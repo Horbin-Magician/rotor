@@ -1,0 +1,25 @@
+[package]
+name = "rotor-rs"
+version = "0.1.0"
+authors = ["Horbin"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tray-icon = "0.8.1"
+
+[dependencies.slint]
+version = "1.1.1"
+default-features = false
+features = [
+    "compat-1-0",
+    "renderer-winit-skia",
+]
+
+[dependencies.windows-sys]
+version = "0.48"
+default-features = false
+features = [
+    "Win32_UI_WindowsAndMessaging",
+]
