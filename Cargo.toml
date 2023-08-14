@@ -11,10 +11,8 @@ tray-icon = "0.8.1"
 
 [dependencies.slint]
 version = "1.1.1"
-default-features = false
 features = [
-    "compat-1-0",
-    "renderer-winit-skia",
+    "renderer-winit-skia-opengl",
 ]
 
 [dependencies.windows-sys]
