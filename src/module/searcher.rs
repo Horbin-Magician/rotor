@@ -1,8 +1,15 @@
 use slint::ComponentHandle;
 use windows_sys::Win32::UI::WindowsAndMessaging;
-use std::rc::Rc;
+// use i_slint_backend_winit::WinitWindowAccessor;
+// use raw_window_handle::HasRawWindowHandle;
+use std::{rc::Rc, cell::RefCell, borrow::BorrowMut};
+
+use file_data::FileData;
+mod file_data;
+pub mod volume;
 
 pub struct Searcher {
+    file_data_rc: Rc<RefCell<FileData>>,
     search_win: SearchWindow,
     search_result_model: Rc<slint::VecModel<SearchResult>>,
 }
@@ -21,6 +28,17 @@ impl Searcher {
 
 
         let search_win = SearchWindow::new().unwrap();
+        // search_win.window().with_winit_window(|winit_window: &winit::window::Window| {
+        //     let raw_window_handle = winit_window.raw_window_handle();
+        //     if let raw_window_handle::RawWindowHandle::Win32(win32_window_handle) = raw_window_handle {
+        //         let hwnd = win32_window_handle.hwnd as isize;
+        //         unsafe{
+        //             WindowsAndMessaging::SetWindowLongPtrA(hwnd, WindowsAndMessaging::GWL_EXSTYLE, WindowsAndMessaging::WS_EX_TOOLWINDOW as isize);
+        //             let result = WindowsAndMessaging::GetWindowLongPtrA(hwnd, WindowsAndMessaging::GWL_EXSTYLE);
+        //         }
+        //     }
+        // });
+
         search_win.set_ui_width(width);
         search_win.set_ui_height(height);
         let x_pos = (x_screen - width) * 0.5;
@@ -29,16 +47,6 @@ impl Searcher {
 
         let search_result_model = std::rc::Rc::new(slint::VecModel::from(vec![]));
         search_win.set_search_result(search_result_model.clone().into());
-
-        let search_result_model_clone = search_result_model.clone();
-        search_win.on_query_change(move |query| {
-            // TODO 搜索事件
-            if query == "" {
-                search_result_model_clone.set_vec(vec![]);
-            } else {
-                search_result_model_clone.push(SearchResult { filename: query.clone().into(), path: query.clone().into(),});
-            }
-        });
 
         let search_win_clone = search_win.as_weak();
         search_win.on_key_released(move |event| {
@@ -61,11 +69,38 @@ impl Searcher {
             }
             return true;
         });
+        
+        let mut file_data = FileData::new();
+        file_data.init_volumes();
+        let file_data_rc: Rc<RefCell<FileData>> = Rc::new(RefCell::new(file_data));
 
-        Searcher {
+        let search_result_model_clone = search_result_model.clone();
+        let file_data_rc_clone = file_data_rc.clone();
+        
+        search_win.on_query_change(move |query| {
+            search_result_model_clone.set_vec(vec![]); // clear history
+            if query != "" {
+                let mut file_data_mut = file_data_rc_clone.as_ref().borrow_mut();
+                let result = file_data_mut.find(query.to_string());
+                if result.query == query.to_string() {
+                    for item in &result.items {
+                        search_result_model_clone.push(
+                            SearchResult { 
+                                filename: slint::SharedString::from(item.file_name.clone()),
+                                path: slint::SharedString::from(item.path.clone()),
+                            }
+                        );
+                    }
+                }
+            }
+        });
+
+        let searcher = Searcher {
+            file_data_rc,
             search_win,
             search_result_model,
-        }
+        };
+        searcher
     }
 
     pub fn show(&self) {
@@ -97,7 +132,7 @@ slint::slint! {
 
         no-frame: true;
         forward-focus: input;
-        default-font-size: 20px;
+        default-font-size: 18px;
         default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
         width: ui_width * 1px;
@@ -137,10 +172,10 @@ slint::slint! {
                                 HorizontalBox { 
                                     padding: 0;
                                     Rectangle {
-                                        width: 60px;
-                                        height: 60px;
+                                        padding-left: 10px;
+                                        width: 40px;
+                                        height: 100%;
                                         Image {
-                                            padding: 15px;
                                             width: 30px;
                                             height: 30px;
                                             source: @image-url("assets/logo.png");
@@ -150,14 +185,16 @@ slint::slint! {
                                         padding: 0;
                                         Text {
                                             height: 20px;
+                                            overflow: elide;
                                             text: data.filename;
-                                            font-size: 18px;
+                                            font-size: 16px;
                                         }
                                         Text {
                                             height: 40px;
+                                            overflow: elide;
                                             text: data.path;
                                             color: grey;
-                                            font-size: 18px;
+                                            font-size: 16px;
                                         }
                                     }
                                 }

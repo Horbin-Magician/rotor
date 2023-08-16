@@ -7,7 +7,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+i-slint-backend-winit = "1.1.1"
+raw-window-handle = "0.5.2"
 tray-icon = "0.8.1"
+winit = "0.28.6"
 
 [dependencies.slint]
 version = "1.1.1"
@@ -20,4 +23,9 @@ version = "0.48"
 default-features = false
 features = [
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
 ]
