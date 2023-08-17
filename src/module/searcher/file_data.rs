@@ -1,34 +1,46 @@
 use std::ffi::CString;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::rc::Rc;
+use slint::{Model, VecModel};
 
 use windows_sys::Win32::Storage::FileSystem;
 use windows_sys::Win32::Foundation;
 
-use crate::module::searcher::volume;
-use super::volume::Volume;
+use super::volume;
+use super::slint_generatedSearchWindow::SearchResult_slint;
+use super::slint_generatedSearchWindow::SearchWindow;
+
+struct volume_pack {
+    volume: Arc<Mutex<volume::Volume>>,
+    stop_sender: mpsc::Sender<()>,
+}
 
 pub struct FileData {
     vols: Vec<char>,
-    volumes: Vec<Arc<Mutex<volume::Volume>>>,
+    // volumes: Vec<Arc<Mutex<volume::Volume>>>,
     finding_name: String,
     finding_result: volume::SearchResult,
     waiting_init: u8,
     waiting_finder: u8,
-    stop_senders: Vec<mpsc::Sender<()>>,
+    // stop_senders: Vec<mpsc::Sender<()>>,
+    search_win: slint::Weak<SearchWindow>,
+    stop_finder_receiver: mpsc::Receiver<()>,
+    volume_packs: Vec<volume_pack>,
 }
 
 impl FileData {
-    pub fn new() -> FileData {
+    pub fn new(search_win: slint::Weak<SearchWindow>, stop_finder_receiver: mpsc::Receiver<()>) -> FileData {
         FileData {
             vols: Vec::new(),
-            volumes: Vec::new(),
+            volume_packs: Vec::new(),
+            // volumes: Vec::new(),
             finding_name: String::new(),
             finding_result: volume::SearchResult{items: Vec::new(), query: String::new()},
             waiting_finder: 0,
             waiting_init: 0,
-            stop_senders: vec![],
+            // stop_senders: vec![],
+            search_win,
+            stop_finder_receiver,
         }
     }
 
@@ -81,22 +93,25 @@ impl FileData {
     pub fn init_volumes(&mut self) -> bool {
         self.waiting_init = self.init_valid_vols();
 
-        let (sender, receiver) = mpsc::channel::<bool>();
+        let (build_sender, build_receiver) = mpsc::channel::<bool>();
 
         for c in &self.vols {
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
-            let volume = Arc::new(Mutex::new(Volume::new(c.clone(), stop_receiver)));
-            self.stop_senders.push(stop_sender);
-            self.volumes.push(volume.clone());
+            let volume = Arc::new(Mutex::new(volume::Volume::new(c.clone(), stop_receiver)));
+            
+            self.volume_packs.push(volume_pack {
+                volume: volume.clone(),
+                stop_sender,
+            });
 
-            let sender_clone = sender.clone();
+            let build_sender_clone = build_sender.clone();
             let _ = thread::spawn(move || {
-                volume.lock().unwrap().build_index_with_sender(sender_clone);
+                volume.lock().unwrap().build_index_with_sender(build_sender_clone);
             });
         }
 
         loop{
-            let result = receiver.recv().unwrap();
+            let result = build_receiver.recv().unwrap();
             if result {
                 self.waiting_init -= 1;
                 if self.waiting_init == 0 { return true; }
@@ -105,21 +120,33 @@ impl FileData {
         }
     }
 
-    pub fn find(&mut self, filename: String) -> &volume::SearchResult {
+    fn stop_find(&self) {
+        for volume_pack in &self.volume_packs {
+            match volume_pack.volume.try_lock() {
+                Ok( _ ) => {},
+                Err( _ ) => { let _ = volume_pack.stop_sender.send(()); },
+            }
+        }
+    }
+
+    pub fn find(&mut self, filename: String) {
         println!("Begin FileData::find_file Filename: {filename}");
 
-        if self.finding_name == filename { return &self.finding_result; }
+        if filename == "" {
+            self.finding_name = String::from("");
+            return;
+        } else if self.finding_name == filename { return; }
+
         self.finding_name = filename.clone();
 
-        for sender in &self.stop_senders { let _ = sender.send(()); }
-        self.waiting_finder = self.volumes.len() as u8;
+        self.waiting_finder = self.volume_packs.len() as u8;
 
         self.finding_result.items.clear();
         self.finding_result.query = filename.clone();
 
         let (find_result_sender, find_result_receiver) = mpsc::channel::<Vec<volume::SearchResultItem>>();
 
-        for volume in &mut self.volumes {
+        for volume_pack{volume, ..} in &self.volume_packs { 
             let find_result_sender: mpsc::Sender<Vec<volume::SearchResultItem>> = find_result_sender.clone();
             let volume = volume.clone();
             let filename = filename.clone();
@@ -129,23 +156,52 @@ impl FileData {
             });
         }
 
-        loop{
-            // TODO 出现错误时终止循环
-            // if(result == nullptr || filename != this->m_findingName) return;
-            let mut result = find_result_receiver.recv().unwrap();
-            self.finding_result.items.append(&mut result);
-            self.waiting_finder -= 1;
-            if self.waiting_finder == 0 {
-                // TODO 排序
-                // sort(m_findingResult->begin(), m_findingResult->end());
-                println!("End FileData::find_file");
-                return &self.finding_result;
+        loop {
+            match self.stop_finder_receiver.try_recv() {
+                Ok( _ ) => { self.stop_find(); },
+                Err( _ ) => {},
+            }
+            
+            match find_result_receiver.try_recv() {
+                Ok( mut result ) => {
+                    self.finding_result.items.append(&mut result);
+                    self.waiting_finder -= 1;
+                    if self.waiting_finder == 0 {
+                        // TODO 排序
+                        // sort(m_findingResult->begin(), m_findingResult->end());
+                        println!("End FileData::find_file");
+        
+                        let return_result;
+                        if self.finding_result.items.len() > 20 { return_result = self.finding_result.items[..20].to_vec(); }
+                        else { return_result = self.finding_result.items.to_vec(); }
+                        
+                        let search_win_clone = self.search_win.clone();
+                        slint::invoke_from_event_loop(move || {
+                            // TODO 确认此时的结果为有效结果
+                            let search_result_model = search_win_clone.unwrap().get_search_result();
+                            let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
+                                .expect("search_result_model set a VecModel earlier");
+                            search_result_model.set_vec(vec![]); // clear history
+        
+                            for item in return_result {
+                                search_result_model.push(
+                                    SearchResult_slint { 
+                                        filename: slint::SharedString::from(item.file_name.clone()),
+                                        path: slint::SharedString::from(item.path.clone()),
+                                    }
+                                );
+                            }
+                        }).unwrap();
+                        break;
+                    }
+                },
+                Err( _ ) => {},
             }
         }
     }
 
     pub fn update_index(&self) {
-        for volume in &self.volumes { 
+        for volume_pack{volume, ..} in &self.volume_packs { 
             let volume = volume.clone();
             let _ = thread::spawn(move || {
                 volume.lock().unwrap().update_index();
@@ -154,7 +210,7 @@ impl FileData {
     }
 
     pub fn release_index(&self) {
-        for volume in &self.volumes { 
+        for volume_pack{volume, ..} in &self.volume_packs { 
             let volume = volume.clone();
             let _ = thread::spawn(move || {
                 volume.lock().unwrap().release_index();

@@ -1,17 +1,18 @@
 use slint::ComponentHandle;
 use windows_sys::Win32::UI::WindowsAndMessaging;
-// use i_slint_backend_winit::WinitWindowAccessor;
-// use raw_window_handle::HasRawWindowHandle;
-use std::{rc::Rc, cell::RefCell, borrow::BorrowMut};
+use std::rc::Rc;
+use std::thread;
+use std::sync::{Arc, Mutex, mpsc};
 
 use file_data::FileData;
 mod file_data;
 pub mod volume;
 
 pub struct Searcher {
-    file_data_rc: Rc<RefCell<FileData>>,
+    file_data: Arc<Mutex<FileData>>,
     search_win: SearchWindow,
-    search_result_model: Rc<slint::VecModel<SearchResult>>,
+    search_result_model: Rc<slint::VecModel<SearchResult_slint>>,
+    stop_find_sender: mpsc::Sender<()>,
 }
 
 impl Searcher {
@@ -23,29 +24,14 @@ impl Searcher {
             y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
         }
     
-        let width: f32 = 500.;
-        let height: f32 = 60.;
-
-
         let search_win = SearchWindow::new().unwrap();
-        // search_win.window().with_winit_window(|winit_window: &winit::window::Window| {
-        //     let raw_window_handle = winit_window.raw_window_handle();
-        //     if let raw_window_handle::RawWindowHandle::Win32(win32_window_handle) = raw_window_handle {
-        //         let hwnd = win32_window_handle.hwnd as isize;
-        //         unsafe{
-        //             WindowsAndMessaging::SetWindowLongPtrA(hwnd, WindowsAndMessaging::GWL_EXSTYLE, WindowsAndMessaging::WS_EX_TOOLWINDOW as isize);
-        //             let result = WindowsAndMessaging::GetWindowLongPtrA(hwnd, WindowsAndMessaging::GWL_EXSTYLE);
-        //         }
-        //     }
-        // });
-
+        
+        let width: f32 = 500.;
         search_win.set_ui_width(width);
-        search_win.set_ui_height(height);
         let x_pos = (x_screen - width) * 0.5;
-        let y_pos = (y_screen - height) * 0.382 - 30.;
+        let y_pos = y_screen * 0.3;
         search_win.window().set_position(slint::WindowPosition::Logical(slint::LogicalPosition::new(x_pos, y_pos)));
-
-        let search_result_model = std::rc::Rc::new(slint::VecModel::from(vec![]));
+        let search_result_model = Rc::new(slint::VecModel::from(vec![]));
         search_win.set_search_result(search_result_model.clone().into());
 
         let search_win_clone = search_win.as_weak();
@@ -64,41 +50,41 @@ impl Searcher {
         let search_win_clone = search_win.as_weak();
 
         search_win.on_lose_focus_trick(move |has_focus| {
-            if has_focus == false {
-                search_win_clone.unwrap().hide().unwrap();
-            }
+            if has_focus == false { search_win_clone.unwrap().hide().unwrap(); }
             return true;
         });
         
-        let mut file_data = FileData::new();
-        file_data.init_volumes();
-        let file_data_rc: Rc<RefCell<FileData>> = Rc::new(RefCell::new(file_data));
+        let (stop_find_sender, stop_finder_receiver) = mpsc::channel::<()>();
+        let file_data = Arc::new(Mutex::new(FileData::new(search_win.as_weak(), stop_finder_receiver)));
+        let file_data_clone = file_data.clone();
+        thread::spawn(move || {
+            file_data_clone.lock().unwrap().init_volumes();
+        });
 
+        let file_data_clone = file_data.clone();
+        let stop_find_sender_clone = stop_find_sender.clone();
         let search_result_model_clone = search_result_model.clone();
-        let file_data_rc_clone = file_data_rc.clone();
-        
         search_win.on_query_change(move |query| {
-            search_result_model_clone.set_vec(vec![]); // clear history
-            if query != "" {
-                let mut file_data_mut = file_data_rc_clone.as_ref().borrow_mut();
-                let result = file_data_mut.find(query.to_string());
-                if result.query == query.to_string() {
-                    for item in &result.items {
-                        search_result_model_clone.push(
-                            SearchResult { 
-                                filename: slint::SharedString::from(item.file_name.clone()),
-                                path: slint::SharedString::from(item.path.clone()),
-                            }
-                        );
-                    }
-                }
+
+            let file_data_clone_clone = file_data_clone.clone();
+
+            match file_data_clone_clone.try_lock() {
+                Ok(_) => {},
+                Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
             }
+
+            if query == "" { search_result_model_clone.set_vec(vec![]); }
+
+            thread::spawn(move || {
+                file_data_clone_clone.lock().unwrap().find(query.to_string());
+            });
         });
 
         let searcher = Searcher {
-            file_data_rc,
+            file_data,
             search_win,
             search_result_model,
+            stop_find_sender,
         };
         searcher
     }
@@ -115,7 +101,7 @@ impl Searcher {
 slint::slint! {
     import { Button, VerticalBox, LineEdit, ListView , HorizontalBox, StyleMetrics} from "std-widgets.slint";
 
-    struct SearchResult {
+    struct SearchResult_slint {
         filename: string,
         path: string,
     }
@@ -124,7 +110,7 @@ slint::slint! {
     
         in property <float> ui_width;
         in property <float> ui_height;
-        in property <[SearchResult]> search_result;
+        in property <[SearchResult_slint]> search_result;
 
         callback query_change(string);
         callback key_released(KeyEvent);
@@ -136,47 +122,42 @@ slint::slint! {
         default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
         width: ui_width * 1px;
+        height: 510px;
         always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
         background: transparent;
 
-        Rectangle {
-            border-radius: 5px;
-            background: StyleMetrics.window-background;
-            key-handler := FocusScope {
-                key-released(event) => {
-                    root.key_released(event);
-                    accept
-                }
-
-                VerticalBox {
-                    padding: 0;
-                    spacing: 0;
-
-                    input := LineEdit {
-                        height: 60px;
-                        placeholder-text: "请输入需要搜索的内容";
-                        edited(str) => {
-                            root.query_change(str);
-                        }
+        VerticalBox {
+            Rectangle {
+                border-radius: 5px;
+                background: StyleMetrics.window-background;
+                key-handler := FocusScope {
+                    key-released(event) => {
+                        root.key_released(event);
+                        accept
                     }
-                    
-                    result-list := ListView {
-                        height: (search_result.length > 7 ? 7 : search_result.length) * 66px + (search_result.length > 0 ? 14px : 0px);
-                        for data in root.search_result : VerticalBox {
-                            padding: 0;
-                            padding-top: 6px;
-                            padding-left: 10px;
-                            Rectangle {
-                                padding: 0;
+                    VerticalBox {
+                        padding: 0;
+                        spacing: 0;
+                        input := LineEdit {
+                            height: 60px;
+                            placeholder-text: "请输入需要搜索的内容";
+                            edited(str) => {
+                                root.query_change(str);
+                            }
+                        }
+                        result-list := ListView {
+                            height: (search_result.length > 7 ? 7 : search_result.length) * 60px + (search_result.length > 0 ? 14px : 0px);
+                            animate height { 
+                                duration: 0.2s;
+                                easing: ease-in-out;
+                            }
+                            for data in root.search_result: Rectangle {
                                 height: 60px;
-                                HorizontalBox { 
-                                    padding: 0;
+                                HorizontalBox {
+                                    padding-right: 0px;
                                     Rectangle {
-                                        padding-left: 10px;
-                                        width: 40px;
-                                        height: 100%;
+                                        width: 30px;
                                         Image {
-                                            width: 30px;
                                             height: 30px;
                                             source: @image-url("assets/logo.png");
                                         }
@@ -204,5 +185,6 @@ slint::slint! {
                 }
             }
         }
+
     }
 }
