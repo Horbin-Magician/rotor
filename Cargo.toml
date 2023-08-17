@@ -7,8 +7,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-i-slint-backend-winit = "1.1.1"
-raw-window-handle = "0.5.2"
 tray-icon = "0.8.1"
 winit = "0.28.6"
 

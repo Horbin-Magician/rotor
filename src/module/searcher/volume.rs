@@ -23,6 +23,16 @@ pub struct SearchResultItem {
     rank: i8,
 }
 
+impl Clone for SearchResultItem {
+    fn clone(&self) -> Self {
+        SearchResultItem {
+            path: self.path.clone(),
+            file_name: self.file_name.clone(),
+            rank: self.rank,
+        }
+    }
+}
+
 pub struct SearchResult {
     pub items: Vec<SearchResultItem>,
     pub query: String,
@@ -35,7 +45,6 @@ pub struct Volume {
     drive: char,
     drive_frn: u64,
     file_map: FileMap,
-    stop_find: bool,
     start_usn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     h_vol: isize,
@@ -50,7 +59,6 @@ impl Volume {
             drive,
             drive_frn: 0x5000000000005,
             file_map: FileMap::new(),
-            stop_find: false,
             start_usn: 0x0,
             ujd: Ioctl::USN_JOURNAL_DATA_V0{ UsnJournalID: 0x0, FirstUsn: 0x0, NextUsn: 0x0, LowestValidUsn: 0x0, MaxUsn: 0x0, MaximumSize: 0x0, AllocationDelta: 0x0 },
             h_vol,
@@ -239,11 +247,11 @@ impl Volume {
         let query_filter = Self::make_filter(&query_lower);
 
         for (index, file) in self.file_map.iter() {
-            if self.stop_find {
-                self.stop_find = false;
-                sender.send(Vec::new()).unwrap();
-                return;
+            match self.stop_receiver.try_recv() {
+                Ok(_) => { sender.send(Vec::new()).unwrap(); return; },
+                Err(_) => {},
             }
+                
             if (file.filter & query_filter) == query_filter {
                 let file_name = file.file_name.clone();
                 let rank = Self::match_str(&file_name, &query_lower);
@@ -261,10 +269,6 @@ impl Volume {
         }
         println!("[info] {} End Volume::find, use tiem: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
         sender.send(result).unwrap();
-    }
-
-    pub fn stop_find(&mut self) {
-        self.stop_find = true;
     }
 
     // TODO
