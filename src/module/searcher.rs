@@ -9,8 +9,8 @@ mod file_data;
 pub mod volume;
 
 pub struct Searcher {
+    pub search_win: SearchWindow,
     file_data: Arc<Mutex<FileData>>,
-    search_win: SearchWindow,
     search_result_model: Rc<slint::VecModel<SearchResult_slint>>,
     stop_find_sender: mpsc::Sender<()>,
 }
@@ -87,14 +87,6 @@ impl Searcher {
             stop_find_sender,
         };
         searcher
-    }
-
-    pub fn show(&self) {
-        self.search_win.show().unwrap();
-    }
-
-    pub fn hide(&self) {
-        self.search_win.hide().unwrap();
     }
 }
 
@@ -185,6 +177,5 @@ slint::slint! {
                 }
             }
         }
-
     }
 }

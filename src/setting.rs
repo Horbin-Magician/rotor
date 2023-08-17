@@ -11,10 +11,6 @@ impl Setting {
             setting_win
         }
     }
-
-    pub fn show(&self) {
-        self.setting_win.show().unwrap();
-    }
 }
 
 slint::slint! {

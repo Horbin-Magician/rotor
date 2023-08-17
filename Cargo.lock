@@ -2974,6 +2974,7 @@ dependencies = [
 name = "rotor-rs"
 version = "0.1.0"
 dependencies = [
+ "i-slint-backend-selector",
  "slint",
  "tray-icon",
  "windows-sys 0.48.0",

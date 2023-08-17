@@ -164,6 +164,7 @@ impl FileData {
             
             match find_result_receiver.try_recv() {
                 Ok( mut result ) => {
+                    // TODO 检查接收到结果的原因是搜索中断还是搜索完成，若中断，则不进行下面的步骤
                     self.finding_result.items.append(&mut result);
                     self.waiting_finder -= 1;
                     if self.waiting_finder == 0 {
@@ -175,22 +176,22 @@ impl FileData {
                         if self.finding_result.items.len() > 20 { return_result = self.finding_result.items[..20].to_vec(); }
                         else { return_result = self.finding_result.items.to_vec(); }
                         
-                        let search_win_clone = self.search_win.clone();
-                        slint::invoke_from_event_loop(move || {
+                        self.search_win.clone().upgrade_in_event_loop(move |search_win| {
                             // TODO 确认此时的结果为有效结果
-                            let search_result_model = search_win_clone.unwrap().get_search_result();
+                            let search_result_model = search_win.get_search_result();
                             let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
                                 .expect("search_result_model set a VecModel earlier");
-                            search_result_model.set_vec(vec![]); // clear history
-        
+                            
+                            let mut result_list = Vec::new();
                             for item in return_result {
-                                search_result_model.push(
+                                result_list.push(
                                     SearchResult_slint { 
                                         filename: slint::SharedString::from(item.file_name.clone()),
                                         path: slint::SharedString::from(item.path.clone()),
                                     }
                                 );
                             }
+                            search_result_model.set_vec(result_list);
                         }).unwrap();
                         break;
                     }
