@@ -1,4 +1,4 @@
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model};
 use windows_sys::Win32::UI::WindowsAndMessaging;
 use std::rc::Rc;
 use std::thread;
@@ -34,23 +34,47 @@ impl Searcher {
         let search_result_model = Rc::new(slint::VecModel::from(vec![]));
         search_win.set_search_result(search_result_model.clone().into());
 
+        search_win.set_active_id(0);
+
         let search_win_clone = search_win.as_weak();
+        let search_result_model_clone = search_result_model.clone();
         search_win.on_key_released(move |event| {
+            let search_win_clone = search_win_clone.unwrap();
             if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
-                search_win_clone.unwrap().hide().unwrap();
+                search_win_clone.hide().unwrap();
             }else if event.text == slint::SharedString::from(slint::platform::Key::UpArrow) {
-                println!("UP") // TODO UP
+                let mut active_id = search_win_clone.get_active_id();
+                if active_id > 0 { 
+                    active_id -= 1;
+                    search_win_clone.set_active_id(active_id); 
+                    let viewport_y = search_win_clone.get_viewport_y();
+                    if (-viewport_y / 60.) as i32 > active_id { search_win_clone.set_viewport_y(viewport_y + 60.); }
+                }
             }else if event.text == slint::SharedString::from(slint::platform::Key::DownArrow) {
-                println!("Down") // TODO Down
+                let mut active_id = search_win_clone.get_active_id();
+                if active_id < (search_result_model_clone.row_count() - 1) as i32 { 
+                    active_id += 1;
+                    search_win_clone.set_active_id(active_id); 
+                    let viewport_y = search_win_clone.get_viewport_y();
+                    if (-viewport_y / 60. + 7.) as i32 <= active_id { search_win_clone.set_viewport_y(viewport_y - 60.); }
+                }
             }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
-                println!("Enter") // TODO Enter
+                let active_id = search_win_clone.get_active_id();
+                let data = search_result_model_clone.row_data(active_id as usize);
+                println!("{:?}", data) // TODO Enter
             }
         });
 
         let search_win_clone = search_win.as_weak();
 
         search_win.on_lose_focus_trick(move |has_focus| {
-            if has_focus == false { search_win_clone.unwrap().hide().unwrap(); }
+            if has_focus == false { 
+                if search_win_clone.unwrap().get_query() != "" {
+                    search_win_clone.unwrap().set_query(slint::SharedString::from(""));
+                    search_win_clone.unwrap().invoke_query_change(slint::SharedString::from(""));
+                }
+                search_win_clone.unwrap().hide().unwrap();
+            }
             return true;
         });
         
@@ -94,6 +118,7 @@ slint::slint! {
     import { Button, VerticalBox, LineEdit, ListView , HorizontalBox, StyleMetrics} from "std-widgets.slint";
 
     struct SearchResult_slint {
+        id: int,
         filename: string,
         path: string,
     }
@@ -103,6 +128,10 @@ slint::slint! {
         in property <float> ui_width;
         in property <float> ui_height;
         in property <[SearchResult_slint]> search_result;
+        in property <int> active_id;
+
+        in-out property <string> query <=> input.text;
+        in-out property <length> viewport-y <=> result-list.viewport-y;
 
         callback query_change(string);
         callback key_released(KeyEvent);
@@ -143,10 +172,28 @@ slint::slint! {
                                 duration: 0.2s;
                                 easing: ease-in-out;
                             }
+
                             for data in root.search_result: Rectangle {
                                 height: 60px;
+                                border-radius: 5px;
                                 HorizontalBox {
                                     padding-right: 0px;
+                                    padding-left: 0px;
+                                    Rectangle {
+                                        width: 10px;
+                                        active_bar := Rectangle {
+                                            x: 0px;
+                                            width: 2px;
+                                            border-radius: 1px;
+                                            height: 30px;
+                                            background: cyan;
+
+                                            animate x { 
+                                                duration: 0.2s;
+                                                easing: ease-in-out;
+                                             }
+                                        }
+                                    }
                                     Rectangle {
                                         width: 30px;
                                         Image {
@@ -171,6 +218,18 @@ slint::slint! {
                                         }
                                     }
                                 }
+
+                                states [
+                                    active when root.active_id == data.id: {
+                                        background: StyleMetrics.textedit-background-disabled;
+                                        active_bar.x: 0px;
+                                    }
+                                    inactive when root.active_id != data.id: {
+                                        background: transparent;
+                                        active_bar.x: -2px;
+                                    }
+                                ] 
+
                             }
                         }
                     }
