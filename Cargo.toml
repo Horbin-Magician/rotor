@@ -7,7 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+global-hotkey = "0.2.4"
 i-slint-backend-selector = "1.1.1"
+i-slint-backend-winit = "1.1.1"
 tray-icon = "0.8.1"
 winit = "0.28.6"
 

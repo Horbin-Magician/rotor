@@ -183,13 +183,16 @@ impl FileData {
                                 .expect("search_result_model set a VecModel earlier");
                             
                             let mut result_list = Vec::new();
+                            let mut i = 0;
                             for item in return_result {
                                 result_list.push(
                                     SearchResult_slint { 
+                                        id: i,
                                         filename: slint::SharedString::from(item.file_name.clone()),
                                         path: slint::SharedString::from(item.path.clone()),
                                     }
                                 );
+                                i += 1;
                             }
                             search_result_model.set_vec(result_list);
                         }).unwrap();

@@ -5,7 +5,7 @@ use tray_icon::{
     ClickType, TrayIconBuilder, menu::MenuItem, Icon, TrayIconEvent, TrayIcon
 };
 
-use crate::application::AppMessage;
+use super::AppMessage;
 
 pub struct SystemTray {
     _tray_icon: TrayIcon,
@@ -33,7 +33,7 @@ impl SystemTray {
                 match TrayIconEvent::receiver().try_recv() {
                     Ok(event) => {
                         if event.click_type == ClickType::Left {
-                            msg_sender.send(AppMessage::ShowSearch).unwrap();
+                            msg_sender.send(AppMessage::ShowSetting).unwrap();
                         }
                     },
                     Err(_) => {}
