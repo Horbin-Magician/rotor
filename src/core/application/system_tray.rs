@@ -28,6 +28,16 @@ impl SystemTray {
 
         let _setting_id = menuitem_setting.id().clone();
         let _quit_id = menuitem_quit.id().clone();
+
+        // let sender_clone = msg_sender.clone();
+        // TrayIconEvent::set_event_handler(Some(
+        //     move |event: TrayIconEvent| {
+        //         if event.click_type == ClickType::Left {
+        //             sender_clone.send(AppMessage::ShowSetting).unwrap();
+        //         }
+        //     }
+        // ));
+
         std::thread::spawn(move || {
             loop {
                 match TrayIconEvent::receiver().try_recv() {
@@ -49,6 +59,7 @@ impl SystemTray {
                     },
                     Err(_) => {}
                 }
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         });
 

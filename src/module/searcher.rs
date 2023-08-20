@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::thread;
 use std::sync::{Arc, Mutex, mpsc};
 
+use crate::core::util::file_util;
 use file_data::FileData;
 mod file_data;
 pub mod volume;
@@ -61,7 +62,10 @@ impl Searcher {
             }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
                 let active_id = search_win_clone.get_active_id();
                 let data = search_result_model_clone.row_data(active_id as usize);
-                println!("{:?}", data) // TODO Enter
+                if let Some(f) = data {
+                    file_util::open_file((f.path + &f.filename).to_string());
+                    search_win_clone.hide().unwrap();
+                }
             }
         });
 
@@ -69,11 +73,12 @@ impl Searcher {
 
         search_win.on_lose_focus_trick(move |has_focus| {
             if has_focus == false { 
-                if search_win_clone.unwrap().get_query() != "" {
-                    search_win_clone.unwrap().set_query(slint::SharedString::from(""));
-                    search_win_clone.unwrap().invoke_query_change(slint::SharedString::from(""));
+                let search_win = search_win_clone.unwrap();
+                if search_win.get_query() != "" {
+                    search_win.set_query(slint::SharedString::from(""));
+                    search_win.invoke_query_change(slint::SharedString::from(""));
                 }
-                search_win_clone.unwrap().hide().unwrap();
+                search_win.hide().unwrap();
             }
             return true;
         });
@@ -104,6 +109,22 @@ impl Searcher {
             });
         });
 
+        let search_win_clone = search_win.as_weak();
+        let search_result_model_clone = search_result_model.clone();
+        search_win.on_item_click(move |event, id| {
+            if event.kind == slint::private_unstable_api::re_exports::PointerEventKind::Up {
+                if event.button == slint::platform::PointerEventButton::Left {
+                    let data = search_result_model_clone.row_data(id as usize);
+                    if let Some(f) = data {
+                        file_util::open_file((f.path + &f.filename).to_string());
+                        search_win_clone.unwrap().hide().unwrap();
+                    }
+                } else if event.button == slint::platform::PointerEventButton::Right {
+                    // TODO 打开菜单
+                }
+            }
+        });
+
         let searcher = Searcher {
             file_data,
             search_win,
@@ -119,6 +140,7 @@ slint::slint! {
 
     struct SearchResult_slint {
         id: int,
+        icon: image,
         filename: string,
         path: string,
     }
@@ -135,6 +157,7 @@ slint::slint! {
 
         callback query_change(string);
         callback key_released(KeyEvent);
+        callback item_click(PointerEvent, int);
         pure callback lose_focus_trick(bool) -> bool;
 
         no-frame: true;
@@ -167,6 +190,7 @@ slint::slint! {
                             }
                         }
                         result-list := ListView {
+                            padding: 0;
                             height: (search_result.length > 7 ? 7 : search_result.length) * 60px + (search_result.length > 0 ? 14px : 0px);
                             animate height { 
                                 duration: 0.2s;
@@ -176,45 +200,51 @@ slint::slint! {
                             for data in root.search_result: Rectangle {
                                 height: 60px;
                                 border-radius: 5px;
-                                HorizontalBox {
-                                    padding-right: 0px;
-                                    padding-left: 0px;
-                                    Rectangle {
-                                        width: 10px;
-                                        active_bar := Rectangle {
-                                            x: 0px;
-                                            width: 2px;
-                                            border-radius: 1px;
-                                            height: 30px;
-                                            background: cyan;
+                                search_result_item_touch := TouchArea {
+                                    pointer-event(event) => {
+                                        root.item-click(event, data.id);
+                                    }
 
-                                            animate x { 
-                                                duration: 0.2s;
-                                                easing: ease-in-out;
-                                             }
+                                    HorizontalBox {
+                                        padding-right: 0px;
+                                        padding-left: 0px;
+                                        Rectangle {
+                                            width: 10px;
+                                            active_bar := Rectangle {
+                                                x: 0px;
+                                                width: 2px;
+                                                border-radius: 1px;
+                                                height: 30px;
+                                                background: cyan;
+
+                                                animate x { 
+                                                    duration: 0.2s;
+                                                    easing: ease-in-out;
+                                                }
+                                            }
                                         }
-                                    }
-                                    Rectangle {
-                                        width: 30px;
-                                        Image {
-                                            height: 30px;
-                                            source: @image-url("assets/logo.png");
+                                        Rectangle {
+                                            width: 30px;
+                                            Image {
+                                                height: 32px;
+                                                source: data.icon;
+                                            }
                                         }
-                                    }
-                                    VerticalBox {
-                                        padding: 0;
-                                        Text {
-                                            height: 20px;
-                                            overflow: elide;
-                                            text: data.filename;
-                                            font-size: 16px;
-                                        }
-                                        Text {
-                                            height: 40px;
-                                            overflow: elide;
-                                            text: data.path;
-                                            color: grey;
-                                            font-size: 16px;
+                                        VerticalBox {
+                                            padding: 0;
+                                            Text {
+                                                height: 20px;
+                                                overflow: elide;
+                                                text: data.filename;
+                                                font-size: 16px;
+                                            }
+                                            Text {
+                                                height: 40px;
+                                                overflow: elide;
+                                                text: data.path;
+                                                color: grey;
+                                                font-size: 16px;
+                                            }
                                         }
                                     }
                                 }
@@ -224,12 +254,15 @@ slint::slint! {
                                         background: StyleMetrics.textedit-background-disabled;
                                         active_bar.x: 0px;
                                     }
-                                    inactive when root.active_id != data.id: {
+                                    inactive when root.active_id != data.id && !search_result_item_touch.has-hover : {
                                         background: transparent;
                                         active_bar.x: -2px;
                                     }
+                                    hover when search_result_item_touch.has-hover: {
+                                        background: StyleMetrics.textedit-background-disabled;
+                                        active_bar.x: -2px;
+                                    }
                                 ] 
-
                             }
                         }
                     }
