@@ -85,7 +85,6 @@ fn app_loop (
                         winit_win.focus_window();
                     });
                 }).unwrap();
-                
             },
             Ok(AppMessage::ShowSetting) => {
                 setting_win.clone().upgrade_in_event_loop(move |win| {
@@ -100,5 +99,7 @@ fn app_loop (
                 msg_sender_clone.send(AppMessage::ShowSearch).unwrap();
             }
         }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }

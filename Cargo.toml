@@ -3,13 +3,19 @@ name = "rotor-rs"
 version = "0.1.0"
 authors = ["Horbin"]
 edition = "2021"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+embed-resource = "2.2.0"
 
 [dependencies]
 global-hotkey = "0.2.4"
 i-slint-backend-selector = "1.1.1"
 i-slint-backend-winit = "1.1.1"
+image = "0.24.7"
+rgb = "0.8.36"
 tray-icon = "0.8.1"
 winit = "0.28.6"
 

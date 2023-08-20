@@ -20,7 +20,7 @@ struct File {
 pub struct SearchResultItem {
     pub path: String,
     pub file_name: String,
-    rank: i8,
+    pub rank: i8,
 }
 
 impl Clone for SearchResultItem {
@@ -41,13 +41,12 @@ pub struct SearchResult {
 type FileMap = std::collections::HashMap<u64, File>;
 
 pub struct Volume {
-    state: u8,
     drive: char,
     drive_frn: u64,
-    file_map: FileMap,
-    start_usn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     h_vol: isize,
+    start_usn: u64,
+    file_map: FileMap,
     stop_receiver: mpsc::Receiver<()>,
 }
 
@@ -55,7 +54,6 @@ impl Volume {
     pub fn new(drive: char, stop_receiver: mpsc::Receiver<()>) -> Volume {
         let h_vol = Self::open(drive);
         Volume {
-            state: 0,
             drive,
             drive_frn: 0x5000000000005,
             file_map: FileMap::new(),
@@ -114,7 +112,7 @@ impl Volume {
     fn get_file_rank(file_name: &String) -> i8 {
         let mut rank: i8 = 0;
         if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
-        else if file_name.to_lowercase().ends_with(".lnk") { rank += 30; }
+        else if file_name.to_lowercase().ends_with(".lnk") { rank += 15; }
         rank
     }
 
@@ -213,7 +211,7 @@ impl Volume {
         for c in contain.to_lowercase().chars() {
             if query_list[i] == c { i += 1; }
             if i >= query_list.len() {
-                let rank: i8 = 10i8.wrapping_sub((contain.len() as i8).wrapping_sub(query_list.len() as i8));
+                let rank: i8 = 20i8.wrapping_sub((contain.chars().collect::<Vec<char>>().len() as i8).wrapping_sub(query_list.len() as i8));
                 return if rank < 0 { 0 } else { rank };
             }
         }
@@ -234,21 +232,21 @@ impl Volume {
     }
 
     // searching
-    pub fn find(&mut self, query: String, sender: mpsc::Sender<Vec<SearchResultItem>>) {
+    pub fn find(&mut self, query: String, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
         let sys_time = SystemTime::now();
         println!("[info] {} Begin Volume::Find", self.drive);
 
         let mut result = Vec::new();
 
-        if query.len() == 0 { sender.send(result).unwrap(); return; }
+        if query.len() == 0 { sender.send(None).unwrap(); return; }
         if self.file_map.is_empty() { self.serialization_read() };
 
         let query_lower = query.to_lowercase();
         let query_filter = Self::make_filter(&query_lower);
 
-        for (index, file) in self.file_map.iter() {
+        for (_, file) in self.file_map.iter() {
             match self.stop_receiver.try_recv() {
-                Ok(_) => { sender.send(Vec::new()).unwrap(); return; },
+                Ok(_) => { let _ = sender.send(None); return; },
                 Err(_) => {},
             }
                 
@@ -256,7 +254,7 @@ impl Volume {
                 let file_name = file.file_name.clone();
                 let rank = Self::match_str(&file_name, &query_lower);
                 if rank >= 0 {
-                    if let Some(path) = self.get_path(index){
+                    if let Some(path) = self.get_path(&file.parent_index){
                         let item: SearchResultItem = SearchResultItem {
                             path,
                             file_name,
@@ -268,7 +266,7 @@ impl Volume {
             }
         }
         println!("[info] {} End Volume::find, use tiem: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
-        sender.send(result).unwrap();
+        sender.send(Some(result)).unwrap();
     }
 
     // TODO

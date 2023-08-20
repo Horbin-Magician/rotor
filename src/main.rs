@@ -1,3 +1,5 @@
+// #![windows_subsystem = "windows"]
+
 mod core;
 mod module;
 
@@ -7,7 +9,7 @@ use crate::core::application::Application;
 
 fn main() {
     slint::platform::set_platform(Box::new(i_slint_backend_winit::Backend::new())).unwrap();
-    
+
     let _app = Application::new();
 
     i_slint_backend_selector::with_platform(|b| {
