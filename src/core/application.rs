@@ -2,6 +2,7 @@ mod system_tray;
 mod setting;
 
 use std::sync::mpsc;
+use std::sync::Arc;
 
 use slint::ComponentHandle;
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -10,6 +11,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, hotkey::{HotKey, Mod
 use system_tray::SystemTray;
 use setting::{Setting, SettingWindow};
 use crate::module::searcher::{Searcher, SearchWindow};
+use crate::module::screen_shotter::{ScreenShotter, MaskWindow};
 
 pub enum AppMessage {
     Quit,
@@ -21,6 +23,7 @@ pub struct Application {
     _system_tray: SystemTray,
     _setting: Setting,
     _searcher: Searcher,
+    _shotter: Arc<ScreenShotter>,
     _msg_sender:mpsc::Sender<AppMessage>,
     _hotkey_manager: GlobalHotKeyManager,
 }
@@ -30,16 +33,21 @@ impl Application {
         let (_msg_sender, msg_reciever) = mpsc::channel();
 
         let _system_tray = SystemTray::new(_msg_sender.clone());
-        let _searcher: Searcher = Searcher::new();
         let _setting: Setting = Setting::new();
+        let _searcher: Searcher = Searcher::new();
+        let _shotter: Arc<ScreenShotter> = Arc::new(ScreenShotter::new());
 
         let _hotkey_manager = GlobalHotKeyManager::new().unwrap(); // initialize the hotkeys manager
         let find_hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyF); // construct the hotkey
+        let shot_hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyC); // construct the hotkey
         _hotkey_manager.register(find_hotkey).unwrap(); // register it
+        _hotkey_manager.register(shot_hotkey).unwrap(); // register it
 
         let setting_win = _setting.setting_win.as_weak();
         let search_win = _searcher.search_win.as_weak();
+        let mask_win = _shotter.mask_win.as_weak();
         let find_hotkey_id = find_hotkey.id();
+        let shot_hotkey_id = shot_hotkey.id();
         let msg_sender_clone = _msg_sender.clone();
         std::thread::spawn(move || {
             app_loop(
@@ -47,7 +55,9 @@ impl Application {
                 msg_reciever,
                 setting_win,
                 search_win,
-                find_hotkey_id
+                mask_win,
+                find_hotkey_id,
+                shot_hotkey_id,
             );
         });
 
@@ -55,6 +65,7 @@ impl Application {
             _system_tray,
             _setting,
             _searcher,
+            _shotter,
             _msg_sender,
             _hotkey_manager,
         }
@@ -70,7 +81,9 @@ fn app_loop (
     msg_reciever: mpsc::Receiver<AppMessage>,
     setting_win: slint::Weak<SettingWindow>,
     search_win: slint::Weak<SearchWindow>,
+    mask_win: slint::Weak<MaskWindow>,
     find_hotkey_id: u32,
+    shot_hotkey_id: u32,
 ) {
     loop {
         match msg_reciever.try_recv() {
@@ -95,11 +108,16 @@ fn app_loop (
         }
 
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+
             if event.id == find_hotkey_id {
                 msg_sender_clone.send(AppMessage::ShowSearch).unwrap();
+            } else if event.id == shot_hotkey_id {
+                mask_win.clone().upgrade_in_event_loop(move |win| {
+                    win.invoke_shot();
+                }).unwrap();
             }
         }
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }

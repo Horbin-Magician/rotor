@@ -22,21 +22,12 @@ impl SystemTray {
         let _tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
             .with_tooltip("system-tray - tray icon library!")
-            .with_icon(Icon::from_path("assets/favicon.ico", Some((128, 128))).unwrap())
+            .with_icon(Icon::from_path("assets/logo.ico", Some((128, 128))).unwrap())
             .build()
             .unwrap();
 
         let _setting_id = menuitem_setting.id().clone();
         let _quit_id = menuitem_quit.id().clone();
-
-        // let sender_clone = msg_sender.clone();
-        // TrayIconEvent::set_event_handler(Some(
-        //     move |event: TrayIconEvent| {
-        //         if event.click_type == ClickType::Left {
-        //             sender_clone.send(AppMessage::ShowSetting).unwrap();
-        //         }
-        //     }
-        // ));
 
         std::thread::spawn(move || {
             loop {
