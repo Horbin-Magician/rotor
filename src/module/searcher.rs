@@ -1,4 +1,8 @@
+mod file_data;
+pub mod volume;
+
 use slint::{ComponentHandle, Model};
+use i_slint_backend_winit::WinitWindowAccessor;
 use windows_sys::Win32::UI::WindowsAndMessaging;
 use std::rc::Rc;
 use std::thread;
@@ -6,8 +10,6 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use crate::core::util::file_util;
 use file_data::FileData;
-mod file_data;
-pub mod volume;
 
 pub struct Searcher {
     pub search_win: SearchWindow,
@@ -133,6 +135,16 @@ impl Searcher {
         };
         searcher
     }
+
+    pub fn show(&self) {
+        self.search_win.as_weak().clone().upgrade_in_event_loop(move |win| {
+            win.show().unwrap();
+            win.window().with_winit_window(|winit_win: &winit::window::Window| {
+                winit_win.focus_window();
+            });
+        }).unwrap();
+    }
+
 }
 
 slint::slint! {

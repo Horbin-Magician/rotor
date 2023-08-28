@@ -1,8 +1,7 @@
 mod system_tray;
 mod setting;
 
-use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 
 use slint::ComponentHandle;
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -29,7 +28,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new() -> Self {
+    pub fn new() -> Application {
         let (_msg_sender, msg_reciever) = mpsc::channel();
 
         let _system_tray = SystemTray::new(_msg_sender.clone());
@@ -61,7 +60,7 @@ impl Application {
             );
         });
 
-        Self {
+        Application {
             _system_tray,
             _setting,
             _searcher,
@@ -71,7 +70,7 @@ impl Application {
         }
     }
 
-    pub fn _get_sender(&self) -> mpsc::Sender<AppMessage> {
+    pub fn get_sender(&self) -> mpsc::Sender<AppMessage> {
         self._msg_sender.clone()
     }
 }

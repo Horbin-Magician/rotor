@@ -1,6 +1,6 @@
 
 
-struct Amplifier {
+pub struct Amplifier {
     // float m_scaleRate;
     // QSize m_screenSize; // 外部组件的大小信息
     // QPoint m_cursorPoint; // 鼠标的位置
@@ -12,7 +12,7 @@ struct Amplifier {
 }
 
 impl Amplifier {
-    fn new() -> Amplifier {
+    pub fn new() -> Amplifier {
         // Amplifier::Amplifier(std::shared_ptr<QPixmap> originPainting, QWidget *parent) :QWidget(parent){
         //     m_originPainting = originPainting;
 
@@ -46,11 +46,11 @@ impl Amplifier {
         //     return m_colorStr;
     }
 
-    fn on_size_change(w: int, h: int) {
+    fn on_size_change(w: i32, h: i32) {
         //     m_screenSize = QSize(w, h);
     }
 
-    fn on_position_change(x: int, y: int) {
+    fn on_position_change(x: i32, y: i32) {
         //     m_cursorPoint = QPoint(x, y);
         //     raise();
         //     int dest_x = x + 4;
@@ -129,7 +129,7 @@ impl Amplifier {
 
 
 slint::slint! {
-    export component AmplifierWin inherits PopupWindow {
+    export component AmplifierWin inherits Window {
 
     }
 }
