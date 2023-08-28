@@ -11,6 +11,7 @@ build = "build.rs"
 embed-resource = "2.2.0"
 
 [dependencies]
+chrono = "0.4.26"
 global-hotkey = "0.2.4"
 i-slint-backend-selector = "1.1.1"
 i-slint-backend-winit = "1.1.1"

@@ -28,7 +28,6 @@ impl SystemTray {
 
         let _setting_id = menuitem_setting.id().clone();
         let _quit_id = menuitem_quit.id().clone();
-
         std::thread::spawn(move || {
             loop {
                 match TrayIconEvent::receiver().try_recv() {

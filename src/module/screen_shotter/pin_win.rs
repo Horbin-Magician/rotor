@@ -1,14 +1,7 @@
+use slint::Image;
+use chrono;
 
-enum DIRECTION {
-    UPPER,
-    LOWER,
-    LEFT,
-    RIGHT,
-    LEFTUPPER,
-    LEFTLOWER,
-    RIGHTLOWER,
-    RIGHTUPPER,NONE
-} // 方位枚举
+use super::Rect;
 
 enum STICK_TYPE {
     UPPER_UPPER,
@@ -21,50 +14,93 @@ enum STICK_TYPE {
     RIGHT_LEFT
 } // 方位枚举
 
-struct PinWin {
-    // const int M_PADDING = 6; // 内边距，决定拖拽的触发。
-    // Toolbar* m_toolbar;
-    // bool m_isStickX;
-    // bool m_isStickY;
-    // float m_scaleRate;
-    // DIRECTION m_direction;
-    // QRectF m_geoRect; // 对应缩放前显示的虚拟窗口
-    // QRectF m_windowRect; // 对应图片区域的虚拟窗口
-    // float m_zoom; // 窗口缩放的数值
-    // bool m_isPressed; // 鼠标是否按下
-    // QPoint m_movePos; // 拖动的距离
-    // QPixmap m_originPainting; // 屏幕原画
+pub struct PinWin {
+    pub pin_window: PinWindow,
 }
 
 impl PinWin {
-    fn new() -> PinWin {
-        // ShotterWindow::ShotterWindow(std::shared_ptr<QPixmap> originPainting, QRectF windowRect, QWidget *parent):QWidget(parent)
-        // {
-        //     setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint);
-        //     setWindowTitle("小云视窗");
+    pub fn new(img: Image, rect: Rect) -> PinWin {
+        let pin_window = PinWindow::new().unwrap();
+        let border_width = 2.;
+        pin_window.window().set_position(slint::LogicalPosition::new(rect.x - border_width, rect.y - border_width));
+        pin_window.set_win_border_width(border_width);
+        pin_window.set_scale_factor(pin_window.window().scale_factor());
+        pin_window.set_zoom_factor(1.);
+        pin_window.set_bac_image(img);
+        pin_window.set_img_x(rect.x);
+        pin_window.set_img_y(rect.y);
+        pin_window.set_img_width(rect.width);
+        pin_window.set_img_height(rect.height);
+        
+        let pin_window_clone = pin_window.as_weak();
+        pin_window.on_mouse_move(move |direction| {
+            let pin_window_clone = pin_window_clone.unwrap();
+            if direction != Direction::Center {
+                // 鼠标进行拖拉拽
+                // QPointF globalPosition = e->globalPosition();
+                // QRectF geo = geometry();
+                // switch(m_direction) {
+                //     case LEFT: geo.setLeft(e->globalPosition().x()); break;
+                //     case RIGHT: geo.setRight(globalPosition.x()); break;
+                //     case UPPER: geo.setTop(globalPosition.y()); break;
+                //     case LOWER: geo.setBottom(globalPosition.y()); break;
+                //     case LEFTUPPER: geo.setTopLeft(globalPosition.toPoint()); break;
+                //     case RIGHTUPPER: geo.setTopRight(globalPosition.toPoint()); break;
+                //     case LEFTLOWER: geo.setBottomLeft(globalPosition.toPoint()); break;
+                //     case RIGHTLOWER: geo.setBottomRight(globalPosition.toPoint()); break;
+                //     default: break;
+                // }
+                // QRectF tmpRect = zoomRect(geo, 1/m_zoom);
+                // if(tmpRect.width() <= 0 || tmpRect.height() <= 0) close();
+                // float x = m_windowRect.x() + (tmpRect.x() - m_geoRect.x()) * m_scaleRate / m_zoom;
+                // float y = m_windowRect.y() + (tmpRect.y() - m_geoRect.y()) * m_scaleRate / m_zoom;
+                // float width = tmpRect.width() * m_scaleRate;
+                // float height = tmpRect.height() * m_scaleRate;
+                // m_geoRect = zoomRect(geo, 1/m_zoom);
+                // m_windowRect.setRect(x, y, width, height);
+                // setGeometry(geo.toRect());
+                // update();
+            } else {
+                let mouse_down_pos = pin_window_clone.get_mouse_down_pos();
+                let mouse_move_pos = pin_window_clone.get_mouse_move_pos();
+                let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
+                let mut delta_x = mouse_move_pos.x - mouse_down_pos.x;
+                let mut delta_y = mouse_move_pos.y - mouse_down_pos.y;
 
-        //     m_originPainting = originPainting->copy();
-        //     m_isStickX = false;
-        //     m_isStickY = false;
-        //     m_isPressed = false;
-        //     m_windowRect = windowRect;
-        //     m_scaleRate = QGuiApplication::primaryScreen()->devicePixelRatio();
-        //     m_zoom = 1;
-        //     m_direction = NONE;
+                let is_stick_x = pin_window_clone.get_is_stick_x();
+                let is_stick_y = pin_window_clone.get_is_stick_y();
 
-        //     setGeometry(m_windowRect.x()/m_scaleRate, m_windowRect.y()/m_scaleRate, m_windowRect.width()/m_scaleRate, m_windowRect.height()/m_scaleRate);
-        //     m_geoRect = geometry();
-        //     setMouseTracking(true); // 开启鼠标实时追踪
-        //     show();
+                if is_stick_x {
+                    if delta_x.abs() > 20. {
+                        pin_window_clone.set_is_stick_x(false);
+                    } else {
+                        delta_x = 0.;
+                    }
+                }
+                if is_stick_y {
+                    if delta_y.abs() > 20. {
+                        pin_window_clone.set_is_stick_y(false);
+                    } else {
+                        delta_y = 0.;
+                    }
+                }
+                if is_stick_x == false || is_stick_y == false {
+                    pin_window_clone.window().set_position(
+                        slint::LogicalPosition::new(now_pos.x + delta_x, now_pos.y + delta_y)
+                    );
+                }
+            }
+            // emit sgn_rect_change(this->geometry());
+        });
 
-        //     initToolbar();
-        // }
+        pin_window.show().unwrap();
 
         PinWin {
-            
+            pin_window,
         }
     }
 
+    // TODO
     fn stick() {
         // void ShotterWindow::stick(STICK_TYPE stick_type, ShotterWindow * shotterWindow)
         // {
@@ -90,201 +126,7 @@ impl PinWin {
         // }
     }
 
-    fn getMouseRegion() {
-        // DIRECTION ShotterWindow::getMouseRegion(const QPoint &cursor)
-        // {
-        //     DIRECTION ret_dir = NONE;
-
-        //     QPoint pt_lu = rect().topLeft(); // left upper
-        //     QPoint pt_rl = rect().bottomRight(); // right lower
-
-        //     int x = cursor.x();
-        //     int y = cursor.y();
-
-        //     /// 获得鼠标当前所处窗口的边界方向
-        //     if(pt_lu.x() + M_PADDING >= x
-        //     && pt_lu.x() <= x
-        //     && pt_lu.y() + M_PADDING >= y
-        //     && pt_lu.y() <= y) {
-        //         ret_dir = LEFTUPPER; // 左上角
-        //         this->setCursor(QCursor(Qt::SizeFDiagCursor));
-        //     } else if(x >= pt_rl.x() - M_PADDING
-        //            && x <= pt_rl.x()
-        //            && y >= pt_rl.y() - M_PADDING
-        //            && y <= pt_rl.y()) {
-        //         ret_dir = RIGHTLOWER; // 右下角
-        //         this->setCursor(QCursor(Qt::SizeFDiagCursor));
-        //     } else if(x <= pt_lu.x() + M_PADDING
-        //            && x >= pt_lu.x()
-        //            && y >= pt_rl.y() - M_PADDING
-        //            && y <= pt_rl.y()) {
-        //         ret_dir = LEFTLOWER; // 左下角
-        //         this->setCursor(QCursor(Qt::SizeBDiagCursor));
-        //     } else if(x <= pt_rl.x()
-        //            && x >= pt_rl.x() - M_PADDING
-        //            && y >= pt_lu.y()
-        //            && y <= pt_lu.y() + M_PADDING) {
-        //         ret_dir = RIGHTUPPER; // 右上角
-        //         this->setCursor(QCursor(Qt::SizeBDiagCursor));
-        //     } else if(x <= pt_lu.x() + M_PADDING
-        //            && x >= pt_lu.x()) {
-        //         ret_dir = LEFT; // 左边
-        //         this->setCursor(QCursor(Qt::SizeHorCursor));
-        //     } else if( x <= pt_rl.x()
-        //             && x >= pt_rl.x() - M_PADDING) {
-        //         ret_dir = RIGHT; // 右边
-        //         this->setCursor(QCursor(Qt::SizeHorCursor));
-        //     }else if(y >= pt_lu.y()
-        //           && y <= pt_lu.y() + M_PADDING){
-        //         ret_dir = UPPER; // 上边
-        //         this->setCursor(QCursor(Qt::SizeVerCursor));
-        //     } else if(y <= pt_rl.y()
-        //            && y >= pt_rl.y() - M_PADDING) {
-        //         ret_dir = LOWER; // 下边
-        //         this->setCursor(QCursor(Qt::SizeVerCursor));
-        //     }else {
-        //         ret_dir = NONE; // 默认
-        //         this->setCursor(QCursor(Qt::SizeAllCursor));
-        //     }
-        //     return ret_dir;
-        // }
-    }
-
-    fn event() {
-        // bool ShotterWindow::event(QEvent *e)
-        // {
-        //     if (e->type() == QEvent::ActivationChange) {
-        //         if(QApplication::activeWindow() != this && QApplication::activeWindow() != m_toolbar) m_toolbar->hide();
-        //         else m_toolbar->show();
-        //     }
-        //     if(e->type() == QEvent::KeyPress){
-        //         QKeyEvent* keyEvent = (QKeyEvent*) e;
-        //         qDebug()<<(int)keyEvent->modifiers();
-        //         qDebug()<<(int)Qt::Key_Control;
-        //         if (keyEvent->key() == Qt::Key_H) minimize(); // H键最小化
-        //         else if (keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Return) onCompleteScreen();
-        //         else if (keyEvent->key() == Qt::Key_Escape) quitScreenshot();
-        //         else if ((keyEvent->modifiers() & Qt::ControlModifier) && keyEvent->key() == Qt::Key_S) onSaveScreen();
-        //         else keyEvent->ignore();
-        //     }
-        //     return QWidget::event(e);
-        // }
-    }
-
-    fn mousePressEvent() {
-        // void ShotterWindow::mousePressEvent(QMouseEvent *e)
-        // {
-        //     if (e->button() == Qt::LeftButton) {
-        //         m_isPressed = true;
-        //         m_movePos = e->position().toPoint();
-        //     }
-        // }
-    }
-
-    fn mouseReleaseEvent() {
-        // void ShotterWindow::mouseReleaseEvent(QMouseEvent *e)
-        // {
-        //     if (e->button() == Qt::LeftButton) m_isPressed = false;
-        // }
-    }
-
-    fn mouseMoveEvent() {
-        // void ShotterWindow::mouseMoveEvent(QMouseEvent *e)
-        // {
-        //     if(!m_isPressed) m_direction = getMouseRegion(e->pos());
-        //     if(m_isPressed) {
-        //         if(m_direction != NONE) {
-        //             // 鼠标进行拖拉拽
-        //             QPointF globalPosition = e->globalPosition();
-        //             QRectF geo = geometry();
-        //             switch(m_direction) {
-        //                 case LEFT: geo.setLeft(e->globalPosition().x()); break;
-        //                 case RIGHT: geo.setRight(globalPosition.x()); break;
-        //                 case UPPER: geo.setTop(globalPosition.y()); break;
-        //                 case LOWER: geo.setBottom(globalPosition.y()); break;
-        //                 case LEFTUPPER: geo.setTopLeft(globalPosition.toPoint()); break;
-        //                 case RIGHTUPPER: geo.setTopRight(globalPosition.toPoint()); break;
-        //                 case LEFTLOWER: geo.setBottomLeft(globalPosition.toPoint()); break;
-        //                 case RIGHTLOWER: geo.setBottomRight(globalPosition.toPoint()); break;
-        //                 default: break;
-        //             }
-        //             QRectF tmpRect = zoomRect(geo, 1/m_zoom);
-        //             if(tmpRect.width() <= 0 || tmpRect.height() <= 0) close();
-        //             float x = m_windowRect.x() + (tmpRect.x() - m_geoRect.x()) * m_scaleRate / m_zoom;
-        //             float y = m_windowRect.y() + (tmpRect.y() - m_geoRect.y()) * m_scaleRate / m_zoom;
-        //             float width = tmpRect.width() * m_scaleRate;
-        //             float height = tmpRect.height() * m_scaleRate;
-        //             m_geoRect = zoomRect(geo, 1/m_zoom);
-        //             m_windowRect.setRect(x, y, width, height);
-        //             setGeometry(geo.toRect());
-        //             update();
-        //         }
-        //         else {
-        //             QPoint delta = e->position().toPoint() - m_movePos;
-        //             if(m_isStickX){
-        //                 if(abs(delta.x()) > 20) m_isStickX = false;
-        //                 else delta.setX(0);
-        //             }
-        //             if(m_isStickY){
-        //                 if(abs(delta.y()) > 20) m_isStickY = false;
-        //                 else delta.setY(0);
-        //             }
-        //             if(m_isStickX == false || m_isStickY == false){
-        //                 move(pos() + delta);
-        //                 m_geoRect.moveTo(m_geoRect.topLeft() + delta);
-        //                 emit sgn_move(this);
-        //             }
-        //         }
-        //         emit sgn_rect_change(this->geometry());
-        //     }
-        // }
-    }
-
-    fn paintEvent() {
-        // void ShotterWindow::paintEvent(QPaintEvent *)
-        // {
-        //     QPainter painter(this);
-        //     QPen pen = painter.pen();
-        //     pen.setColor(QColor(0,175,255));
-        //     pen.setWidth(2);
-        //     pen.setJoinStyle(Qt::MiterJoin);
-        //     painter.setPen(pen);
-
-        //     painter.setRenderHint(QPainter::SmoothPixmapTransform);
-
-        //     QRect windowRect = rect();
-        //     painter.drawPixmap(rect(), m_originPainting, m_windowRect); // 绘制截屏编辑窗口
-        //     painter.drawRect(windowRect.x()+1, windowRect.y()+1, windowRect.width()-2, windowRect.height()-2); // 绘制边框线C
-        // }
-    }
-
-    fn wheelEvent() {
-        // void ShotterWindow::wheelEvent(QWheelEvent *e)
-        // {
-        //     if(e->angleDelta().y() > 0) m_zoom = m_zoom + 0.1;
-        //     else if (e->angleDelta().y() < 0 && m_zoom > 0.1) m_zoom = m_zoom - 0.1;
-        //     setGeometry(zoomRect(m_geoRect, m_zoom).toRect());
-        //     emit sgn_rect_change(this->geometry());
-        // }
-    }
-
-    fn changeEvent() {
-        // void ShotterWindow::changeEvent(QEvent *event)
-        // {
-        //     if(QEvent::WindowStateChange == event->type()){
-        //         QWindowStateChangeEvent * stateEvent = dynamic_cast<QWindowStateChangeEvent*>(event);
-        //         if(Q_NULLPTR != stateEvent){
-        //             if(Qt::WindowMinimized == stateEvent->oldState()){
-        //                 // 为了去除最小化后再打开时出现的白框闪烁，目前认为是windows的BUG
-        //                 setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
-        //                 setWindowFlags(Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint);
-        //                 show();
-        //             }
-        //         }
-        //     }
-        // }
-    }
-
+    // TODO
     fn closeEvent() {
         // void ShotterWindow::closeEvent(QCloseEvent *event)
         // {
@@ -292,43 +134,19 @@ impl PinWin {
         // }
     }
 
-    fn getFileName() {
-        // QDateTime currentTime = QDateTime::currentDateTime();
-        // QString file_name = "Rotor_" + currentTime.toString(QStringLiteral("yyyy-MM-dd-HH-mm-ss"));
-        // return file_name;
-    }
-
+    // TODO
     fn minimize() {
         // setWindowState(Qt::WindowMinimized);
     }
 
-    fn initToolbar() {
-        // m_toolbar = new Toolbar(this);
-
-        // connect(this, &ShotterWindow::sgn_rect_change, m_toolbar, &Toolbar::movePosition);
-        // emit sgn_rect_change(this->geometry());
-
-        // connect(m_toolbar, &Toolbar::sgn_complete, this, &ShotterWindow::onCompleteScreen);
-        // connect(m_toolbar, &Toolbar::sgn_save, this, &ShotterWindow::onSaveScreen);
-        // connect(m_toolbar, &Toolbar::sgn_minimize, this, &ShotterWindow::minimize);
-        // connect(m_toolbar, &Toolbar::sgn_close, this, &ShotterWindow::quitScreenshot);
-
-        // m_toolbar->show();
-    }
-
-    fn zoomRect() {
-        // QRectF ShotterWindow::zoomRect(const QRectF &rect, float zoom)
-        // {
-        //     return QRectF(rect.x(), rect.y(), rect.width()*zoom, rect.height()*zoom);
-        // }
-    }
-
+    // TODO
     fn onCompleteScreen() {
         // QClipboard *board = QApplication::clipboard();
         // board->setPixmap(m_originPainting.copy(m_windowRect.toRect())); // 把图片放入剪切板
         // quitScreenshot();
     }
 
+    // TODO
     fn onSaveScreen() {
         // SettingModel& settingModel = SettingModel::getInstance();
         // QVariant savePath = settingModel.getConfig(settingModel.Flag_Save_Path);
@@ -346,13 +164,258 @@ impl PinWin {
         // }
     }
 
-    fn quitScreenshot() {
-        close();
+    fn getFileName() -> String {
+        "Rotor_".to_owned() + chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S").to_string().as_str()
     }
 }
 
 slint::slint! {
-    export component PinWindow inherits PopupWindow {
+    import { Button } from "std-widgets.slint";
 
+    enum Direction {
+        upper,
+        lower,
+        left,
+        right,
+        left_upper,
+        left_lower,
+        right_upper,
+        right_lower,
+        center,
+    }
+
+    export component PinWindow inherits Window {
+        no-frame: true;
+        always-on-top: true;
+        title: "小云视窗";
+
+        in property <image> bac_image;
+        in property <length> win_border_width;
+        in property <float> scale_factor;
+        in property <length> img_x;
+        in property <length> img_y;
+        in property <length> img_width;
+        in property <length> img_height;
+        in property <float> zoom_factor;
+
+        in-out property <bool> is_stick_x;
+        in-out property <bool> is_stick_y;
+
+        in-out property <Point> mouse_down_pos;
+        in-out property <Point> mouse_move_pos;
+
+        // bool m_isStickX;
+        // bool m_isStickY;
+
+        callback mouse_move(Direction);
+
+        width: img_width + win_border_width * 2;
+        height: img_height + win_border_width * 2;
+
+        // TODO: zoom, return QRectF(rect.x(), rect.y(), rect.width()*zoom, rect.height()*zoom);
+        // TODO:
+            // void ShotterWindow::wheelEvent(QWheelEvent *e)
+            // {
+            //     if(e->angleDelta().y() > 0) m_zoom = m_zoom + 0.1;
+            //     else if (e->angleDelta().y() < 0 && m_zoom > 0.1) m_zoom = m_zoom - 0.1;
+            //     setGeometry(zoomRect(m_geoRect, m_zoom).toRect());
+            //     emit sgn_rect_change(this->geometry());
+            // }
+        // TODO:
+            // if (e->type() == QEvent::ActivationChange) {
+            //     if(QApplication::activeWindow() != this && QApplication::activeWindow() != m_toolbar) m_toolbar->hide();
+            //     else m_toolbar->show();
+            // }
+            // if(e->type() == QEvent::KeyPress){
+            //     QKeyEvent* keyEvent = (QKeyEvent*) e;
+            //     qDebug()<<(int)keyEvent->modifiers();
+            //     qDebug()<<(int)Qt::Key_Control;
+            //     if (keyEvent->key() == Qt::Key_H) minimize(); // H键最小化
+            //     else if (keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Return) onCompleteScreen();
+            //     else if (keyEvent->key() == Qt::Key_Escape) quitScreenshot();
+            //     else if ((keyEvent->modifiers() & Qt::ControlModifier) && keyEvent->key() == Qt::Key_S) onSaveScreen();
+            //     else keyEvent->ignore();
+            // }
+            // return QWidget::event(e);
+
+        image_border := Rectangle {
+            border-color: blue;
+            border-width: win_border_width;
+
+            width: img_width + win_border_width * 2;
+            height: img_height + win_border_width * 2;
+
+            pin_image := Image {
+                source: bac_image;
+                image-fit: contain;
+
+                x: win_border_width;
+                y: win_border_width;
+                width: img_width;
+                height: img_height;
+
+                source-clip-x: img_x / 1px  * root.scale_factor;
+                source-clip-y: img_y / 1px  * root.scale_factor;
+                source-clip-width: img_width / 1px  * root.scale_factor;
+                source-clip-height: img_height / 1px  * root.scale_factor;
+
+                outer_touch_area := TouchArea {
+                    pointer-event(event) => {
+                        if(event.button == PointerEventButton.left) {
+                            if(event.kind == PointerEventKind.down) {
+                                root.mouse_down_pos.x = self.mouse-x;
+                                root.mouse_down_pos.y = self.mouse-y;
+                                root.mouse_move_pos.x = self.mouse-x;
+                                root.mouse_move_pos.y = self.mouse-y;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        HorizontalLayout {
+                            height: 6px;
+                            TouchArea {
+                                width: 6px;
+                                mouse-cursor: nwse-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.left_upper);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+
+                            TouchArea {
+                                mouse-cursor: ns-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.upper);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+
+                            TouchArea {
+                                width: 6px;
+                                mouse-cursor: nesw-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.right_upper);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            TouchArea {
+                                width: 6px;
+                                mouse-cursor: ew-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.left);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+
+                            TouchArea {
+                                mouse-cursor: move;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.center);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+
+                            TouchArea {
+                                width: 6px;
+                                mouse-cursor: ew-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.right);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+                        }
+                        HorizontalLayout {
+                            height: 6px;
+
+                            TouchArea {
+                                width: 6px;
+                                mouse-cursor: nesw-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.left-lower);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+
+                            TouchArea {
+                                mouse-cursor: ns-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.lower);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+
+                            TouchArea {
+                                width: 6px;
+                                mouse-cursor: nwse-resize;
+                                moved => {
+                                    root.mouse_move_pos.x = self.mouse-x;
+                                    root.mouse_move_pos.y = self.mouse-y;
+                                    root.mouse_move(Direction.right-lower);
+                                }
+                                pointer-event(event) => { outer_touch_area.pointer-event(event); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        PopupWindow {
+            close-on-click: false;
+            height: 30px;
+            width: 120px;
+
+            HorizontalLayout {
+                Button {
+                    // 保存截图
+                    height: 30px;
+                    width: 30px;
+                }
+
+                Button { 
+                    // 最小化截图
+                    height: 30px;
+                    width: 30px;
+                }
+
+                Button { 
+                    // 关闭截图
+                    height: 30px;
+                    width: 30px;
+                }
+
+                Button { 
+                    // 完成截图
+                    height: 30px;
+                    width: 30px;
+                }
+            }
+
+            // void Toolbar::movePosition(QRect rect)
+            //     this->move(rect.bottomRight().x() - 120, rect.bottomRight().y() + 4);
+
+            // bool Toolbar::event(QEvent *e)
+            //     if (e->type() == QEvent::ActivationChange)
+            //         if(QApplication::activeWindow() != this && QApplication::activeWindow() != this->parent()) this->hide();
+        }
     }
 }
