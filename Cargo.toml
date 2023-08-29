@@ -16,7 +16,7 @@ global-hotkey = "0.2.4"
 i-slint-backend-selector = "1.1.1"
 i-slint-backend-winit = "1.1.1"
 image = "0.24.7"
-screenshots = "0.7.3"
+screenshots = "0.8.2"
 tray-icon = "0.8.1"
 winit = "0.28.6"
 
