@@ -1,7 +1,7 @@
 mod amplifier;
 mod pin_win;
 
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -12,7 +12,6 @@ use pin_win::PinWin;
 
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
-    screens: Vec<Screen>,
     pin_wins: Arc<Mutex<Vec<PinWin>>>,
     amplifier: Amplifier, // 放大取色器
 }
@@ -21,7 +20,12 @@ impl ScreenShotter{
     pub fn new() -> ScreenShotter {
         // get screens and info
         let screens = Screen::all().unwrap();
-        let primary_screen = Self::get_prime_screen(&screens).unwrap();
+        let mut primary_screen = None ;
+        for screen in screens {
+            if screen.display_info.is_primary {
+                primary_screen = Some(screen);
+            }
+        }
         
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
         let amplifier = Amplifier::new(); // init Amplifier
@@ -36,30 +40,31 @@ impl ScreenShotter{
 
         let pin_wins: Arc<Mutex<Vec<PinWin>>> =  Arc::new(Mutex::new(Vec::new()));
 
-        let primary_screen_clone = primary_screen.clone();
+        let primary_screen_clone = primary_screen.unwrap().clone();
         let mask_win_clone = mask_win.as_weak();
         mask_win.on_shot(move || {
-            let mask_win_clone = mask_win_clone.unwrap();
-            mask_win_clone.set_scale_factor(mask_win_clone.window().scale_factor());
-            mask_win_clone.set_state(1);
-            mask_win_clone.set_select_rect(Rect{x: 0., y: 0., height: 0., width: 0.});
+            let mask_win = mask_win_clone.unwrap();
+            
+            mask_win.set_scale_factor(mask_win.window().scale_factor());
+            mask_win.set_state(1);
+            mask_win.set_select_rect(Rect{x: 0., y: 0., height: 0., width: 0.});
             let physical_width = primary_screen_clone.display_info.width;
             let physical_height = primary_screen_clone.display_info.height;
 
-            mask_win_clone.set_bac_image(
+            mask_win.set_bac_image(
                 slint::Image::from_rgba8(
                     SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-                        primary_screen_clone.capture().unwrap().rgba(),
+                        &primary_screen_clone.capture().unwrap(),
                         physical_width,
                         physical_height,
                     )
                 )
             );
 
-            mask_win_clone.show().unwrap();
+            mask_win.show().unwrap();
             // +1 to fix the bug
-            mask_win_clone.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height + 1));
-            mask_win_clone.window().with_winit_window(|winit_win: &winit::window::Window| {
+            mask_win.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height + 1));
+            mask_win.window().with_winit_window(|winit_win: &winit::window::Window| {
                 winit_win.focus_window();
             });
 
@@ -81,7 +86,6 @@ impl ScreenShotter{
         let mask_win_clone = mask_win.as_weak();
         let pin_wins_clone = pin_wins.clone();
         mask_win.on_new_pin_win(move |img, rect| {
-            println!("{:?}", rect);
             let pin_win = PinWin::new(img, rect);
             let mut pin_wins = pin_wins_clone.lock().unwrap();
             let index = pin_wins.len();
@@ -97,18 +101,10 @@ impl ScreenShotter{
         });
 
         ScreenShotter{
-            screens,
             mask_win,
             pin_wins,
             amplifier,
         }
-    }
-
-    fn get_prime_screen(screens: &Vec<Screen>) -> Option<&Screen> {
-        for screen in screens {
-            if screen.display_info.is_primary { return Some(screen); }
-        }
-        return None;
     }
 
     // fn new_pin_win(&mut self) {
