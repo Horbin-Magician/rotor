@@ -1,11 +1,14 @@
 mod system_tray;
 mod setting;
+pub mod powerboot;
+pub mod admin_runner;
 
 use std::sync::{mpsc, Arc};
 
 use slint::ComponentHandle;
 use i_slint_backend_winit::WinitWindowAccessor;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}};
+
 
 use system_tray::SystemTray;
 use setting::{Setting, SettingWindow};
