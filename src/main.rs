@@ -5,9 +5,14 @@ mod module;
 
 use i_slint_backend_selector;
 
+use crate::core::application::admin_runner::AdminRunner;
+use crate::core::application::powerboot::PowerBoot;
 use crate::core::application::Application;
 
 fn main() {
+    if AdminRunner::run_as_admin() == true {return;}
+    PowerBoot::set_process_auto_run().unwrap(); // TODO: check the setting
+
     slint::platform::set_platform(Box::new(i_slint_backend_winit::Backend::new())).unwrap();
 
     let _app = Application::new();

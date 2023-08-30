@@ -107,10 +107,6 @@ impl ScreenShotter{
         }
     }
 
-    // fn new_pin_win(&mut self) {
-    //     self.pin_wins.push(pin_win);
-    // }
-
     fn on_hot_key(modifiers: i32, key: i32) {
         // if(m_state == 1)return;
         // if(vk == (UINT)0x43) Shot();
