@@ -1,7 +1,7 @@
 mod amplifier;
 mod pin_win;
 
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, collections::HashMap};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -12,7 +12,8 @@ use pin_win::PinWin;
 
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
-    pin_wins: Arc<Mutex<Vec<PinWin>>>,
+    max_pin_win_id: Arc<Mutex<u32>>,
+    pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
     amplifier: Amplifier, // 放大取色器
 }
 
@@ -38,7 +39,8 @@ impl ScreenShotter{
         mask_win.window().set_position(slint::PhysicalPosition::new(0, 0) );
         mask_win.set_state(0);
 
-        let pin_wins: Arc<Mutex<Vec<PinWin>>> =  Arc::new(Mutex::new(Vec::new()));
+        let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
+        let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
 
         let primary_screen_clone = primary_screen.unwrap().clone();
         let mask_win_clone = mask_win.as_weak();
@@ -63,7 +65,7 @@ impl ScreenShotter{
 
             mask_win.show().unwrap();
             // +1 to fix the bug
-            mask_win.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height + 1));
+            mask_win.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height+1));
             mask_win.window().with_winit_window(|winit_win: &winit::window::Window| {
                 winit_win.focus_window();
             });
@@ -84,24 +86,31 @@ impl ScreenShotter{
         });
 
         let mask_win_clone = mask_win.as_weak();
+        let max_pin_win_id_clone = max_pin_win_id.clone();
         let pin_wins_clone = pin_wins.clone();
         mask_win.on_new_pin_win(move |img, rect| {
+            let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
+
             let pin_win = PinWin::new(img, rect);
             let mut pin_wins = pin_wins_clone.lock().unwrap();
-            let index = pin_wins.len();
+
             let pin_window_clone = pin_win.pin_window.as_weak();
-            pin_wins.push(pin_win);
+            pin_wins.insert(*max_pin_win_id, pin_win);
 
             let pin_wins_clone = pin_wins_clone.clone();
+            let id = *max_pin_win_id;
             pin_window_clone.unwrap().window().on_close_requested(move || {
-                pin_wins_clone.lock().unwrap().remove(index);
+                pin_wins_clone.lock().unwrap().remove(&id);
                 slint::CloseRequestResponse::HideWindow
             });
+
+            *max_pin_win_id = *max_pin_win_id + 1;
             mask_win_clone.unwrap().hide().unwrap();
         });
 
         ScreenShotter{
             mask_win,
+            max_pin_win_id,
             pin_wins,
             amplifier,
         }

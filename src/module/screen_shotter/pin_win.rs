@@ -94,7 +94,7 @@ impl PinWin {
     }
 
     // TODO
-    fn closeEvent() {
+    fn close_event() {
         // emit sgn_close(this);
     }
 
@@ -104,14 +104,14 @@ impl PinWin {
     }
 
     // TODO
-    fn onCompleteScreen() {
+    fn on_complete_screen() {
         // QClipboard *board = QApplication::clipboard();
         // board->setPixmap(m_originPainting.copy(m_windowRect.toRect())); // 把图片放入剪切板
         // quitScreenshot();
     }
 
     // TODO
-    fn onSaveScreen() {
+    fn on_save_screen() {
         // SettingModel& settingModel = SettingModel::getInstance();
         // QVariant savePath = settingModel.getConfig(settingModel.Flag_Save_Path);
         let file_name = "Rotor_".to_owned() + chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S").to_string().as_str();
