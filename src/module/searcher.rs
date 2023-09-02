@@ -39,6 +39,14 @@ impl Searcher {
 
         search_win.set_active_id(0);
 
+        let (stop_find_sender, stop_finder_receiver) = mpsc::channel::<()>();
+        let file_data = Arc::new(Mutex::new(FileData::new(search_win.as_weak(), stop_finder_receiver)));
+        let file_data_clone = file_data.clone();
+        thread::spawn(move || {
+            file_data_clone.lock().unwrap().init_volumes();
+        });
+
+
         let search_win_clone = search_win.as_weak();
         let search_result_model_clone = search_result_model.clone();
         search_win.on_key_released(move |event| {
@@ -72,8 +80,9 @@ impl Searcher {
         });
 
         let search_win_clone = search_win.as_weak();
-
+        let file_data_clone = file_data.clone();
         search_win.on_lose_focus_trick(move |has_focus| {
+            let file_data_clone_clone = file_data_clone.clone();
             if has_focus == false { 
                 let search_win = search_win_clone.unwrap();
                 if search_win.get_query() != "" {
@@ -81,17 +90,17 @@ impl Searcher {
                     search_win.invoke_query_change(slint::SharedString::from(""));
                 }
                 search_win.hide().unwrap();
+                thread::spawn(move || {
+                    file_data_clone_clone.lock().unwrap().release_index();
+                });
+            } else {
+                thread::spawn(move || {
+                    file_data_clone_clone.lock().unwrap().update_index();
+                });
             }
             return true;
         });
         
-        let (stop_find_sender, stop_finder_receiver) = mpsc::channel::<()>();
-        let file_data = Arc::new(Mutex::new(FileData::new(search_win.as_weak(), stop_finder_receiver)));
-        let file_data_clone = file_data.clone();
-        thread::spawn(move || {
-            file_data_clone.lock().unwrap().init_volumes();
-        });
-
         let file_data_clone = file_data.clone();
         let stop_find_sender_clone = stop_find_sender.clone();
         let search_result_model_clone = search_result_model.clone();
@@ -136,15 +145,14 @@ impl Searcher {
         searcher
     }
 
-    pub fn show(&self) {
-        self.search_win.as_weak().clone().upgrade_in_event_loop(move |win| {
-            win.show().unwrap();
-            win.window().with_winit_window(|winit_win: &winit::window::Window| {
-                winit_win.focus_window();
-            });
-        }).unwrap();
-    }
-
+    // pub fn show(&self) {
+    //     self.search_win.as_weak().clone().upgrade_in_event_loop(move |win| {
+    //         win.show().unwrap();
+    //         win.window().with_winit_window(|winit_win: &winit::window::Window| {
+    //             winit_win.focus_window();
+    //         });
+    //     }).unwrap();
+    // }
 }
 
 slint::slint! {

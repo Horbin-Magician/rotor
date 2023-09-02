@@ -1,6 +1,9 @@
 use std::ffi::{CString, c_void};
 use std::time::SystemTime;
 use std::sync::mpsc;
+use std::collections::HashMap;
+use std::fs;
+use std::env;
 
 use windows_sys::Win32::{
     Storage::FileSystem,
@@ -8,7 +11,9 @@ use windows_sys::Win32::{
     System::Ioctl,
     Foundation,
 };
+use serde::{Serialize, Deserialize};
 
+#[derive(Serialize, Deserialize, Debug)]
 struct File {
     parent_index: u64,
     file_name: String,
@@ -38,14 +43,14 @@ pub struct SearchResult {
     pub query: String,
 }
 
-type FileMap = std::collections::HashMap<u64, File>;
+type FileMap = HashMap<u64, File>;
 
 pub struct Volume {
     drive: char,
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     h_vol: isize,
-    start_usn: u64,
+    start_usn: i64,
     file_map: FileMap,
     stop_receiver: mpsc::Receiver<()>,
 }
@@ -150,7 +155,7 @@ impl Volume {
             )
         };
 
-        self.start_usn = self.ujd.NextUsn as u64;
+        self.start_usn = self.ujd.NextUsn;
 
         // add the root directory
         let sz_root = format!("{}:", self.drive);
@@ -191,7 +196,8 @@ impl Volume {
                 med.StartFileReferenceNumber = *(&(data[0]) as *const u64);
             }
         }
-        println!("[info] {} End Volume::build_index, use tiem: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        self.serialization_write();
     }
 
 
@@ -205,15 +211,19 @@ impl Volume {
         self.file_map.clear();
     }
 
-    fn match_str(contain: &String, query: &String) -> i8 {
-        let mut i = 0;
-        let query_list = query.to_lowercase().chars().collect::<Vec<char>>();
-        for c in contain.to_lowercase().chars() {
-            if query_list[i] == c { i += 1; }
-            if i >= query_list.len() {
-                let rank: i8 = 20i8.wrapping_sub((contain.chars().collect::<Vec<char>>().len() as i8).wrapping_sub(query_list.len() as i8));
-                return if rank < 0 { 0 } else { rank };
-            }
+    fn match_str(contain: &String, query_lower: &String) -> i8 {
+        // let query_list = query_lower.chars().collect::<Vec<char>>();
+        // let mut i = 0;
+        // for c in contain.to_lowercase().chars() {
+        //     if query_list[i] == c { i += 1; }
+        //     if i >= query_list.len() {
+        //         let rank = 20i16 - contain.len() as i16;
+        //         if rank < 0 {return 0;} else { return rank as i8; }
+        //     }
+        // }
+        if contain.to_lowercase().contains(query_lower) {
+            let rank = 20i16 - contain.len() as i16;
+            if rank < 0 {return 0;} else { return rank as i8; }
         }
         -1
     }
@@ -249,110 +259,113 @@ impl Volume {
                 Ok(_) => { let _ = sender.send(None); return; },
                 Err(_) => {},
             }
-                
             if (file.filter & query_filter) == query_filter {
                 let file_name = file.file_name.clone();
                 let rank = Self::match_str(&file_name, &query_lower);
                 if rank >= 0 {
                     if let Some(path) = self.get_path(&file.parent_index){
-                        let item: SearchResultItem = SearchResultItem {
+                        result.push(SearchResultItem {
                             path,
                             file_name,
                             rank: file.rank + rank,
-                        };
-                        result.push(item);
+                        });
                     }
                 }
             }
         }
-        println!("[info] {} End Volume::find, use tiem: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        println!(
+            "[info] {} End Volume::find, use tiem: {:?} ms, get result num {}",
+            self.drive,
+            sys_time.elapsed().unwrap().as_millis(),
+            result.len()
+        );
         sender.send(Some(result)).unwrap();
     }
 
-    // TODO
-    pub fn update_index(&self) {
-        println!("TODO Volume::update_index");
+    // update index, add new file, remove deleted file
+    pub fn update_index(&mut self) {
+        let sys_time = SystemTime::now();
+        println!("[info] {} Begin Volume::update_index", self.drive);
+
         if self.file_map.is_empty() {self.serialization_read()};
 
-        // WCHAR szRoot[_MAX_PATH];
-        // wsprintf(szRoot, TEXT("%c:"), m_drive);
+        let mut data: [i64; 0x10000] = [0; 0x10000];
+        let mut cb: u32 = 0;
+        let mut rujd: Ioctl::READ_USN_JOURNAL_DATA_V0 = Ioctl::READ_USN_JOURNAL_DATA_V0 {
+                StartUsn: self.start_usn,
+                ReasonMask: Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_NEW_NAME,
+                ReturnOnlyOnClose: 0,
+                Timeout: 0,
+                BytesToWaitFor: 0,
+                UsnJournalID: self.ujd.UsnJournalID,
+        };
 
-        // BYTE pData[sizeof(DWORDLONG) * 0x10000];
-        // DWORD cb;
-        // DWORD reason_mask = USN_REASON_FILE_CREATE | USN_REASON_FILE_DELETE | USN_REASON_RENAME_NEW_NAME;
-        // READ_USN_JOURNAL_DATA rujd = {m_StartUSN, reason_mask, 0, 0, 0, m_ujd.UsnJournalID};
+        unsafe{
+            while IO::DeviceIoControl(
+                self.h_vol, 
+                Ioctl::FSCTL_READ_USN_JOURNAL, 
+                &rujd as *const _ as *const c_void,
+                std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>().try_into().unwrap(), 
+                &mut data as *mut _ as *mut c_void,
+                std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
+                &mut cb as *mut u32, 
+                0 as *mut IO::OVERLAPPED
+            ) != 0 {
+                if cb == 8 { break };
+                let mut record_ptr: *const Ioctl::USN_RECORD_V2 = &(data[1]) as *const i64 as *const Ioctl::USN_RECORD_V2;
+                while (record_ptr as usize) < (&(data[0]) as *const i64 as usize + cb as usize) {
+                    let file_name_begin_ptr = record_ptr as usize + (*record_ptr).FileNameOffset as usize;
+                    let file_name_length = (*record_ptr).FileNameLength / (std::mem::size_of::<u16>() as u16);
+                    let mut file_name_list: Vec<u16> = Vec::new();
+                    for i in 0..file_name_length {
+                        let c = *((file_name_begin_ptr + (i * 2) as usize) as *const u16);
+                        file_name_list.push(c);
+                    }
+                    let file_name = String::from_utf16(&file_name_list).unwrap();
+                    if (*record_ptr).Reason & Ioctl::USN_REASON_FILE_CREATE == Ioctl::USN_REASON_FILE_CREATE {
+                        self.add_file((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                    }
+                    else if (*record_ptr).Reason & Ioctl::USN_REASON_FILE_DELETE == Ioctl::USN_REASON_FILE_DELETE {
+                        self.file_map.remove(&(*record_ptr).FileReferenceNumber);
+                    }
+                    else if (*record_ptr).Reason & Ioctl::USN_REASON_RENAME_NEW_NAME == Ioctl::USN_REASON_RENAME_NEW_NAME {
+                        self.add_file((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                    }
+                    record_ptr = (record_ptr as usize + (*record_ptr).RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
+                }
 
-        // m_FileMapMutex.lock();
-        // while (DeviceIoControl(m_hVol, FSCTL_READ_USN_JOURNAL, &rujd, sizeof(rujd), pData, sizeof(pData), &cb, NULL)){
-        //     if(cb == 8) break;
-        //     PUSN_RECORD pRecord = (PUSN_RECORD) &pData[sizeof(USN)];
-        //     while ((PBYTE) pRecord < (pData + cb)){
-        //         wstring sz((LPCWSTR) ((PBYTE) pRecord + pRecord->FileNameOffset), pRecord->FileNameLength / sizeof(WCHAR));
-        //         if ((pRecord->Reason & USN_REASON_FILE_CREATE) == USN_REASON_FILE_CREATE){
-        //             AddFile(pRecord->FileReferenceNumber, sz, pRecord->ParentFileReferenceNumber);
-        //         }
-        //         else if ((pRecord->Reason & USN_REASON_FILE_DELETE) == USN_REASON_FILE_DELETE){
-        //             m_FileMap.remove(pRecord->FileReferenceNumber);
-        //         }
-        //         else if ((pRecord->Reason & USN_REASON_RENAME_NEW_NAME) == USN_REASON_RENAME_NEW_NAME){
-        //             AddFile(pRecord->FileReferenceNumber, sz, pRecord->ParentFileReferenceNumber);
-        //         }
-        //         pRecord = (PUSN_RECORD) ((PBYTE) pRecord + pRecord->RecordLength);
-        //     }
-        //     rujd.StartUsn = *(USN *)&pData;
-        // }
-        // m_FileMapMutex.unlock();
+                rujd.StartUsn = *(&(data[0]) as *const i64);
+            }
+        }
+        self.start_usn = rujd.StartUsn;
 
-        // m_StartUSN = rujd.StartUsn;
+        println!("[info] {} End Volume::update_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 
-    // TODO
-    fn serialization_write(&self) {
-        println!("TODO Volume::SerializationWrite");
+    // serializate file_map to reduce memory usage
+    fn serialization_write(&mut self) {
+        let sys_time = SystemTime::now();
+        println!("[info] {} Begin Volume::serialization_write", self.drive);
+        // TODO optimize the write speed (now up tp 20s)
         if self.file_map.is_empty() {return;};
+        let file_path = env::current_dir().unwrap();
+        println!("{}", file_path.to_str().unwrap());
+        fs::create_dir(format!("{}/userdata", file_path.to_str().unwrap()));
+        let file = fs::File::create(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
+        bincode::serialize_into(file, &self.file_map).unwrap();
+        self.release_index();
 
-        // QString appPath = QApplication::applicationDirPath(); // get programe path
-        // QFile file(appPath + "/userdata/" + m_drive + ".fd");
-        // file.open(QIODevice::WriteOnly | QIODevice::Truncate);
-        // QDataStream out(&file);
-
-        // out<<m_StartUSN;
-
-        // QMapIterator<DWORDLONG, File*> i(m_FileMap);
-        // while (i.hasNext()){
-        //     i.next();
-        //     const File* filedata = i.value();
-        //     out<<i.key()<<filedata->parentIndex<<filedata->fileName<<(quint32)filedata->filter<<filedata->rank;
-        // }
-
-        // this->ReleaseIndex(false);
-        // file.close();
+        println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 
-    // TODO
-    fn serialization_read(&self) {
-        println!("TODO Volume::SerializationRead")
-        // QString appPath = QApplication::applicationDirPath(); // get programe path
-        // QFile file(appPath + "/userdata/" + m_drive + ".fd");
-        // file.open(QIODevice::ReadOnly);
-        // QDataStream in(&file);
-
-        // DWORDLONG index;
-        // DWORDLONG parentIndex;
-        // QByteArray fileName;
-        // quint32 filter;
-        // char rank;
-
-        // in>>m_StartUSN;
-
-        // m_FileMapMutex.lock();
-        // while(in.atEnd() == false){
-        //     in>>index>>parentIndex>>fileName>>filter>>rank;
-        //     m_FileMap[index] = new File(parentIndex, fileName, filter, rank);
-        // }
-        // m_FileMapMutex.unlock();
-
-        // file.close();
+    // deserializate file_map from file
+    fn serialization_read(&mut self) {
+        let sys_time = SystemTime::now();
+        println!("[info] {} Begin Volume::serialization_read", self.drive);
+        let file_path = env::current_dir().unwrap();
+        let file = fs::read(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
+        self.file_map = bincode::deserialize(&file).unwrap();
+        println!("[info] {} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 
 }
