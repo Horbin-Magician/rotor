@@ -1,4 +1,5 @@
 use std::ffi::{CString, c_void};
+use std::io::Write;
 use std::time::SystemTime;
 use std::sync::mpsc;
 use std::collections::HashMap;
@@ -11,9 +12,7 @@ use windows_sys::Win32::{
     System::Ioctl,
     Foundation,
 };
-use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug)]
 struct File {
     parent_index: u64,
     file_name: String,
@@ -346,15 +345,24 @@ impl Volume {
     fn serialization_write(&mut self) {
         let sys_time = SystemTime::now();
         println!("[info] {} Begin Volume::serialization_write", self.drive);
-        // TODO optimize the write speed (now up tp 20s)
+
         if self.file_map.is_empty() {return;};
         let file_path = env::current_dir().unwrap();
-        println!("{}", file_path.to_str().unwrap());
-        fs::create_dir(format!("{}/userdata", file_path.to_str().unwrap()));
-        let file = fs::File::create(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
-        bincode::serialize_into(file, &self.file_map).unwrap();
+        let _ = fs::create_dir(format!("{}/userdata", file_path.to_str().unwrap()));
+        let mut save_file = fs::File::create(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
+        
+        let mut buf = Vec::new();
+        buf.write(&self.start_usn.to_be_bytes()).unwrap();
+        for (index, file) in self.file_map.iter() {
+            let _ = buf.write(&index.to_be_bytes());
+            let _ = buf.write(&file.parent_index.to_be_bytes());
+            let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
+            let _ = buf.write(&file.file_name.as_bytes());
+            let _ = buf.write(&file.filter.to_be_bytes());
+            let _ = buf.write(&file.rank.to_be_bytes());
+        }
+        let _ = save_file.write(&buf.to_vec());
         self.release_index();
-
         println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 
@@ -362,9 +370,28 @@ impl Volume {
     fn serialization_read(&mut self) {
         let sys_time = SystemTime::now();
         println!("[info] {} Begin Volume::serialization_read", self.drive);
+
         let file_path = env::current_dir().unwrap();
-        let file = fs::read(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
-        self.file_map = bincode::deserialize(&file).unwrap();
+        let file_data = fs::read(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
+
+        self.start_usn = i64::from_be_bytes(file_data[0..8].try_into().unwrap());
+        let mut ptr_index = 8;
+        while ptr_index < file_data.len() {
+            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap());
+            ptr_index += 8;
+            let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap()) as u64;
+            ptr_index += 8;
+            let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into().unwrap()) as u16;
+            ptr_index += 2;
+            let file_name = String::from_utf8(file_data[ptr_index..ptr_index + file_name_len as usize].to_vec()).unwrap();
+            ptr_index += file_name_len as usize;
+            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into().unwrap());
+            ptr_index += 4;
+            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into().unwrap());
+            ptr_index += 1;
+            self.file_map.insert(index, File { parent_index, file_name, filter, rank });
+        }
+
         println!("[info] {} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 

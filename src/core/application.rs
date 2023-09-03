@@ -73,9 +73,9 @@ impl Application {
         }
     }
 
-    pub fn get_sender(&self) -> mpsc::Sender<AppMessage> {
-        self._msg_sender.clone()
-    }
+    // pub fn get_sender(&self) -> mpsc::Sender<AppMessage> {
+    //     self._msg_sender.clone()
+    // }
 }
 
 fn app_loop (
@@ -119,7 +119,6 @@ fn app_loop (
                 }).unwrap();
             }
         }
-
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
