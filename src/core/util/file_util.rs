@@ -4,8 +4,8 @@ use std::{ptr, mem};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows_sys::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON};
-use windows_sys::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON};
+use windows_sys::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, ShellExecuteW};
+use windows_sys::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
 use windows_sys::Win32::Graphics::Gdi::{BITMAP, BITMAPINFOHEADER, GetBitmapBits, DeleteObject, HGDIOBJ, HBITMAP, self};
 
 pub fn open_file(file_full_name: String) {
@@ -14,7 +14,18 @@ pub fn open_file(file_full_name: String) {
 }
 
 pub fn open_file_admin(file_full_name: String) {
-    // TODO 以管理员权限打开文件
+    let file_path: Vec<u16> = file_full_name.as_str().encode_utf16().chain(std::iter::once(0)).collect();
+    let runas_str: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        ShellExecuteW(
+            0,
+            runas_str.as_ptr(),
+            file_path.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL
+        )
+    };
 }
 
 pub fn get_icon(path: &str) -> Option<slint::Image> {

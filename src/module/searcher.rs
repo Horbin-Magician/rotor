@@ -2,7 +2,6 @@ mod file_data;
 pub mod volume;
 
 use slint::{ComponentHandle, Model};
-use i_slint_backend_winit::WinitWindowAccessor;
 use windows_sys::Win32::UI::WindowsAndMessaging;
 use std::rc::Rc;
 use std::thread;
@@ -26,7 +25,6 @@ impl Searcher {
             x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
             y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
         }
-    
         let search_win = SearchWindow::new().unwrap();
         
         let width: f32 = 500.;
@@ -46,7 +44,7 @@ impl Searcher {
             file_data_clone.lock().unwrap().init_volumes();
         });
 
-
+        // add key event hander
         let search_win_clone = search_win.as_weak();
         let search_result_model_clone = search_result_model.clone();
         search_win.on_key_released(move |event| {
@@ -57,7 +55,7 @@ impl Searcher {
                 let mut active_id = search_win_clone.get_active_id();
                 if active_id > 0 { 
                     active_id -= 1;
-                    search_win_clone.set_active_id(active_id); 
+                    search_win_clone.set_active_id(active_id);
                     let viewport_y = search_win_clone.get_viewport_y();
                     if (-viewport_y / 60.) as i32 > active_id { search_win_clone.set_viewport_y(viewport_y + 60.); }
                 }
@@ -65,7 +63,7 @@ impl Searcher {
                 let mut active_id = search_win_clone.get_active_id();
                 if active_id < (search_result_model_clone.row_count() - 1) as i32 { 
                     active_id += 1;
-                    search_win_clone.set_active_id(active_id); 
+                    search_win_clone.set_active_id(active_id);
                     let viewport_y = search_win_clone.get_viewport_y();
                     if (-viewport_y / 60. + 7.) as i32 <= active_id { search_win_clone.set_viewport_y(viewport_y - 60.); }
                 }
@@ -79,60 +77,87 @@ impl Searcher {
             }
         });
 
+        // add lose focus hander
         let search_win_clone = search_win.as_weak();
         let file_data_clone = file_data.clone();
+        let stop_find_sender_clone = stop_find_sender.clone();
         search_win.on_lose_focus_trick(move |has_focus| {
-            let file_data_clone_clone = file_data_clone.clone();
+            match file_data_clone.try_lock() {
+                Ok(_) => {},
+                Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
+            }
+            let file_data = file_data_clone.clone();
+            let search_win = search_win_clone.unwrap();
             if has_focus == false { 
-                let search_win = search_win_clone.unwrap();
                 if search_win.get_query() != "" {
                     search_win.set_query(slint::SharedString::from(""));
                     search_win.invoke_query_change(slint::SharedString::from(""));
                 }
                 search_win.hide().unwrap();
                 thread::spawn(move || {
-                    file_data_clone_clone.lock().unwrap().release_index();
+                    file_data.lock().unwrap().release_index();
                 });
-            } else {
+            } else if has_focus && search_win.window().is_visible() {
                 thread::spawn(move || {
-                    file_data_clone_clone.lock().unwrap().update_index();
+                    file_data.lock().unwrap().update_index();
                 });
             }
             return true;
         });
         
+        // add query change hander
         let file_data_clone = file_data.clone();
         let stop_find_sender_clone = stop_find_sender.clone();
         let search_result_model_clone = search_result_model.clone();
         search_win.on_query_change(move |query| {
-
             let file_data_clone_clone = file_data_clone.clone();
-
             match file_data_clone_clone.try_lock() {
                 Ok(_) => {},
                 Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
             }
-
             if query == "" { search_result_model_clone.set_vec(vec![]); }
-
             thread::spawn(move || {
                 file_data_clone_clone.lock().unwrap().find(query.to_string());
             });
         });
 
+        // add item click hander
         let search_win_clone = search_win.as_weak();
         let search_result_model_clone = search_result_model.clone();
         search_win.on_item_click(move |event, id| {
             if event.kind == slint::private_unstable_api::re_exports::PointerEventKind::Up {
+                let search_win = search_win_clone.unwrap();
                 if event.button == slint::platform::PointerEventButton::Left {
                     let data = search_result_model_clone.row_data(id as usize);
                     if let Some(f) = data {
                         file_util::open_file((f.path + &f.filename).to_string());
-                        search_win_clone.unwrap().hide().unwrap();
+                        search_win.hide().unwrap();
                     }
-                } else if event.button == slint::platform::PointerEventButton::Right {
-                    // TODO 打开菜单
                 }
+            }
+        });
+
+        // on open with admin
+        let search_win_clone = search_win.as_weak();
+        let search_result_model_clone = search_result_model.clone();
+        search_win.on_open_with_admin(move |id| {
+            let search_win = search_win_clone.unwrap();
+            let data = search_result_model_clone.row_data(id as usize);
+            if let Some(f) = data {
+                file_util::open_file_admin((f.path + &f.filename).to_string());
+                search_win.hide().unwrap();
+            }
+        });
+
+        // on open file dir
+        let search_win_clone = search_win.as_weak();
+        let search_result_model_clone = search_result_model.clone();
+        search_win.on_open_file_dir(move |id| {
+            let search_win = search_win_clone.unwrap();
+            let data = search_result_model_clone.row_data(id as usize);
+            if let Some(f) = data {
+                file_util::open_file((f.path[0..(f.path.to_string().len()-1)]).to_string());
+                search_win.hide().unwrap();
             }
         });
 
@@ -166,7 +191,6 @@ slint::slint! {
     }
 
     export component SearchWindow inherits Window {
-    
         in property <float> ui_width;
         in property <float> ui_height;
         in property <[SearchResult_slint]> search_result;
@@ -178,6 +202,8 @@ slint::slint! {
         callback query_change(string);
         callback key_released(KeyEvent);
         callback item_click(PointerEvent, int);
+        callback open_with_admin(int);
+        callback open_file_dir(int);
         pure callback lose_focus_trick(bool) -> bool;
 
         no-frame: true;
@@ -220,69 +246,129 @@ slint::slint! {
                             for data in root.search_result: Rectangle {
                                 height: 60px;
                                 border-radius: 5px;
+
                                 search_result_item_touch := TouchArea {
+                                    mouse-cursor: pointer;
                                     pointer-event(event) => {
                                         root.item-click(event, data.id);
                                     }
 
-                                    HorizontalBox {
-                                        padding-right: 0px;
-                                        padding-left: 0px;
-                                        Rectangle {
-                                            width: 10px;
-                                            active_bar := Rectangle {
-                                                x: 0px;
-                                                width: 2px;
-                                                border-radius: 1px;
-                                                height: 30px;
-                                                background: cyan;
+                                    HorizontalLayout {
+                                        item_content := HorizontalBox {
+                                            width: 100%;
+                                            padding-right: 0px;
+                                            padding-left: 0px;
+                                            Rectangle {
+                                                width: 10px;
+                                                active_bar := Rectangle {
+                                                    x: 0px;
+                                                    width: 2px;
+                                                    border-radius: 1px;
+                                                    height: 30px;
+                                                    background: cyan;
 
-                                                animate x { 
-                                                    duration: 0.2s;
-                                                    easing: ease-in-out;
+                                                    animate x { 
+                                                        duration: 0.2s;
+                                                        easing: ease-in-out;
+                                                    }
                                                 }
                                             }
-                                        }
-                                        Rectangle {
-                                            width: 30px;
-                                            Image {
-                                                height: 32px;
-                                                source: data.icon;
+                                            Rectangle {
+                                                width: 30px;
+                                                Image {
+                                                    height: 32px;
+                                                    source: data.icon;
+                                                }
+                                            }
+                                            VerticalBox {
+                                                padding: 0;
+                                                Text {
+                                                    height: 20px;
+                                                    overflow: elide;
+                                                    text: data.filename;
+                                                    font-size: 16px;
+                                                }
+                                                Text {
+                                                    height: 40px;
+                                                    overflow: elide;
+                                                    text: data.path;
+                                                    color: grey;
+                                                    font-size: 16px;
+                                                }
+                                            }
+                                            animate width { 
+                                                duration: 0.2s;
+                                                easing: ease-in-out;
                                             }
                                         }
-                                        VerticalBox {
-                                            padding: 0;
-                                            Text {
-                                                height: 20px;
-                                                overflow: elide;
-                                                text: data.filename;
-                                                font-size: 16px;
-                                            }
-                                            Text {
-                                                height: 40px;
-                                                overflow: elide;
-                                                text: data.path;
-                                                color: grey;
-                                                font-size: 16px;
+
+                                        item_menu := Rectangle {
+                                            width: 100px;
+                                            HorizontalLayout {
+                                                TouchArea {
+                                                    width: 50px;
+                                                    mouse-cursor: pointer;
+                                                    clicked => { root.open_with_admin(data.id); }
+                                                    admin_btn_rc := Rectangle {
+                                                        admin_btn_img := Image {
+                                                            height: 20px;
+                                                            width: 20px;
+                                                            colorize: StyleMetrics.default-text-color;
+                                                            source: @image-url("assets/icon/admin.svg");
+                                                        }
+                                                    }
+                                                    states [ 
+                                                        hover when self.has-hover: {
+                                                            admin_btn_img.colorize: cyan;
+                                                        }
+                                                    ]
+                                                }
+                                                
+                                                TouchArea {
+                                                    width: 50px;
+                                                    mouse-cursor: pointer;
+                                                    clicked => { root.open_file_dir(data.id); }
+                                                    file_btn_rc := Rectangle {
+                                                        file_btn_img := Image {
+                                                            height: 20px;
+                                                            width: 20px;
+                                                            colorize: StyleMetrics.default-text-color;
+                                                            source: @image-url("assets/icon/file.svg");
+                                                        }
+                                                    }
+                                                    states [ 
+                                                        hover when self.has-hover: {
+                                                            file_btn_img.colorize: cyan;
+                                                        }
+                                                    ]
+                                                }
                                             }
                                         }
                                     }
                                 }
 
                                 states [
-                                    active when root.active_id == data.id: {
+                                    active when root.active_id == data.id && !search_result_item_touch.has-hover: {
                                         background: StyleMetrics.textedit-background-disabled;
                                         active_bar.x: 0px;
+                                        item_content.width: self.width;
                                     }
                                     inactive when root.active_id != data.id && !search_result_item_touch.has-hover : {
                                         background: transparent;
                                         active_bar.x: -2px;
+                                        item_content.width: self.width;
+                                    }
+                                    active_hover when root.active_id == data.id && search_result_item_touch.has-hover: {
+                                        background: StyleMetrics.textedit-background-disabled;
+                                        active_bar.x: 0px;
+                                        item_content.width: self.width - item_menu.width;
                                     }
                                     hover when search_result_item_touch.has-hover: {
                                         background: StyleMetrics.textedit-background-disabled;
                                         active_bar.x: -2px;
+                                        item_content.width: self.width - item_menu.width;
                                     }
-                                ] 
+                                ]
                             }
                         }
                     }

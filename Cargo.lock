@@ -372,15 +372,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "604178f6c5c21f02dc555784810edfb88d34ac2c73b2eae109655649ee73ce3d"
 
 [[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "bindgen"
 version = "0.65.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3302,7 +3293,6 @@ dependencies = [
 name = "rotor-rs"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "chrono",
  "embed-resource",
  "global-hotkey",
@@ -3311,7 +3301,6 @@ dependencies = [
  "image",
  "is-root",
  "screenshots",
- "serde",
  "slint",
  "tray-icon",
  "windows-sys 0.48.0",
