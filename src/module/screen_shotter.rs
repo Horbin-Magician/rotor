@@ -1,7 +1,7 @@
 mod amplifier;
 mod pin_win;
 
-use std::{sync::{Arc, Mutex}, collections::HashMap};
+use std::{sync::{Arc, Mutex, mpsc}, collections::HashMap};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -9,6 +9,7 @@ use screenshots::Screen;
 
 use amplifier::Amplifier;
 use pin_win::PinWin;
+use pin_win::PinWindow;
 
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
@@ -31,7 +32,6 @@ impl ScreenShotter{
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
         let amplifier = Amplifier::new(); // init Amplifier
 
-
         // there is an animation when the window is first show. The mask window does not need the animation
         mask_win.show().unwrap();
         mask_win.hide().unwrap();
@@ -41,6 +41,8 @@ impl ScreenShotter{
 
         let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
         let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
+        let pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>> =  Arc::new(Mutex::new(HashMap::new()));
+        let (move_sender, move_reciever) = mpsc::channel::<u32>();
 
         let primary_screen_clone = primary_screen.unwrap().clone();
         let mask_win_clone = mask_win.as_weak();
@@ -75,7 +77,7 @@ impl ScreenShotter{
 
         let mask_win_clone = mask_win.as_weak();
         mask_win.on_key_released(move |event| {
-            println!("{:?}", event);
+            // println!("{:?}", event);
             if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                 mask_win_clone.unwrap().hide().unwrap();
             } else if event.text == slint::SharedString::from("Z") {
@@ -88,24 +90,39 @@ impl ScreenShotter{
         let mask_win_clone = mask_win.as_weak();
         let max_pin_win_id_clone = max_pin_win_id.clone();
         let pin_wins_clone = pin_wins.clone();
+        let pin_windows_clone = pin_windows.clone();
+        let move_sender_clone = move_sender.clone();
         mask_win.on_new_pin_win(move |img, rect| {
             let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
+            let move_sender_clone = move_sender_clone.clone();
 
-            let pin_win = PinWin::new(img, rect);
-            let mut pin_wins = pin_wins_clone.lock().unwrap();
+            let pin_win = PinWin::new(img, rect, max_pin_win_id.clone(), move_sender_clone);
 
             let pin_window_clone = pin_win.pin_window.as_weak();
-            pin_wins.insert(*max_pin_win_id, pin_win);
-
-            let pin_wins_clone = pin_wins_clone.clone();
+            let pin_wins_clone_clone = pin_wins_clone.clone();
+            let pin_windows_clone_clone = pin_windows_clone.clone();
             let id = *max_pin_win_id;
             pin_window_clone.unwrap().window().on_close_requested(move || {
-                pin_wins_clone.lock().unwrap().remove(&id);
+                pin_wins_clone_clone.lock().unwrap().remove(&id);
+                pin_windows_clone_clone.lock().unwrap().remove(&id);
                 slint::CloseRequestResponse::HideWindow
             });
 
+            let pin_window_clone = pin_win.pin_window.as_weak();
+            pin_wins_clone.lock().unwrap().insert(*max_pin_win_id, pin_win);
+            pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
+
             *max_pin_win_id = *max_pin_win_id + 1;
             mask_win_clone.unwrap().hide().unwrap();
+        });
+
+        // tile function
+        std::thread::spawn(move || {
+            loop {
+                let id = move_reciever.recv().unwrap();
+                let pin_windows = pin_windows.clone();
+                ScreenShotter::pin_win_move_hander(pin_windows, id.clone());
+            }
         });
 
         ScreenShotter{
@@ -131,37 +148,65 @@ impl ScreenShotter{
         // m_isHidden = false;
     }
 
-    // TODO: 贴贴功能：
-    fn on_pin_win_move() {
-        // foreach (ShotterWindow* otherWin, m_ShotterWindowList) {
-        //     if(otherWin != shotterWindow){
-        //         QRect rectA = shotterWindow->geometry();
-        //         QRect rectB = otherWin->geometry();
-        //         int padding = 10;
+    fn pin_win_move_hander(pin_wins: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32) {
+        slint::invoke_from_event_loop(move || {
+            let padding = 10;
+            let pin_wins = pin_wins.lock().unwrap();
+            let move_win = &pin_wins[&move_win_id].unwrap();
+            for pin_win_id in pin_wins.keys(){
+                if move_win_id != *pin_win_id {
+                    let other_win = &pin_wins[pin_win_id].unwrap();
+                    
+                    let move_pos = move_win.window().position();
+                    let move_size = move_win.window().size();
+                    let other_pos = other_win.window().position();
+                    let other_size = other_win.window().size();
 
-        //         if(!(rectA.top() > rectB.bottom()) && !(rectA.bottom() < rectB.top())){
-        //             if( qAbs(rectA.right() - rectB.left()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::RIGHT_LEFT, otherWin);
-        //             else if( qAbs(rectA.right() - rectB.right()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::RIGHT_RIGHT, otherWin);
-        //             else if( qAbs(rectA.left() - rectB.right()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::LEFT_RIGHT, otherWin);
-        //             else if( qAbs(rectA.left() - rectB.left()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::LEFT_LEFT, otherWin);
-        //         }
+                    let move_bottom = move_pos.y + move_size.height as i32;
+                    let move_right = move_pos.x + move_size.width as i32;
+                    let other_bottom = other_pos.y + other_size.height as i32;
+                    let other_right = other_pos.x + other_size.width as i32;
 
-        //         if(!(rectA.right() < rectB.left()) && !(rectA.left() > rectB.right())){
-        //             if( qAbs(rectA.top() - rectB.bottom()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::UPPER_LOWER, otherWin);
-        //             else if( qAbs(rectA.bottom() - rectB.top()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::LOWER_UPPER, otherWin);
-        //             else if( qAbs(rectA.top() - rectB.top()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::UPPER_UPPER, otherWin);
-        //             else if( qAbs(rectA.bottom() - rectB.bottom()) < padding)
-        //                 shotterWindow->stick(STICK_TYPE::LOWER_LOWER, otherWin);
-        //         }
-        //     }
-        // }
+                    println!("move_pos: {:?}", move_pos);
+                    let mut delta_x = 0;
+                    let mut delta_y = 0;
+                    
+                    if !(move_pos.x > other_right) && !(move_right < other_pos.x) {
+                        if (move_right - other_pos.x).abs() < padding {
+                            move_win.set_is_stick_x(true);
+                            delta_x = move_right - other_pos.x - 2; // -1 to fix the border width
+                        } else if (move_right - other_right).abs() < padding {
+                            move_win.set_is_stick_x(true);
+                            delta_x = move_right - other_right;
+                        } else if (move_pos.x - other_right).abs() < padding {
+                            move_win.set_is_stick_x(true);
+                            delta_x = move_pos.x - other_right + 2;
+                        } else if (move_pos.x - other_pos.x).abs() < padding {
+                            move_win.set_is_stick_x(true);
+                            delta_x = move_pos.x - other_pos.x;
+                        }
+                    }
+
+                    if !(move_pos.y > other_bottom) && !(move_bottom < other_pos.y) {
+                        if (move_bottom - other_pos.y).abs() < padding {
+                            move_win.set_is_stick_y(true);
+                            delta_y = move_bottom - other_pos.y - 2;
+                        } else if (move_pos.y - other_bottom).abs() < padding {
+                            move_win.set_is_stick_y(true);
+                            delta_y = move_pos.y - other_bottom + 2;
+                        } else if (move_bottom - other_bottom).abs() < padding {
+                            move_win.set_is_stick_y(true);
+                            delta_y = move_bottom - other_bottom;
+                        } else if (move_pos.y - other_pos.y).abs() < padding {
+                            move_win.set_is_stick_y(true);
+                            delta_y = move_pos.y - other_pos.y;
+                        }
+                    }
+
+                    move_win.window().set_position(slint::PhysicalPosition::new(move_pos.x - delta_x, move_pos.y - delta_y));
+                }
+            }
+        }).unwrap();
     }
 
 }
@@ -231,7 +276,7 @@ slint::slint! {
                 }
 
                 select_border := Rectangle {
-                    border-color: blue;
+                    border-color: rgb(0, 175, 255);
                     border-width: 2px;
 
                     x: root.select-rect.x - self.border-width;

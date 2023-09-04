@@ -1,25 +1,16 @@
+use std::sync::mpsc::Sender;
+
 use slint::Image;
 use chrono;
 
 use super::Rect;
-
-enum STICK_TYPE {
-    UPPER_UPPER,
-    UPPER_LOWER,
-    LOWER_UPPER,
-    LOWER_LOWER,
-    LEFT_RIGHT,
-    LEFT_LEFT,
-    RIGHT_RIGHT,
-    RIGHT_LEFT
-} // 方位枚举
 
 pub struct PinWin {
     pub pin_window: PinWindow,
 }
 
 impl PinWin {
-    pub fn new(img: Image, rect: Rect) -> PinWin {
+    pub fn new(img: Image, rect: Rect, id: u32, move_sender: Sender<u32>) -> PinWin {
         let pin_window = PinWindow::new().unwrap();
         let border_width = pin_window.get_win_border_width();
         pin_window.window().set_position(slint::LogicalPosition::new(rect.x - border_width, rect.y - border_width));
@@ -32,6 +23,7 @@ impl PinWin {
         pin_window.set_img_height(rect.height);
         
         let pin_window_clone = pin_window.as_weak();
+        let move_sender_clone = move_sender.clone();
         pin_window.on_win_move(move |mut delta_x, mut delta_y| {
             let pin_window_clone = pin_window_clone.unwrap();
             let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
@@ -39,6 +31,7 @@ impl PinWin {
             let is_stick_y = pin_window_clone.get_is_stick_y();
 
             if is_stick_x {
+                println!("delta_x: {}", delta_x);
                 if delta_x.abs() > 20. {
                     pin_window_clone.set_is_stick_x(false);
                 } else {
@@ -46,6 +39,7 @@ impl PinWin {
                 }
             }
             if is_stick_y {
+                println!("delta_y: {}", delta_y);
                 if delta_y.abs() > 20. {
                     pin_window_clone.set_is_stick_y(false);
                 } else {
@@ -56,8 +50,8 @@ impl PinWin {
                 pin_window_clone.window().set_position(
                     slint::LogicalPosition::new(now_pos.x + delta_x, now_pos.y + delta_y)
                 );
+                move_sender_clone.send(id).unwrap();
             }
-            // emit sgn_rect_change(this->geometry());
         });
 
         pin_window.show().unwrap();
@@ -65,32 +59,6 @@ impl PinWin {
         PinWin {
             pin_window,
         }
-    }
-
-    // TODO
-    fn stick() {
-        // void ShotterWindow::stick(STICK_TYPE stick_type, ShotterWindow * shotterWindow)
-        // {
-        //     QPoint delta;
-        //     switch(stick_type){
-        //         case STICK_TYPE::RIGHT_LEFT: delta = QPoint((shotterWindow->geometry().left() - geometry().right()), 0); break;
-        //         case STICK_TYPE::RIGHT_RIGHT: delta = QPoint((shotterWindow->geometry().right() - geometry().right()), 0); break;
-        //         case STICK_TYPE::LEFT_RIGHT: delta = QPoint((shotterWindow->geometry().right() - geometry().left()), 0); break;
-        //         case STICK_TYPE::LEFT_LEFT: delta = QPoint((shotterWindow->geometry().left() - geometry().left()), 0); break;
-        //         case STICK_TYPE::UPPER_LOWER: delta = QPoint(0, shotterWindow->geometry().bottom() - geometry().top()); break;
-        //         case STICK_TYPE::UPPER_UPPER: delta = QPoint(0, shotterWindow->geometry().top() - geometry().top()); break;
-        //         case STICK_TYPE::LOWER_UPPER: delta = QPoint(0, shotterWindow->geometry().top() - geometry().bottom()); break;
-        //         case STICK_TYPE::LOWER_LOWER: delta = QPoint(0, shotterWindow->geometry().bottom() - geometry().bottom()); break;
-        //         default:break;
-        //     }
-        //     if(stick_type == STICK_TYPE::RIGHT_LEFT || stick_type == STICK_TYPE::RIGHT_RIGHT || stick_type == STICK_TYPE::LEFT_RIGHT || stick_type == STICK_TYPE::LEFT_LEFT){
-        //         m_isStickX = true;
-        //     }else if(stick_type == STICK_TYPE::UPPER_LOWER || stick_type == STICK_TYPE::UPPER_UPPER || stick_type == STICK_TYPE::LOWER_UPPER || stick_type == STICK_TYPE::LOWER_LOWER){
-        //         m_isStickY = true;
-        //     }
-        //     move(pos() + delta);
-        //     m_geoRect.moveTo(m_geoRect.topLeft() + delta);
-        // }
     }
 
     // TODO
