@@ -251,6 +251,14 @@ impl Volume {
 
         let query_lower = query.to_lowercase();
         let query_filter = Self::make_filter(&query_lower);
+        
+        // clear channel before find !!! need to use a better way
+        loop {
+            match self.stop_receiver.try_recv() {
+                Ok( _ ) => {},
+                Err( _ ) => { break; },
+            }
+        }
 
         for (_, file) in self.file_map.iter() {
             match self.stop_receiver.try_recv() {
@@ -274,7 +282,7 @@ impl Volume {
                 }
             }
         }
-        println!("[info] {} End Volume::find, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
+        println!("[info] {} End Volume::find {query}, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
         
         sender.send(Some(result)).unwrap(); // BUG: unwrap error
     }

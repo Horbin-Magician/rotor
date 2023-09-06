@@ -229,6 +229,7 @@ impl FileData {
                 for VolumePack{volume, ..} in &mut self.volume_packs { 
                     volume.lock().unwrap().update_index();
                 }
+                self.state = FileState::Ready;
             },
             _ => { return; },
         }
@@ -237,6 +238,7 @@ impl FileData {
     pub fn release_index(&mut self) {
         match self.state {
             FileState::Released => { return; },
+            FileState::Unbuild => { return; },
             _ => {
                 for VolumePack{volume, ..} in &mut self.volume_packs { 
                     volume.lock().unwrap().release_index();

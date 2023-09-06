@@ -26,6 +26,9 @@ impl Searcher {
             y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
         }
         let search_win = SearchWindow::new().unwrap();
+        // to fix the bug that the on_lose_focus_trick do not be triggered when it is first displayed
+        search_win.show().unwrap();
+        search_win.hide().unwrap();
         
         let width: f32 = 500.;
         search_win.set_ui_width(width);
@@ -34,12 +37,10 @@ impl Searcher {
         search_win.window().set_position(slint::WindowPosition::Logical(slint::LogicalPosition::new(x_pos, y_pos)));
         let search_result_model = Rc::new(slint::VecModel::from(vec![]));
         search_win.set_search_result(search_result_model.clone().into());
-
         search_win.set_active_id(0);
 
         let (stop_find_sender, stop_finder_receiver) = mpsc::channel::<()>();
         let file_data = Arc::new(Mutex::new(FileData::new(search_win.as_weak(), stop_finder_receiver)));
-        
         
         let file_data_clone = file_data.clone();
         thread::spawn(move || {
@@ -119,10 +120,7 @@ impl Searcher {
                 let file_data_clone_clone = file_data_clone.clone();
                 match file_data_clone_clone.try_lock() {
                     Ok(_) => {},
-                    Err(_) => {
-                        println!("try_lock failed");
-                        stop_find_sender_clone.send(()).unwrap();
-                    },
+                    Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
                 }
                 if query == "" { search_result_model_clone.set_vec(vec![]); }
                 thread::spawn(move || {
@@ -182,15 +180,6 @@ impl Searcher {
         };
         searcher
     }
-
-    // pub fn show(&self) {
-    //     self.search_win.as_weak().clone().upgrade_in_event_loop(move |win| {
-    //         win.show().unwrap();
-    //         win.window().with_winit_window(|winit_win: &winit::window::Window| {
-    //             winit_win.focus_window();
-    //         });
-    //     }).unwrap();
-    // }
 }
 
 slint::slint! {
