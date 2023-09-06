@@ -115,8 +115,13 @@ impl Volume {
     // return rank by filename
     fn get_file_rank(file_name: &String) -> i8 {
         let mut rank: i8 = 0;
+
         if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
-        else if file_name.to_lowercase().ends_with(".lnk") { rank += 15; }
+        else if file_name.to_lowercase().ends_with(".lnk") { rank += 20; }
+
+        let tmp = 20i16 - file_name.len() as i16;
+        if tmp > 0 { rank += tmp as i8; }
+
         rank
     }
 
@@ -133,7 +138,7 @@ impl Volume {
     }
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
-    pub fn build_index(&mut self) {
+    pub fn build_index(&mut self, sender: mpsc::Sender<bool>) {
         let sys_time = SystemTime::now();
         println!("[info] {} Begin Volume::build_index", self.drive);
 
@@ -197,34 +202,28 @@ impl Volume {
         }
         println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
         self.serialization_write();
-    }
-
-
-    pub fn build_index_with_sender(&mut self, sender: mpsc::Sender<bool>) {
-        self.build_index();
         sender.send(true).unwrap();
     }
 
     // Clears the database
     pub fn release_index(&mut self) {
+        println!("[info] {} Volume::release_index", self.drive);
         self.file_map.clear();
     }
 
-    fn match_str(contain: &String, query_lower: &String) -> i8 {
+    fn match_str(contain: &String, query_lower: &String) -> bool {
         // let query_list = query_lower.chars().collect::<Vec<char>>();
         // let mut i = 0;
         // for c in contain.to_lowercase().chars() {
         //     if query_list[i] == c { i += 1; }
         //     if i >= query_list.len() {
-        //         let rank = 20i16 - contain.len() as i16;
-        //         if rank < 0 {return 0;} else { return rank as i8; }
+        //          return true;
         //     }
         // }
         if contain.to_lowercase().contains(query_lower) {
-            let rank = 20i16 - contain.len() as i16;
-            if rank < 0 {return 0;} else { return rank as i8; }
+            return true;
         }
-        -1
+        false
     }
 
     // Constructs a path for a directory
@@ -243,7 +242,7 @@ impl Volume {
     // searching
     pub fn find(&mut self, query: String, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
         let sys_time = SystemTime::now();
-        println!("[info] {} Begin Volume::Find", self.drive);
+        println!("[info] {} Begin Volume::Find {query}", self.drive);
 
         let mut result = Vec::new();
 
@@ -255,36 +254,34 @@ impl Volume {
 
         for (_, file) in self.file_map.iter() {
             match self.stop_receiver.try_recv() {
-                Ok(_) => { let _ = sender.send(None); return; },
+                Ok(_) => { 
+                    println!("[info] {} Stop Volume::Find", self.drive);
+                    let _ = sender.send(None);
+                    return;
+                },
                 Err(_) => {},
             }
             if (file.filter & query_filter) == query_filter {
                 let file_name = file.file_name.clone();
-                let rank = Self::match_str(&file_name, &query_lower);
-                if rank >= 0 {
+                if Self::match_str(&file_name, &query_lower) {
                     if let Some(path) = self.get_path(&file.parent_index){
                         result.push(SearchResultItem {
                             path,
                             file_name,
-                            rank: file.rank + rank,
+                            rank: file.rank,
                         });
                     }
                 }
             }
         }
-        println!(
-            "[info] {} End Volume::find, use tiem: {:?} ms, get result num {}",
-            self.drive,
-            sys_time.elapsed().unwrap().as_millis(),
-            result.len()
-        );
-        sender.send(Some(result)).unwrap();
+        println!("[info] {} End Volume::find, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
+        
+        sender.send(Some(result)).unwrap(); // BUG: unwrap error
     }
 
     // update index, add new file, remove deleted file
     pub fn update_index(&mut self) {
-        let sys_time = SystemTime::now();
-        println!("[info] {} Begin Volume::update_index", self.drive);
+        println!("[info] {} Volume::update_index", self.drive);
 
         if self.file_map.is_empty() {self.serialization_read()};
 
@@ -337,8 +334,6 @@ impl Volume {
             }
         }
         self.start_usn = rujd.StartUsn;
-
-        println!("[info] {} End Volume::update_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 
     // serializate file_map to reduce memory usage
@@ -368,8 +363,7 @@ impl Volume {
 
     // deserializate file_map from file
     fn serialization_read(&mut self) {
-        let sys_time = SystemTime::now();
-        println!("[info] {} Begin Volume::serialization_read", self.drive);
+        println!("[info] {} Volume::serialization_read", self.drive);
 
         let file_path = env::current_dir().unwrap();
         let file_data = fs::read(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
@@ -391,8 +385,6 @@ impl Volume {
             ptr_index += 1;
             self.file_map.insert(index, File { parent_index, file_name, filter, rank });
         }
-
-        println!("[info] {} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 
 }
