@@ -39,127 +39,140 @@ impl Searcher {
 
         let (stop_find_sender, stop_finder_receiver) = mpsc::channel::<()>();
         let file_data = Arc::new(Mutex::new(FileData::new(search_win.as_weak(), stop_finder_receiver)));
+        
+        
         let file_data_clone = file_data.clone();
         thread::spawn(move || {
             file_data_clone.lock().unwrap().init_volumes();
         });
 
-        // add key event hander
-        let search_win_clone = search_win.as_weak();
-        let search_result_model_clone = search_result_model.clone();
-        search_win.on_key_released(move |event| {
-            let search_win_clone = search_win_clone.unwrap();
-            if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
-                search_win_clone.hide().unwrap();
-            }else if event.text == slint::SharedString::from(slint::platform::Key::UpArrow) {
-                let mut active_id = search_win_clone.get_active_id();
-                if active_id > 0 { 
-                    active_id -= 1;
-                    search_win_clone.set_active_id(active_id);
-                    let viewport_y = search_win_clone.get_viewport_y();
-                    if (-viewport_y / 60.) as i32 > active_id { search_win_clone.set_viewport_y(viewport_y + 60.); }
-                }
-            }else if event.text == slint::SharedString::from(slint::platform::Key::DownArrow) {
-                let mut active_id = search_win_clone.get_active_id();
-                if active_id < (search_result_model_clone.row_count() - 1) as i32 { 
-                    active_id += 1;
-                    search_win_clone.set_active_id(active_id);
-                    let viewport_y = search_win_clone.get_viewport_y();
-                    if (-viewport_y / 60. + 7.) as i32 <= active_id { search_win_clone.set_viewport_y(viewport_y - 60.); }
-                }
-            }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
-                let active_id = search_win_clone.get_active_id();
-                let data = search_result_model_clone.row_data(active_id as usize);
-                if let Some(f) = data {
-                    file_util::open_file((f.path + &f.filename).to_string());
+        { // add key event hander
+            let search_win_clone = search_win.as_weak();
+            let search_result_model_clone = search_result_model.clone();
+            search_win.on_key_released(move |event| {
+                let search_win_clone = search_win_clone.unwrap();
+                if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                     search_win_clone.hide().unwrap();
-                }
-            }
-        });
-
-        // add lose focus hander
-        let search_win_clone = search_win.as_weak();
-        let file_data_clone = file_data.clone();
-        let stop_find_sender_clone = stop_find_sender.clone();
-        search_win.on_lose_focus_trick(move |has_focus| {
-            match file_data_clone.try_lock() {
-                Ok(_) => {},
-                Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
-            }
-            let file_data = file_data_clone.clone();
-            let search_win = search_win_clone.unwrap();
-            if has_focus == false { 
-                if search_win.get_query() != "" {
-                    search_win.set_query(slint::SharedString::from(""));
-                    search_win.invoke_query_change(slint::SharedString::from(""));
-                }
-                search_win.hide().unwrap();
-                thread::spawn(move || {
-                    file_data.lock().unwrap().release_index();
-                });
-            } else if has_focus && search_win.window().is_visible() {
-                thread::spawn(move || {
-                    file_data.lock().unwrap().update_index();
-                });
-            }
-            return true;
-        });
-        
-        // add query change hander
-        let file_data_clone = file_data.clone();
-        let stop_find_sender_clone = stop_find_sender.clone();
-        let search_result_model_clone = search_result_model.clone();
-        search_win.on_query_change(move |query| {
-            let file_data_clone_clone = file_data_clone.clone();
-            match file_data_clone_clone.try_lock() {
-                Ok(_) => {},
-                Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
-            }
-            if query == "" { search_result_model_clone.set_vec(vec![]); }
-            thread::spawn(move || {
-                file_data_clone_clone.lock().unwrap().find(query.to_string());
-            });
-        });
-
-        // add item click hander
-        let search_win_clone = search_win.as_weak();
-        let search_result_model_clone = search_result_model.clone();
-        search_win.on_item_click(move |event, id| {
-            if event.kind == slint::private_unstable_api::re_exports::PointerEventKind::Up {
-                let search_win = search_win_clone.unwrap();
-                if event.button == slint::platform::PointerEventButton::Left {
-                    let data = search_result_model_clone.row_data(id as usize);
+                }else if event.text == slint::SharedString::from(slint::platform::Key::UpArrow) {
+                    let mut active_id = search_win_clone.get_active_id();
+                    if active_id > 0 { 
+                        active_id -= 1;
+                        search_win_clone.set_active_id(active_id);
+                        let viewport_y = search_win_clone.get_viewport_y();
+                        if (-viewport_y / 60.) as i32 > active_id { search_win_clone.set_viewport_y(viewport_y + 60.); }
+                    }
+                }else if event.text == slint::SharedString::from(slint::platform::Key::DownArrow) {
+                    let mut active_id = search_win_clone.get_active_id();
+                    if active_id < (search_result_model_clone.row_count() - 1) as i32 { 
+                        active_id += 1;
+                        search_win_clone.set_active_id(active_id);
+                        let viewport_y = search_win_clone.get_viewport_y();
+                        if (-viewport_y / 60. + 7.) as i32 <= active_id { search_win_clone.set_viewport_y(viewport_y - 60.); }
+                    }
+                }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
+                    let active_id = search_win_clone.get_active_id();
+                    let data = search_result_model_clone.row_data(active_id as usize);
                     if let Some(f) = data {
                         file_util::open_file((f.path + &f.filename).to_string());
-                        search_win.hide().unwrap();
+                        search_win_clone.hide().unwrap();
                     }
                 }
-            }
-        });
+            });
+        }
 
-        // on open with admin
-        let search_win_clone = search_win.as_weak();
-        let search_result_model_clone = search_result_model.clone();
-        search_win.on_open_with_admin(move |id| {
-            let search_win = search_win_clone.unwrap();
-            let data = search_result_model_clone.row_data(id as usize);
-            if let Some(f) = data {
-                file_util::open_file_admin((f.path + &f.filename).to_string());
-                search_win.hide().unwrap();
-            }
-        });
+        { // add lose focus hander
+            let search_win_clone = search_win.as_weak();
+            let file_data_clone = file_data.clone();
+            let stop_find_sender_clone = stop_find_sender.clone();
+            search_win.on_lose_focus_trick(move |has_focus| {
+                match file_data_clone.try_lock() {
+                    Ok(_) => {},
+                    Err(_) => { 
+                        stop_find_sender_clone.send(()).unwrap(); 
+                    },
+                }
+                let file_data = file_data_clone.clone();
+                let search_win = search_win_clone.unwrap();
+                if has_focus == false { 
+                    if search_win.get_query() != "" {
+                        search_win.set_query(slint::SharedString::from(""));
+                        search_win.invoke_query_change(slint::SharedString::from(""));
+                    }
+                    search_win.hide().unwrap();
+                    thread::spawn(move || {
+                        file_data.lock().unwrap().release_index();
+                    });
+                } else if has_focus && search_win.window().is_visible() {
+                    thread::spawn(move || {
+                        file_data.lock().unwrap().update_index();
+                    });
+                }
+                return true;
+            });
+        }
+        
+        { // add query change hander
+            let file_data_clone = file_data.clone();
+            let stop_find_sender_clone = stop_find_sender.clone();
+            let search_result_model_clone = search_result_model.clone();
+            search_win.on_query_change(move |query| {
+                let file_data_clone_clone = file_data_clone.clone();
+                match file_data_clone_clone.try_lock() {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("try_lock failed");
+                        stop_find_sender_clone.send(()).unwrap();
+                    },
+                }
+                if query == "" { search_result_model_clone.set_vec(vec![]); }
+                thread::spawn(move || {
+                    file_data_clone_clone.lock().unwrap().find(query.to_string());
+                });
+            });
+        }
 
-        // on open file dir
-        let search_win_clone = search_win.as_weak();
-        let search_result_model_clone = search_result_model.clone();
-        search_win.on_open_file_dir(move |id| {
-            let search_win = search_win_clone.unwrap();
-            let data = search_result_model_clone.row_data(id as usize);
-            if let Some(f) = data {
-                file_util::open_file((f.path[0..(f.path.to_string().len()-1)]).to_string());
-                search_win.hide().unwrap();
-            }
-        });
+        { // add item click hander
+            let search_win_clone = search_win.as_weak();
+            let search_result_model_clone = search_result_model.clone();
+            search_win.on_item_click(move |event, id| {
+                if event.kind == slint::private_unstable_api::re_exports::PointerEventKind::Up {
+                    let search_win = search_win_clone.unwrap();
+                    if event.button == slint::platform::PointerEventButton::Left {
+                        let data = search_result_model_clone.row_data(id as usize);
+                        if let Some(f) = data {
+                            file_util::open_file((f.path + &f.filename).to_string());
+                            search_win.hide().unwrap();
+                        }
+                    }
+                }
+            });
+        }
+
+        { // on open with admin
+            let search_win_clone = search_win.as_weak();
+            let search_result_model_clone = search_result_model.clone();
+            search_win.on_open_with_admin(move |id| {
+                let search_win = search_win_clone.unwrap();
+                let data = search_result_model_clone.row_data(id as usize);
+                if let Some(f) = data {
+                    file_util::open_file_admin((f.path + &f.filename).to_string());
+                    search_win.hide().unwrap();
+                }
+            });
+        }
+
+        { // on open file dir
+            let search_win_clone = search_win.as_weak();
+            let search_result_model_clone = search_result_model.clone();
+            search_win.on_open_file_dir(move |id| {
+                let search_win = search_win_clone.unwrap();
+                let data = search_result_model_clone.row_data(id as usize);
+                if let Some(f) = data {
+                    file_util::open_file((f.path[0..(f.path.to_string().len()-1)]).to_string());
+                    search_win.hide().unwrap();
+                }
+            });
+        }
 
         let searcher = Searcher {
             file_data,

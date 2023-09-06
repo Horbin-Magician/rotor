@@ -12,22 +12,29 @@ use super::volume;
 use super::slint_generatedSearchWindow::SearchResult_slint;
 use super::slint_generatedSearchWindow::SearchWindow;
 
-struct volume_pack {
+#[derive(Debug)]
+enum FileState {
+    Unbuild,
+    Released,
+    Ready,
+    Finding,
+}
+
+struct VolumePack {
     volume: Arc<Mutex<volume::Volume>>,
     stop_sender: mpsc::Sender<()>,
 }
 
 pub struct FileData {
     vols: Vec<char>,
-    // volumes: Vec<Arc<Mutex<volume::Volume>>>,
     finding_name: String,
     finding_result: volume::SearchResult,
     waiting_init: u8,
     waiting_finder: u8,
-    // stop_senders: Vec<mpsc::Sender<()>>,
     search_win: slint::Weak<SearchWindow>,
     stop_finder_receiver: mpsc::Receiver<()>,
-    volume_packs: Vec<volume_pack>,
+    volume_packs: Vec<VolumePack>,
+    state: FileState,
 }
 
 impl FileData {
@@ -35,14 +42,13 @@ impl FileData {
         FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
-            // volumes: Vec::new(),
             finding_name: String::new(),
             finding_result: volume::SearchResult{items: Vec::new(), query: String::new()},
             waiting_finder: 0,
             waiting_init: 0,
-            // stop_senders: vec![],
             search_win,
             stop_finder_receiver,
+            state: FileState::Unbuild,
         }
     }
 
@@ -95,17 +101,18 @@ impl FileData {
         let (build_sender, build_receiver) = mpsc::channel::<bool>();
 
         for c in &self.vols {
+            // println!("{}", self.volume_packs.len());
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
             let volume = Arc::new(Mutex::new(volume::Volume::new(c.clone(), stop_receiver)));
             
-            self.volume_packs.push(volume_pack {
+            self.volume_packs.push(VolumePack {
                 volume: volume.clone(),
                 stop_sender,
             });
 
             let build_sender_clone = build_sender.clone();
             let _ = thread::spawn(move || {
-                volume.lock().unwrap().build_index_with_sender(build_sender_clone);
+                volume.lock().unwrap().build_index(build_sender_clone);
             });
         }
 
@@ -113,35 +120,32 @@ impl FileData {
             let result = build_receiver.recv().unwrap();
             if result {
                 self.waiting_init -= 1;
-                if self.waiting_init == 0 { return true; }
+                if self.waiting_init == 0 { 
+                    self.state = FileState::Released;
+                    return true; 
+                }
             }
             else { return false; }
         }
     }
 
-    fn stop_find(&self) {
-        for volume_pack in &self.volume_packs {
-            match volume_pack.volume.try_lock() {
-                Ok( _ ) => {},
-                Err( _ ) => { let _ = volume_pack.stop_sender.send(()); },
-            }
-        }
-    }
-
     pub fn find(&mut self, filename: String) {
-        println!("Begin FileData::find_file Filename: {filename}");
-
         if self.finding_name == filename { return; }
-
         self.finding_name = filename.clone();
         self.finding_result.items.clear();
         self.finding_result.query = filename.clone();
-
         if filename == "" { return; } 
+
+        match self.state {
+            FileState::Ready => {},
+            FileState::Released => { self.update_index(); },
+            _ => { return; },
+        }
+        self.state = FileState::Finding;
 
         self.waiting_finder = self.volume_packs.len() as u8;
         let (find_result_sender, find_result_receiver) = mpsc::channel::<Option<Vec<volume::SearchResultItem>>>();
-        for volume_pack{volume, ..} in &self.volume_packs { 
+        for VolumePack{volume, ..} in &mut self.volume_packs {
             let find_result_sender: mpsc::Sender<Option<Vec<volume::SearchResultItem>>> = find_result_sender.clone();
             let volume = volume.clone();
             let filename = filename.clone();
@@ -151,21 +155,31 @@ impl FileData {
             });
         }
 
+        // clear channel before loop !!! need to use a better way
         loop {
             match self.stop_finder_receiver.try_recv() {
-                Ok( _ ) => { self.stop_find(); },
+                Ok( _ ) => {},
+                Err( _ ) => { break; },
+            }
+        }
+
+        // begin loop
+        loop {
+            match self.stop_finder_receiver.try_recv() {
+                Ok( _ ) => { 
+                    for volume_pack in &mut self.volume_packs {
+                        let _ = volume_pack.stop_sender.send(());
+                    }
+                },
                 Err( _ ) => {},
             }
             
             match find_result_receiver.try_recv() {
-                Ok( mut op_result ) => {
-                    // TODO 检查接收到结果的原因是搜索中断还是搜索完成，若中断，则不进行下面的步骤
+                Ok( op_result ) => {
                     if let Some( mut result ) = op_result {
                         self.finding_result.items.append(&mut result);
                         self.waiting_finder -= 1;
                         if self.waiting_finder == 0 {
-                            println!("End FileData::find_file");
-    
                             self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
                             
                             let return_result;
@@ -173,7 +187,6 @@ impl FileData {
                             else { return_result = self.finding_result.items.to_vec(); }
                             
                             self.search_win.clone().upgrade_in_event_loop(move |search_win| {
-                                // TODO 确认此时的结果为有效结果
                                 let search_result_model = search_win.get_search_result();
                                 let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
                                     .expect("search_result_model set a VecModel earlier");
@@ -207,23 +220,29 @@ impl FileData {
                 Err( _ ) => {},
             }
         }
+        self.state = FileState::Ready;
     }
 
-    pub fn update_index(&self) {
-        for volume_pack{volume, ..} in &self.volume_packs { 
-            let volume = volume.clone();
-            let _ = thread::spawn(move || {
-                volume.lock().unwrap().update_index();
-            });
+    pub fn update_index(&mut self) {
+        match self.state {
+            FileState::Released => { 
+                for VolumePack{volume, ..} in &mut self.volume_packs { 
+                    volume.lock().unwrap().update_index();
+                }
+            },
+            _ => { return; },
         }
     }
 
-    pub fn release_index(&self) {
-        for volume_pack{volume, ..} in &self.volume_packs { 
-            let volume = volume.clone();
-            let _ = thread::spawn(move || {
-                volume.lock().unwrap().release_index();
-            });
+    pub fn release_index(&mut self) {
+        match self.state {
+            FileState::Released => { return; },
+            _ => {
+                for VolumePack{volume, ..} in &mut self.volume_packs { 
+                    volume.lock().unwrap().release_index();
+                }
+                self.state = FileState::Released;
+            },
         }
     }
 }
