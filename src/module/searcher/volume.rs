@@ -117,7 +117,7 @@ impl Volume {
         let mut rank: i8 = 0;
 
         if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
-        else if file_name.to_lowercase().ends_with(".lnk") { rank += 20; }
+        else if file_name.to_lowercase().ends_with(".lnk") { rank += 25; }
 
         let tmp = 20i16 - file_name.len() as i16;
         if tmp > 0 { rank += tmp as i8; }
@@ -284,7 +284,7 @@ impl Volume {
         }
         println!("[info] {} End Volume::find {query}, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
         
-        sender.send(Some(result)).unwrap(); // BUG: unwrap error
+        sender.send(Some(result)).unwrap();
     }
 
     // update index, add new file, remove deleted file
