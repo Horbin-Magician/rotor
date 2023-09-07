@@ -25,13 +25,15 @@ impl Searcher {
             x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
             y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
         }
+
         let search_win = SearchWindow::new().unwrap();
+        let width: f32 = 500.;
+        search_win.set_ui_width(width);
+
         // to fix the bug that the on_lose_focus_trick do not be triggered when it is first displayed
         search_win.show().unwrap();
         search_win.hide().unwrap();
-        
-        let width: f32 = 500.;
-        search_win.set_ui_width(width);
+
         let x_pos = (x_screen - width) * 0.5;
         let y_pos = y_screen * 0.3;
         search_win.window().set_position(slint::WindowPosition::Logical(slint::LogicalPosition::new(x_pos, y_pos)));
