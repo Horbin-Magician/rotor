@@ -1,7 +1,7 @@
 mod amplifier;
 mod pin_win;
 
-use std::{sync::{Arc, Mutex, mpsc}, collections::HashMap};
+use std::{sync::{Arc, Mutex, mpsc}, collections::HashMap, rc::Rc};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -14,7 +14,7 @@ use pin_win::PinWindow;
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
     max_pin_win_id: Arc<Mutex<u32>>,
-    pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
+    pin_wins: Rc<Mutex<HashMap<u32, PinWin>>>,
     amplifier: Amplifier, // 放大取色器
 }
 
@@ -40,11 +40,11 @@ impl ScreenShotter{
         mask_win.set_state(0);
 
         let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
-        let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
+        let pin_wins: Rc<Mutex<HashMap<u32, PinWin>>> =  Rc::new(Mutex::new(HashMap::new()));
         let pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>> =  Arc::new(Mutex::new(HashMap::new()));
         let (move_sender, move_reciever) = mpsc::channel::<u32>();
 
-        let primary_screen_clone = primary_screen.unwrap().clone();
+        let primary_screen_clone = primary_screen.unwrap();
         let mask_win_clone = mask_win.as_weak();
         mask_win.on_shot(move || {
             let mask_win = mask_win_clone.unwrap();
@@ -80,9 +80,9 @@ impl ScreenShotter{
             // println!("{:?}", event);
             if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                 mask_win_clone.unwrap().hide().unwrap();
-            } else if event.text == slint::SharedString::from("Z") {
+            } else if event.text == *"Z" {
                 println!("切换颜色");
-            } else if event.text == slint::SharedString::from("C") {
+            } else if event.text == *"C" {
                 println!("复制颜色");
             }
         });
@@ -96,7 +96,7 @@ impl ScreenShotter{
             let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
             let move_sender_clone = move_sender_clone.clone();
 
-            let pin_win = PinWin::new(img, rect, max_pin_win_id.clone(), move_sender_clone);
+            let pin_win = PinWin::new(img, rect, *max_pin_win_id, move_sender_clone);
 
             let pin_window_clone = pin_win.pin_window.as_weak();
             let pin_wins_clone_clone = pin_wins_clone.clone();
@@ -112,7 +112,7 @@ impl ScreenShotter{
             pin_wins_clone.lock().unwrap().insert(*max_pin_win_id, pin_win);
             pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
 
-            *max_pin_win_id = *max_pin_win_id + 1;
+            *max_pin_win_id += 1;
             mask_win_clone.unwrap().hide().unwrap();
         });
 
@@ -121,7 +121,7 @@ impl ScreenShotter{
             loop {
                 let id = move_reciever.recv().unwrap();
                 let pin_windows = pin_windows.clone();
-                ScreenShotter::pin_win_move_hander(pin_windows, id.clone());
+                ScreenShotter::pin_win_move_hander(pin_windows, id);
             }
         });
 

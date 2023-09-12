@@ -30,15 +30,15 @@ pub fn open_file_admin(file_full_name: String) {
 
 pub fn get_icon(path: &str) -> Option<slint::Image> {
     #[repr(C)]
-    struct ICONHEADER {
+    struct Iconheader {
         id_reserved: i16, 
         id_type: i16,
         id_count: i16,
     }
     
-    // An array of ICONDIRs immediately follow the ICONHEADER
+    // An array of Icondirs immediately follow the Iconheader
     #[repr(C)]
-    struct ICONDIR {
+    struct Icondir {
         b_width: u8,
         b_height: u8,
         b_color_count: u8,
@@ -56,7 +56,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
                 dwAttributes: 0,
                 hIcon: 0,
                 iIcon: 0,
-                szDisplayName: [0 as u16; 260],
+                szDisplayName: [0_u16; 260],
                 szTypeName: [0; 80]
             };
             let file_info_size = mem::size_of_val(&file_info) as u32;
@@ -103,8 +103,8 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         let h_icon = get_icon_from_file(path);
         
         // init and get nesesary message
-        let icon_header = ICONHEADER { 
-            id_count: 1, // number of ICONDIRs
+        let icon_header = Iconheader { 
+            id_count: 1, // number of Icondirs
             id_reserved: 0, 
             id_type: 1// Type 1 = ICON (type 2 = CURSOR)
         };
@@ -117,8 +117,8 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         Gdi::GetObjectW(icon_info.hbmColor, mem::size_of_val(&bmp_color) as i32, &mut bmp_color as *mut BITMAP as *mut c_void);
         Gdi::GetObjectW(icon_info.hbmMask, mem::size_of_val(&bmp_mask) as i32, &mut bmp_mask as *mut BITMAP as *mut c_void);
 
-        let icon_header_size = mem::size_of::<ICONHEADER>();
-        let icon_dir_size = mem::size_of::<ICONDIR>();
+        let icon_header_size = mem::size_of::<Iconheader>();
+        let icon_dir_size = mem::size_of::<Icondir>();
         let info_header_size = mem::size_of::<BITMAPINFOHEADER>();
         let bitmap_bytes_count = get_bitmap_count(&bmp_color) as usize;
         let mask_bytes_count = get_bitmap_count(&bmp_mask) as usize;
@@ -146,7 +146,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         let byte_ptr: *mut u8 = mem::transmute(&icon_header);
         ptr::copy_nonoverlapping(byte_ptr, bytes.as_mut_ptr(), icon_header_size); 
 
-        // 2.write icondir
+        // 2.write Icondir
         let pos = icon_header_size;
 
         let color_count = if bmp_color.bmBitsPixel >= 8 { 
@@ -155,7 +155,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
             1 << (bmp_color.bmBitsPixel * bmp_color.bmPlanes) 
         };
     
-        let icon_dir = ICONDIR {
+        let icon_dir = Icondir {
             b_width: bmp_color.bmWidth as u8,
             b_height: bmp_color.bmHeight as u8,
             b_color_count: color_count,
@@ -175,7 +175,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         ptr::copy_nonoverlapping(byte_ptr, bytes[pos..].as_mut_ptr(), info_header_size); 
         let pos = pos + info_header_size;
 
-        if bmp_color.bmBitsPixel == 2 || bmp_color.bmBitsPixel == 8 { } // write the RGBQUAD color table (for 16 and 256 colour icons)
+        // if bmp_color.bmBitsPixel == 2 || bmp_color.bmBitsPixel == 8 { } // write the RGBQUAD color table (for 16 and 256 colour icons)
 
         // 5.write color and mask bitmaps
         write_icon_data_to_memory(&mut bytes[pos..], icon_info.hbmColor, &bmp_color, bitmap_bytes_count as usize);

@@ -96,7 +96,7 @@ impl Searcher {
                 }
                 let file_data = file_data_clone.clone();
                 let search_win = search_win_clone.unwrap();
-                if has_focus == false { 
+                if !has_focus { 
                     if search_win.get_query() != "" {
                         search_win.set_query(slint::SharedString::from(""));
                         search_win.invoke_query_change(slint::SharedString::from(""));
@@ -110,7 +110,7 @@ impl Searcher {
                         file_data.lock().unwrap().update_index();
                     });
                 }
-                return true;
+                true
             });
         }
         
@@ -124,7 +124,7 @@ impl Searcher {
                     Ok(_) => {},
                     Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
                 }
-                if query == "" { search_result_model_clone.set_vec(vec![]); }
+                if query.is_empty() { search_result_model_clone.set_vec(vec![]); }
                 thread::spawn(move || {
                     file_data_clone_clone.lock().unwrap().find(query.to_string());
                 });
@@ -174,13 +174,12 @@ impl Searcher {
             });
         }
 
-        let searcher = Searcher {
+        Searcher {
             file_data,
             search_win,
             search_result_model,
             stop_find_sender,
-        };
-        searcher
+        }
     }
 }
 

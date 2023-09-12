@@ -46,7 +46,7 @@ impl PinWin {
                     delta_y = 0.;
                 }
             }
-            if is_stick_x == false || is_stick_y == false {
+            if !is_stick_x || !is_stick_y {
                 pin_window_clone.window().set_position(
                     slint::LogicalPosition::new(now_pos.x + delta_x, now_pos.y + delta_y)
                 );
