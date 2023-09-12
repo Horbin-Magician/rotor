@@ -76,7 +76,7 @@ impl Volume {
                 c_str.as_ptr() as *const u8, 
                 Foundation::GENERIC_READ,
                 FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE, 
-                0 as *const windows_sys::Win32::Security::SECURITY_ATTRIBUTES, 
+                std::ptr::null::<windows_sys::Win32::Security::SECURITY_ATTRIBUTES>(), 
                 FileSystem::OPEN_EXISTING, 
                 0, 
                 0)
@@ -94,14 +94,14 @@ impl Volume {
         28 not in ASCII
         */
         let len = str.len();
-        if len <= 0 { return 0;}
+        if len == 0 { return 0;}
         let mut address: u32 = 0;
         let str_lower = str.to_lowercase();
 
         for c in str_lower.chars() {
-            if c >= 'a' && c <= 'z' {
+            if ('a'..='z').contains(&c) {
                 address |= 1 << (c as u32 - 97);
-            } else if c >= '0' && c <= '9' {
+            } else if ('0'..'9').contains(&c) {
                 address |= 1 << 26;
             } else if c > 127 as char {
                 address |= 1 << 27;
@@ -182,7 +182,7 @@ impl Volume {
                 &mut data as *mut _ as *mut c_void, 
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
                 &mut cb as *mut u32, 
-                0 as *mut IO::OVERLAPPED
+                std::ptr::null_mut::<IO::OVERLAPPED>()
             ) != 0 {
                 let mut record_ptr: *const Ioctl::USN_RECORD_V2 = &(data[1]) as *const u64 as *const Ioctl::USN_RECORD_V2;
                 while (record_ptr as usize) < (&(data[0]) as *const u64 as usize + cb as usize) {
@@ -211,7 +211,7 @@ impl Volume {
         self.file_map.clear();
     }
 
-    fn match_str(contain: &String, query_lower: &String) -> bool {
+    fn match_str(contain: &str, query_lower: &String) -> bool {
         // let query_list = query_lower.chars().collect::<Vec<char>>();
         // let mut i = 0;
         // for c in contain.to_lowercase().chars() {
@@ -229,9 +229,9 @@ impl Volume {
     // Constructs a path for a directory
     fn get_path(&self, index: &u64) -> Option<String> {
         let mut path = String::new();
-        let mut loop_index = index.clone();
+        let mut loop_index = *index;
         while loop_index != 0 {
-            if self.file_map.contains_key(&loop_index) == false { return None;}
+            if !self.file_map.contains_key(&loop_index) { return None;}
             let file = &self.file_map[&loop_index];
             path.insert_str(0, (file.file_name.clone() + "\\").as_str());
             loop_index = file.parent_index;
@@ -246,28 +246,20 @@ impl Volume {
 
         let mut result = Vec::new();
 
-        if query.len() == 0 { sender.send(None).unwrap(); return; }
+        if query.is_empty() { sender.send(None).unwrap(); return; }
         if self.file_map.is_empty() { self.serialization_read() };
 
         let query_lower = query.to_lowercase();
         let query_filter = Self::make_filter(&query_lower);
         
         // clear channel before find !!! need to use a better way
-        loop {
-            match self.stop_receiver.try_recv() {
-                Ok( _ ) => {},
-                Err( _ ) => { break; },
-            }
-        }
+        while self.stop_receiver.try_recv().is_ok() { }
 
         for (_, file) in self.file_map.iter() {
-            match self.stop_receiver.try_recv() {
-                Ok(_) => { 
-                    println!("[info] {} Stop Volume::Find", self.drive);
-                    let _ = sender.send(None);
-                    return;
-                },
-                Err(_) => {},
+            if self.stop_receiver.try_recv().is_ok() {
+                println!("[info] {} Stop Volume::Find", self.drive);
+                let _ = sender.send(None);
+                return;
             }
             if (file.filter & query_filter) == query_filter {
                 let file_name = file.file_name.clone();
@@ -313,7 +305,7 @@ impl Volume {
                 &mut data as *mut _ as *mut c_void,
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
                 &mut cb as *mut u32, 
-                0 as *mut IO::OVERLAPPED
+                std::ptr::null_mut::<IO::OVERLAPPED>()
             ) != 0 {
                 if cb == 8 { break };
                 let mut record_ptr: *const Ioctl::USN_RECORD_V2 = &(data[1]) as *const i64 as *const Ioctl::USN_RECORD_V2;
@@ -360,7 +352,7 @@ impl Volume {
             let _ = buf.write(&index.to_be_bytes());
             let _ = buf.write(&file.parent_index.to_be_bytes());
             let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
-            let _ = buf.write(&file.file_name.as_bytes());
+            let _ = buf.write(file.file_name.as_bytes());
             let _ = buf.write(&file.filter.to_be_bytes());
             let _ = buf.write(&file.rank.to_be_bytes());
         }

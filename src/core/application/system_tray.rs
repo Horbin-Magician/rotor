@@ -30,24 +30,18 @@ impl SystemTray {
         let _quit_id = menuitem_quit.id().clone();
         std::thread::spawn(move || {
             loop {
-                match TrayIconEvent::receiver().try_recv() {
-                    Ok(event) => {
-                        if event.click_type == ClickType::Left {
-                            msg_sender.send(AppMessage::ShowSetting).unwrap();
-                        }
-                    },
-                    Err(_) => {}
+                if let Ok(event) = TrayIconEvent::receiver().try_recv() {
+                    if event.click_type == ClickType::Left {
+                        msg_sender.send(AppMessage::ShowSetting).unwrap();
+                    }
                 }
 
-                match MenuEvent::receiver().try_recv() {
-                    Ok(event) => {
-                        if event.id == _setting_id {
-                            msg_sender.send(AppMessage::ShowSetting).unwrap();
-                        } else if event.id == _quit_id {
-                            msg_sender.send(AppMessage::Quit).unwrap();
-                        }
-                    },
-                    Err(_) => {}
+                if let Ok(event) = MenuEvent::receiver().try_recv() {
+                    if event.id == _setting_id {
+                        msg_sender.send(AppMessage::ShowSetting).unwrap();
+                    } else if event.id == _quit_id {
+                        msg_sender.send(AppMessage::Quit).unwrap();
+                    }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }

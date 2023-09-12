@@ -3,7 +3,7 @@ mod setting;
 pub mod powerboot;
 pub mod admin_runner;
 
-use std::sync::{mpsc, Arc};
+use std::{sync::{mpsc, Arc}, rc::Rc};
 
 use slint::ComponentHandle;
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -25,7 +25,7 @@ pub struct Application {
     _system_tray: SystemTray,
     _setting: Setting,
     _searcher: Searcher,
-    _shotter: Arc<ScreenShotter>,
+    _shotter: Rc<ScreenShotter>,
     _msg_sender:mpsc::Sender<AppMessage>,
     _hotkey_manager: GlobalHotKeyManager,
 }
@@ -37,7 +37,7 @@ impl Application {
         let _system_tray = SystemTray::new(_msg_sender.clone());
         let _setting: Setting = Setting::new();
         let _searcher: Searcher = Searcher::new();
-        let _shotter: Arc<ScreenShotter> = Arc::new(ScreenShotter::new());
+        let _shotter: Rc<ScreenShotter> = Rc::new(ScreenShotter::new());
 
         let _hotkey_manager = GlobalHotKeyManager::new().unwrap(); // initialize the hotkeys manager
         let find_hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyF); // construct the hotkey

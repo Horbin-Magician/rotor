@@ -64,12 +64,12 @@ impl FileData {
         unsafe {
             if FileSystem::GetVolumeInformationA(
                     root_path_name.as_ptr() as *const u8,
-                    &mut (volume_name_buffer[0]) as *mut _ as *mut u8,
+                    &mut (volume_name_buffer[0]) as *mut _,
                     Foundation::MAX_PATH,
                     &mut volume_serial_number,
                     &mut maximum_component_length,
                     &mut file_system_flags,
-                    &mut (file_system_name_buffer[0]) as *mut _ as *mut u8,
+                    &mut (file_system_name_buffer[0]) as *mut _,
                     Foundation::MAX_PATH
                 ) != 0 {
                 let result = String::from_utf8_lossy(&file_system_name_buffer);
@@ -103,7 +103,7 @@ impl FileData {
         for c in &self.vols {
             // println!("{}", self.volume_packs.len());
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
-            let volume = Arc::new(Mutex::new(volume::Volume::new(c.clone(), stop_receiver)));
+            let volume = Arc::new(Mutex::new(volume::Volume::new(*c, stop_receiver)));
             
             self.volume_packs.push(VolumePack {
                 volume: volume.clone(),
@@ -134,7 +134,7 @@ impl FileData {
         self.finding_name = filename.clone();
         self.finding_result.items.clear();
         self.finding_result.query = filename.clone();
-        if filename == "" { return; } 
+        if filename.is_empty() { return; } 
 
         match self.state {
             FileState::Ready => {},
@@ -156,68 +156,55 @@ impl FileData {
         }
 
         // clear channel before loop !!! need to use a better way
-        loop {
-            match self.stop_finder_receiver.try_recv() {
-                Ok( _ ) => {},
-                Err( _ ) => { break; },
-            }
-        }
+        while self.stop_finder_receiver.try_recv().is_ok() { }
 
         // begin loop
         loop {
-            match self.stop_finder_receiver.try_recv() {
-                Ok( _ ) => { 
-                    for volume_pack in &mut self.volume_packs {
-                        let _ = volume_pack.stop_sender.send(());
-                    }
-                },
-                Err( _ ) => {},
-            }
+            if self.stop_finder_receiver.try_recv().is_ok() {
+                for volume_pack in &mut self.volume_packs {
+                    let _ = volume_pack.stop_sender.send(());
+                }
+            } 
             
-            match find_result_receiver.try_recv() {
-                Ok( op_result ) => {
-                    if let Some( mut result ) = op_result {
-                        self.finding_result.items.append(&mut result);
-                        self.waiting_finder -= 1;
-                        if self.waiting_finder == 0 {
-                            self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
+            if let Ok( op_result ) = find_result_receiver.try_recv() {
+                if let Some( mut result ) = op_result {
+                    self.finding_result.items.append(&mut result);
+                    self.waiting_finder -= 1;
+                    if self.waiting_finder == 0 {
+                        self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
+                        
+                        let return_result = 
+                            if self.finding_result.items.len() > 20 { self.finding_result.items[..20].to_vec() }
+                            else { self.finding_result.items.to_vec() };
+                        
+                        self.search_win.clone().upgrade_in_event_loop(move |search_win| {
+                            let search_result_model = search_win.get_search_result();
+                            let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
+                                .expect("search_result_model set a VecModel earlier");
                             
-                            let return_result;
-                            if self.finding_result.items.len() > 20 { return_result = self.finding_result.items[..20].to_vec(); }
-                            else { return_result = self.finding_result.items.to_vec(); }
-                            
-                            self.search_win.clone().upgrade_in_event_loop(move |search_win| {
-                                let search_result_model = search_win.get_search_result();
-                                let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
-                                    .expect("search_result_model set a VecModel earlier");
-                                
-                                let mut result_list = Vec::new();
-                                let mut id = 0;
-                                for item in return_result {
-                                    let icon = 
-                                        file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
-                                        .unwrap_or_else(|| slint::Image::load_from_path(std::path::Path::new("./assets/logo.png")).unwrap());
-                                    result_list.push(
-                                        SearchResult_slint { 
-                                            id,
-                                            icon,
-                                            filename: slint::SharedString::from(item.file_name.clone()),
-                                            path: slint::SharedString::from(item.path.clone()),
-                                        }
-                                    );
-                                    id += 1;
-                                }
-                                search_result_model.set_vec(result_list);
-                                search_win.set_viewport_y(0.);
-                                search_win.set_active_id(0);
-                            }).unwrap();
-                            break;
-                        }
-                    } else {
+                            let mut result_list = Vec::new();
+                            for (id, item) in return_result.into_iter().enumerate() {
+                                let icon = 
+                                    file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
+                                    .unwrap_or_else(|| slint::Image::load_from_path(std::path::Path::new("./assets/logo.png")).unwrap());
+                                result_list.push(
+                                    SearchResult_slint { 
+                                        id: id as i32,
+                                        icon,
+                                        filename: slint::SharedString::from(item.file_name.clone()),
+                                        path: slint::SharedString::from(item.path.clone()),
+                                    }
+                                );
+                            }
+                            search_result_model.set_vec(result_list);
+                            search_win.set_viewport_y(0.);
+                            search_win.set_active_id(0);
+                        }).unwrap();
                         break;
                     }
-                },
-                Err( _ ) => {},
+                } else {
+                    break;
+                }
             }
         }
         self.state = FileState::Ready;
@@ -231,14 +218,14 @@ impl FileData {
                 }
                 self.state = FileState::Ready;
             },
-            _ => { return; },
+            _ => { },
         }
     }
 
     pub fn release_index(&mut self) {
         match self.state {
-            FileState::Released => { return; },
-            FileState::Unbuild => { return; },
+            FileState::Released => {  },
+            FileState::Unbuild => {  },
             _ => {
                 for VolumePack{volume, ..} in &mut self.volume_packs { 
                     volume.lock().unwrap().release_index();
