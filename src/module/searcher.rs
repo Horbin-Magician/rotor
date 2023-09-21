@@ -215,7 +215,6 @@ slint::slint! {
         default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
         width: ui_width * 1px;
-        height: 510px;
         always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
         background: transparent;
 
@@ -241,10 +240,6 @@ slint::slint! {
                         result-list := ListView {
                             padding: 0;
                             height: (search_result.length > 7 ? 7 : search_result.length) * 60px + (search_result.length > 0 ? 14px : 0px);
-                            animate height { 
-                                duration: 0.2s;
-                                easing: ease-in-out;
-                            }
 
                             for data in root.search_result: Rectangle {
                                 height: 60px;
