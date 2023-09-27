@@ -1,7 +1,7 @@
 use std::ffi::{CString, c_void};
 use std::io::Write;
 use std::time::SystemTime;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::collections::HashMap;
 use std::fs;
 use std::env;

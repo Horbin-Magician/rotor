@@ -1,5 +1,5 @@
 mod file_data;
-pub mod volume;
+mod volume;
 
 use slint::{ComponentHandle, Model};
 use windows_sys::Win32::UI::WindowsAndMessaging;

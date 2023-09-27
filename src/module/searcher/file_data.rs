@@ -34,7 +34,7 @@ pub struct FileData {
     search_win: slint::Weak<SearchWindow>,
     stop_finder_receiver: mpsc::Receiver<()>,
     volume_packs: Vec<VolumePack>,
-    state: FileState,
+    state: Arc<Mutex<FileState>>,
 }
 
 impl FileData {
@@ -48,8 +48,12 @@ impl FileData {
             waiting_init: 0,
             search_win,
             stop_finder_receiver,
-            state: FileState::Unbuild,
+            state: Arc::new(Mutex::new(FileState::Unbuild)),
         }
+    }
+
+    fn change_state(&self, state: FileState) {
+        *(self.state.lock().unwrap()) = state;
     }
 
     // Check whether the disk represented by a drive letter is in ntfs format
@@ -120,8 +124,8 @@ impl FileData {
             let result = build_receiver.recv().unwrap();
             if result {
                 self.waiting_init -= 1;
-                if self.waiting_init == 0 { 
-                    self.state = FileState::Released;
+                if self.waiting_init == 0 {
+                    self.change_state(FileState::Released);
                     return true; 
                 }
             }
@@ -136,12 +140,14 @@ impl FileData {
         self.finding_result.query = filename.clone();
         if filename.is_empty() { return; } 
 
-        match self.state {
-            FileState::Ready => {},
-            FileState::Released => { self.update_index(); },
-            _ => { return; },
+        {
+            let state = self.state.lock().unwrap();
+            match *state {
+                FileState::Ready => {},
+                _ => { return; },
+            }
         }
-        self.state = FileState::Finding;
+        self.change_state(FileState::Finding);
 
         self.waiting_finder = self.volume_packs.len() as u8;
         let (find_result_sender, find_result_receiver) = mpsc::channel::<Option<Vec<volume::SearchResultItem>>>();
@@ -164,7 +170,7 @@ impl FileData {
                 for volume_pack in &mut self.volume_packs {
                     let _ = volume_pack.stop_sender.send(());
                 }
-            } 
+            }
             
             if let Ok( op_result ) = find_result_receiver.try_recv() {
                 if let Some( mut result ) = op_result {
@@ -207,30 +213,26 @@ impl FileData {
                 }
             }
         }
-        self.state = FileState::Ready;
+        self.change_state(FileState::Ready);
     }
 
-    pub fn update_index(&mut self) {
-        match self.state {
-            FileState::Released => { 
-                for VolumePack{volume, ..} in &mut self.volume_packs { 
-                    volume.lock().unwrap().update_index();
-                }
-                self.state = FileState::Ready;
-            },
-            _ => { },
+    pub fn update_index(&self) {
+        for VolumePack{volume, ..} in &self.volume_packs { 
+            volume.lock().unwrap().update_index();
         }
+        self.change_state(FileState::Ready);
     }
 
     pub fn release_index(&mut self) {
-        match self.state {
+        let mut state = self.state.lock().unwrap();
+        match *state {
             FileState::Released => {  },
             FileState::Unbuild => {  },
             _ => {
                 for VolumePack{volume, ..} in &mut self.volume_packs { 
                     volume.lock().unwrap().release_index();
                 }
-                self.state = FileState::Released;
+                *state = FileState::Released;
             },
         }
     }
