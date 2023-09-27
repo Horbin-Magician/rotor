@@ -51,7 +51,7 @@ impl ScreenShotter{
             
             mask_win.set_scale_factor(mask_win.window().scale_factor());
             mask_win.set_state(1);
-            mask_win.set_select_rect(Rect{x: 0., y: 0., height: 0., width: 0.});
+            mask_win.set_select_rect(Rect{x: -1., y: -1., height: -1., width: -1.});
             let physical_width = primary_screen_clone.display_info.width;
             let physical_height = primary_screen_clone.display_info.height;
 
@@ -67,7 +67,7 @@ impl ScreenShotter{
 
             mask_win.show().unwrap();
             // +1 to fix the bug
-            mask_win.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height+1));
+            mask_win.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height + 1));
             mask_win.window().with_winit_window(|winit_win: &winit::window::Window| {
                 winit_win.focus_window();
             });
