@@ -8,16 +8,15 @@ use windows_sys::Win32::Foundation;
 
 use crate::core::util::file_util;
 
+use super::SearcherMessage;
 use super::volume;
 use super::slint_generatedSearchWindow::SearchResult_slint;
 use super::slint_generatedSearchWindow::SearchWindow;
 
-#[derive(Debug)]
 enum FileState {
     Unbuild,
     Released,
     Ready,
-    Finding,
 }
 
 struct VolumePack {
@@ -32,14 +31,14 @@ pub struct FileData {
     waiting_init: u8,
     waiting_finder: u8,
     search_win: slint::Weak<SearchWindow>,
-    stop_finder_receiver: mpsc::Receiver<()>,
     volume_packs: Vec<VolumePack>,
-    state: Arc<Mutex<FileState>>,
+    state: FileState,
 }
 
 impl FileData {
-    pub fn new(search_win: slint::Weak<SearchWindow>, stop_finder_receiver: mpsc::Receiver<()>) -> FileData {
-        FileData {
+    pub fn new(search_win: slint::Weak<SearchWindow>) -> FileData {
+
+        let file_data = FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
             finding_name: String::new(),
@@ -47,13 +46,56 @@ impl FileData {
             waiting_finder: 0,
             waiting_init: 0,
             search_win,
-            stop_finder_receiver,
-            state: Arc::new(Mutex::new(FileState::Unbuild)),
-        }
+            state: FileState::Unbuild,
+        };
+
+        file_data
     }
 
-    fn change_state(&self, state: FileState) {
-        *(self.state.lock().unwrap()) = state;
+    pub fn event_loop (
+        msg_reciever: mpsc::Receiver<SearcherMessage>,
+        mut file_data: FileData
+    ) {
+        std::thread::spawn(move || {
+            let mut wait_deal: Option<SearcherMessage> = None;
+            loop {
+                let msg: Result<SearcherMessage, mpsc::RecvError>;
+                
+                if let Some(search_msg) = wait_deal {
+                    msg = Ok(search_msg);
+                    wait_deal = None;
+                } else {
+                    msg = msg_reciever.recv();
+                }
+
+                match msg {
+                    Ok(SearcherMessage::Init) => {
+                        file_data.init_volumes();
+                        file_data.state = FileState::Released;
+                    },
+                    Ok(SearcherMessage::Update) => {
+                        file_data.update_index();
+                        file_data.state = FileState::Ready;
+                    },
+                    Ok(SearcherMessage::Find(filename)) => {
+                        match file_data.state {
+                            FileState::Ready => { wait_deal = file_data.find(filename, &msg_reciever); },
+                            _ => { continue; },
+                        }
+                    },
+                    Ok(SearcherMessage::Release) => {
+                        match file_data.state {
+                            FileState::Ready => { 
+                                file_data.release_index();
+                                file_data.state = FileState::Released;
+                            },
+                            _ => {},
+                        }
+                    },
+                    Err(_) => {}
+                }
+            }
+        });
     }
 
     // Check whether the disk represented by a drive letter is in ntfs format
@@ -105,7 +147,6 @@ impl FileData {
         let (build_sender, build_receiver) = mpsc::channel::<bool>();
 
         for c in &self.vols {
-            // println!("{}", self.volume_packs.len());
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
             let volume = Arc::new(Mutex::new(volume::Volume::new(*c, stop_receiver)));
             
@@ -124,30 +165,20 @@ impl FileData {
             let result = build_receiver.recv().unwrap();
             if result {
                 self.waiting_init -= 1;
-                if self.waiting_init == 0 {
-                    self.change_state(FileState::Released);
-                    return true; 
-                }
+                if self.waiting_init == 0 { return true; }
             }
             else { return false; }
         }
     }
 
-    pub fn find(&mut self, filename: String) {
-        if self.finding_name == filename { return; }
+    pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
+        let mut reply: Option<SearcherMessage> = None;
+        
+        if self.finding_name == filename { return reply; }
         self.finding_name = filename.clone();
         self.finding_result.items.clear();
         self.finding_result.query = filename.clone();
-        if filename.is_empty() { return; } 
-
-        {
-            let state = self.state.lock().unwrap();
-            match *state {
-                FileState::Ready => {},
-                _ => { return; },
-            }
-        }
-        self.change_state(FileState::Finding);
+        if filename.is_empty() { return reply; } 
 
         self.waiting_finder = self.volume_packs.len() as u8;
         let (find_result_sender, find_result_receiver) = mpsc::channel::<Option<Vec<volume::SearchResultItem>>>();
@@ -161,79 +192,66 @@ impl FileData {
             });
         }
 
-        // clear channel before loop !!! need to use a better way
-        while self.stop_finder_receiver.try_recv().is_ok() { }
-
         // begin loop
         loop {
-            if self.stop_finder_receiver.try_recv().is_ok() {
+            if let Ok(searcher_msg) = msg_reciever.try_recv() {
                 for volume_pack in &mut self.volume_packs {
                     let _ = volume_pack.stop_sender.send(());
                 }
+                reply = Some(searcher_msg);
             }
             
             if let Ok( op_result ) = find_result_receiver.try_recv() {
                 if let Some( mut result ) = op_result {
                     self.finding_result.items.append(&mut result);
                     self.waiting_finder -= 1;
-                    if self.waiting_finder == 0 {
-                        self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
+                    if self.waiting_finder != 0 { continue; }
+
+                    self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
+                    
+                    let return_result = 
+                        if self.finding_result.items.len() > 20 { self.finding_result.items[..20].to_vec() }
+                        else { self.finding_result.items.to_vec() };
+                    
+                    self.search_win.clone().upgrade_in_event_loop(move |search_win| {
+                        let search_result_model = search_win.get_search_result();
+                        let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
+                            .expect("search_result_model set a VecModel earlier");
                         
-                        let return_result = 
-                            if self.finding_result.items.len() > 20 { self.finding_result.items[..20].to_vec() }
-                            else { self.finding_result.items.to_vec() };
-                        
-                        self.search_win.clone().upgrade_in_event_loop(move |search_win| {
-                            let search_result_model = search_win.get_search_result();
-                            let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
-                                .expect("search_result_model set a VecModel earlier");
-                            
-                            let mut result_list = Vec::new();
-                            for (id, item) in return_result.into_iter().enumerate() {
-                                let icon = 
-                                    file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
-                                    .unwrap_or_else(|| slint::Image::load_from_path(std::path::Path::new("./assets/logo.png")).unwrap());
-                                result_list.push(
-                                    SearchResult_slint { 
-                                        id: id as i32,
-                                        icon,
-                                        filename: slint::SharedString::from(item.file_name.clone()),
-                                        path: slint::SharedString::from(item.path.clone()),
-                                    }
-                                );
-                            }
-                            search_result_model.set_vec(result_list);
-                            search_win.set_viewport_y(0.);
-                            search_win.set_active_id(0);
-                        }).unwrap();
-                        break;
-                    }
-                } else {
-                    break;
+                        let mut result_list = Vec::new();
+                        for (id, item) in return_result.into_iter().enumerate() {
+                            let icon = 
+                                file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
+                                .unwrap_or_else(|| slint::Image::load_from_path(std::path::Path::new("./assets/logo.png")).unwrap());
+                            result_list.push(
+                                SearchResult_slint { 
+                                    id: id as i32,
+                                    icon,
+                                    filename: slint::SharedString::from(item.file_name.clone()),
+                                    path: slint::SharedString::from(item.path.clone()),
+                                }
+                            );
+                        }
+                        search_result_model.set_vec(result_list);
+                        search_win.set_viewport_y(0.);
+                        search_win.set_active_id(0);
+                    }).unwrap();
                 }
+                break;
             }
         }
-        self.change_state(FileState::Ready);
+        reply
     }
 
-    pub fn update_index(&self) {
+    pub fn update_index(&mut self) {
         for VolumePack{volume, ..} in &self.volume_packs { 
             volume.lock().unwrap().update_index();
         }
-        self.change_state(FileState::Ready);
     }
 
     pub fn release_index(&mut self) {
-        let mut state = self.state.lock().unwrap();
-        match *state {
-            FileState::Released => {  },
-            FileState::Unbuild => {  },
-            _ => {
-                for VolumePack{volume, ..} in &mut self.volume_packs { 
-                    volume.lock().unwrap().release_index();
-                }
-                *state = FileState::Released;
-            },
+        for VolumePack{volume, ..} in &mut self.volume_packs { 
+            volume.lock().unwrap().release_index();
         }
     }
 }

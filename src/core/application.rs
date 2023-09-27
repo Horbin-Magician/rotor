@@ -3,12 +3,11 @@ mod setting;
 pub mod powerboot;
 pub mod admin_runner;
 
-use std::{sync::{mpsc, Arc}, rc::Rc};
+use std::{sync::mpsc, rc::Rc};
 
 use slint::ComponentHandle;
 use i_slint_backend_winit::WinitWindowAccessor;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}};
-
 
 use system_tray::SystemTray;
 use setting::{Setting, SettingWindow};
@@ -110,7 +109,6 @@ fn app_loop (
         }
 
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-
             if event.id == find_hotkey_id {
                 msg_sender_clone.send(AppMessage::ShowSearch).unwrap();
             } else if event.id == shot_hotkey_id {
@@ -119,6 +117,7 @@ fn app_loop (
                 }).unwrap();
             }
         }
+        
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
