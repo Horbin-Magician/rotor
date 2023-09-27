@@ -4,17 +4,20 @@ mod volume;
 use slint::{ComponentHandle, Model};
 use windows_sys::Win32::UI::WindowsAndMessaging;
 use std::rc::Rc;
-use std::thread;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc;
 
 use crate::core::util::file_util;
 use file_data::FileData;
 
+pub enum SearcherMessage {
+    Init,
+    Update,
+    Find(String),
+    Release,
+}
+
 pub struct Searcher {
     pub search_win: SearchWindow,
-    file_data: Arc<Mutex<FileData>>,
-    search_result_model: Rc<slint::VecModel<SearchResult_slint>>,
-    stop_find_sender: mpsc::Sender<()>,
 }
 
 impl Searcher {
@@ -41,13 +44,10 @@ impl Searcher {
         search_win.set_search_result(search_result_model.clone().into());
         search_win.set_active_id(0);
 
-        let (stop_find_sender, stop_finder_receiver) = mpsc::channel::<()>();
-        let file_data = Arc::new(Mutex::new(FileData::new(search_win.as_weak(), stop_finder_receiver)));
-        
-        let file_data_clone = file_data.clone();
-        thread::spawn(move || {
-            file_data_clone.lock().unwrap().init_volumes();
-        });
+        let (searcher_msg_sender, searcher_msg_receiver) = mpsc::channel::<SearcherMessage>();
+        let _file_data = FileData::new(search_win.as_weak());
+        FileData::event_loop(searcher_msg_receiver, _file_data);
+        searcher_msg_sender.send(SearcherMessage::Init).unwrap();
 
         { // add key event hander
             let search_win_clone = search_win.as_weak();
@@ -85,16 +85,8 @@ impl Searcher {
 
         { // add lose focus hander
             let search_win_clone = search_win.as_weak();
-            let file_data_clone = file_data.clone();
-            let stop_find_sender_clone = stop_find_sender.clone();
+            let searcher_msg_sender_clone = searcher_msg_sender.clone();
             search_win.on_lose_focus_trick(move |has_focus| {
-                match file_data_clone.try_lock() {
-                    Ok(_) => {},
-                    Err(_) => { 
-                        stop_find_sender_clone.send(()).unwrap(); 
-                    },
-                }
-                let file_data = file_data_clone.clone();
                 let search_win = search_win_clone.unwrap();
                 if !has_focus { 
                     if search_win.get_query() != "" {
@@ -102,32 +94,20 @@ impl Searcher {
                         search_win.invoke_query_change(slint::SharedString::from(""));
                     }
                     search_win.hide().unwrap();
-                    thread::spawn(move || {
-                        file_data.lock().unwrap().release_index();
-                    });
+                    searcher_msg_sender_clone.send(SearcherMessage::Release).unwrap();
                 } else if has_focus && search_win.window().is_visible() {
-                    thread::spawn(move || {
-                        file_data.lock().unwrap().update_index();
-                    });
+                    searcher_msg_sender_clone.send(SearcherMessage::Update).unwrap();
                 }
                 true
             });
         }
         
         { // add query change hander
-            let file_data_clone = file_data.clone();
-            let stop_find_sender_clone = stop_find_sender.clone();
+            let searcher_msg_sender_clone = searcher_msg_sender.clone();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_query_change(move |query| {
-                let file_data_clone_clone = file_data_clone.clone();
-                match file_data_clone_clone.try_lock() {
-                    Ok(_) => {},
-                    Err(_) => { stop_find_sender_clone.send(()).unwrap(); },
-                }
                 if query.is_empty() { search_result_model_clone.set_vec(vec![]); }
-                thread::spawn(move || {
-                    file_data_clone_clone.lock().unwrap().find(query.to_string());
-                });
+                searcher_msg_sender_clone.send(SearcherMessage::Find(query.to_string())).unwrap();
             });
         }
 
@@ -175,10 +155,7 @@ impl Searcher {
         }
 
         Searcher {
-            file_data,
             search_win,
-            search_result_model,
-            stop_find_sender,
         }
     }
 }
