@@ -119,7 +119,7 @@ impl Volume {
         if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
         else if file_name.to_lowercase().ends_with(".lnk") { rank += 25; }
 
-        let tmp = 20i16 - file_name.len() as i16;
+        let tmp = 40i16 - file_name.len() as i16;
         if tmp > 0 { rank += tmp as i8; }
 
         rank
@@ -264,6 +264,7 @@ impl Volume {
             if (file.filter & query_filter) == query_filter {
                 let file_name = file.file_name.clone();
                 if Self::match_str(&file_name, &query_lower) {
+                    println!("{} {}", file_name, file.rank);
                     if let Some(path) = self.get_path(&file.parent_index){
                         result.push(SearchResultItem {
                             path,
