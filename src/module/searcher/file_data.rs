@@ -1,18 +1,19 @@
 use std::ffi::CString;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use slint::{Model, VecModel};
+use std::collections::VecDeque;
 
+use slint::{Model, VecModel};
 use windows_sys::Win32::Storage::FileSystem;
 use windows_sys::Win32::Foundation;
 
 use crate::core::util::file_util;
-
 use super::SearcherMessage;
 use super::volume;
 use super::slint_generatedSearchWindow::SearchResult_slint;
 use super::slint_generatedSearchWindow::SearchWindow;
 
+#[derive(Debug)]
 enum FileState {
     Unbuild,
     Released,
@@ -57,13 +58,11 @@ impl FileData {
         mut file_data: FileData
     ) {
         std::thread::spawn(move || {
-            let mut wait_deal: Option<SearcherMessage> = None;
+            let mut wait_deals: VecDeque<SearcherMessage> = VecDeque::new();
             loop {
                 let msg: Result<SearcherMessage, mpsc::RecvError>;
-                
-                if let Some(search_msg) = wait_deal {
-                    msg = Ok(search_msg);
-                    wait_deal = None;
+                if wait_deals.len() > 0 {
+                    msg = Ok(wait_deals.pop_front().unwrap());
                 } else {
                     msg = msg_reciever.recv();
                 }
@@ -79,7 +78,16 @@ impl FileData {
                     },
                     Ok(SearcherMessage::Find(filename)) => {
                         match file_data.state {
-                            FileState::Ready => { wait_deal = file_data.find(filename, &msg_reciever); },
+                            FileState::Released => { 
+                                wait_deals.push_back(SearcherMessage::Update);
+                                wait_deals.push_back(SearcherMessage::Find(filename));
+                            },
+                            FileState::Ready => {
+                                let rtn = file_data.find(filename, &msg_reciever);
+                                if let Some(rtn) = rtn {
+                                    wait_deals.push_back(rtn);
+                                }
+                            },
                             _ => { continue; },
                         }
                     },
