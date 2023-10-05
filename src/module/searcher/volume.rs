@@ -1,10 +1,12 @@
-use std::ffi::{CString, c_void};
-use std::io::Write;
-use std::time::SystemTime;
-use std::sync::mpsc;
-use std::collections::HashMap;
-use std::fs;
-use std::env;
+use std::{
+    ffi::{CString, c_void},
+    io::Write,
+    time::SystemTime,
+    sync::mpsc,
+    collections::{BTreeMap, HashMap},
+    fs,
+    env,
+};
 
 use windows_sys::Win32::{
     Storage::FileSystem,
@@ -20,7 +22,6 @@ struct File {
     rank: i8,
 }
 
-#[derive(Debug)]
 pub struct SearchResultItem {
     pub path: String,
     pub file_name: String,
@@ -42,7 +43,109 @@ pub struct SearchResult {
     pub query: String,
 }
 
-type FileMap = HashMap<u64, File>;
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct FileKey {
+    rank: i8,
+    index: u64,
+}
+
+struct FileMap {
+    main_map: BTreeMap<FileKey, File>,
+    rank_map: HashMap<u64, i8>,
+}
+
+impl FileMap {
+    pub fn new() -> FileMap{
+        FileMap {
+            main_map: BTreeMap::new(),
+            rank_map: HashMap::new(),
+        }
+    }
+
+    // Adds a file to the database
+    pub fn add(&mut self, index: u64, file_name: String, parent_index: u64) {
+        let filter = Volume::make_filter(&file_name);
+        let rank = Self::get_file_rank(&file_name);
+        self.main_map.insert(FileKey { rank, index }, File {
+            parent_index,
+            file_name,
+            filter,
+            rank,
+        });
+        self.rank_map.insert(index, rank);
+    }
+
+    pub fn get(&self, index: &u64) -> Option<&File> {
+        if let Some(rank) = self.rank_map.get(index) {
+            let file_key = FileKey {
+                rank: *rank,
+                index: *index,
+            };
+            return self.main_map.get(&file_key);
+        }
+        None
+    }
+
+    pub fn insert(&mut self, index: u64, file: File) {
+        let file_key = FileKey {
+            rank: file.rank,
+            index,
+        };
+        self.rank_map.insert(index, file.rank);
+        self.main_map.insert(file_key, file);
+    }
+
+    pub fn remove(&mut self, index: &u64) {
+        let file_key = FileKey {
+            rank: self.rank_map[index],
+            index: *index,
+        };
+        self.main_map.remove(&file_key);
+        self.rank_map.remove(index);
+    }
+
+    pub fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, File> {
+        self.main_map.iter()
+    }
+
+    pub fn clear(&mut self) {
+        self.main_map.clear();
+        self.rank_map.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.main_map.is_empty()
+    }
+
+    // return rank by filename
+    fn get_file_rank(file_name: &String) -> i8 {
+        let mut rank: i8 = 0;
+
+        if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
+        else if file_name.to_lowercase().ends_with(".lnk") { rank += 25; }
+
+        let tmp = 40i16 - file_name.len() as i16;
+        if tmp > 0 { rank += tmp as i8; }
+
+        rank
+    }
+
+    // Constructs a path for a directory
+    fn get_path(&self, index: &u64) -> Option<String> {
+        let mut path = String::new();
+        let mut loop_index = *index;
+        while loop_index != 0 {
+            let file_op = self.get(&loop_index);
+            if let Some(file) = file_op {
+                path.insert_str(0, (file.file_name.clone() + "\\").as_str());
+                loop_index = file.parent_index;
+            } else {
+                return None;
+            }
+        }
+        Some(path)
+    }
+}
 
 pub struct Volume {
     drive: char,
@@ -51,6 +154,7 @@ pub struct Volume {
     h_vol: isize,
     start_usn: i64,
     file_map: FileMap,
+    // ranked_file_index: Vec<u64>,
     stop_receiver: mpsc::Receiver<()>,
 }
 
@@ -64,6 +168,7 @@ impl Volume {
             start_usn: 0x0,
             ujd: Ioctl::USN_JOURNAL_DATA_V0{ UsnJournalID: 0x0, FirstUsn: 0x0, NextUsn: 0x0, LowestValidUsn: 0x0, MaxUsn: 0x0, MaximumSize: 0x0, AllocationDelta: 0x0 },
             h_vol,
+            // ranked_file_index: Vec::new(),
             stop_receiver,
         }
     }
@@ -112,31 +217,6 @@ impl Volume {
         address
     }
 
-    // return rank by filename
-    fn get_file_rank(file_name: &String) -> i8 {
-        let mut rank: i8 = 0;
-
-        if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
-        else if file_name.to_lowercase().ends_with(".lnk") { rank += 25; }
-
-        let tmp = 40i16 - file_name.len() as i16;
-        if tmp > 0 { rank += tmp as i8; }
-
-        rank
-    }
-
-    // Adds a file to the database
-    fn add_file(&mut self, index: u64, file_name: String, parent_index: u64) {
-        let filter = Self::make_filter(&file_name);
-        let rank = Self::get_file_rank(&file_name);
-        self.file_map.insert(index, File {
-            parent_index,
-            file_name,
-            filter,
-            rank,
-        });
-    }
-
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
     pub fn build_index(&mut self, sender: mpsc::Sender<bool>) {
         let sys_time = SystemTime::now();
@@ -163,7 +243,8 @@ impl Volume {
 
         // add the root directory
         let sz_root = format!("{}:", self.drive);
-        self.add_file(self.drive_frn, sz_root, 0);
+        self.file_map.add(self.drive_frn, sz_root, 0);
+        // self.add_file(self.drive_frn, sz_root, 0);
 
         let mut med: Ioctl::MFT_ENUM_DATA_V0 = Ioctl::MFT_ENUM_DATA_V0 {
             StartFileReferenceNumber: 0,
@@ -194,12 +275,14 @@ impl Volume {
                         file_name_list.push(c);
                     }
                     let file_name = String::from_utf16(&file_name_list).unwrap();
-                    self.add_file((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                    self.file_map.add((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                    // self.add_file((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
                     record_ptr = (record_ptr as usize + (*record_ptr).RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
                 med.StartFileReferenceNumber = *(&(data[0]) as *const u64);
             }
         }
+
         println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
         self.serialization_write();
         sender.send(true).unwrap();
@@ -223,19 +306,6 @@ impl Volume {
         false
     }
 
-    // Constructs a path for a directory
-    fn get_path(&self, index: &u64) -> Option<String> {
-        let mut path = String::new();
-        let mut loop_index = *index;
-        while loop_index != 0 {
-            if !self.file_map.contains_key(&loop_index) { return None;}
-            let file = &self.file_map[&loop_index];
-            path.insert_str(0, (file.file_name.clone() + "\\").as_str());
-            loop_index = file.parent_index;
-        }
-        Some(path)
-    }
-
     // searching
     pub fn find(&mut self, query: String, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
         let sys_time = SystemTime::now();
@@ -252,7 +322,8 @@ impl Volume {
         // clear channel before find !!! need to use a better way
         while self.stop_receiver.try_recv().is_ok() { }
 
-        for (_, file) in self.file_map.iter() {
+        let mut find_num = 0;
+        for (_, file) in self.file_map.iter().rev() {
             if self.stop_receiver.try_recv().is_ok() {
                 println!("[info] {} Stop Volume::Find", self.drive);
                 let _ = sender.send(None);
@@ -261,12 +332,14 @@ impl Volume {
             if (file.filter & query_filter) == query_filter {
                 let file_name = file.file_name.clone();
                 if Self::match_str(&file_name, &query_lower) {
-                    if let Some(path) = self.get_path(&file.parent_index){
+                    if let Some(path) = self.file_map.get_path(&file.parent_index){
                         result.push(SearchResultItem {
                             path,
                             file_name,
                             rank: file.rank,
                         });
+                        find_num += 1;
+                        if find_num >= 20 { break; }
                     }
                 }
             }
@@ -316,13 +389,13 @@ impl Volume {
                     }
                     let file_name = String::from_utf16(&file_name_list).unwrap();
                     if (*record_ptr).Reason & Ioctl::USN_REASON_FILE_CREATE == Ioctl::USN_REASON_FILE_CREATE {
-                        self.add_file((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                        self.file_map.add((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
                     }
                     else if (*record_ptr).Reason & Ioctl::USN_REASON_FILE_DELETE == Ioctl::USN_REASON_FILE_DELETE {
                         self.file_map.remove(&(*record_ptr).FileReferenceNumber);
                     }
                     else if (*record_ptr).Reason & Ioctl::USN_REASON_RENAME_NEW_NAME == Ioctl::USN_REASON_RENAME_NEW_NAME {
-                        self.add_file((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                        self.file_map.add((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
                     }
                     record_ptr = (record_ptr as usize + (*record_ptr).RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
@@ -345,8 +418,8 @@ impl Volume {
         
         let mut buf = Vec::new();
         buf.write(&self.start_usn.to_be_bytes()).unwrap();
-        for (index, file) in self.file_map.iter() {
-            let _ = buf.write(&index.to_be_bytes());
+        for (file_key, file) in self.file_map.iter() {
+            let _ = buf.write(&file_key.index.to_be_bytes());
             let _ = buf.write(&file.parent_index.to_be_bytes());
             let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
             let _ = buf.write(file.file_name.as_bytes());
@@ -383,5 +456,4 @@ impl Volume {
             self.file_map.insert(index, File { parent_index, file_name, filter, rank });
         }
     }
-
 }
