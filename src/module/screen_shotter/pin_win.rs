@@ -126,11 +126,6 @@ slint::slint! {
         height <=> win_height;
 
         // TODO:
-        // if (e->type() == QEvent::ActivationChange) {
-        //     if(QApplication::activeWindow() != this && QApplication::activeWindow() != m_toolbar) m_toolbar->hide();
-        //     else m_toolbar->show();
-        // }
-        // TODO:
         // if (keyEvent->key() == Qt::Key_H) minimize(); // H键最小化
         // else if (keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Return) onCompleteScreen();
         // else if (keyEvent->key() == Qt::Key_Escape) quitScreenshot();
@@ -173,47 +168,5 @@ slint::slint! {
                 }
             }
         }
-
-        // tool_bar := PopupWindow {
-        //     close-on-click: false;
-        //     height: 30px;
-        //     width: 120px;
-        //     x: root.win_width - 120px;
-        //     y: root.win_height + 4px;
-        //     z: 1;
-            
-        //     Rectangle { height:100%; width: 100%; background: yellow; }
-        //     // HorizontalLayout {
-        //     //     Button {
-        //     //         // 保存截图
-        //     //         height: 30px;
-        //     //         width: 30px;
-        //     //     }
-
-        //     //     Button { 
-        //     //         // 最小化截图
-        //     //         height: 30px;
-        //     //         width: 30px;
-        //     //     }
-
-        //     //     Button { 
-        //     //         // 退出截图
-        //     //         height: 30px;
-        //     //         width: 30px;
-        //     //     }
-
-        //     //     Button { 
-        //     //         // 完成截图
-        //     //         height: 30px;
-        //     //         width: 30px;
-        //     //     }
-        //     // }
-        //     // void Toolbar::movePosition(QRect rect)
-        //     //     this->move(rect.bottomRight().x() - 120, rect.bottomRight().y() + 4);
-
-        //     // bool Toolbar::event(QEvent *e)
-        //     //     if (e->type() == QEvent::ActivationChange)
-        //     //         if(QApplication::activeWindow() != this && QApplication::activeWindow() != this->parent()) this->hide();
-        // }
     }
 }
