@@ -295,13 +295,8 @@ impl Volume {
     }
 
     fn match_str(contain: &str, query_lower: &String) -> bool {
-        let query_list = query_lower.chars().collect::<Vec<char>>();
-        let mut i = 0;
-        for c in contain.to_lowercase().chars() {
-            if query_list[i] == c { i += 1; }
-            if i >= query_list.len() {
-                 return true;
-            }
+        if contain.to_lowercase().contains(query_lower) {
+            return true;
         }
         false
     }

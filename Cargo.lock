@@ -428,6 +428,9 @@ name = "bitflags"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "block"
@@ -1796,7 +1799,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08c12993a445d59000c3994fcd3d179e7da026a4234cc46db652987aa2785e4a"
 dependencies = [
  "crossbeam-channel",
- "keyboard-types",
+ "keyboard-types 0.6.2",
  "once_cell",
  "thiserror",
  "windows-sys 0.48.0",
@@ -2455,6 +2458,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyboard-types"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b750dcadc39a09dbadd74e118f6dd6598df77fa01df0cfcdc52c28dece74528a"
+dependencies = [
+ "bitflags 2.4.0",
+ "serde",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2846,7 +2860,27 @@ dependencies = [
  "gdk",
  "gdk-pixbuf",
  "gtk",
- "keyboard-types",
+ "keyboard-types 0.6.2",
+ "libxdo",
+ "objc",
+ "once_cell",
+ "png",
+ "thiserror",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "muda"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6eb02166dc44b1c52fb86944e3d69aae28810aacf6214b7c926ce4d96c0c11c"
+dependencies = [
+ "cocoa 0.25.0",
+ "crossbeam-channel",
+ "gdk",
+ "gdk-pixbuf",
+ "gtk",
+ "keyboard-types 0.7.0",
  "libxdo",
  "objc",
  "once_cell",
@@ -3565,6 +3599,7 @@ dependencies = [
  "i-slint-backend-winit",
  "image",
  "is-root",
+ "muda 0.9.3",
  "screenshots",
  "slint",
  "tray-icon",
@@ -4369,7 +4404,7 @@ dependencies = [
  "crossbeam-channel",
  "dirs-next",
  "libappindicator",
- "muda",
+ "muda 0.8.7",
  "objc",
  "once_cell",
  "png",
