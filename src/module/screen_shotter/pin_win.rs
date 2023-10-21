@@ -1,6 +1,9 @@
 use std::sync::mpsc::Sender;
-
+use muda::{Menu, MenuItem, Submenu, PredefinedMenuItem, ContextMenu, MenuEvent};
+use muda::accelerator::{Accelerator, Modifiers, Code};
 use slint::Image;
+use i_slint_backend_winit::WinitWindowAccessor;
+use raw_window_handle::HasRawWindowHandle;
 use chrono;
 
 use super::Rect;
@@ -22,40 +25,84 @@ impl PinWin {
         pin_window.set_img_width(rect.width);
         pin_window.set_img_height(rect.height);
         
-        let pin_window_clone = pin_window.as_weak();
-        let move_sender_clone = move_sender.clone();
-        pin_window.on_win_move(move |mut delta_x, mut delta_y| {
-            let pin_window_clone = pin_window_clone.unwrap();
-            let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
-            let is_stick_x = pin_window_clone.get_is_stick_x();
-            let is_stick_y = pin_window_clone.get_is_stick_y();
+        { // code for window move
+            let pin_window_clone = pin_window.as_weak();
+            let move_sender_clone = move_sender.clone();
+            pin_window.on_win_move(move |mut delta_x, mut delta_y| {
+                let pin_window_clone = pin_window_clone.unwrap();
+                let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
+                let is_stick_x = pin_window_clone.get_is_stick_x();
+                let is_stick_y = pin_window_clone.get_is_stick_y();
 
-            if is_stick_x {
-                println!("delta_x: {}", delta_x);
-                if delta_x.abs() > 20. {
-                    pin_window_clone.set_is_stick_x(false);
-                } else {
-                    delta_x = 0.;
+                if is_stick_x {
+                    if delta_x.abs() > 20. {
+                        pin_window_clone.set_is_stick_x(false);
+                    } else {
+                        delta_x = 0.;
+                    }
                 }
-            }
-            if is_stick_y {
-                println!("delta_y: {}", delta_y);
-                if delta_y.abs() > 20. {
-                    pin_window_clone.set_is_stick_y(false);
-                } else {
-                    delta_y = 0.;
+                if is_stick_y {
+                    if delta_y.abs() > 20. {
+                        pin_window_clone.set_is_stick_y(false);
+                    } else {
+                        delta_y = 0.;
+                    }
                 }
-            }
-            if !is_stick_x || !is_stick_y {
-                pin_window_clone.window().set_position(
-                    slint::LogicalPosition::new(now_pos.x + delta_x, now_pos.y + delta_y)
-                );
-                move_sender_clone.send(id).unwrap();
-            }
-        });
+                if !is_stick_x || !is_stick_y {
+                    pin_window_clone.window().set_position(
+                        slint::LogicalPosition::new(now_pos.x + delta_x, now_pos.y + delta_y)
+                    );
+                    move_sender_clone.send(id).unwrap();
+                }
+            });
+        }
+
+        { // code for right_menu
+            let pin_window_clone = pin_window.as_weak();
+            let pin_window = pin_window_clone.unwrap();
+
+            let save_item = MenuItem::new("保存", true, None);
+            let minimize_item = MenuItem::new("最小化", true, None);
+            let exit_item = MenuItem::new("退出", true, None);
+            let finish_item = MenuItem::new("完成", true, None);
+            let menu = Menu::with_items(&[&save_item, &minimize_item, &exit_item, &finish_item]).unwrap();
+            // &PredefinedMenuItem::separator()
+            // &MenuItem::new("Menu item #1", true, Some(Accelerator::new(Some(Modifiers::ALT), Code::KeyD)))
+
+            pin_window.on_show_menu(move |mouse_x, mouse_y| {
+                let pin_window = pin_window_clone.unwrap();
+                pin_window.window().with_winit_window(|winit_win: &winit::window::Window| {
+                    let raw_window_handle = winit_win.raw_window_handle();
+                    if let raw_window_handle::RawWindowHandle::Win32(win32_window_handle) = raw_window_handle {
+                        let hwnd = win32_window_handle.hwnd as isize;
+                        let position = muda::LogicalPosition { x: mouse_x, y: mouse_y };
+                        menu.show_context_menu_for_hwnd(hwnd as isize, Some(position.into()));
+                    }
+                });
+                println!("show_menu begin");
+                // need to do something for menu event
+                if let Ok(event) = MenuEvent::receiver().try_recv() {
+                    match event.id {
+                        id if id == save_item.id() => {
+                            println!("save_item");
+                        },
+                        id if id == minimize_item.id() => {
+                            println!("minimize_item");
+                        },
+                        id if id == exit_item.id() => {
+                            println!("exit_item");
+                        },
+                        id if id == finish_item.id() => {
+                            println!("finish_item");
+                        },
+                        _ => {}
+                    }
+                }
+                println!("show_menu end");
+            });
+        }
 
         pin_window.show().unwrap();
-
         PinWin {
             pin_window,
         }
@@ -121,6 +168,7 @@ slint::slint! {
         in-out property <bool> is_stick_y;
 
         callback win_move(length, length);
+        callback show_menu(length, length);
 
         width <=> win_width;
         height <=> win_height;
@@ -151,13 +199,31 @@ slint::slint! {
 
                 move_touch_area := TouchArea {
                     mouse-cursor: move;
-                    moved => { root.win_move(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);}
 
+                    property <bool> right_pressed: false;
+
+                    moved => {
+                        if (self.right_pressed) {return;} // right button alse trigger this event
+                        root.win_move(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                    }
+                    pointer-event(event) => {
+                        if(event.button == PointerEventButton.right) {
+                            self.right_pressed = true;
+                            if (event.kind == PointerEventKind.up) {
+                                show-menu(self.mouse-x, self.mouse-y);
+                            }
+                        } else if(event.button == PointerEventButton.left) {
+                            if (event.kind == PointerEventKind.down) {
+                                self.right_pressed = false;
+                            }
+                        }
+                    }
+
+                    // An alternative way to resize when there is no wheel event
                     resize_touch_area := TouchArea {
                         x: win_width - 10px;
                         y: win_height - 10px;
                         mouse-cursor: nwse-resize;
-                        // An alternative way to resize when there is no wheel event
                         moved => {
                             win_width = win_width + self.mouse-x - self.pressed-x;
                             win_height = win_height + self.mouse-y - self.pressed-y;
