@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
 mod core;
 mod module;
@@ -10,8 +10,8 @@ use crate::core::application::powerboot::PowerBoot;
 use crate::core::application::Application;
 
 fn main() {
-    if AdminRunner::run_as_admin() == true {return;}
-    PowerBoot::set_process_auto_run().unwrap(); // TODO: check the setting
+    // if AdminRunner::run_as_admin() == true {return;}
+    // PowerBoot::set_process_auto_run().unwrap(); // TODO: check the setting
 
     slint::platform::set_platform(Box::new(i_slint_backend_winit::Backend::new())).unwrap();
 

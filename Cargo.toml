@@ -13,8 +13,9 @@ embed-resource = "2.2.0"
 
 [dependencies]
 winit = "0.28.6"
-i-slint-backend-selector = "1.2.0"
-i-slint-backend-winit = "1.2.0"
+i-slint-backend-selector = "1.2.2"
+i-slint-backend-winit = "1.2.2"
+raw-window-handle = "0.5.2"
 muda = "0.9.3"
 tray-icon = "0.8.1" 
 winreg = "0.51.0"
@@ -25,7 +26,7 @@ global-hotkey = "0.2.4"
 image = "0.24.7"
 
 [dependencies.slint]
-version = "1.2.0"
+version = "1.2.2"
 
 [dependencies.windows-sys]
 version = "0.48"
