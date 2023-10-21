@@ -1,21 +1,53 @@
 mod amplifier;
 mod pin_win;
 
-use std::{sync::{Arc, Mutex, mpsc}, collections::HashMap, rc::Rc};
-
+use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap, rc::Rc};
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
+use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 use screenshots::Screen;
 
+use crate::module::{Module, ModuleMessage};
 use amplifier::Amplifier;
 use pin_win::PinWin;
 use pin_win::PinWindow;
+// use module::
 
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
+    id: Option<u32>,
     max_pin_win_id: Arc<Mutex<u32>>,
     pin_wins: Rc<Mutex<HashMap<u32, PinWin>>>,
     amplifier: Amplifier, // 放大取色器
+}
+
+impl Module for ScreenShotter {
+    fn run(&self) -> Sender<ModuleMessage> {
+        let (msg_sender, msg_reciever) = mpsc::channel();
+        let mask_win_clone = self.mask_win.as_weak();
+        std::thread::spawn(move || {
+            loop {
+                match msg_reciever.recv().unwrap() {
+                    ModuleMessage::Trigger => {
+                        mask_win_clone.upgrade_in_event_loop(move |win| {
+                            win.invoke_shot();
+                        }).unwrap();
+                    }
+                }
+            }
+        });
+        return msg_sender;
+    }
+
+    fn get_hotkey(&mut self) -> HotKey {
+        let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyC);
+        self.id = Some(hotkey.id());
+        return  hotkey;
+    }
+
+    fn get_id(&self) -> Option<u32> {
+        return self.id;
+    }
 }
 
 impl ScreenShotter{
@@ -126,6 +158,7 @@ impl ScreenShotter{
         });
 
         ScreenShotter{
+            id: None,
             mask_win,
             max_pin_win_id,
             pin_wins,

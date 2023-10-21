@@ -96,12 +96,14 @@ impl FileMap {
     }
 
     pub fn remove(&mut self, index: &u64) {
-        let file_key = FileKey {
-            rank: self.rank_map[index],
-            index: *index,
-        };
-        self.main_map.remove(&file_key);
-        self.rank_map.remove(index);
+        if self.rank_map.contains_key(index) {
+            let file_key = FileKey {
+                rank: self.rank_map[index],
+                index: *index,
+            };
+            self.main_map.remove(&file_key);
+            self.rank_map.remove(index);
+        }
     }
 
     pub fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, File> {
