@@ -222,6 +222,7 @@ slint::slint! {
         callback open_file_dir(int);
         pure callback lose_focus_trick(bool) -> bool;
 
+        title: "小云搜索";
         no-frame: true;
         forward-focus: input;
         default-font-size: 18px;
