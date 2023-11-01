@@ -287,7 +287,7 @@ impl Volume {
 
         println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
         self.serialization_write();
-        sender.send(true).unwrap();
+        let _ = sender.send(true);
     }
 
     // Clears the database
@@ -296,6 +296,7 @@ impl Volume {
         self.file_map.clear();
     }
 
+    // return true if contain query
     fn match_str(contain: &str, query_lower: &String) -> bool {
         if contain.to_lowercase().contains(query_lower) {
             return true;
@@ -310,7 +311,7 @@ impl Volume {
 
         let mut result = Vec::new();
 
-        if query.is_empty() { sender.send(None).unwrap(); return; }
+        if query.is_empty() { let _ = sender.send(None); return; }
         if self.file_map.is_empty() { self.serialization_read() };
 
         let query_lower = query.to_lowercase();
@@ -343,7 +344,7 @@ impl Volume {
         }
         println!("[info] {} End Volume::find {query}, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
         
-        sender.send(Some(result)).unwrap();
+        let _ = sender.send(Some(result));
     }
 
     // update index, add new file, remove deleted file
@@ -411,21 +412,24 @@ impl Volume {
         if self.file_map.is_empty() {return;};
         let file_path = env::current_dir().unwrap();
         let _ = fs::create_dir(format!("{}/userdata", file_path.to_str().unwrap()));
-        let mut save_file = fs::File::create(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
-        
-        let mut buf = Vec::new();
-        buf.write(&self.start_usn.to_be_bytes()).unwrap();
-        for (file_key, file) in self.file_map.iter() {
-            let _ = buf.write(&file_key.index.to_be_bytes());
-            let _ = buf.write(&file.parent_index.to_be_bytes());
-            let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
-            let _ = buf.write(file.file_name.as_bytes());
-            let _ = buf.write(&file.filter.to_be_bytes());
-            let _ = buf.write(&file.rank.to_be_bytes());
+
+        if let Ok(mut save_file) = fs::File::create(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)){
+            let mut buf = Vec::new();
+            buf.write(&self.start_usn.to_be_bytes()).unwrap();
+            for (file_key, file) in self.file_map.iter() {
+                let _ = buf.write(&file_key.index.to_be_bytes());
+                let _ = buf.write(&file.parent_index.to_be_bytes());
+                let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
+                let _ = buf.write(file.file_name.as_bytes());
+                let _ = buf.write(&file.filter.to_be_bytes());
+                let _ = buf.write(&file.rank.to_be_bytes());
+            }
+            let _ = save_file.write(&buf.to_vec());
+            self.release_index();
+            println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        } else {
+            println!("[Error] {} Volume::serialization_write, error: create file failed", self.drive);
         }
-        let _ = save_file.write(&buf.to_vec());
-        self.release_index();
-        println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 
     // deserializate file_map from file
@@ -433,24 +437,27 @@ impl Volume {
         println!("[info] {} Volume::serialization_read", self.drive);
 
         let file_path = env::current_dir().unwrap();
-        let file_data = fs::read(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)).unwrap();
-
-        self.start_usn = i64::from_be_bytes(file_data[0..8].try_into().unwrap());
-        let mut ptr_index = 8;
-        while ptr_index < file_data.len() {
-            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap());
-            ptr_index += 8;
-            let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap()) as u64;
-            ptr_index += 8;
-            let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into().unwrap()) as u16;
-            ptr_index += 2;
-            let file_name = String::from_utf8(file_data[ptr_index..ptr_index + file_name_len as usize].to_vec()).unwrap();
-            ptr_index += file_name_len as usize;
-            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into().unwrap());
-            ptr_index += 4;
-            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into().unwrap());
-            ptr_index += 1;
-            self.file_map.insert(index, File { parent_index, file_name, filter, rank });
+        if let Ok(file_data) = fs::read(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive))
+        {
+            self.start_usn = i64::from_be_bytes(file_data[0..8].try_into().unwrap());
+            let mut ptr_index = 8;
+            while ptr_index < file_data.len() {
+                let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap());
+                ptr_index += 8;
+                let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap()) as u64;
+                ptr_index += 8;
+                let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into().unwrap()) as u16;
+                ptr_index += 2;
+                let file_name = String::from_utf8(file_data[ptr_index..ptr_index + file_name_len as usize].to_vec()).unwrap();
+                ptr_index += file_name_len as usize;
+                let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into().unwrap());
+                ptr_index += 4;
+                let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into().unwrap());
+                ptr_index += 1;
+                self.file_map.insert(index, File { parent_index, file_name, filter, rank });
+            }
+        } else {
+            println!("[Error] {} Volume::serialization_read, error: read file failed", self.drive);
         }
     }
 }
