@@ -21,7 +21,7 @@ impl SystemTray {
         
         let _tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
-            .with_tooltip("system-tray - tray icon library!")
+            .with_tooltip("小云管家")
             .with_icon(Icon::from_path("assets/logo.ico", Some((128, 128))).unwrap())
             .build()
             .unwrap();

@@ -7,18 +7,18 @@ use i_slint_backend_winit::WinitWindowAccessor;
 use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 use screenshots::Screen;
 
-use crate::module::{Module, ModuleMessage};
+use super::{Module, ModuleMessage};
 use amplifier::Amplifier;
 use pin_win::PinWin;
 use pin_win::PinWindow;
-// use module::
+
 
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
     id: Option<u32>,
-    max_pin_win_id: Arc<Mutex<u32>>,
-    pin_wins: Rc<Mutex<HashMap<u32, PinWin>>>,
-    amplifier: Amplifier, // 放大取色器
+    _max_pin_win_id: Arc<Mutex<u32>>,
+    _pin_wins: Rc<Mutex<HashMap<u32, PinWin>>>,
+    _amplifier: Amplifier, // 放大取色器
 }
 
 impl Module for ScreenShotter {
@@ -109,7 +109,6 @@ impl ScreenShotter{
 
         let mask_win_clone = mask_win.as_weak();
         mask_win.on_key_released(move |event| {
-            // println!("{:?}", event);
             if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                 mask_win_clone.unwrap().hide().unwrap();
             } else if event.text == *"Z" {
@@ -160,25 +159,10 @@ impl ScreenShotter{
         ScreenShotter{
             id: None,
             mask_win,
-            max_pin_win_id,
-            pin_wins,
-            amplifier,
+            _max_pin_win_id: max_pin_win_id,
+            _pin_wins: pin_wins,
+            _amplifier: amplifier,
         }
-    }
-
-    fn on_hot_key(modifiers: i32, key: i32) {
-        // if(m_state == 1)return;
-        // if(vk == (UINT)0x43) Shot();
-        // else if(vk == (UINT)0x48) HideAll();
-    }
-
-    fn end_shot() {
-        // m_amplifierTool->hide(); // 隐藏放大器
-        // this->hide();
-        // m_state = 0;
-        // foreach (ShotterWindow* win, m_ShotterWindowList) win->show();
-        // if(m_ShotterWindowList.length()>0) m_ShotterWindowList.last()->raise();
-        // m_isHidden = false;
     }
 
     fn pin_win_move_hander(pin_wins: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32) {
