@@ -33,7 +33,7 @@ impl Module for Searcher{
                     ModuleMessage::Trigger => {
                         search_win_clone.upgrade_in_event_loop(move |win| {
                             win.show().unwrap();
-                            win.window().with_winit_window(|winit_win: &winit::window::Window| {
+                            win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                 winit_win.focus_window();
                             });
                         }).unwrap();
@@ -57,24 +57,21 @@ impl Module for Searcher{
 
 impl Searcher {
     pub fn new() -> Searcher {
+        let search_win = SearchWindow::new().unwrap();
+
+        let width: f32 = 500.;
+        search_win.set_ui_width(width);
+
         let x_screen: f32;
         let y_screen: f32;
         unsafe{
             x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
             y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
         }
+        let x_pos = ((x_screen - width * search_win.window().scale_factor()) * 0.5) as i32;
+        let y_pos = (y_screen * 0.3) as i32;
+        search_win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
 
-        let search_win = SearchWindow::new().unwrap();
-        let width: f32 = 500.;
-        search_win.set_ui_width(width);
-
-        // to fix the bug that the on_lose_focus_trick do not be triggered when it is first displayed
-        search_win.show().unwrap();
-        search_win.hide().unwrap();
-
-        let x_pos = (x_screen - width) * 0.5;
-        let y_pos = y_screen * 0.3;
-        search_win.window().set_position(slint::WindowPosition::Logical(slint::LogicalPosition::new(x_pos, y_pos)));
         let search_result_model = Rc::new(slint::VecModel::from(vec![]));
         search_win.set_search_result(search_result_model.clone().into());
         search_win.set_active_id(0);
@@ -118,11 +115,14 @@ impl Searcher {
             });
         }
 
-        { // add lose focus hander
+        { // add focus change hander
             let search_win_clone = search_win.as_weak();
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
             search_win.on_lose_focus_trick(move |has_focus| {
                 let search_win = search_win_clone.unwrap();
+                println!("has_focus: {}", has_focus);
+                println!("search_win.window().is_visible(): {}", search_win.window().is_visible());
+                println!("search_win.get_query(): {}", search_win.get_query());
                 if !has_focus { 
                     if search_win.get_query() != "" {
                         search_win.set_query(slint::SharedString::from(""));
@@ -130,8 +130,12 @@ impl Searcher {
                     }
                     search_win.hide().unwrap();
                     searcher_msg_sender_clone.send(SearcherMessage::Release).unwrap();
+                    search_win.set_ready(false);
                 } else if has_focus && search_win.window().is_visible() {
-                    searcher_msg_sender_clone.send(SearcherMessage::Update).unwrap();
+                    if search_win.get_ready() == false { 
+                        searcher_msg_sender_clone.send(SearcherMessage::Update).unwrap();
+                        search_win.set_ready(true);
+                    }
                 }
                 true
             });
@@ -208,9 +212,10 @@ slint::slint! {
 
     export component SearchWindow inherits Window {
         in property <float> ui_width;
-        in property <float> ui_height;
+        // in property <float> ui_height;
         in property <[SearchResult_slint]> search_result;
         in property <int> active_id;
+        in property <bool> ready: false;
 
         in-out property <string> query <=> input.text;
         in-out property <length> viewport-y <=> result-list.viewport-y;
@@ -229,6 +234,7 @@ slint::slint! {
         default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
         width: ui_width * 1px;
+        height: 494px; // TODO: Flexible change
         always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
         background: transparent;
 
@@ -241,12 +247,15 @@ slint::slint! {
                         root.key_released(event);
                         accept
                     }
+
                     VerticalBox {
                         padding: 0;
                         spacing: 0;
                         input := LineEdit {
                             height: 60px;
-                            placeholder-text: "请输入需要搜索的内容";
+                            // placeholder-text: "请输入需要搜索的内容";
+                            placeholder-text: ready ? "请输入需要搜索的内容":"正在加载索引信息...";
+                            read-only: !ready;
                             edited(str) => {
                                 root.query_change(str);
                             }
@@ -280,8 +289,8 @@ slint::slint! {
                                                     background: cyan;
 
                                                     animate x { 
-                                                        duration: 0.2s;
-                                                        easing: ease-in-out;
+                                                        duration: 200ms;
+                                                        easing: linear;
                                                     }
                                                 }
                                             }

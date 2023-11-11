@@ -13,8 +13,6 @@ fn main() {
     if AdminRunner::run_as_admin() == true {return;}
     PowerBoot::set_process_auto_run().unwrap(); // TODO: check the setting
 
-    slint::platform::set_platform(Box::new(i_slint_backend_winit::Backend::new())).unwrap();
-
     let _app = Application::new();
 
     i_slint_backend_selector::with_platform(|b| {

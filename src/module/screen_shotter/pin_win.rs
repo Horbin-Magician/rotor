@@ -1,10 +1,10 @@
 use std::sync::mpsc::Sender;
-use muda::{Menu, MenuItem, Submenu, PredefinedMenuItem, ContextMenu, MenuEvent};
-use muda::accelerator::{Accelerator, Modifiers, Code};
+use std::thread;
+use muda::{Menu, MenuItem, ContextMenu, MenuEvent};
 use slint::Image;
 use i_slint_backend_winit::WinitWindowAccessor;
 use raw_window_handle::HasRawWindowHandle;
-use chrono;
+// use chrono;
 
 use super::Rect;
 
@@ -25,6 +25,12 @@ impl PinWin {
         pin_window.set_img_width(rect.width);
         pin_window.set_img_height(rect.height);
         
+        let save_item = MenuItem::new("保存", true, None);
+        let minimize_item = MenuItem::new("最小化", true, None);
+        let exit_item = MenuItem::new("退出", true, None);
+        let finish_item = MenuItem::new("完成", true, None);
+        let menu = Menu::with_items(&[&save_item, &minimize_item, &exit_item, &finish_item]).unwrap();
+
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
             let move_sender_clone = move_sender.clone();
@@ -61,17 +67,9 @@ impl PinWin {
             let pin_window_clone = pin_window.as_weak();
             let pin_window = pin_window_clone.unwrap();
 
-            let save_item = MenuItem::new("保存", true, None);
-            let minimize_item = MenuItem::new("最小化", true, None);
-            let exit_item = MenuItem::new("退出", true, None);
-            let finish_item = MenuItem::new("完成", true, None);
-            let menu = Menu::with_items(&[&save_item, &minimize_item, &exit_item, &finish_item]).unwrap();
-            // &PredefinedMenuItem::separator()
-            // &MenuItem::new("Menu item #1", true, Some(Accelerator::new(Some(Modifiers::ALT), Code::KeyD)))
-
             pin_window.on_show_menu(move |mouse_x, mouse_y| {
                 let pin_window = pin_window_clone.unwrap();
-                pin_window.window().with_winit_window(|winit_win: &winit::window::Window| {
+                pin_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                     let raw_window_handle = winit_win.raw_window_handle();
                     if let raw_window_handle::RawWindowHandle::Win32(win32_window_handle) = raw_window_handle {
                         let hwnd = win32_window_handle.hwnd as isize;
@@ -79,28 +77,34 @@ impl PinWin {
                         menu.show_context_menu_for_hwnd(hwnd as isize, Some(position.into()));
                     }
                 });
-                println!("show_menu begin");
-                // need to do something for menu event
-                if let Ok(event) = MenuEvent::receiver().try_recv() {
+            });
+        }
+
+        let save_item_id = save_item.id().clone();
+        let minimize_item_id = minimize_item.id().clone();
+        let exit_item_id = exit_item.id().clone();
+        let finish_item_id = finish_item.id().clone();
+        thread::spawn(move || {
+            loop {
+                if let Ok(event) = MenuEvent::receiver().recv() {
                     match event.id {
-                        id if id == save_item.id() => {
+                        id if id == save_item_id => {
                             println!("save_item");
                         },
-                        id if id == minimize_item.id() => {
+                        id if id == minimize_item_id => {
                             println!("minimize_item");
                         },
-                        id if id == exit_item.id() => {
+                        id if id == exit_item_id => {
                             println!("exit_item");
                         },
-                        id if id == finish_item.id() => {
+                        id if id == finish_item_id => {
                             println!("finish_item");
                         },
                         _ => {}
                     }
                 }
-                println!("show_menu end");
-            });
-        }
+            }
+        });
 
         pin_window.show().unwrap();
         PinWin {
@@ -108,40 +112,40 @@ impl PinWin {
         }
     }
 
-    // TODO
-    fn close_event() {
-        // emit sgn_close(this);
-    }
+    // // TODO
+    // fn close_event() {
+    //     // emit sgn_close(this);
+    // }
 
-    // TODO
-    fn minimize() {
-        // setWindowState(Qt::WindowMinimized);
-    }
+    // // TODO
+    // fn minimize() {
+    //     // setWindowState(Qt::WindowMinimized);
+    // }
 
-    // TODO
-    fn on_complete_screen() {
-        // QClipboard *board = QApplication::clipboard();
-        // board->setPixmap(m_originPainting.copy(m_windowRect.toRect())); // 把图片放入剪切板
-        // quitScreenshot();
-    }
+    // // TODO
+    // fn on_complete_screen() {
+    //     // QClipboard *board = QApplication::clipboard();
+    //     // board->setPixmap(m_originPainting.copy(m_windowRect.toRect())); // 把图片放入剪切板
+    //     // quitScreenshot();
+    // }
 
-    // TODO
-    fn on_save_screen() {
-        // SettingModel& settingModel = SettingModel::getInstance();
-        // QVariant savePath = settingModel.getConfig(settingModel.Flag_Save_Path);
-        let file_name = "Rotor_".to_owned() + chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S").to_string().as_str();
-        // QString fileName = QFileDialog::getSaveFileName(this, QStringLiteral("保存图片"), savePath.toString() + getFileName(), "PNG Files (*.PNG)");
-        // if (fileName.length() > 0) {
-        //     QPixmap pic = m_originPainting.copy(m_windowRect.toRect());
-        //     pic.save(fileName, "png");
+    // // TODO
+    // fn on_save_screen() {
+    //     // SettingModel& settingModel = SettingModel::getInstance();
+    //     // QVariant savePath = settingModel.getConfig(settingModel.Flag_Save_Path);
+    //     let file_name = "Rotor_".to_owned() + chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S").to_string().as_str();
+    //     // QString fileName = QFileDialog::getSaveFileName(this, QStringLiteral("保存图片"), savePath.toString() + getFileName(), "PNG Files (*.PNG)");
+    //     // if (fileName.length() > 0) {
+    //     //     QPixmap pic = m_originPainting.copy(m_windowRect.toRect());
+    //     //     pic.save(fileName, "png");
         
-        //     QStringList listTmp = fileName.split("/");
-        //     listTmp.pop_back();
-        //     QString savePath = listTmp.join('/') + '/';
+    //     //     QStringList listTmp = fileName.split("/");
+    //     //     listTmp.pop_back();
+    //     //     QString savePath = listTmp.join('/') + '/';
 
-        //     settingModel.setConfig(settingModel.Flag_Save_Path, QVariant(savePath));
-        // }
-    }
+    //     //     settingModel.setConfig(settingModel.Flag_Save_Path, QVariant(savePath));
+    //     // }
+    // }
 }
 
 slint::slint! {
@@ -173,12 +177,6 @@ slint::slint! {
         width <=> win_width;
         height <=> win_height;
 
-        // TODO:
-        // if (keyEvent->key() == Qt::Key_H) minimize(); // H键最小化
-        // else if (keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Return) onCompleteScreen();
-        // else if (keyEvent->key() == Qt::Key_Escape) quitScreenshot();
-        // else if ((keyEvent->modifiers() & Qt::ControlModifier) && keyEvent->key() == Qt::Key_S) onSaveScreen();
-
         image_border := Rectangle {
             border-color: rgb(0, 175, 255);
             border-width: win_border_width;
@@ -199,7 +197,6 @@ slint::slint! {
 
                 move_touch_area := TouchArea {
                     mouse-cursor: move;
-
                     property <bool> right_pressed: false;
 
                     moved => {

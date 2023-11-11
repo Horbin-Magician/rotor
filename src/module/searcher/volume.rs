@@ -292,6 +292,7 @@ impl Volume {
 
     // Clears the database
     pub fn release_index(&mut self) {
+        if self.file_map.is_empty() {return;}
         println!("[info] {} Volume::release_index", self.drive);
         self.file_map.clear();
     }
@@ -343,7 +344,6 @@ impl Volume {
             }
         }
         println!("[info] {} End Volume::find {query}, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
-        
         let _ = sender.send(Some(result));
     }
 
