@@ -32,6 +32,7 @@ impl Module for Searcher{
                 match msg_reciever.recv().unwrap() {
                     ModuleMessage::Trigger => {
                         search_win_clone.upgrade_in_event_loop(move |win| {
+                            // BUG1: a trick to make on_lose_focus_trick work on the first time
                             win.show().unwrap();
                             win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                 winit_win.focus_window();
@@ -120,9 +121,7 @@ impl Searcher {
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
             search_win.on_lose_focus_trick(move |has_focus| {
                 let search_win = search_win_clone.unwrap();
-                println!("has_focus: {}", has_focus);
-                println!("search_win.window().is_visible(): {}", search_win.window().is_visible());
-                println!("search_win.get_query(): {}", search_win.get_query());
+                println!("has_focus: {}; visible: {}", has_focus, search_win.window().is_visible());
                 if !has_focus { 
                     if search_win.get_query() != "" {
                         search_win.set_query(slint::SharedString::from(""));
@@ -130,12 +129,8 @@ impl Searcher {
                     }
                     search_win.hide().unwrap();
                     searcher_msg_sender_clone.send(SearcherMessage::Release).unwrap();
-                    search_win.set_ready(false);
                 } else if has_focus && search_win.window().is_visible() {
-                    if search_win.get_ready() == false { 
-                        searcher_msg_sender_clone.send(SearcherMessage::Update).unwrap();
-                        search_win.set_ready(true);
-                    }
+                    searcher_msg_sender_clone.send(SearcherMessage::Update).unwrap();
                 }
                 true
             });
@@ -212,10 +207,8 @@ slint::slint! {
 
     export component SearchWindow inherits Window {
         in property <float> ui_width;
-        // in property <float> ui_height;
         in property <[SearchResult_slint]> search_result;
         in property <int> active_id;
-        in property <bool> ready: false;
 
         in-out property <string> query <=> input.text;
         in-out property <length> viewport-y <=> result-list.viewport-y;
@@ -234,7 +227,7 @@ slint::slint! {
         default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
         width: ui_width * 1px;
-        height: 494px; // TODO: Flexible change
+        height: 494px; // BUG2: Flexible change
         always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
         background: transparent;
 
@@ -244,6 +237,7 @@ slint::slint! {
                 background: StyleMetrics.window-background;
                 key-handler := FocusScope {
                     key-released(event) => {
+                        debug(parent.height);
                         root.key_released(event);
                         accept
                     }
@@ -253,9 +247,7 @@ slint::slint! {
                         spacing: 0;
                         input := LineEdit {
                             height: 60px;
-                            // placeholder-text: "请输入需要搜索的内容";
-                            placeholder-text: ready ? "请输入需要搜索的内容":"正在加载索引信息...";
-                            read-only: !ready;
+                            placeholder-text: "请输入需要搜索的内容";
                             edited(str) => {
                                 root.query_change(str);
                             }

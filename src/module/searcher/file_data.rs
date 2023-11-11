@@ -242,9 +242,12 @@ impl FileData {
                                 }
                             );
                         }
+                        // let win_height = if result_list.len() > 0 {  result_list.len() * 60 + 74 + 14 } else { 74 };
                         search_result_model.set_vec(result_list);
                         search_win.set_viewport_y(0.);
                         search_win.set_active_id(0);
+                        // println!("{win_height}");
+                        // search_win.set_ui_height(win_height as f32);
                     }).unwrap();
                 }
                 break;
