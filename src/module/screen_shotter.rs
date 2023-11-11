@@ -100,7 +100,7 @@ impl ScreenShotter{
             mask_win.show().unwrap();
             // +1 to fix the bug
             mask_win.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height + 1));
-            mask_win.window().with_winit_window(|winit_win: &winit::window::Window| {
+            mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                 winit_win.focus_window();
             });
 
@@ -150,9 +150,10 @@ impl ScreenShotter{
         // tile function
         std::thread::spawn(move || {
             loop {
-                let id = move_reciever.recv().unwrap();
-                let pin_windows = pin_windows.clone();
-                ScreenShotter::pin_win_move_hander(pin_windows, id);
+                if let Ok(id) = move_reciever.recv() {
+                    let pin_windows = pin_windows.clone();
+                    ScreenShotter::pin_win_move_hander(pin_windows, id);
+                }
             }
         });
 

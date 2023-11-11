@@ -222,10 +222,12 @@ impl FileData {
                         else { self.finding_result.items.to_vec() };
                     
                     self.search_win.clone().upgrade_in_event_loop(move |search_win| {
+                        if slint::SharedString::from(filename) != search_win.get_query() {return;}
+
                         let search_result_model = search_win.get_search_result();
                         let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
                             .expect("search_result_model set a VecModel earlier");
-                        
+
                         let mut result_list = Vec::new();
                         for (id, item) in return_result.into_iter().enumerate() {
                             let icon = 
