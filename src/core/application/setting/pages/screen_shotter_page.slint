@@ -1,0 +1,24 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: MIT
+
+import { Button, GroupBox, SpinBox, ComboBox, CheckBox, LineEdit, TabWidget, VerticalBox, HorizontalBox,
+    Slider, ProgressIndicator, SpinBox, Switch } from "std-widgets.slint";
+import { GallerySettings } from "../gallery_settings.slint";
+import { Page } from "page.slint";
+
+export component ScreenShotterSettingPage inherits Page {
+    GroupBox {
+        vertical-stretch: 0;
+        title: @tr("Buttons");
+
+        HorizontalBox {
+            alignment: start;
+            padding: 0px;
+
+            Button {
+                text: @tr("Regular Button");
+                enabled: GallerySettings.widgets-enabled;
+            }
+        }
+    }
+}

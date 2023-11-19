@@ -107,9 +107,9 @@ impl ScreenShotter{
         mask_win.on_key_released(move |event| {
             if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                 mask_win_clone.unwrap().hide().unwrap();
-            } else if event.text == *"Z" {
+            } else if event.text == "z" || event.text == "Z"  {
                 println!("切换颜色");
-            } else if event.text == *"C" {
+            } else if event.text == "c" || event.text == "C" {
                 println!("复制颜色");
             }
         });
@@ -258,6 +258,7 @@ slint::slint! {
 
                 focus_scope := FocusScope {
                     key-released(event) => {
+                        if(event.modifiers.shift) {return reject;}
                         root.key_released(event);
                         accept
                     }
