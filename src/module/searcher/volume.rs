@@ -433,7 +433,6 @@ impl Volume {
 
     // deserializate file_map from file
     fn serialization_read(&mut self) {
-        let sys_time = SystemTime::now();
         println!("[info] {} Volume::serialization_read", self.drive);
 
         let file_path = env::current_dir().unwrap();
@@ -459,7 +458,5 @@ impl Volume {
         } else {
             println!("[Error] {} Volume::serialization_read, error: read file failed", self.drive);
         }
-
-        println!("[info] {} Volume::serialization_read, use tiem: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
     }
 }
