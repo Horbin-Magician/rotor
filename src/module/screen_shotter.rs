@@ -64,10 +64,6 @@ impl ScreenShotter{
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
         let amplifier = Amplifier::new(); // init Amplifier
 
-        // there is an animation when the window is first show. The mask window does not need the animation
-        mask_win.show().unwrap();
-        mask_win.hide().unwrap();
-
         mask_win.window().set_position(slint::PhysicalPosition::new(0, 0) );
         mask_win.set_state(0);
 
