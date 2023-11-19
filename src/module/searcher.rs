@@ -121,15 +121,17 @@ impl Searcher {
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
             search_win.on_lose_focus_trick(move |has_focus| {
                 let search_win = search_win_clone.unwrap();
-                println!("has_focus: {}; visible: {}", has_focus, search_win.window().is_visible());
+                search_win.set_read_only(!has_focus);  // trick to fix bug.
                 if !has_focus { 
                     if search_win.get_query() != "" {
                         search_win.set_query(slint::SharedString::from(""));
                         search_win.invoke_query_change(slint::SharedString::from(""));
                     }
                     search_win.hide().unwrap();
+                    // search_win.set_read_only(true);
                     searcher_msg_sender_clone.send(SearcherMessage::Release).unwrap();
                 } else if has_focus && search_win.window().is_visible() {
+                    // search_win.set_read_only(false);
                     searcher_msg_sender_clone.send(SearcherMessage::Update).unwrap();
                 }
                 true
@@ -211,6 +213,7 @@ slint::slint! {
         in property <int> active_id;
 
         in-out property <string> query <=> input.text;
+        in-out property <bool> read_only <=> input.read-only;  // trick to fix bug.
         in-out property <length> viewport-y <=> result-list.viewport-y;
 
         callback query_change(string);
@@ -222,7 +225,7 @@ slint::slint! {
 
         title: "小云搜索";
         no-frame: true;
-        forward-focus: input;
+        forward-focus: key-handler;
         default-font-size: 18px;
         default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
@@ -237,7 +240,7 @@ slint::slint! {
                 background: StyleMetrics.window-background;
                 key-handler := FocusScope {
                     key-released(event) => {
-                        debug(parent.height);
+                        if(input.has-focus == false){ input.focus();} // trick to fix bug.
                         root.key_released(event);
                         accept
                     }
@@ -247,6 +250,7 @@ slint::slint! {
                         spacing: 0;
                         input := LineEdit {
                             height: 60px;
+                            read-only: true;
                             placeholder-text: "请输入需要搜索的内容";
                             edited(str) => {
                                 root.query_change(str);
@@ -279,11 +283,6 @@ slint::slint! {
                                                     border-radius: 1px;
                                                     height: 30px;
                                                     background: cyan;
-
-                                                    animate x { 
-                                                        duration: 200ms;
-                                                        easing: linear;
-                                                    }
                                                 }
                                             }
                                             Rectangle {
