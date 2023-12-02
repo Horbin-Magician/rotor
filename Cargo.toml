@@ -12,9 +12,9 @@ build = "build.rs"
 embed-resource = "2.2.0"
 
 [dependencies]
-slint = "1.3.0"
-i-slint-backend-selector = "=1.3.0"
-i-slint-backend-winit = "=1.3.0"
+slint = "=1.3.2"
+i-slint-backend-selector = "=1.3.2"
+i-slint-backend-winit = "=1.3.2"
 raw-window-handle = "0.5.2"
 muda = "0.9.3"
 tray-icon = "0.8.1" 
