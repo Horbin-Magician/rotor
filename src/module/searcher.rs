@@ -1,7 +1,6 @@
 mod file_data;
 mod volume;
 
-use std::thread;
 use slint::{ComponentHandle, Model};
 use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -228,7 +227,6 @@ slint::slint! {
         default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
         width: ui_width * 1px;
-        height: 494px; // BUG2: Flexible change
         always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
         background: transparent;
 
