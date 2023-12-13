@@ -85,7 +85,7 @@ impl Searcher {
         { // add key event hander
             let search_win_clone = search_win.as_weak();
             let search_result_model_clone = search_result_model.clone();
-            search_win.on_key_released(move |event| {
+            search_win.on_key_pressed(move |event| {
                 let search_win_clone = search_win_clone.unwrap();
                 if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                     search_win_clone.hide().unwrap();
@@ -214,7 +214,7 @@ slint::slint! {
         in-out property <length> viewport-y <=> result-list.viewport-y;
 
         callback query_change(string);
-        callback key_released(KeyEvent);
+        callback key_pressed(KeyEvent);
         callback item_click(PointerEvent, int);
         callback open_with_admin(int);
         callback open_file_dir(int);
@@ -236,8 +236,15 @@ slint::slint! {
                 background: StyleMetrics.window-background;
 
                 key-handler := FocusScope {
+                    // key-pressed(event) => {
+                    //     // root.key_pressed(event);
+                    //     debug(event);
+                    //     accept
+                    // }
+
                     key-released(event) => {
-                        root.key_released(event);
+                        root.key_pressed(event);
+                        debug(event);
                         accept
                     }
 
@@ -249,12 +256,13 @@ slint::slint! {
                             // read-only: false;
                             placeholder-text: "请输入需要搜索的内容";
                             edited(str) => {
+                                debug(str);
                                 root.query_change(str);
                             }
                         }
                         result-list := ListView {
                             padding: 0;
-                            height: (search_result.length > 7 ? 7 : search_result.length) * 60px + (search_result.length > 0 ? 14px : 0px);
+                            height: (search_result.length > 7 ? 7 : search_result.length) * 60px;
 
                             for data in root.search_result: Rectangle {
                                 height: 60px;
