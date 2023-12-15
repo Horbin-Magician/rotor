@@ -1,5 +1,6 @@
 mod amplifier;
 mod pin_win;
+mod toolbar;
 
 use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap, rc::Rc};
 use slint::{SharedPixelBuffer, Rgba8Pixel};
@@ -94,8 +95,11 @@ impl ScreenShotter{
             );
 
             mask_win.show().unwrap();
-            // +1 to fix the bug
-            mask_win.window().set_size(slint::PhysicalSize::new(primary_screen_clone.display_info.width, primary_screen_clone.display_info.height + 1));
+            mask_win.window().set_size(
+                slint::PhysicalSize::new(
+                    primary_screen_clone.display_info.width,
+                     primary_screen_clone.display_info.height + 1) // +1 to fix the bug
+            );
             mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                 winit_win.focus_window();
             });
@@ -104,7 +108,7 @@ impl ScreenShotter{
         });
 
         let mask_win_clone = mask_win.as_weak();
-        mask_win.on_key_released(move |event| {
+        mask_win.on_key_pressed(move |event| {
             if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                 mask_win_clone.unwrap().hide().unwrap();
             } else if event.text == "z" || event.text == "Z"  {
@@ -181,7 +185,6 @@ impl ScreenShotter{
                     let other_bottom = other_pos.y + other_size.height as i32;
                     let other_right = other_pos.x + other_size.width as i32;
 
-                    println!("move_pos: {:?}", move_pos);
                     let mut delta_x = 0;
                     let mut delta_y = 0;
                     
@@ -245,7 +248,7 @@ slint::slint! {
         in-out property <int> state; // 0:before shot; 1:shotting before left button press; 2:shotting，left button press
 
         callback shot();
-        callback key_released(KeyEvent);
+        callback key_pressed(KeyEvent);
         callback new_pin_win(image, Rect);
 
         Image {
@@ -257,9 +260,9 @@ slint::slint! {
                 background: black.with_alpha(0.5);
 
                 focus_scope := FocusScope {
-                    key-released(event) => {
+                    key-pressed(event) => {
                         if(event.modifiers.shift) {return reject;}
-                        root.key_released(event);
+                        root.key_pressed(event);
                         accept
                     }
                 }

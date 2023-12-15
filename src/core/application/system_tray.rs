@@ -37,6 +37,7 @@ impl SystemTray {
                 }
 
                 if let Ok(event) = MenuEvent::receiver().try_recv() {
+                    println!("tray get");
                     if event.id == _setting_id {
                         msg_sender.send(AppMessage::ShowSetting).unwrap();
                     } else if event.id == _quit_id {

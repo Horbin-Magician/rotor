@@ -210,8 +210,8 @@ slint::slint! {
         in property <int> active_id;
 
         in-out property <string> query <=> input.text;
-        // in-out property <bool> read_only <=> input.read-only;  // trick to fix bug.
         in-out property <length> viewport-y <=> result-list.viewport-y;
+        // in-out property <bool> read_only <=> input.read-only;  // trick to fix bug.
 
         callback query_change(string);
         callback key_pressed(KeyEvent);
