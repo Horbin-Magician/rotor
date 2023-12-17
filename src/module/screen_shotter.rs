@@ -14,11 +14,16 @@ use pin_win::PinWin;
 use pin_win::PinWindow;
 
 
+pub enum ShotterMessage {
+    Move(u32),
+    Close(u32),
+}
+
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
     id: Option<u32>,
     _max_pin_win_id: Arc<Mutex<u32>>,
-    _pin_wins: Rc<Mutex<HashMap<u32, PinWin>>>,
+    _pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
     _amplifier: Amplifier, // 放大取色器
 }
 
@@ -55,10 +60,10 @@ impl ScreenShotter{
     pub fn new() -> ScreenShotter {
         // get screens and info
         let screens = Screen::all().unwrap();
-        let mut primary_screen = None ;
+        let mut primary_screen_op = None ;
         for screen in screens {
             if screen.display_info.is_primary {
-                primary_screen = Some(screen);
+                primary_screen_op = Some(screen);
             }
         }
         
@@ -69,90 +74,113 @@ impl ScreenShotter{
         mask_win.set_state(0);
 
         let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
-        let pin_wins: Rc<Mutex<HashMap<u32, PinWin>>> =  Rc::new(Mutex::new(HashMap::new()));
+        let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
         let pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>> =  Arc::new(Mutex::new(HashMap::new()));
-        let (move_sender, move_reciever) = mpsc::channel::<u32>();
+        let (message_sender, message_reciever) = mpsc::channel::<ShotterMessage>();
 
-        let primary_screen_clone = primary_screen.unwrap();
-        let mask_win_clone = mask_win.as_weak();
-        mask_win.on_shot(move || {
-            let mask_win = mask_win_clone.unwrap();
-            
-            mask_win.set_scale_factor(mask_win.window().scale_factor());
-            mask_win.set_state(1);
-            mask_win.set_select_rect(Rect{x: -1., y: -1., height: -1., width: -1.});
-            let physical_width = primary_screen_clone.display_info.width;
-            let physical_height = primary_screen_clone.display_info.height;
+        let primary_screen = primary_screen_op.unwrap();
+        let physical_width = primary_screen.display_info.width;
+        let physical_height = primary_screen.display_info.height;
+        let bac_buffer_rc = Arc::new(Mutex::new(
+            SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
+                &primary_screen.capture().unwrap(),
+                physical_width,
+                physical_height,
+            )
+        ));
+        
+        { // code for shot
+            let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
+            let mask_win_clone = mask_win.as_weak();
+            mask_win.on_shot(move || {
+                let mask_win = mask_win_clone.unwrap();
 
-            mask_win.set_bac_image(
-                slint::Image::from_rgba8(
-                    SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-                        &primary_screen_clone.capture().unwrap(),
+                let mut bac_buffer = bac_buffer_rc_clone.lock().unwrap();
+                *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
+                        &primary_screen.capture().unwrap(),
                         physical_width,
                         physical_height,
-                    )
-                )
-            );
+                    );
+                
+                mask_win.set_scale_factor(mask_win.window().scale_factor());
+                mask_win.set_state(1);
+                mask_win.set_select_rect(Rect{x: -1., y: -1., height: -1., width: -1.});
+                mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
 
-            mask_win.show().unwrap();
-            mask_win.window().set_size(
-                slint::PhysicalSize::new(
-                    primary_screen_clone.display_info.width,
-                     primary_screen_clone.display_info.height + 1) // +1 to fix the bug
-            );
-            mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
-                winit_win.focus_window();
+                mask_win.show().unwrap();
+                mask_win.window().set_size(
+                    slint::PhysicalSize::new(
+                        primary_screen.display_info.width,
+                        primary_screen.display_info.height + 1) // +1 to fix the bug
+                );
+
+                mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+                    winit_win.focus_window();
+                });
+                // TODO 显示鼠标放大器
             });
+        }
 
-            // TODO 显示鼠标放大器
-        });
+        { // code for key press
+            let mask_win_clone = mask_win.as_weak();
+            mask_win.on_key_pressed(move |event| {
+                if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
+                    mask_win_clone.unwrap().hide().unwrap();
+                } else if event.text == "z" || event.text == "Z"  {
+                    println!("切换颜色");
+                } else if event.text == "c" || event.text == "C" {
+                    println!("复制颜色");
+                }
+            });
+        }
 
-        let mask_win_clone = mask_win.as_weak();
-        mask_win.on_key_pressed(move |event| {
-            if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
+        { // code for new pin_win
+            let mask_win_clone = mask_win.as_weak();
+            let max_pin_win_id_clone = max_pin_win_id.clone();
+            let pin_wins_clone = pin_wins.clone();
+            let pin_windows_clone = pin_windows.clone();
+            let message_sender_clone = message_sender.clone();
+            mask_win.on_new_pin_win(move |rect| {
+                let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
+                let message_sender_clone = message_sender_clone.clone();
+                
+                let pin_win = PinWin::new(bac_buffer_rc.clone(), rect, *max_pin_win_id, message_sender_clone);
+                
+                let pin_window_clone = pin_win.pin_window.as_weak();
+
+                let pin_wins_clone_clone = pin_wins_clone.clone();
+                let pin_windows_clone_clone = pin_windows_clone.clone();
+                let id = *max_pin_win_id;
+                pin_window_clone.unwrap().window().on_close_requested(move || {
+                    pin_wins_clone_clone.lock().unwrap().remove(&id);
+                    pin_windows_clone_clone.lock().unwrap().remove(&id);
+                    slint::CloseRequestResponse::HideWindow
+                });
+                
+                pin_wins_clone.lock().unwrap().insert(*max_pin_win_id, pin_win);
+                pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
+    
+                *max_pin_win_id += 1;
                 mask_win_clone.unwrap().hide().unwrap();
-            } else if event.text == "z" || event.text == "Z"  {
-                println!("切换颜色");
-            } else if event.text == "c" || event.text == "C" {
-                println!("复制颜色");
-            }
-        });
-
-        let mask_win_clone = mask_win.as_weak();
-        let max_pin_win_id_clone = max_pin_win_id.clone();
-        let pin_wins_clone = pin_wins.clone();
-        let pin_windows_clone = pin_windows.clone();
-        let move_sender_clone = move_sender.clone();
-        mask_win.on_new_pin_win(move |img, rect| {
-            let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
-            let move_sender_clone = move_sender_clone.clone();
-
-            let pin_win = PinWin::new(img, rect, *max_pin_win_id, move_sender_clone);
-
-            let pin_window_clone = pin_win.pin_window.as_weak();
-            let pin_wins_clone_clone = pin_wins_clone.clone();
-            let pin_windows_clone_clone = pin_windows_clone.clone();
-            let id = *max_pin_win_id;
-            pin_window_clone.unwrap().window().on_close_requested(move || {
-                pin_wins_clone_clone.lock().unwrap().remove(&id);
-                pin_windows_clone_clone.lock().unwrap().remove(&id);
-                slint::CloseRequestResponse::HideWindow
             });
+        }
 
-            let pin_window_clone = pin_win.pin_window.as_weak();
-            pin_wins_clone.lock().unwrap().insert(*max_pin_win_id, pin_win);
-            pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
-
-            *max_pin_win_id += 1;
-            mask_win_clone.unwrap().hide().unwrap();
-        });
-
-        // tile function
+        // event listen
+        // let pin_wins_clone = pin_wins.clone();
+        let pin_windows_clone = pin_windows.clone();
         std::thread::spawn(move || {
             loop {
-                if let Ok(id) = move_reciever.recv() {
-                    let pin_windows = pin_windows.clone();
-                    ScreenShotter::pin_win_move_hander(pin_windows, id);
+                if let Ok(message) = message_reciever.recv() {
+                    match message {
+                        ShotterMessage::Move(id) => {
+                            ScreenShotter::pin_win_move_hander(pin_windows.clone(), id);
+                        },
+                        ShotterMessage::Close(id) => {
+                            println!("close pin_win: {}", id);
+                            pin_windows_clone.lock().unwrap().remove(&id);
+                            // pin_wins_clone.lock().unwrap().remove(&id);
+                        }
+                    }
                 }
             }
         });
@@ -249,7 +277,7 @@ slint::slint! {
 
         callback shot();
         callback key_pressed(KeyEvent);
-        callback new_pin_win(image, Rect);
+        callback new_pin_win(Rect);
 
         Image {
             height: 100%;
@@ -278,7 +306,7 @@ slint::slint! {
                                 root.mouse_move_pos.x = touch_area.mouse-x;
                                 root.mouse_move_pos.y = touch_area.mouse-y;
                             } else if (event.kind == PointerEventKind.up) {
-                                root.new_pin_win(root.bac_image, root.select_rect);
+                                root.new_pin_win(root.select_rect);
                             }
                         }
                     }
