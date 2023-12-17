@@ -1,19 +1,28 @@
+use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
-use slint::Image;
+use arboard::{Clipboard, ImageData};
+use slint::{SharedPixelBuffer, Rgba8Pixel};
+use i_slint_backend_winit::WinitWindowAccessor;
+use chrono;
+
 use super::Rect;
+use super::ShotterMessage;
 
 pub struct PinWin {
+    img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
+    id: u32,
     pub pin_window: PinWindow,
 }
 
 impl PinWin {
-    pub fn new(img: Image, rect: Rect, id: u32, move_sender: Sender<u32>) -> PinWin {
+    pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
         let pin_window = PinWindow::new().unwrap();
         let border_width = pin_window.get_win_border_width();
         pin_window.window().set_position(slint::LogicalPosition::new(rect.x - border_width, rect.y - border_width));
         pin_window.set_scale_factor(pin_window.window().scale_factor());
 
-        pin_window.set_bac_image(img);
+        pin_window.set_bac_image(slint::Image::from_rgba8((*img_rc.lock().unwrap()).clone()));
         pin_window.set_img_x(rect.x);
         pin_window.set_img_y(rect.y);
         pin_window.set_img_width(rect.width);
@@ -21,8 +30,9 @@ impl PinWin {
 
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
-            let move_sender_clone = move_sender.clone();
+            let message_sender_clone = message_sender.clone();
             pin_window.on_win_move(move |mut delta_x, mut delta_y| {
+
                 let pin_window_clone = pin_window_clone.unwrap();
                 let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
                 let is_stick_x = pin_window_clone.get_is_stick_x();
@@ -46,41 +56,75 @@ impl PinWin {
                     let change_pos_x = now_pos.x + delta_x;
                     let change_pos_y = now_pos.y + delta_y;
                     pin_window_clone.window().set_position(slint::LogicalPosition::new(change_pos_x, change_pos_y));
-                    move_sender_clone.send(id).unwrap();
+                    message_sender_clone.send(ShotterMessage::Move(id)).unwrap();
+                }
+            });
+        }
+
+        { // code for key press
+            let img_rc_clone = img_rc.clone();
+            let pin_window_clone = pin_window.as_weak();
+            let message_sender_clone = message_sender.clone();
+            pin_window.on_key_release(move |event| {
+                let pin_window = pin_window_clone.unwrap();
+                if event.text == slint::SharedString::from(slint::platform::Key::Escape) { // close win
+                    pin_window.hide().unwrap();
+                    message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
+                } else if event.text == "h" { // hide win
+                    pin_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+                        winit_win.set_minimized(true);
+                    });
+                } else if event.text == "s" { // save pic
+                    println!("TODO: save");
+                    let buffer = (*img_rc_clone.lock().unwrap()).clone();
+
+                    let file_name = "Rotor_".to_owned() + chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S").to_string().as_str();
+                    
+                    // SettingModel& settingModel = SettingModel::getInstance();
+                    // QVariant savePath = settingModel.getConfig(settingModel.Flag_Save_Path);
+                    // QString fileName = QFileDialog::getSaveFileName(this, QStringLiteral("保存图片"), savePath.toString() + getFileName(), "PNG Files (*.PNG)");
+                    // if (fileName.length() > 0) {
+                    //     QPixmap pic = m_originPainting.copy(m_windowRect.toRect());
+                    //     pic.save(fileName, "png");
+                    //     QStringList listTmp = fileName.split("/");
+                    //     listTmp.pop_back();
+                    //     QString savePath = listTmp.join('/') + '/';
+                    //     settingModel.setConfig(settingModel.Flag_Save_Path, QVariant(savePath));
+                    // }
+
+                    image::save_buffer(
+                        std::path::Path::new(&(file_name + ".png")),
+                        buffer.as_bytes(),
+                        buffer.width(),
+                        buffer.height(),
+                        image::ColorType::Rgba8,
+                    ).unwrap();
+                } else if event.text == slint::SharedString::from(slint::platform::Key::Return) { // copy pic and close
+                    println!("TODO: copy");
+
+                    let buffer = (*img_rc_clone.lock().unwrap()).clone();
+
+                    let mut clipboard = Clipboard::new().unwrap();
+                    let img = ImageData {
+                        width: buffer.width() as usize,
+                        height: buffer.height() as usize,
+                        bytes: Cow::from(buffer.as_bytes())
+                    };
+                    clipboard.set_image(img).unwrap();
+                    
+                    pin_window_clone.unwrap().hide().unwrap();
+                    message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
                 }
             });
         }
 
         pin_window.show().unwrap();
         PinWin {
+            img_rc,
+            id,
             pin_window,
         }
     }
-
-    // // TODO
-    // fn on_complete_screen() {
-    //     // QClipboard *board = QApplication::clipboard();
-    //     // board->setPixmap(m_originPainting.copy(m_windowRect.toRect())); // 把图片放入剪切板
-    //     // quitScreenshot();
-    // }
-
-    // // TODO
-    // fn on_save_screen() {
-    //     // SettingModel& settingModel = SettingModel::getInstance();
-    //     // QVariant savePath = settingModel.getConfig(settingModel.Flag_Save_Path);
-    //     let file_name = "Rotor_".to_owned() + chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S").to_string().as_str();
-    //     // QString fileName = QFileDialog::getSaveFileName(this, QStringLiteral("保存图片"), savePath.toString() + getFileName(), "PNG Files (*.PNG)");
-    //     // if (fileName.length() > 0) {
-    //     //     QPixmap pic = m_originPainting.copy(m_windowRect.toRect());
-    //     //     pic.save(fileName, "png");
-        
-    //     //     QStringList listTmp = fileName.split("/");
-    //     //     listTmp.pop_back();
-    //     //     QString savePath = listTmp.join('/') + '/';
-
-    //     //     settingModel.setConfig(settingModel.Flag_Save_Path, QVariant(savePath));
-    //     // }
-    // }
 }
 
 slint::slint! {
@@ -90,6 +134,7 @@ slint::slint! {
         no-frame: true;
         always-on-top: true;
         title: "小云视窗";
+        forward-focus: key_focus;
 
         in property <image> bac_image;
         in property <length> win_border_width: 2px;
@@ -108,7 +153,7 @@ slint::slint! {
         in-out property <bool> is_stick_y;
 
         callback win_move(length, length);
-        callback show_menu(length, length);
+        callback key_release(KeyEvent);
 
         width <=> win_width;
         height <=> win_height;
@@ -133,43 +178,22 @@ slint::slint! {
 
                 move_touch_area := TouchArea {
                     mouse-cursor: move;
-                    property <bool> right_pressed: false;
-                    
                     moved => {
-                        if (self.right_pressed) {return;} // right button alse trigger this event
                         root.win_move(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
                     }
 
-                    pointer-event(event) => {
-                        if(event.button == PointerEventButton.right) {
-                            self.right_pressed = true;
-                            if (event.kind == PointerEventKind.up) {
-                                show-menu(self.mouse-x, self.mouse-y);
-                            }
-                        } else if(event.button == PointerEventButton.left) {
-                            if (event.kind == PointerEventKind.down) {
-                                self.right_pressed = false;
-                            }
-                        }
-                    }
-
                     scroll-event(event) => {
-                        debug(root.zoom_factor);
                         if (event.delta-y > 0) {
-                            if (root.zoom_factor < 50) {
-                                root.zoom_factor = root.zoom_factor + 1;
-                            }
+                            if (root.zoom_factor < 50) { root.zoom_factor = root.zoom_factor + 1; }
                         } else if (event.delta-y < 0) {
-                            if (root.zoom_factor > 2) {
-                                root.zoom_factor = root.zoom_factor - 1;
-                            }
+                            if (root.zoom_factor > 2) { root.zoom_factor = root.zoom_factor - 1; }
                         }
-                        return accept;
+                        accept
                     }
 
-                    FocusScope {
-                        key-pressed(event) => {
-                            debug(event);
+                    key_focus := FocusScope {
+                        key-released(event) => {
+                            key_release(event);
                             accept;
                         }
                     }
