@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use image;
+use image::{ImageBuffer, Rgba};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
@@ -100,17 +102,28 @@ impl PinWin {
                         image::ColorType::Rgba8,
                     ).unwrap();
                 } else if event.text == slint::SharedString::from(slint::platform::Key::Return) { // copy pic and close
-                    println!("TODO: copy");
-
                     let buffer = (*img_rc_clone.lock().unwrap()).clone();
+                    
+                    let scale_factor = pin_window.get_scale_factor();
+                    let img_x = pin_window.get_img_x() * scale_factor;
+                    let img_y = pin_window.get_img_y() * scale_factor;
+                    let img_height = pin_window.get_img_height() * scale_factor;
+                    let img_width = pin_window.get_img_width() * scale_factor;
+
+                    let mut img = image::DynamicImage::ImageRgba8(
+                        image::RgbaImage::from_vec(
+                            buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
+                        ).unwrap()
+                    );
+                    img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
 
                     let mut clipboard = Clipboard::new().unwrap();
-                    let img = ImageData {
-                        width: buffer.width() as usize,
-                        height: buffer.height() as usize,
-                        bytes: Cow::from(buffer.as_bytes())
+                    let img_data = ImageData {
+                        width: img.width() as usize,
+                        height: img.height() as usize,
+                        bytes: Cow::from(img.to_rgba8().to_vec())
                     };
-                    clipboard.set_image(img).unwrap();
+                    clipboard.set_image(img_data).unwrap();
                     
                     pin_window_clone.unwrap().hide().unwrap();
                     message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
