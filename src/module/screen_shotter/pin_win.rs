@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use wfd::DialogParams;
 use image;
 use image::{ImageBuffer, Rgba};
 use std::sync::{Arc, Mutex};
@@ -64,9 +65,18 @@ impl PinWin {
         }
 
         { // code for key press
-            let img_rc_clone = img_rc.clone();
             let pin_window_clone = pin_window.as_weak();
             let message_sender_clone = message_sender.clone();
+
+            let img_rc_clone = img_rc.clone();
+            let buffer = (*img_rc_clone.lock().unwrap()).clone();
+
+            let scale_factor = pin_window.get_scale_factor();
+            let img_x = pin_window.get_img_x() * scale_factor;
+            let img_y = pin_window.get_img_y() * scale_factor;
+            let img_height = pin_window.get_img_height() * scale_factor;
+            let img_width = pin_window.get_img_width() * scale_factor;
+
             pin_window.on_key_release(move |event| {
                 let pin_window = pin_window_clone.unwrap();
                 if event.text == slint::SharedString::from(slint::platform::Key::Escape) { // close win
@@ -77,39 +87,30 @@ impl PinWin {
                         winit_win.set_minimized(true);
                     });
                 } else if event.text == "s" { // save pic
-                    println!("TODO: save");
-                    let buffer = (*img_rc_clone.lock().unwrap()).clone();
-
-                    let file_name = "Rotor_".to_owned() + chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S").to_string().as_str();
+                    let mut img = image::DynamicImage::ImageRgba8(
+                        image::RgbaImage::from_vec(
+                            buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
+                        ).unwrap()
+                    );
+                    img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
-                    // SettingModel& settingModel = SettingModel::getInstance();
-                    // QVariant savePath = settingModel.getConfig(settingModel.Flag_Save_Path);
-                    // QString fileName = QFileDialog::getSaveFileName(this, QStringLiteral("保存图片"), savePath.toString() + getFileName(), "PNG Files (*.PNG)");
-                    // if (fileName.length() > 0) {
-                    //     QPixmap pic = m_originPainting.copy(m_windowRect.toRect());
-                    //     pic.save(fileName, "png");
-                    //     QStringList listTmp = fileName.split("/");
-                    //     listTmp.pop_back();
-                    //     QString savePath = listTmp.join('/') + '/';
-                    //     settingModel.setConfig(settingModel.Flag_Save_Path, QVariant(savePath));
-                    // }
+                    let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
+                    let params = DialogParams {
+                        title: "Select an image to save",
+                        file_types: vec![("PNG Files", "*.png")],
+                        default_extension: "png",
+                        file_name: &file_name,
+                        ..Default::default()
+                    };
+                    pin_window.hide().unwrap();
 
-                    image::save_buffer(
-                        std::path::Path::new(&(file_name + ".png")),
-                        buffer.as_bytes(),
-                        buffer.width(),
-                        buffer.height(),
-                        image::ColorType::Rgba8,
-                    ).unwrap();
+                    let dialog_result = wfd::save_dialog(params);
+                    if let Ok(file_path_result) = dialog_result {
+                        img.save(file_path_result.selected_file_path).unwrap();
+                    }
+
+                    message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
                 } else if event.text == slint::SharedString::from(slint::platform::Key::Return) { // copy pic and close
-                    let buffer = (*img_rc_clone.lock().unwrap()).clone();
-                    
-                    let scale_factor = pin_window.get_scale_factor();
-                    let img_x = pin_window.get_img_x() * scale_factor;
-                    let img_y = pin_window.get_img_y() * scale_factor;
-                    let img_height = pin_window.get_img_height() * scale_factor;
-                    let img_width = pin_window.get_img_width() * scale_factor;
-
                     let mut img = image::DynamicImage::ImageRgba8(
                         image::RgbaImage::from_vec(
                             buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
@@ -125,7 +126,7 @@ impl PinWin {
                     };
                     clipboard.set_image(img_data).unwrap();
                     
-                    pin_window_clone.unwrap().hide().unwrap();
+                    pin_window.hide().unwrap();
                     message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
                 }
             });

@@ -3813,6 +3813,7 @@ dependencies = [
  "screenshots",
  "slint",
  "tray-icon",
+ "wfd",
  "windows-sys 0.48.0",
  "winreg",
 ]
@@ -5211,6 +5212,16 @@ name = "weezl"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9193164d4de03a926d909d3bc7c30543cecb35400c02114792c2cae20d5e2dbb"
+
+[[package]]
+name = "wfd"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e713040b67aae5bf1a0ae3e1ebba8cc29ab2b90da9aa1bff6e09031a8a41d7a8"
+dependencies = [
+ "libc",
+ "winapi",
+]
 
 [[package]]
 name = "which"
