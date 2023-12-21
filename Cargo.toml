@@ -25,6 +25,7 @@ chrono = "0.4.26"
 global-hotkey = "0.2.4"
 image = "0.24.7"
 arboard = "3.3.0"
+wfd = "0.1.7"
 
 [dependencies.windows-sys]
 version = "0.48"
