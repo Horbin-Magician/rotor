@@ -1,5 +1,5 @@
 [package]
-name = "rotor-rs"
+name = "rotor"
 version = "0.2.3"
 authors = ["Horbin"]
 edition = "2021"
