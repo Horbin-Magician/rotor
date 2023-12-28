@@ -280,7 +280,7 @@ slint::slint! {
                                             padding-right: 0px;
                                             padding-left: 0px;
                                             Rectangle {
-                                                width: 10px;
+                                                width: 2px;
                                                 active_bar := Rectangle {
                                                     x: 0px;
                                                     width: 2px;
