@@ -121,9 +121,9 @@ impl ScreenShotter{
             });
         }
 
-        { // code for key press
+        { // code for key release
             let mask_win_clone = mask_win.as_weak();
-            mask_win.on_key_pressed(move |event| {
+            mask_win.on_key_released(move |event| {
                 if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
                     mask_win_clone.unwrap().hide().unwrap();
                 } else if event.text == "z" || event.text == "Z"  {
@@ -276,7 +276,7 @@ slint::slint! {
         in-out property <int> state; // 0:before shot; 1:shotting before left button press; 2:shotting，left button press
 
         callback shot();
-        callback key_pressed(KeyEvent);
+        callback key_released(KeyEvent);
         callback new_pin_win(Rect);
 
         Image {
@@ -288,9 +288,9 @@ slint::slint! {
                 background: black.with_alpha(0.5);
 
                 focus_scope := FocusScope {
-                    key-pressed(event) => {
+                    key-released(event) => {
                         if(event.modifiers.shift) {return reject;}
-                        root.key_pressed(event);
+                        root.key_released(event);
                         accept
                     }
                 }
