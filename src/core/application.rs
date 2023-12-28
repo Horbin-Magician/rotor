@@ -6,7 +6,7 @@ pub mod admin_runner;
 use std::{sync::{mpsc, mpsc::Sender}, collections::HashMap};
 
 use slint::ComponentHandle;
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}, HotKeyState};
 
 use system_tray::SystemTray;
 use setting::{Setting, SettingWindow};
@@ -29,11 +29,14 @@ pub struct Application {
 impl Application {
     pub fn new() -> Application {
         let (_msg_sender, msg_reciever) = mpsc::channel();
+        let _hotkey_manager = GlobalHotKeyManager::new().unwrap(); // initialize the hotkeys manager
 
         let _system_tray = SystemTray::new(_msg_sender.clone());
         let _setting: Setting = Setting::new();
-        let _hotkey_manager = GlobalHotKeyManager::new().unwrap(); // initialize the hotkeys manager
         
+        let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyD);
+        _hotkey_manager.register(hotkey).expect("Failed to register hotkey.");
+
         let mut _modules: Vec<Box<dyn Module>> = Vec::new();
         _modules.push(Box::new(Searcher::new()));
         _modules.push(Box::new(ScreenShotter::new()));
@@ -82,8 +85,9 @@ fn app_loop (
         }
 
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+            println!("{:?}", event);
             for module_port in &module_ports {
-                if event.id == *module_port.0 {
+                if event.state == HotKeyState::Released && event.id == *module_port.0 {
                     module_port.1.send(ModuleMessage::Trigger).unwrap();
                 }
             }

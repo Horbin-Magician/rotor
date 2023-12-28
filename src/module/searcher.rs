@@ -48,7 +48,7 @@ impl Module for Searcher{
     fn get_hotkey(&mut self) -> HotKey {
         let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyF);
         self.id = Some(hotkey.id());
-        return  hotkey;
+        return hotkey;
     }
 
     fn get_id(&self) -> Option<u32> {

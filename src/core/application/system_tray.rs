@@ -48,6 +48,8 @@ impl SystemTray {
             }
         });
 
-        SystemTray { _tray_icon }
+        SystemTray {
+            _tray_icon
+        }
     }
 }
