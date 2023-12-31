@@ -16,12 +16,11 @@ impl Setting {
 slint::slint! {
     import { CheckBox, StandardListView, StyleMetrics } from "std-widgets.slint";
     import { AboutPage, BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/pages/pages.slint";
-    import { GallerySettings } from "src/core/application/setting/gallery_settings.slint";
     import { SideBar } from "src/core/application/setting/side_bar.slint";
 
     export component SettingWindow inherits Window {
-        preferred-width: 700px;
-        preferred-height: 500px;
+        width: 500px;
+        height: 400px;
         title: @tr("设置");
         icon: @image-url("assets/logo.png");
 
@@ -34,11 +33,13 @@ slint::slint! {
                     @tr("Menu" => "关于"),
                 ];
             }
+            Rectangle {
+                if(side-bar.current-item == 0) : BaseSettingPage {}
+                if(side-bar.current-item == 1) : SearchSettingPage {}
+                if(side-bar.current-item == 2) : ScreenShotterSettingPage {}
+                if(side-bar.current-item == 3) : AboutPage {}
+            }
 
-            if(side-bar.current-item == 0) : BaseSettingPage {}
-            if(side-bar.current-item == 1) : SearchSettingPage {}
-            if(side-bar.current-item == 2) : ScreenShotterSettingPage {}
-            if(side-bar.current-item == 3) : AboutPage {}
         }
     }
 }

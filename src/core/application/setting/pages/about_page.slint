@@ -1,10 +1,55 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 
-import { AboutSlint } from "std-widgets.slint";
-import { GallerySettings } from "../gallery_settings.slint";
+import { AboutSlint, Button } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component AboutPage inherits Page {
-    AboutSlint {}
+    VerticalLayout {
+        padding: 20px;
+        spacing: 10px;
+        alignment: start;
+        width: 100%;
+
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 100px;
+                Image {
+                    source: @image-url("../../../../../assets/logo.svg");
+                    height: 80px;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    horizontal-alignment: center;
+                    text: "Rotor";
+                    font-size: 18px;
+                    font-weight: 700;
+                }
+                Text {
+                    horizontal-alignment: center;
+                    text: "Version 0.2.3";
+                }
+                Text {
+                    horizontal-alignment: center;
+                    text: "by: Horibn";
+                }
+            }
+        }
+
+        Button {
+            text: "检查更新";
+            width: 50%;
+            clicked =>  {
+                // TODO: 检查更新
+            }
+        }
+
+        Text {
+            horizontal-alignment: center;
+            text: "查看本软件使用的开源库，感谢这些库的开发者！";
+        }
+    }
 }
