@@ -1,24 +1,53 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 
-import { Button, GroupBox, SpinBox, ComboBox, CheckBox, LineEdit, TabWidget, VerticalBox, HorizontalBox,
-    Slider, ProgressIndicator, SpinBox, Switch } from "std-widgets.slint";
-import { GallerySettings } from "../gallery_settings.slint";
+import { Button, ComboBox, Switch } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component BaseSettingPage inherits Page {
-    GroupBox {
-        vertical-stretch: 0;
-        title: @tr("Buttons");
 
-        HorizontalBox {
+    VerticalLayout {
+        padding: 20px;
+        spacing: 20px;
+        HorizontalLayout {
             alignment: start;
-            padding: 0px;
-
-            Button {
-                text: @tr("Regular Button");
-                enabled: GallerySettings.widgets-enabled;
+            spacing: 20px;
+            Text {
+                text: @tr("语言");
+                height: 30px;
+                vertical-alignment: center;
             }
+            ComboBox {
+                width: 150px;
+                height: 30px;
+                model: ["简体中文", "English"];
+                current-value: "简体中文";
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 20px;
+            Text {
+                text: @tr("主题");
+                height: 30px;
+                vertical-alignment: center;
+            }
+            ComboBox {
+                width: 150px;
+                height: 30px;
+                model: ["随系统", "暗色", "亮色"];
+                current-value: "随系统";
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 20px;
+            Text {
+                text: @tr("开机自启");
+                height: 30px;
+                vertical-alignment: center;
+            }
+            Switch { height: 30px; }
         }
     }
 }
