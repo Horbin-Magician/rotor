@@ -1,15 +1,13 @@
-mod amplifier;
 mod pin_win;
 mod toolbar;
 
-use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap, rc::Rc};
+use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
 use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 use screenshots::Screen;
 
 use super::{Module, ModuleMessage};
-use amplifier::Amplifier;
 use pin_win::PinWin;
 use pin_win::PinWindow;
 
@@ -24,7 +22,6 @@ pub struct ScreenShotter {
     id: Option<u32>,
     _max_pin_win_id: Arc<Mutex<u32>>,
     _pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
-    _amplifier: Amplifier, // 放大取色器
 }
 
 impl Module for ScreenShotter {
@@ -68,7 +65,6 @@ impl ScreenShotter{
         }
         
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
-        let amplifier = Amplifier::new(); // init Amplifier
 
         mask_win.window().set_position(slint::PhysicalPosition::new(0, 0) );
         mask_win.set_state(0);
@@ -190,7 +186,6 @@ impl ScreenShotter{
             mask_win,
             _max_pin_win_id: max_pin_win_id,
             _pin_wins: pin_wins,
-            _amplifier: amplifier,
         }
     }
 
@@ -286,10 +281,8 @@ slint::slint! {
             source: bac_image;
             Rectangle {
                 background: black.with_alpha(0.5);
-
                 focus_scope := FocusScope {
                     key-released(event) => {
-                        if(event.modifiers.shift) {return reject;}
                         root.key_released(event);
                         accept
                     }
@@ -345,8 +338,75 @@ slint::slint! {
                         source-clip-height: root.select-rect.height / 1px  * root.scale_factor;
                     }
                 }
-
             }
+        }
+
+        amplifier := Rectangle {
+            width: 120px;
+            height:140px; // 90px + 50px
+            x: (touch-area.mouse-x + self.width > root.width) ? 
+                touch-area.mouse-x - self.width : touch-area.mouse-x;
+            y: (touch-area.mouse-y + 25px + self.height > root.height) ? 
+                touch-area.mouse-y - 25px - self.height : touch-area.mouse-y + 25px;
+            background: black.with_alpha(0.6);
+
+            VerticalLayout {
+                alignment: start;
+                spacing: 2px;
+                Rectangle {
+                    width: 100%;
+                    height: 90px;
+                    border-width: 1px;
+                    border-color: white;
+                    
+                    Image {
+                        width: parent.width - 2px;
+                        height: parent.height - 2px;
+                        source: bac_image;
+                        image-fit: fill;
+                        source-clip-x: (touch-area.mouse-x / 1px - self.width / 8px) * root.scale_factor;
+                        source-clip-y: (touch-area.mouse-y / 1px - self.height / 8px) * root.scale_factor;
+                        source-clip-width: (self.width / 4px) * root.scale_factor;
+                        source-clip-height: (self.height / 4px) * root.scale_factor;
+                    }
+                }
+
+                Text {
+                    horizontal-alignment: center;
+                    text: "???x???";
+                    color: white;
+                } // 当前选中矩形的宽高信息
+
+                Text {
+                    horizontal-alignment: center;
+                    text: "RGB:(???,???,???)"; // "HSV(%1,%2,%3)"
+                    color: white;
+                } // 当前鼠标像素值的RGB信息
+
+                Text {
+                    horizontal-alignment: center;
+                    text: "Z键切换 C键复制"; // "HSV(%1,%2,%3)"
+                    color: white;
+                } // 绘制坐标轴相关数据
+            }
+
+            Path {
+                y: 0px;
+                width: 100%;
+                height: 90px;
+                commands: "M 60 0 v 90";
+                stroke: rgba(0, 180, 255, 0.7);
+                stroke-width: 2px;
+            } // 绘制竖线
+
+            Path {
+                y: 0px;
+                width: 100%;
+                height: 90px;
+                commands: "M 0 45 L 120 45";
+                stroke: rgba(0, 180, 255, 0.7);
+                stroke-width: 2px;
+            } // 绘制横线
         }
     }
 }

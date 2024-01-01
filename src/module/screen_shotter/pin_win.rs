@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use wfd::DialogParams;
 use image;
-use image::{ImageBuffer, Rgba};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
@@ -13,8 +12,8 @@ use super::Rect;
 use super::ShotterMessage;
 
 pub struct PinWin {
-    img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
-    id: u32,
+    _img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
+    _id: u32,
     pub pin_window: PinWindow,
 }
 
@@ -134,8 +133,8 @@ impl PinWin {
 
         pin_window.show().unwrap();
         PinWin {
-            img_rc,
-            id,
+            _img_rc: img_rc,
+            _id: id,
             pin_window,
         }
     }
