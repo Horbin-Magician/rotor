@@ -12,15 +12,15 @@ I think an open source software to bring these small tools together is very nece
 
 ## File Searching
 
-1. Shortcut key "Shift+F" shows the search window, it is not yet customizable.
+1. Shortcut key `Shift+F` shows the search window, it is not yet customizable.
 2. Next, enter any information in the search window to get the search results immediately.
-3. Up and down keys to select the result, enter key to open the file. 
-4. TODO Right-clicking the result item will open a right-click menu, which currently only provides the function of opening the directory where the file is located.
+3. `Up` and `down` keys to select the result, `Enter` key to open the file. 
+4. A menu is displayed when the mouse hovers over the result item. You can opening the directory where the file is located or run as admin.
 
 ## Screenshot
 
-1. Shortcut key "Shift+C" prints screen, it is not yet customizable.
-2. TODO By default, the captured image is fixed to the screen, and right-clicking the image will open a right-click menu.
+1. Shortcut key `Shift+C` prints screen, it is not yet customizable.
+2. By default, the captured image is fixed to the screen, and press `ESC` to close it, `s` to save it, `Enter` to copy it, 'h' to minimize it.
 
 # Contribution
 
