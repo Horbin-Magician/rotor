@@ -5,6 +5,8 @@ import { AboutSlint, Button } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component AboutPage inherits Page {
+    in property <string> version: "unknown";
+
     VerticalLayout {
         padding: 20px;
         spacing: 10px;
@@ -30,7 +32,7 @@ export component AboutPage inherits Page {
                 }
                 Text {
                     horizontal-alignment: center;
-                    text: "Version 0.2.3";
+                    text: @tr("Version {}", version);
                 }
                 Text {
                     horizontal-alignment: center;
