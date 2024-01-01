@@ -211,7 +211,6 @@ slint::slint! {
 
         in-out property <string> query <=> input.text;
         in-out property <length> viewport-y <=> result-list.viewport-y;
-        // in-out property <bool> read_only <=> input.read-only;  // trick to fix bug.
 
         callback query_change(string);
         callback key_pressed(KeyEvent);
@@ -236,12 +235,6 @@ slint::slint! {
                 background: StyleMetrics.window-background;
 
                 key-handler := FocusScope {
-                    // key-pressed(event) => {
-                    //     // root.key_pressed(event);
-                    //     debug(event);
-                    //     accept
-                    // }
-
                     key-released(event) => {
                         root.key_pressed(event);
                         debug(event);
@@ -253,7 +246,6 @@ slint::slint! {
                         spacing: 0;
                         input := LineEdit {
                             height: 60px;
-                            // read-only: false;
                             placeholder-text: "请输入需要搜索的内容";
                             edited(str) => {
                                 debug(str);
