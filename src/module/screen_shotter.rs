@@ -1,6 +1,8 @@
 mod pin_win;
 mod toolbar;
 
+use arboard::Clipboard;
+use image::{self, GenericImageView, Rgba};
 use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
@@ -113,19 +115,44 @@ impl ScreenShotter{
                 mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                     winit_win.focus_window();
                 });
-                // TODO 显示鼠标放大器
+            });
+        }
+
+        { // refresh rgb code str
+            let mask_win_clone = mask_win.as_weak();
+            let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
+            mask_win.on_refresh_rgb_trick(move |mouse_x, mouse_y, color_type_dec| {
+                let mask_win = mask_win_clone.unwrap();
+                let scale_factor = mask_win.window().scale_factor();
+                let bac_buffer = bac_buffer_rc_clone.lock().unwrap();
+                let img: image::DynamicImage = image::DynamicImage::ImageRgba8(
+                    image::RgbaImage::from_vec(
+                        bac_buffer.width() as u32, bac_buffer.height() as u32, bac_buffer.as_bytes().to_vec()
+                    ).unwrap()
+                );
+                let pixel: Rgba<u8> = img.get_pixel((mouse_x * scale_factor) as u32, (mouse_y * scale_factor) as u32);
+                let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+                if color_type_dec {
+                    mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
+                } else {
+                    mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into());
+                }
+                true
             });
         }
 
         { // code for key release
             let mask_win_clone = mask_win.as_weak();
             mask_win.on_key_released(move |event| {
+                let mask_win = mask_win_clone.unwrap();
                 if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
-                    mask_win_clone.unwrap().hide().unwrap();
-                } else if event.text == "z" || event.text == "Z"  {
-                    println!("切换颜色");
-                } else if event.text == "c" || event.text == "C" {
-                    println!("复制颜色");
+                    mask_win.hide().unwrap();
+                } else if event.text == "z" || event.text == "Z"  { // switch Dec or Hex
+                    let color_type_dec = mask_win_clone.unwrap().get_color_type_Dec();
+                    mask_win.set_color_type_Dec(!color_type_dec);
+                } else if event.text == "c" || event.text == "C" { // copy color code
+                    let mut clipboard = Clipboard::new().unwrap();
+                    clipboard.set_text(mask_win.get_color_str().to_string()).unwrap();
                 }
             });
         }
@@ -162,7 +189,7 @@ impl ScreenShotter{
         }
 
         // event listen
-        // let pin_wins_clone = pin_wins.clone();
+        // let pin_wins_clone = pin_wins.clone(); // TODO: clear pin_wins
         let pin_windows_clone = pin_windows.clone();
         std::thread::spawn(move || {
             loop {
@@ -260,7 +287,6 @@ slint::slint! {
     }
     export component MaskWindow inherits Window {
         no-frame: true;
-        always-on-top: true;
         forward-focus: focus_scope;
         
         in-out property <image> bac_image;
@@ -270,9 +296,15 @@ slint::slint! {
         in-out property <Point> mouse_move_pos;
         in-out property <int> state; // 0:before shot; 1:shotting before left button press; 2:shotting，left button press
 
+        in-out property <bool> color_type_Dec: true;
+        in-out property <string> color_str: "RGB:(???,???,???)";
+
         callback shot();
         callback key_released(KeyEvent);
         callback new_pin_win(Rect);
+        pure callback refresh_rgb_trick(float, float, bool) -> bool;
+
+        always-on-top: refresh_rgb_trick(touch_area.mouse-x / 1px, touch_area.mouse-y / 1px, color_type_Dec);
 
         Image {
             height: 100%;
@@ -373,23 +405,29 @@ slint::slint! {
 
                 Text {
                     horizontal-alignment: center;
-                    text: "???x???";
+                    text: touch_area.pressed ?
+                        @tr(
+                            "宽{}×长{}",
+                            round(root.select_rect.width / 1px * root.scale-factor),
+                            round(root.select_rect.height / 1px * root.scale-factor)
+                        ) : "左键划选区域";
                     color: white;
-                } // 当前选中矩形的宽高信息
+                } // draw width and height
 
                 Text {
                     horizontal-alignment: center;
-                    text: "RGB:(???,???,???)"; // "HSV(%1,%2,%3)"
+                    text: color_str;
                     color: white;
-                } // 当前鼠标像素值的RGB信息
+                } // draw RGB color code
 
                 Text {
                     horizontal-alignment: center;
                     text: "Z键切换 C键复制"; // "HSV(%1,%2,%3)"
                     color: white;
-                } // 绘制坐标轴相关数据
+                } // draw tips
             }
 
+            // draw cross curve
             Path {
                 y: 0px;
                 width: 100%;
@@ -397,7 +435,7 @@ slint::slint! {
                 commands: "M 60 0 v 90";
                 stroke: rgba(0, 180, 255, 0.7);
                 stroke-width: 2px;
-            } // 绘制竖线
+            } // draw vertical lines
 
             Path {
                 y: 0px;
@@ -406,7 +444,7 @@ slint::slint! {
                 commands: "M 0 45 L 120 45";
                 stroke: rgba(0, 180, 255, 0.7);
                 stroke-width: 2px;
-            } // 绘制横线
+            } // draw horizontal lines
         }
     }
 }
