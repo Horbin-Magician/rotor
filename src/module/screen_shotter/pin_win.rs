@@ -150,7 +150,7 @@ slint::slint! {
         forward-focus: key_focus;
 
         in property <image> bac_image;
-        in property <length> win_border_width: 2px;
+        in property <length> win_border_width: 1px;
         in property <float> scale_factor;
 
         in property <length> img_x;

@@ -348,7 +348,7 @@ slint::slint! {
 
                 select_border := Rectangle {
                     border-color: rgb(0, 175, 255);
-                    border-width: 2px;
+                    border-width: 1px;
 
                     x: root.select-rect.x - self.border-width;
                     y: root.select-rect.y - self.border-width;
