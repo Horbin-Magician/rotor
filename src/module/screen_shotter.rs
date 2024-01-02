@@ -407,7 +407,7 @@ slint::slint! {
                     horizontal-alignment: center;
                     text: touch_area.pressed ?
                         @tr(
-                            "宽{}×长{}",
+                            "宽{}×高{}",
                             round(root.select_rect.width / 1px * root.scale-factor),
                             round(root.select_rect.height / 1px * root.scale-factor)
                         ) : "左键划选区域";
