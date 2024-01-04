@@ -1,0 +1,74 @@
+import { StyleMetrics } from "std-widgets.slint";
+
+component TitleBtn inherits Rectangle {
+    in property<image> img <=> image.source;
+    in property<color> hover_color;
+    callback clicked <=> touch.clicked;
+
+    width: 40px;
+    background: transparent;
+    animate background { duration: 150ms; }
+
+    touch := TouchArea {
+        image := Image {
+            height: 14px;
+            width: 14px;
+            colorize: StyleMetrics.default-text-color;
+        }
+    }
+
+    states [
+        pressed when touch.pressed : {
+            root.background: hover_color.darker(0.5);
+        }
+        hover when touch.has-hover : {
+            root.background: hover_color;
+        }
+    ]
+}
+
+export component TitleBar inherits Rectangle {
+
+    callback minimize <=> min_btn.clicked;
+    callback close <=> close_btn.clicked;
+    callback win_move;
+
+    height: 40px;
+    width: 100%;
+    background: StyleMetrics.window-background.darker(0.4);
+
+    touch := TouchArea {
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                win_move();
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: 4px;
+            alignment: stretch;
+    
+            Rectangle {
+                height: 40px;
+                width: 30px;
+                Image {
+                    height: 30px;
+                    width: 30px;
+                    source: @image-url("../../../../assets/logo.svg");
+                }    
+            }
+    
+            Rectangle {}
+    
+            min_btn := TitleBtn {
+                img: @image-url("../../../../assets/icon/min.svg");
+                hover_color: grey;
+            }
+    
+            close_btn := TitleBtn {
+                img: @image-url("../../../../assets/icon/close.svg");
+                hover_color: red;
+            }
+        }
+    }
+}

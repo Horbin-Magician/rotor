@@ -1,114 +1,106 @@
-// Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: MIT
-
-import { GroupBox, LineEdit } from "std-widgets.slint";
+import { GroupBox, LineEdit, ScrollView } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component ScreenShotterSettingPage inherits Page {
-    VerticalLayout {
-        alignment: start;
-        padding: 20px;
-        spacing: 20px;
-        GroupBox {
-            title: @tr("快捷键");
-            VerticalLayout {
-                spacing: 10px;
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 20px;
-                    Text {
-                        text: @tr("截图（全局）");
-                        height: 30px;
-                        width: 100px;
-                        vertical-alignment: center;
-                    }
-                    LineEdit {
-                        height: 30px;
-                        read-only: true;
-                        text: "Ctrl+C";
-                    }
+    GroupBox {
+        title: @tr("快捷键");
+        VerticalLayout {
+            spacing: 10px;
+            HorizontalLayout {
+                alignment: start;
+                spacing: 20px;
+                Text {
+                    text: @tr("截图（全局）");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
                 }
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 20px;
-                    Text {
-                        text: @tr("关闭贴图");
-                        height: 30px;
-                        width: 100px;
-                        vertical-alignment: center;
-                    }
-                    LineEdit {
-                        height: 30px;
-                        read-only: true;
-                        text: "ESC";
-                    }
+                LineEdit {
+                    height: 30px;
+                    read-only: true;
+                    text: "Ctrl+C";
                 }
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 20px;
-                    Text {
-                        text: @tr("复制贴图");
-                        height: 30px;
-                        width: 100px;
-                        vertical-alignment: center;
-                    }
-                    LineEdit {
-                        height: 30px;
-                        read-only: true;
-                        text: "Enter";
-                    }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 20px;
+                Text {
+                    text: @tr("关闭贴图");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
                 }
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 20px;
-                    Text {
-                        text: @tr("保存贴图");
-                        height: 30px;
-                        width: 100px;
-                        vertical-alignment: center;
-                    }
-                    LineEdit {
-                        height: 30px;
-                        read-only: true;
-                        text: "S";
-                    }
+                LineEdit {
+                    height: 30px;
+                    read-only: true;
+                    text: "ESC";
                 }
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 20px;
-                    Text {
-                        text: @tr("隐藏贴图");
-                        height: 30px;
-                        width: 100px;
-                        vertical-alignment: center;
-                    }
-                    LineEdit {
-                        height: 30px;
-                        read-only: true;
-                        text: "H";
-                    }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 20px;
+                Text {
+                    text: @tr("复制贴图");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    height: 30px;
+                    read-only: true;
+                    text: "Enter";
+                }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 20px;
+                Text {
+                    text: @tr("保存贴图");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    height: 30px;
+                    read-only: true;
+                    text: "S";
+                }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 20px;
+                Text {
+                    text: @tr("隐藏贴图");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    height: 30px;
+                    read-only: true;
+                    text: "H";
                 }
             }
         }
+    }
 
-        GroupBox {
-            title: @tr("其他");
-            VerticalLayout {
-                spacing: 10px;
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 20px;
-                    Text {
-                        text: @tr("默认保存路径");
-                        height: 30px;
-                        width: 100px;
-                        vertical-alignment: center;
-                    }
-                    LineEdit {
-                        height: 30px;
-                        read-only: true;
-                        text: "???";
-                    }
+    GroupBox {
+        title: @tr("其他");
+        VerticalLayout {
+            spacing: 10px;
+            HorizontalLayout {
+                alignment: start;
+                spacing: 20px;
+                Text {
+                    text: @tr("默认保存路径");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    height: 30px;
+                    read-only: true;
+                    text: "???";
                 }
             }
         }

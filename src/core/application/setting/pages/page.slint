@@ -1,8 +1,12 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 
-import { VerticalBox } from "std-widgets.slint";
+import { VerticalBox, ScrollView } from "std-widgets.slint";
 
-export component Page inherits VerticalBox {
-    @children
+export component Page inherits ScrollView {
+    VerticalBox{
+        alignment: start;
+        padding: 20px;
+        @children
+    }
 }
