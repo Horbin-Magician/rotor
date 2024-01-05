@@ -48,25 +48,25 @@ export component TitleBar inherits Rectangle {
             padding-left: 4px;
             alignment: stretch;
     
-            Rectangle {
-                height: 40px;
-                width: 30px;
-                Image {
-                    height: 30px;
-                    width: 30px;
-                    source: @image-url("../../../../assets/logo.svg");
-                }    
-            }
+            // Rectangle {
+            //     height: 40px;
+            //     width: 30px;
+            //     Image {
+            //         height: 30px;
+            //         width: 30px;
+            //         source: @image-url("../../../../../assets/logo.svg");
+            //     }    
+            // }
     
             Rectangle {}
     
             min_btn := TitleBtn {
-                img: @image-url("../../../../assets/icon/min.svg");
+                img: @image-url("../../../../../assets/icon/min.svg");
                 hover_color: grey;
             }
     
             close_btn := TitleBtn {
-                img: @image-url("../../../../assets/icon/close.svg");
+                img: @image-url("../../../../../assets/icon/close.svg");
                 hover_color: red;
             }
         }

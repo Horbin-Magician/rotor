@@ -1,4 +1,10 @@
+mod app_config;
+
+use toml;
+
 use i_slint_backend_winit::WinitWindowAccessor;
+
+use app_config::AppConfig;
 
 pub struct Setting {
     pub setting_win: SettingWindow,
@@ -10,6 +16,9 @@ impl Setting {
 
         let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
         setting_win.set_version(version.into());
+
+        let app_config = AppConfig::get().expect("Failed to read config");
+        println!("Successfully read config: {:?}", app_config);
 
         {
             let setting_win_clone = setting_win.as_weak();
@@ -27,12 +36,11 @@ impl Setting {
             });
         }
 
-
         {
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_win_move(move || {
                 setting_win_clone.unwrap().window().with_winit_window(|winit_win| {
-                    winit_win.drag_window();
+                    let _ = winit_win.drag_window();
                 });
             });
         }
@@ -45,10 +53,9 @@ impl Setting {
 
 slint::slint! {
     import { CheckBox, StandardListView, StyleMetrics } from "std-widgets.slint";
-    import { AboutPage, BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/pages/pages.slint";
-    import { SideBar } from "src/core/application/setting/side_bar.slint";
-    import { TitleBar } from "src/core/application/setting/title_bar.slint";
-
+    import { AboutPage, BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/UI/pages/pages.slint";
+    import { SideBar } from "src/core/application/setting/UI/side_bar.slint";
+    import { TitleBar } from "src/core/application/setting/UI/title_bar.slint";
     export component SettingWindow inherits Window {
         width: 500px;
         height: 400px;
