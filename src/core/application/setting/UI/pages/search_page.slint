@@ -1,0 +1,41 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: MIT
+
+import { ComboBox, LineEdit } from "std-widgets.slint";
+import { Page } from "page.slint";
+
+export component SearchSettingPage inherits Page {
+    HorizontalLayout { // TODO exclude path
+        alignment: start;
+        spacing: 20px;
+        Text {
+            text: @tr("排除路径");
+            height: 30px;
+            width: 100px;
+            vertical-alignment: center;
+        }
+        LineEdit {
+            height: 30px;
+            read-only: true;
+            text: "???";
+        }
+    }
+
+    HorizontalLayout { // TODO showing number of results on a single page
+        alignment: start;
+        spacing: 20px;
+        Text {
+            text: @tr("单页展示结果数");
+            height: 30px;
+            width: 100px;
+            vertical-alignment: center;
+        }
+        ComboBox {
+            width: 150px;
+            height: 30px;
+            model: ["5", "6", "7", "8", "9"];
+            current-value: "7";
+            enabled: false;
+        }
+    }
+}

@@ -1,4 +1,4 @@
-import { GroupBox, LineEdit, ScrollView } from "std-widgets.slint";
+import { GroupBox, LineEdit } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component ScreenShotterSettingPage inherits Page {
@@ -6,21 +6,6 @@ export component ScreenShotterSettingPage inherits Page {
         title: @tr("快捷键");
         VerticalLayout {
             spacing: 10px;
-            HorizontalLayout {
-                alignment: start;
-                spacing: 20px;
-                Text {
-                    text: @tr("截图（全局）");
-                    height: 30px;
-                    width: 100px;
-                    vertical-alignment: center;
-                }
-                LineEdit {
-                    height: 30px;
-                    read-only: true;
-                    text: "Ctrl+C";
-                }
-            }
             HorizontalLayout {
                 alignment: start;
                 spacing: 20px;
