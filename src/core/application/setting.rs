@@ -18,7 +18,7 @@ impl Setting {
         setting_win.set_version(version.into());
 
         let app_config = AppConfig::get().expect("Failed to read config");
-        println!("Successfully read config: {:?}", app_config);
+        // println!("Successfully read config: {:?}", app_config);
 
         {
             let setting_win_clone = setting_win.as_weak();
