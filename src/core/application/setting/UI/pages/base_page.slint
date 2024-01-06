@@ -2,6 +2,10 @@ import { Button, ComboBox, Switch, GroupBox, LineEdit } from "std-widgets.slint"
 import { Page } from "page.slint";
 
 export component BaseSettingPage inherits Page {
+    in-out property <bool> power_boot;
+
+    callback power_boot_changed(bool);
+
     HorizontalLayout {
         alignment: start;
         spacing: 20px;
@@ -42,7 +46,13 @@ export component BaseSettingPage inherits Page {
             height: 30px;
             vertical-alignment: center;
         }
-        Switch { height: 30px; }
+        Switch { 
+            height: 30px;
+            checked <=> root.power_boot;
+            toggled => {
+                root.power_boot_changed(self.checked);
+            }
+        }
     }
 
     GroupBox {
