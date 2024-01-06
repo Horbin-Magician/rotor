@@ -1,9 +1,6 @@
 mod app_config;
 
-use toml;
-
 use i_slint_backend_winit::WinitWindowAccessor;
-
 use app_config::AppConfig;
 
 pub struct Setting {
@@ -14,11 +11,20 @@ impl Setting {
     pub fn new() -> Setting {
         let setting_win = SettingWindow::new().unwrap();
 
-        let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
-        setting_win.set_version(version.into());
+        {   
+            let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
+            setting_win.set_version(version.into());
+            
+            let app_config = AppConfig::global().lock().unwrap();
+            setting_win.set_power_boot(app_config.get_power_boot());
+        }
 
-        let app_config = AppConfig::get().expect("Failed to read config");
-        // println!("Successfully read config: {:?}", app_config);
+        {
+            setting_win.on_power_boot_changed(move |power_boot| {
+                let mut app_config = AppConfig::global().lock().unwrap();
+                app_config.set_power_boot(power_boot);
+            });
+        }
 
         {
             let setting_win_clone = setting_win.as_weak();
@@ -68,7 +74,10 @@ slint::slint! {
         callback close <=> title_bar.close;
         callback win_move <=> title_bar.win_move;
 
+        callback power_boot_changed(bool);
+
         in property <string> version;
+        in-out property <bool> power_boot;
 
         Rectangle {
             height: root.height - 4px;
@@ -92,7 +101,13 @@ slint::slint! {
                         ];
                     }
                     Rectangle {
-                        if(side-bar.current-item == 0) : BaseSettingPage {}
+                        if(side-bar.current-item == 0) : 
+                            base_setting_page := BaseSettingPage {
+                                power_boot <=> root.power_boot;
+                                power_boot_changed(power_boot) => {
+                                    root.power_boot_changed(power_boot);
+                                }
+                            }
                         if(side-bar.current-item == 1) : SearchSettingPage {}
                         if(side-bar.current-item == 2) : ScreenShotterSettingPage {}
                         if(side-bar.current-item == 3) : AboutPage {version: version;}
