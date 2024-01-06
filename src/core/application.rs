@@ -1,7 +1,5 @@
 mod system_tray;
 mod setting;
-pub mod powerboot;
-pub mod admin_runner;
 
 use std::{sync::{mpsc, mpsc::Sender}, collections::HashMap};
 
