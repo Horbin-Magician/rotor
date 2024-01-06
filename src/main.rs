@@ -5,11 +5,11 @@ mod module;
 
 use i_slint_backend_selector;
 
-use crate::core::application::admin_runner::AdminRunner;
+use crate::core::util::sys_util;
 use crate::core::application::Application;
 
 fn main() {
-    if AdminRunner::run_as_admin() == true {return;}
+    if sys_util::run_as_admin() == true {return;}
 
     let _app = Application::new();
 

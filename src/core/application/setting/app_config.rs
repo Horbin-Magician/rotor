@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use serde::{Serialize, Deserialize};
 
-use crate::core::application::powerboot::PowerBoot;
+use crate::core::util::sys_util;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppConfig {
@@ -41,7 +41,7 @@ impl AppConfig {
 
     pub fn set_power_boot(&mut self, power_boot: bool) {
         self.power_boot = power_boot;
-        PowerBoot::set_power_boot(power_boot).unwrap();
+        sys_util::set_power_boot(power_boot).unwrap();
         self.save();
     }
 
