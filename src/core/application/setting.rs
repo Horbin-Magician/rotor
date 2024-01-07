@@ -3,6 +3,8 @@ mod app_config;
 use i_slint_backend_winit::WinitWindowAccessor;
 use app_config::AppConfig;
 
+use crate::core::util::net_util;
+
 pub struct Setting {
     pub setting_win: SettingWindow,
 }
@@ -49,6 +51,15 @@ impl Setting {
                     let _ = winit_win.drag_window();
                 });
             });
+        }
+
+        { // update
+            let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
+            let latest_version_info = net_util::get_latest_version().unwrap();
+            let latest_version = latest_version_info.tag_name[1..].to_string();
+            println!("current version: {}", current_version);
+            println!("latest version: {}", latest_version);
+            net_util::update_software(latest_version_info).unwrap();
         }
 
         Setting {

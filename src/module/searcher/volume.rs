@@ -409,10 +409,11 @@ impl Volume {
         println!("[info] {} Begin Volume::serialization_write", self.drive);
 
         if self.file_map.is_empty() {return;};
-        let file_path = env::current_dir().unwrap();
-        let _ = fs::create_dir(format!("{}/userdata", file_path.to_str().unwrap()));
+        
+        let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
+        if !file_path.exists() { fs::create_dir(&file_path).unwrap(); }
 
-        if let Ok(mut save_file) = fs::File::create(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive)){
+        if let Ok(mut save_file) = fs::File::create(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive)){
             let mut buf = Vec::new();
             buf.write(&self.start_usn.to_be_bytes()).unwrap();
             for (file_key, file) in self.file_map.iter() {
@@ -435,8 +436,8 @@ impl Volume {
     fn serialization_read(&mut self) {
         println!("[info] {} Volume::serialization_read", self.drive);
 
-        let file_path = env::current_dir().unwrap();
-        if let Ok(file_data) = fs::read(format!("{}/userdata/{}.fd", file_path.to_str().unwrap(), self.drive))
+        let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
+        if let Ok(file_data) = fs::read(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive))
         {
             self.start_usn = i64::from_be_bytes(file_data[0..8].try_into().unwrap());
             let mut ptr_index = 8;
