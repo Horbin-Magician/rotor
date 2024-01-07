@@ -1,6 +1,7 @@
+use std::error::Error;
 use std::ffi::c_void;
 use std::process::Command;
-use std::{ptr, mem};
+use std::{ptr, mem, fs, io};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
@@ -192,4 +193,28 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         let pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(im.as_bytes(), im.width(), im.height());
         Some(slint::Image::from_rgba8(pixel_buffer))
     }
+}
+
+pub fn unzip(zip_path: &std::path::PathBuf , out_root_path: &std::path::PathBuf ) -> Result<(), Box<dyn Error>> {
+    let file = fs::File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let tmppath = match file.enclosed_name() {
+            Some(path) => path.to_owned(),
+            None => continue,
+        };
+        let outpath = std::path::PathBuf::from(&out_root_path).join(&tmppath);
+
+        if (*file.name()).ends_with('/') {
+            fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() { fs::create_dir_all(p)?; }
+            }
+            let mut outfile = fs::File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
+        }
+    }
+    Ok(())
 }

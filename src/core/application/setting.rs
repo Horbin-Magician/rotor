@@ -21,30 +21,26 @@ impl Setting {
             setting_win.set_power_boot(app_config.get_power_boot());
         }
 
-        {
+        { // power boot
             setting_win.on_power_boot_changed(move |power_boot| {
                 let mut app_config = AppConfig::global().lock().unwrap();
                 app_config.set_power_boot(power_boot);
             });
         }
 
-        {
+        { // minimize, close, win move
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_minimize(move || {
                 setting_win_clone.unwrap().window().with_winit_window(|winit_win| {
                     winit_win.set_minimized(true);
                 });
             });
-        }
 
-        {
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_close(move || {
                 setting_win_clone.unwrap().hide().unwrap();
             });
-        }
 
-        {
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_win_move(move || {
                 setting_win_clone.unwrap().window().with_winit_window(|winit_win| {
@@ -54,12 +50,21 @@ impl Setting {
         }
 
         { // update
-            let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
-            let latest_version_info = net_util::get_latest_version().unwrap();
-            let latest_version = latest_version_info.tag_name[1..].to_string();
-            println!("current version: {}", current_version);
-            println!("latest version: {}", latest_version);
-            net_util::update_software(latest_version_info).unwrap();
+            let setting_win_clone = setting_win.as_weak();
+            setting_win.on_check_update(move || {
+                let latest_version_info = net_util::get_latest_version().unwrap();
+                let latest_version = latest_version_info.tag_name[1..].to_string();
+                let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
+                let setting_window = setting_win_clone.unwrap();
+                setting_window.set_update_modal_state(1);
+                setting_window.set_current_version(current_version.into());
+                setting_window.set_latest_version(latest_version.into());
+            });
+
+            setting_win.on_update(move || {
+                let latest_version_info = net_util::get_latest_version().unwrap();
+                net_util::update_software(latest_version_info).unwrap();
+            });
         }
 
         Setting {
@@ -69,7 +74,7 @@ impl Setting {
 }
 
 slint::slint! {
-    import { CheckBox, StandardListView, StyleMetrics } from "std-widgets.slint";
+    import { CheckBox, StandardListView, StyleMetrics, Button } from "std-widgets.slint";
     import { AboutPage, BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/UI/pages/pages.slint";
     import { SideBar } from "src/core/application/setting/UI/side_bar.slint";
     import { TitleBar } from "src/core/application/setting/UI/title_bar.slint";
@@ -86,8 +91,13 @@ slint::slint! {
         callback win_move <=> title_bar.win_move;
 
         callback power_boot_changed(bool);
+        callback check_update();
+        callback update();
 
         in property <string> version;
+        in-out property <int> update_modal_state: 0;
+        in-out property <string> current_version;
+        in-out property <string> latest_version;
         in-out property <bool> power_boot;
 
         Rectangle {
@@ -115,16 +125,101 @@ slint::slint! {
                         if(side-bar.current-item == 0) : 
                             base_setting_page := BaseSettingPage {
                                 power_boot <=> root.power_boot;
-                                power_boot_changed(power_boot) => {
-                                    root.power_boot_changed(power_boot);
-                                }
+                                power_boot_changed(power_boot) => { root.power_boot_changed(power_boot); }
                             }
-                        if(side-bar.current-item == 1) : SearchSettingPage {}
-                        if(side-bar.current-item == 2) : ScreenShotterSettingPage {}
-                        if(side-bar.current-item == 3) : AboutPage {version: version;}
+                        if(side-bar.current-item == 1) :
+                            SearchSettingPage {}
+                        if(side-bar.current-item == 2) :
+                            ScreenShotterSettingPage {}
+                        if(side-bar.current-item == 3) :
+                            about_page := AboutPage { 
+                                version: version; 
+                                check_update() => { root.check_update(); }
+                            }
                     }
                 }
             }
         }
+
+        if (update_modal_state != 0) : 
+            Rectangle {
+                height: root.height;
+                width: root.width;
+                background: StyleMetrics.window-background.with_alpha(0.5);
+
+                in-out property <int> update_modal_state <=> root.update_modal_state;
+                in-out property <string> current_version <=> root.current_version;
+                in-out property <string> latest_version <=> root.latest_version;
+                
+                TouchArea {
+                    clicked() => { update_modal_state = 0; }
+                    Rectangle {
+                        height: 150px;
+                        width: 200px;
+                        background: StyleMetrics.window-background;
+                        border-width: 2px;
+                        border-radius: 5px;
+                        border-color: StyleMetrics.window-background.brighter(1);
+
+                        if (current_version == latest_version):
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 5px;
+                                Text {
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    text: @tr("当前已是最新版本");
+                                }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Button {
+                                        height: 30px;
+                                        width: 60px;
+                                        text: @tr("确定");
+                                        clicked() => { root.update_modal_state = 0; }
+                                    }
+                                }
+                            }
+                        if (current_version != latest_version):
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 5px;
+                                Text {
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    text: @tr("当前版本: {}", current_version);
+                                }
+                                Text {
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    text: @tr("最新版本: {}", latest_version);
+                                }
+                                Text {
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    text: @tr("请问是否更新至最新版本？");
+                                }
+
+                                HorizontalLayout {
+                                    padding-top: 10px;
+                                    alignment: center;
+                                    spacing: 10px;
+                                    Button {
+                                        height: 28px;
+                                        width: 60px;
+                                        text: @tr("是");
+                                        clicked() => { root.update(); }
+                                    }
+                                    Button {
+                                        height: 28px;
+                                        width: 60px;
+                                        text: @tr("否");
+                                        clicked() => { root.update_modal_state = 0; }
+                                    }
+                                }
+                            }
+                    }
+                }
+            }
     }
 }

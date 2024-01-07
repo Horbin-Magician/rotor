@@ -1,13 +1,13 @@
-// Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: MIT
-
 import { AboutSlint, Button } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component AboutPage inherits Page {
     in property <string> version: "unknown";
+
+    callback check_update <=> check_update_btn.clicked;
+
     width: 100%;
-    
+
     HorizontalLayout {
         alignment: center;
         padding-top: 40px;
@@ -37,12 +37,9 @@ export component AboutPage inherits Page {
         }
     }
 
-    Button {
+    check_update_btn := Button {
         text: "检查更新";
         width: 50%;
-        clicked =>  {
-            // TODO: 检查更新
-        }
     }
 
     Text {
