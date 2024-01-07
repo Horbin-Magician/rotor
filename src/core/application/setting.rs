@@ -171,6 +171,7 @@ slint::slint! {
                                     text: @tr("当前已是最新版本");
                                 }
                                 HorizontalLayout {
+                                    padding-top: 10px;
                                     alignment: center;
                                     Button {
                                         height: 30px;
