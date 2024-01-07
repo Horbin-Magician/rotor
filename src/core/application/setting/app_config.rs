@@ -1,5 +1,5 @@
 use toml;
-use std::fs;
+use std::{fs, env};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use serde::{Serialize, Deserialize};
@@ -21,7 +21,7 @@ fn default_u8() -> u8 { 0 }
 
 impl AppConfig {
     fn new() -> AppConfig {
-        let path = "config.toml";
+        let path = env::current_exe().unwrap().parent().unwrap().join("userdata").join("config.toml");
         let config_str = fs::read_to_string(path).unwrap_or_else(|_| String::new());
         match toml::from_str::<AppConfig>(&config_str) {
             Ok(config) => config,
@@ -30,7 +30,7 @@ impl AppConfig {
     }
 
     fn save(&self) {
-        let path = "config.toml";
+        let path = env::current_exe().unwrap().parent().unwrap().join("userdata").join("config.toml");
         let config_str = toml::to_string_pretty(self).unwrap();
         fs::write(path, config_str).unwrap();
     }
