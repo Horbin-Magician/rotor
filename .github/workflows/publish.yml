@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  release:
+  build:
     name: build and release app
 
     # the type of machine to run the job on
