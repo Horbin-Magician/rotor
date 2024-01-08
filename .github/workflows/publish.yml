@@ -1,4 +1,4 @@
-name: Rust
+name: Build And Release App
 
 on:
   push:
@@ -9,9 +9,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: windows-latest
+  release:
+    name: build and release app
+
+    # the type of machine to run the job on
+    runs-on: ${{ matrix.os }}
+    
+    # create a build matrix for jobs
+    strategy:
+      matrix:
+        os: [windows-latest]
+
     steps:
-    - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --release
+      - name: Check out git repository
+      - uses: actions/checkout@v3
+
+    - name: Get latest tag
+      id: latesttag
+      run: |
+        $latestTag = git describe --tags $(git rev-list --tags --max-count=1)
+        echo "Latest tag is $latestTag"
+        echo "::set-output name=tag::$latestTag"
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Compress
+        run: Compress-Archive -Path assets, target\release\rotor.exe -DestinationPath rotor-${{ steps.latesttag.outputs.tag }}.zip
+
+      - name: release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: "rotor-${{ steps.latesttag.outputs.tag }}.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
