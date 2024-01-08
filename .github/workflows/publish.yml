@@ -2,8 +2,6 @@ name: Build And Release App
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -12,24 +10,22 @@ jobs:
   build:
     name: build and release app
 
-    # the type of machine to run the job on
     runs-on: ${{ matrix.os }}
     
-    # create a build matrix for jobs
     strategy:
       matrix:
         os: [windows-latest]
 
     steps:
       - name: Check out git repository
-      - uses: actions/checkout@v3
+        uses: actions/checkout@v3
 
-    - name: Get latest tag
-      id: latesttag
-      run: |
-        $latestTag = git describe --tags $(git rev-list --tags --max-count=1)
-        echo "Latest tag is $latestTag"
-        echo "::set-output name=tag::$latestTag"
+      - name: Get latest tag
+        id: latesttag
+        run: |
+          $latestTag = git describe --tags $(git rev-list --tags --max-count=1)
+          echo "Latest tag is $latestTag"
+          echo "::set-output name=tag::$latestTag"
 
       - name: Build
         run: cargo build --release
