@@ -54,6 +54,7 @@ impl PinWin {
                         delta_y = 0.;
                     }
                 }
+                
                 if !is_stick_x || !is_stick_y {
                     let change_pos_x = now_pos.x + delta_x;
                     let change_pos_y = now_pos.y + delta_y;

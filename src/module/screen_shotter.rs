@@ -238,7 +238,7 @@ impl ScreenShotter{
                     let mut delta_x = 0;
                     let mut delta_y = 0;
                     
-                    if !(move_pos.x > other_right) && !(move_right < other_pos.x) {
+                    if !(move_pos.x > other_right) && !(move_right < other_pos.x) && !(move_pos.y > other_bottom) && !(move_bottom < other_pos.y) {
                         if (move_right - other_pos.x).abs() < padding {
                             move_win.set_is_stick_x(true);
                             delta_x = move_right - other_pos.x - 2; // -1 to fix the border width
@@ -252,9 +252,7 @@ impl ScreenShotter{
                             move_win.set_is_stick_x(true);
                             delta_x = move_pos.x - other_pos.x;
                         }
-                    }
 
-                    if !(move_pos.y > other_bottom) && !(move_bottom < other_pos.y) {
                         if (move_bottom - other_pos.y).abs() < padding {
                             move_win.set_is_stick_y(true);
                             delta_y = move_bottom - other_pos.y - 2;
