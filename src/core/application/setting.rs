@@ -1,6 +1,7 @@
 mod app_config;
 
 use i_slint_backend_winit::WinitWindowAccessor;
+use windows_sys::Win32::UI::WindowsAndMessaging;
 use app_config::AppConfig;
 
 use crate::core::util::net_util;
@@ -12,6 +13,20 @@ pub struct Setting {
 impl Setting {
     pub fn new() -> Setting {
         let setting_win = SettingWindow::new().unwrap();
+
+        {
+            let width: f32 = 500.;
+            let height: f32 = 400.;
+            let x_screen: f32;
+            let y_screen: f32;
+            unsafe{
+                x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
+                y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
+            }
+            let x_pos = ((x_screen - width * setting_win.window().scale_factor()) * 0.5) as i32;
+            let y_pos = ((y_screen - height * setting_win.window().scale_factor()) * 0.4) as i32;
+            setting_win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
+        }
 
         {   
             let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
