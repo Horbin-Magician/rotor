@@ -41,7 +41,7 @@ impl AppConfig {
 
     pub fn set_power_boot(&mut self, power_boot: bool) {
         self.power_boot = power_boot;
-        sys_util::set_power_boot(power_boot).unwrap();
+        let _ = sys_util::set_power_boot(power_boot);
         self.save();
     }
 
