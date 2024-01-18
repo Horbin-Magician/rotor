@@ -337,10 +337,10 @@ slint::slint! {
                         root.mouse_move_pos.x = touch_area.mouse-x;
                         root.mouse_move_pos.y = touch_area.mouse-y;
 
-                        root.select-rect.x = min(root.mouse_down_pos.x, root.mouse_move_pos.x);
-                        root.select-rect.y = min(root.mouse_down_pos.y, root.mouse_move_pos.y);
-                        root.select-rect.width = abs((root.mouse_move_pos.x - root.mouse_down_pos.x) / 1px) * 1px;
-                        root.select-rect.height = abs((root.mouse_move_pos.y - root.mouse_down_pos.y) / 1px) * 1px;
+                        root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor) * 1px;
+                        root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor) * 1px;
+                        root.select-rect.width = ceil(abs((root.mouse_move_pos.x - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
+                        root.select-rect.height = ceil(abs((root.mouse_move_pos.y - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
                     }
                 }
 
@@ -348,10 +348,10 @@ slint::slint! {
                     border-color: rgb(0, 175, 255);
                     border-width: 1px;
 
-                    x: root.select-rect.x - self.border-width;
-                    y: root.select-rect.y - self.border-width;
-                    width: root.select-rect.width + self.border-width * 2;
-                    height: root.select-rect.height + self.border-width * 2;
+                    x: root.select-rect.x / root.scale_factor - self.border-width;
+                    y: root.select-rect.y / root.scale_factor - self.border-width;
+                    width: root.select-rect.width / root.scale_factor + self.border-width * 2;
+                    height: root.select-rect.height / root.scale_factor + self.border-width * 2;
 
                     select_win := Image {
                         source: bac_image;
@@ -359,13 +359,13 @@ slint::slint! {
 
                         x: select_border.border-width;
                         y: select_border.border-width;
-                        width: root.select-rect.width;
-                        height: root.select-rect.height;
-
-                        source-clip-x: root.select-rect.x / 1px  * root.scale_factor;
-                        source-clip-y: root.select-rect.y / 1px  * root.scale_factor;
-                        source-clip-width: root.select-rect.width / 1px  * root.scale_factor;
-                        source-clip-height: root.select-rect.height / 1px  * root.scale_factor;
+                        width: root.select-rect.width / root.scale_factor;
+                        height: root.select-rect.height / root.scale_factor;
+                        
+                        source-clip-x: root.select-rect.x / 1px;
+                        source-clip-y: root.select-rect.y / 1px;
+                        source-clip-width: root.select-rect.width / 1px;
+                        source-clip-height: root.select-rect.height / 1px;
                     }
                 }
             }
