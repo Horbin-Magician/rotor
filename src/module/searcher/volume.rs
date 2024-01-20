@@ -1,6 +1,6 @@
 use std::{
     ffi::{CString, c_void},
-    io::Write,
+    io::{self, Write},
     time::SystemTime,
     sync::mpsc,
     collections::{BTreeMap, HashMap},
@@ -105,6 +105,11 @@ impl FileMap {
             self.rank_map.remove(index);
         }
     }
+
+    // pub fn reserve(&mut self, additional: usize) {
+    //     self.rank_map.reserve(additional);
+    //     self.main_map.retain(f);
+    // }
 
     pub fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, File> {
         self.main_map.iter()
@@ -286,7 +291,7 @@ impl Volume {
         }
 
         println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
-        self.serialization_write();
+        self.serialization_write().expect(format!("[Error] {} Volume::serialization_write, error: create file failed", self.drive).as_str());
         let _ = sender.send(true);
     }
 
@@ -313,7 +318,9 @@ impl Volume {
         let mut result = Vec::new();
 
         if query.is_empty() { let _ = sender.send(None); return; }
-        if self.file_map.is_empty() { self.serialization_read() };
+        if self.file_map.is_empty() { 
+            self.serialization_read().expect(format!("[Error] {} Volume::serialization_read, error: read file failed", self.drive).as_str() ) 
+        };
 
         let query_lower = query.to_lowercase();
         let query_filter = Self::make_filter(&query_lower);
@@ -351,7 +358,9 @@ impl Volume {
     pub fn update_index(&mut self) {
         println!("[info] {} Volume::update_index", self.drive);
 
-        if self.file_map.is_empty() {self.serialization_read()};
+        if self.file_map.is_empty() { 
+            self.serialization_read().expect(format!("[Error] {} Volume::serialization_read, error: read file failed", self.drive).as_str() ) 
+        };
 
         let mut data: [i64; 0x10000] = [0; 0x10000];
         let mut cb: u32 = 0;
@@ -404,60 +413,60 @@ impl Volume {
     }
 
     // serializate file_map to reduce memory usage
-    fn serialization_write(&mut self) {
+    fn serialization_write(&mut self) -> io::Result<()> {
         let sys_time = SystemTime::now();
         println!("[info] {} Begin Volume::serialization_write", self.drive);
 
-        if self.file_map.is_empty() {return;};
+        if self.file_map.is_empty() {return Ok(())};
         
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
         if !file_path.exists() { fs::create_dir(&file_path).unwrap(); }
 
-        if let Ok(mut save_file) = fs::File::create(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive)){
-            let mut buf = Vec::new();
-            buf.write(&self.start_usn.to_be_bytes()).unwrap();
-            for (file_key, file) in self.file_map.iter() {
-                let _ = buf.write(&file_key.index.to_be_bytes());
-                let _ = buf.write(&file.parent_index.to_be_bytes());
-                let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
-                let _ = buf.write(file.file_name.as_bytes());
-                let _ = buf.write(&file.filter.to_be_bytes());
-                let _ = buf.write(&file.rank.to_be_bytes());
-            }
-            let _ = save_file.write(&buf.to_vec());
-            self.release_index();
-            println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
-        } else {
-            println!("[Error] {} Volume::serialization_write, error: create file failed", self.drive);
+        let mut save_file = fs::File::create(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive))?;
+
+        let mut buf = Vec::new();
+        buf.write(&self.start_usn.to_be_bytes()).unwrap();
+        for (file_key, file) in self.file_map.iter() {
+            let _ = buf.write(&file_key.index.to_be_bytes());
+            let _ = buf.write(&file.parent_index.to_be_bytes());
+            let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
+            let _ = buf.write(file.file_name.as_bytes());
+            let _ = buf.write(&file.filter.to_be_bytes());
+            let _ = buf.write(&file.rank.to_be_bytes());
         }
+        let _ = save_file.write(&buf.to_vec());
+        self.release_index();
+
+        println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        Ok(())
     }
 
     // deserializate file_map from file
-    fn serialization_read(&mut self) {
+    fn serialization_read(&mut self) -> io::Result<()> {
         println!("[info] {} Volume::serialization_read", self.drive);
 
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
-        if let Ok(file_data) = fs::read(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive))
-        {
-            self.start_usn = i64::from_be_bytes(file_data[0..8].try_into().unwrap());
-            let mut ptr_index = 8;
-            while ptr_index < file_data.len() {
-                let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap());
-                ptr_index += 8;
-                let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap()) as u64;
-                ptr_index += 8;
-                let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into().unwrap()) as u16;
-                ptr_index += 2;
-                let file_name = String::from_utf8(file_data[ptr_index..ptr_index + file_name_len as usize].to_vec()).unwrap();
-                ptr_index += file_name_len as usize;
-                let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into().unwrap());
-                ptr_index += 4;
-                let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into().unwrap());
-                ptr_index += 1;
-                self.file_map.insert(index, File { parent_index, file_name, filter, rank });
-            }
-        } else {
-            println!("[Error] {} Volume::serialization_read, error: read file failed", self.drive);
+        let file_path_str = file_path.to_str().ok_or(io::Error::new(io::ErrorKind::Other, "Path to string conversion failed"))?;
+        
+        let file_data = fs::read(format!("{}/{}.fd", file_path_str, self.drive))?;
+
+        self.start_usn = i64::from_be_bytes(file_data[0..8].try_into().unwrap());
+        let mut ptr_index = 8;
+        while ptr_index < file_data.len() {
+            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap());
+            ptr_index += 8;
+            let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap()) as u64;
+            ptr_index += 8;
+            let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into().unwrap()) as u16;
+            ptr_index += 2;
+            let file_name = String::from_utf8(file_data[ptr_index..ptr_index + file_name_len as usize].to_vec()).unwrap();
+            ptr_index += file_name_len as usize;
+            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into().unwrap());
+            ptr_index += 4;
+            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into().unwrap());
+            ptr_index += 1;
+            self.file_map.insert(index, File { parent_index, file_name, filter, rank });
         }
+        Ok(())
     }
 }
