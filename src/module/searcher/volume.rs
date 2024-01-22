@@ -226,7 +226,9 @@ impl Volume {
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
     pub fn build_index(&mut self, sender: mpsc::Sender<bool>) {
+        #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
+        #[cfg(debug_assertions)]
         println!("[info] {} Begin Volume::build_index", self.drive);
 
         self.release_index();
@@ -290,7 +292,9 @@ impl Volume {
             }
         }
 
+        #[cfg(debug_assertions)]
         println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        
         self.serialization_write().expect(format!("[Error] {} Volume::serialization_write, error: create file failed", self.drive).as_str());
         let _ = sender.send(true);
     }
@@ -312,7 +316,9 @@ impl Volume {
 
     // searching
     pub fn find(&mut self, query: String, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
+        #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
+        #[cfg(debug_assertions)]
         println!("[info] {} Begin Volume::Find {query}", self.drive);
 
         let mut result = Vec::new();
@@ -350,12 +356,15 @@ impl Volume {
                 }
             }
         }
+
+        #[cfg(debug_assertions)]
         println!("[info] {} End Volume::find {query}, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
         let _ = sender.send(Some(result));
     }
 
     // update index, add new file, remove deleted file
     pub fn update_index(&mut self) {
+        #[cfg(debug_assertions)]
         println!("[info] {} Volume::update_index", self.drive);
 
         if self.file_map.is_empty() { 
@@ -414,7 +423,9 @@ impl Volume {
 
     // serializate file_map to reduce memory usage
     fn serialization_write(&mut self) -> io::Result<()> {
+        #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
+        #[cfg(debug_assertions)]
         println!("[info] {} Begin Volume::serialization_write", self.drive);
 
         if self.file_map.is_empty() {return Ok(())};
@@ -437,14 +448,19 @@ impl Volume {
         let _ = save_file.write(&buf.to_vec());
         self.release_index();
 
+        #[cfg(debug_assertions)]
         println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        
         Ok(())
     }
 
     // deserializate file_map from file
     fn serialization_read(&mut self) -> io::Result<()> {
+        #[cfg(debug_assertions)]
+        let sys_time = SystemTime::now();
+        #[cfg(debug_assertions)]
         println!("[info] {} Volume::serialization_read", self.drive);
-
+        
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
         let file_path_str = file_path.to_str().ok_or(io::Error::new(io::ErrorKind::Other, "Path to string conversion failed"))?;
         
@@ -467,6 +483,10 @@ impl Volume {
             ptr_index += 1;
             self.file_map.insert(index, File { parent_index, file_name, filter, rank });
         }
+
+        #[cfg(debug_assertions)]
+        println!("[info] {} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+
         Ok(())
     }
 }

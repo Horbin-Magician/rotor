@@ -257,14 +257,26 @@ impl FileData {
     }
 
     pub fn update_index(&mut self) {
-        for VolumePack{volume, ..} in &self.volume_packs { 
-            volume.lock().unwrap().update_index();
+        let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
+            let volume = volume.clone();
+            thread::spawn(move || {
+                volume.lock().unwrap().update_index();
+            })
+        }).collect::<Vec<_>>();
+        for handle in handles {
+            let _ = handle.join();
         }
     }
 
     pub fn release_index(&mut self) {
-        for VolumePack{volume, ..} in &mut self.volume_packs { 
-            volume.lock().unwrap().release_index();
+        let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
+            let volume = volume.clone();
+            thread::spawn(move || {
+                volume.lock().unwrap().release_index();
+            })
+        }).collect::<Vec<_>>();
+        for handle in handles {
+            let _ = handle.join();
         }
     }
 }
