@@ -176,8 +176,6 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         ptr::copy_nonoverlapping(byte_ptr, bytes[pos..].as_mut_ptr(), info_header_size); 
         let pos = pos + info_header_size;
 
-        // if bmp_color.bmBitsPixel == 2 || bmp_color.bmBitsPixel == 8 { } // write the RGBQUAD color table (for 16 and 256 colour icons)
-
         // 5.write color and mask bitmaps
         write_icon_data_to_memory(&mut bytes[pos..], icon_info.hbmColor, &bmp_color, bitmap_bytes_count as usize);
         let pos = pos + bitmap_bytes_count as usize;
@@ -189,6 +187,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         DeleteObject(icon_info.hbmMask as HGDIOBJ);
 
         // convert and output
+        println!("icon path: {}", path);
         let im: image::DynamicImage = image::load_from_memory(&bytes).unwrap();
         let pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(im.as_bytes(), im.width(), im.height());
         Some(slint::Image::from_rgba8(pixel_buffer))

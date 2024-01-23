@@ -135,7 +135,7 @@ impl FileData {
         false
     }
 
-    fn init_valid_vols(&mut self) -> u8 {
+    fn update_valid_vols(&mut self) -> u8 {
         let mut bit_mask = unsafe { FileSystem::GetLogicalDrives() };
         self.vols.clear();
         let mut vol = 'A';
@@ -146,11 +146,17 @@ impl FileData {
             vol = (vol as u8 + 1) as char;
             bit_mask >>= 1;
         }
+
+        self.volume_packs.retain(|VolumePack{volume, ..}| {
+            let volume = volume.lock().unwrap();
+            self.vols.contains(&volume.drive)
+        });
+
         self.vols.len() as u8
     }
 
     pub fn init_volumes(&mut self) -> bool {
-        self.waiting_init = self.init_valid_vols();
+        self.waiting_init = self.update_valid_vols();
 
         let (build_sender, build_receiver) = mpsc::channel::<bool>();
 
@@ -180,6 +186,8 @@ impl FileData {
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
+        self.update_valid_vols();
+
         let mut reply: Option<SearcherMessage> = None;
         
         if self.finding_name == filename { return reply; }
@@ -242,12 +250,9 @@ impl FileData {
                                 }
                             );
                         }
-                        // let win_height = if result_list.len() > 0 {  result_list.len() * 60 + 74 + 14 } else { 74 };
                         search_result_model.set_vec(result_list);
                         search_win.set_viewport_y(0.);
                         search_win.set_active_id(0);
-                        // println!("{win_height}");
-                        // search_win.set_ui_height(win_height as f32);
                     }).unwrap();
                 }
                 break;
@@ -257,6 +262,8 @@ impl FileData {
     }
 
     pub fn update_index(&mut self) {
+        self.update_valid_vols();
+
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {
@@ -269,6 +276,8 @@ impl FileData {
     }
 
     pub fn release_index(&mut self) {
+        self.update_valid_vols();
+        
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {

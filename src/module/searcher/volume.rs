@@ -155,33 +155,31 @@ impl FileMap {
 }
 
 pub struct Volume {
-    drive: char,
+    pub drive: char,
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
-    h_vol: isize,
+    // h_vol: isize,
     start_usn: i64,
     file_map: FileMap,
-    // ranked_file_index: Vec<u64>,
     stop_receiver: mpsc::Receiver<()>,
 }
 
 impl Volume {
     pub fn new(drive: char, stop_receiver: mpsc::Receiver<()>) -> Volume {
-        let h_vol = Self::open(drive);
+        // let h_vol = Self::open(drive);
         Volume {
             drive,
             drive_frn: 0x5000000000005,
             file_map: FileMap::new(),
             start_usn: 0x0,
             ujd: Ioctl::USN_JOURNAL_DATA_V0{ UsnJournalID: 0x0, FirstUsn: 0x0, NextUsn: 0x0, LowestValidUsn: 0x0, MaxUsn: 0x0, MaximumSize: 0x0, AllocationDelta: 0x0 },
-            h_vol,
-            // ranked_file_index: Vec::new(),
+            // h_vol,
             stop_receiver,
         }
     }
 
     // This is a helper function that opens a handle to the volume specified by the cDriveLetter parameter.
-    fn open(drive_letter: char) -> isize {
+    fn open_drive(drive_letter: char) -> isize {
         unsafe{
             let c_str: CString = CString::new(format!("\\\\.\\{}:", drive_letter)).unwrap();
             FileSystem::CreateFileA(
@@ -193,6 +191,11 @@ impl Volume {
                 0, 
                 0)
         }
+    }
+
+    // This is a helper function that close a handle.
+    fn close_drive(h_vol: isize) {
+        unsafe { Foundation::CloseHandle(h_vol); }
     }
 
     // Calculates a 32bit value that is used to filter out many files before comparing their filenames
@@ -233,11 +236,13 @@ impl Volume {
 
         self.release_index();
 
+        let h_vol = Self::open_drive(self.drive);
+
         // Query, Return statistics about the journal on the current volume
         let mut cd: u32 = 0;
         unsafe { 
             IO::DeviceIoControl(
-                self.h_vol, 
+                h_vol, 
                 Ioctl::FSCTL_QUERY_USN_JOURNAL, 
                 std::ptr::null(), 
                 0, 
@@ -253,7 +258,6 @@ impl Volume {
         // add the root directory
         let sz_root = format!("{}:", self.drive);
         self.file_map.add(self.drive_frn, sz_root, 0);
-        // self.add_file(self.drive_frn, sz_root, 0);
 
         let mut med: Ioctl::MFT_ENUM_DATA_V0 = Ioctl::MFT_ENUM_DATA_V0 {
             StartFileReferenceNumber: 0,
@@ -265,7 +269,7 @@ impl Volume {
         
         unsafe{
             while IO::DeviceIoControl(
-                self.h_vol, 
+                h_vol, 
                 Ioctl::FSCTL_ENUM_USN_DATA, 
                 &med as *const _ as *const c_void, 
                 std::mem::size_of::<Ioctl::MFT_ENUM_DATA_V0>() as u32, 
@@ -295,6 +299,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
         
+        Self::close_drive(h_vol);
         self.serialization_write().expect(format!("[Error] {} Volume::serialization_write, error: create file failed", self.drive).as_str());
         let _ = sender.send(true);
     }
@@ -382,9 +387,11 @@ impl Volume {
                 UsnJournalID: self.ujd.UsnJournalID,
         };
 
+        let h_vol = Self::open_drive(self.drive);
+
         unsafe{
             while IO::DeviceIoControl(
-                self.h_vol, 
+                h_vol, 
                 Ioctl::FSCTL_READ_USN_JOURNAL, 
                 &rujd as *const _ as *const c_void,
                 std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>().try_into().unwrap(), 
@@ -419,6 +426,7 @@ impl Volume {
             }
         }
         self.start_usn = rujd.StartUsn;
+        Self::close_drive(h_vol);
     }
 
     // serializate file_map to reduce memory usage
