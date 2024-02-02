@@ -187,7 +187,6 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         DeleteObject(icon_info.hbmMask as HGDIOBJ);
 
         // convert and output
-        println!("icon path: {}", path);
         let im: image::DynamicImage = image::load_from_memory(&bytes).unwrap();
         let pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(im.as_bytes(), im.width(), im.height());
         Some(slint::Image::from_rgba8(pixel_buffer))
