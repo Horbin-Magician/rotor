@@ -110,7 +110,7 @@ impl ScreenShotter{
                     slint::PhysicalSize::new(
                         primary_screen.display_info.width,
                         primary_screen.display_info.height + 1) // +1 to fix the bug
-                );
+                ); // set_fullscreen does not work well
 
                 mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                     winit_win.focus_window();
