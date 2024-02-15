@@ -171,7 +171,7 @@ impl FileData {
 
             let build_sender_clone = build_sender.clone();
             let _ = thread::spawn(move || {
-                volume.lock().unwrap().build_index(build_sender_clone);
+                volume.lock().unwrap().build_index(Some(build_sender_clone));
             });
         }
 

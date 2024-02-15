@@ -1,11 +1,5 @@
 use std::{
-    ffi::{CString, c_void},
-    io::{self, Write},
-    time::SystemTime,
-    sync::mpsc,
-    collections::{BTreeMap, HashMap},
-    fs,
-    env,
+    collections::{BTreeMap, HashMap}, env, error::Error, ffi::{c_void, CString}, fs, io::{self, Write}, sync::mpsc, time::SystemTime
 };
 
 use windows_sys::Win32::{
@@ -62,19 +56,29 @@ impl FileMap {
         }
     }
 
-    // Adds a file to the database
-    pub fn add(&mut self, index: u64, file_name: String, parent_index: u64) {
+    // insert a file to the database by index, file name and parent index
+    pub fn insert(&mut self, index: u64, file_name: String, parent_index: u64) {
         let filter = Volume::make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
-        self.main_map.insert(FileKey { rank, index }, File {
+        self.insert_simple(index, File {
             parent_index,
             file_name,
             filter,
             rank,
         });
-        self.rank_map.insert(index, rank);
     }
 
+    // insert a file to the database by index and file struct
+    pub fn insert_simple(&mut self, index: u64, file: File) {
+        let file_key = FileKey {
+            rank: file.rank,
+            index,
+        };
+        self.rank_map.insert(index, file.rank);
+        self.main_map.insert(file_key, file);
+    }
+
+    // get a File by index
     pub fn get(&self, index: &u64) -> Option<&File> {
         if let Some(rank) = self.rank_map.get(index) {
             let file_key = FileKey {
@@ -84,15 +88,6 @@ impl FileMap {
             return self.main_map.get(&file_key);
         }
         None
-    }
-
-    pub fn insert(&mut self, index: u64, file: File) {
-        let file_key = FileKey {
-            rank: file.rank,
-            index,
-        };
-        self.rank_map.insert(index, file.rank);
-        self.main_map.insert(file_key, file);
     }
 
     pub fn remove(&mut self, index: &u64) {
@@ -105,11 +100,6 @@ impl FileMap {
             self.rank_map.remove(index);
         }
     }
-
-    // pub fn reserve(&mut self, additional: usize) {
-    //     self.rank_map.reserve(additional);
-    //     self.main_map.retain(f);
-    // }
 
     pub fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, File> {
         self.main_map.iter()
@@ -158,7 +148,6 @@ pub struct Volume {
     pub drive: char,
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
-    // h_vol: isize,
     start_usn: i64,
     file_map: FileMap,
     stop_receiver: mpsc::Receiver<()>,
@@ -166,14 +155,12 @@ pub struct Volume {
 
 impl Volume {
     pub fn new(drive: char, stop_receiver: mpsc::Receiver<()>) -> Volume {
-        // let h_vol = Self::open(drive);
         Volume {
             drive,
             drive_frn: 0x5000000000005,
             file_map: FileMap::new(),
             start_usn: 0x0,
             ujd: Ioctl::USN_JOURNAL_DATA_V0{ UsnJournalID: 0x0, FirstUsn: 0x0, NextUsn: 0x0, LowestValidUsn: 0x0, MaxUsn: 0x0, MaximumSize: 0x0, AllocationDelta: 0x0 },
-            // h_vol,
             stop_receiver,
         }
     }
@@ -228,7 +215,7 @@ impl Volume {
     }
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
-    pub fn build_index(&mut self, sender: mpsc::Sender<bool>) {
+    pub fn build_index(&mut self, sender: Option<mpsc::Sender<bool>>) {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
@@ -257,7 +244,7 @@ impl Volume {
 
         // add the root directory
         let sz_root = format!("{}:", self.drive);
-        self.file_map.add(self.drive_frn, sz_root, 0);
+        self.file_map.insert(self.drive_frn, sz_root, 0);
 
         let mut med: Ioctl::MFT_ENUM_DATA_V0 = Ioctl::MFT_ENUM_DATA_V0 {
             StartFileReferenceNumber: 0,
@@ -287,9 +274,8 @@ impl Volume {
                         let c = *((file_name_begin_ptr + (i * 2) as usize) as *const u16);
                         file_name_list.push(c);
                     }
-                    let file_name = String::from_utf16(&file_name_list).unwrap();
-                    self.file_map.add((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
-                    // self.add_file((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                    let file_name = String::from_utf16(&file_name_list).unwrap_or(String::from("unknown"));
+                    self.file_map.insert((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
                     record_ptr = (record_ptr as usize + (*record_ptr).RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
                 med.StartFileReferenceNumber = *(&(data[0]) as *const u64);
@@ -300,8 +286,13 @@ impl Volume {
         println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
         
         Self::close_drive(h_vol);
-        self.serialization_write().expect(format!("[Error] {} Volume::serialization_write, error: create file failed", self.drive).as_str());
-        let _ = sender.send(true);
+        self.serialization_write().unwrap_or_else(|err: io::Error| {
+            println!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err);
+        });
+        
+        if let Some(sender) = sender {
+            let _ = sender.send(true);
+        }
     }
 
     // Clears the database
@@ -330,7 +321,10 @@ impl Volume {
 
         if query.is_empty() { let _ = sender.send(None); return; }
         if self.file_map.is_empty() { 
-            self.serialization_read().expect(format!("[Error] {} Volume::serialization_read, error: read file failed", self.drive).as_str() ) 
+            self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
+                println!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err);
+                self.build_index(None);
+            });
         };
 
         let query_lower = query.to_lowercase();
@@ -364,6 +358,7 @@ impl Volume {
 
         #[cfg(debug_assertions)]
         println!("[info] {} End Volume::find {query}, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
+        
         let _ = sender.send(Some(result));
     }
 
@@ -373,7 +368,10 @@ impl Volume {
         println!("[info] {} Volume::update_index", self.drive);
 
         if self.file_map.is_empty() { 
-            self.serialization_read().expect(format!("[Error] {} Volume::serialization_read, error: read file failed", self.drive).as_str() ) 
+            self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
+                println!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err);
+                self.build_index(None);
+            });
         };
 
         let mut data: [i64; 0x10000] = [0; 0x10000];
@@ -410,15 +408,15 @@ impl Volume {
                         let c = *((file_name_begin_ptr + (i * 2) as usize) as *const u16);
                         file_name_list.push(c);
                     }
-                    let file_name = String::from_utf16(&file_name_list).unwrap();
+                    let file_name = String::from_utf16(&file_name_list).unwrap_or(String::from("unknown"));
                     if (*record_ptr).Reason & Ioctl::USN_REASON_FILE_CREATE == Ioctl::USN_REASON_FILE_CREATE {
-                        self.file_map.add((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                        self.file_map.insert((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
                     }
                     else if (*record_ptr).Reason & Ioctl::USN_REASON_FILE_DELETE == Ioctl::USN_REASON_FILE_DELETE {
                         self.file_map.remove(&(*record_ptr).FileReferenceNumber);
                     }
                     else if (*record_ptr).Reason & Ioctl::USN_REASON_RENAME_NEW_NAME == Ioctl::USN_REASON_RENAME_NEW_NAME {
-                        self.file_map.add((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                        self.file_map.insert((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
                     }
                     record_ptr = (record_ptr as usize + (*record_ptr).RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
@@ -430,7 +428,7 @@ impl Volume {
     }
 
     // serializate file_map to reduce memory usage
-    fn serialization_write(&mut self) -> io::Result<()> {
+    fn serialization_write(&mut self) -> Result<(), io::Error> {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
@@ -439,19 +437,19 @@ impl Volume {
         if self.file_map.is_empty() {return Ok(())};
         
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
-        if !file_path.exists() { fs::create_dir(&file_path).unwrap(); }
+        if !file_path.exists() { fs::create_dir(&file_path)?; }
 
         let mut save_file = fs::File::create(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive))?;
 
         let mut buf = Vec::new();
-        buf.write(&self.start_usn.to_be_bytes()).unwrap();
+        buf.write(&self.start_usn.to_be_bytes())?;
         for (file_key, file) in self.file_map.iter() {
-            let _ = buf.write(&file_key.index.to_be_bytes());
-            let _ = buf.write(&file.parent_index.to_be_bytes());
-            let _ = buf.write(&(file.file_name.len() as u16).to_be_bytes());
-            let _ = buf.write(file.file_name.as_bytes());
-            let _ = buf.write(&file.filter.to_be_bytes());
-            let _ = buf.write(&file.rank.to_be_bytes());
+            buf.write(&file_key.index.to_be_bytes())?;
+            buf.write(&file.parent_index.to_be_bytes())?;
+            buf.write(&(file.file_name.len() as u16).to_be_bytes())?;
+            buf.write(file.file_name.as_bytes())?;
+            buf.write(&file.filter.to_be_bytes())?;
+            buf.write(&file.rank.to_be_bytes())?;
         }
         let _ = save_file.write(&buf.to_vec());
         self.release_index();
@@ -463,33 +461,41 @@ impl Volume {
     }
 
     // deserializate file_map from file
-    fn serialization_read(&mut self) -> io::Result<()> {
+    fn serialization_read(&mut self) -> Result<(), Box<dyn Error>> {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
         println!("[info] {} Volume::serialization_read", self.drive);
         
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
-        let file_path_str = file_path.to_str().ok_or(io::Error::new(io::ErrorKind::Other, "Path to string conversion failed"))?;
+        let file_path_str = file_path.to_str().unwrap();
         
         let file_data = fs::read(format!("{}/{}.fd", file_path_str, self.drive))?;
 
-        self.start_usn = i64::from_be_bytes(file_data[0..8].try_into().unwrap());
+        if file_data.len() < 8 { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data too short.").into()); }
+
+        self.start_usn = i64::from_be_bytes(file_data[0..8].try_into()?);
         let mut ptr_index = 8;
+
         while ptr_index < file_data.len() {
-            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap());
+            if ptr_index + 18 > file_data.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into()); }
+            
+            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into()?);
             ptr_index += 8;
-            let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into().unwrap()) as u64;
+            let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into()?) as u64;
             ptr_index += 8;
-            let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into().unwrap()) as u16;
+            let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into()?) as u16;
             ptr_index += 2;
-            let file_name = String::from_utf8(file_data[ptr_index..ptr_index + file_name_len as usize].to_vec()).unwrap();
+
+            if ptr_index + (file_name_len as usize) + 5 > file_data.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into()); }
+
+            let file_name = String::from_utf8(file_data[ptr_index..(ptr_index + file_name_len as usize)].to_vec())?;
             ptr_index += file_name_len as usize;
-            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into().unwrap());
+            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into()?);
             ptr_index += 4;
-            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into().unwrap());
+            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into()?);
             ptr_index += 1;
-            self.file_map.insert(index, File { parent_index, file_name, filter, rank });
+            self.file_map.insert_simple(index, File { parent_index, file_name, filter, rank });
         }
 
         #[cfg(debug_assertions)]

@@ -22,7 +22,6 @@ pub fn run_as_admin() -> bool {
         )
     };
     if ins > 32 as HMODULE { return true; } // return true if programe run successfully
-    // TODO: MessageBoxW(NULL, L"该软件需要在管理员权限下建立索引。", L"请以管理员身份运行",MB_OK);
     false
 }
 
