@@ -9,6 +9,8 @@ use windows_sys::Win32::{
     Foundation,
 };
 
+use tauri_winrt_notification::{Duration, Sound, Toast};
+
 struct File {
     parent_index: u64,
     file_name: String,
@@ -287,11 +289,17 @@ impl Volume {
         
         Self::close_drive(h_vol);
         self.serialization_write().unwrap_or_else(|err: io::Error| {
+            Toast::new(Toast::POWERSHELL_APP_ID)
+                .title("小云管家错误报告（非正常）")
+                .text1(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str())
+                .sound(Some(Sound::SMS))
+                .duration(Duration::Short)
+                .show().expect("unable to toast");
             println!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err);
         });
         
         if let Some(sender) = sender {
-            let _ = sender.send(true);
+            let _ = sender.send(true); // TODO return false when failed
         }
     }
 
@@ -322,6 +330,12 @@ impl Volume {
         if query.is_empty() { let _ = sender.send(None); return; }
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
+                Toast::new(Toast::POWERSHELL_APP_ID)
+                    .title("小云管家错误报告（非正常）")
+                    .text1(format!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err).as_str())
+                    .sound(Some(Sound::SMS))
+                    .duration(Duration::Short)
+                    .show().expect("unable to toast");
                 println!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err);
                 self.build_index(None);
             });
@@ -369,6 +383,12 @@ impl Volume {
 
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
+                Toast::new(Toast::POWERSHELL_APP_ID)
+                    .title("小云管家错误报告（非正常）")
+                    .text1(format!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err).as_str())
+                    .sound(Some(Sound::SMS))
+                    .duration(Duration::Short)
+                    .show().expect("unable to toast");
                 println!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err);
                 self.build_index(None);
             });
