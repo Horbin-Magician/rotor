@@ -9,6 +9,10 @@ mod module;
 use crate::core::util::sys_util;
 use crate::core::application::Application;
 
+fn wide_null(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
 fn main() {
     // let mut backend = i_slint_backend_winit::Backend::new().unwrap();
     // backend.window_builder_hook = Some(Box::new(|builder| {

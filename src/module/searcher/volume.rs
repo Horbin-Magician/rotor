@@ -7,9 +7,11 @@ use windows_sys::Win32::{
     System::IO,
     System::Ioctl,
     Foundation,
+    UI::WindowsAndMessaging::{MessageBoxW, MB_OK},
 };
 
-use tauri_winrt_notification::{Duration, Sound, Toast};
+use crate::wide_null;
+
 
 struct File {
     parent_index: u64,
@@ -289,13 +291,11 @@ impl Volume {
         
         Self::close_drive(h_vol);
         self.serialization_write().unwrap_or_else(|err: io::Error| {
-            Toast::new(Toast::POWERSHELL_APP_ID)
-                .title("小云管家错误报告（非正常）")
-                .text1(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str())
-                .sound(Some(Sound::SMS))
-                .duration(Duration::Short)
-                .show().expect("unable to toast");
-            println!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err);
+            let title = wide_null("出现错误");
+            let content = wide_null(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str());
+            unsafe {
+                MessageBoxW(0 as isize, content.as_ptr(), title.as_ptr(), MB_OK);
+            }
         });
         
         if let Some(sender) = sender {
@@ -330,13 +330,11 @@ impl Volume {
         if query.is_empty() { let _ = sender.send(None); return; }
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
-                Toast::new(Toast::POWERSHELL_APP_ID)
-                    .title("小云管家错误报告（非正常）")
-                    .text1(format!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err).as_str())
-                    .sound(Some(Sound::SMS))
-                    .duration(Duration::Short)
-                    .show().expect("unable to toast");
-                println!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err);
+                let title = wide_null("出现错误");
+                let content = wide_null(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str());
+                unsafe {
+                    MessageBoxW(0 as isize, content.as_ptr(), title.as_ptr(), MB_OK);
+                }
                 self.build_index(None);
             });
         };
@@ -383,13 +381,11 @@ impl Volume {
 
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
-                Toast::new(Toast::POWERSHELL_APP_ID)
-                    .title("小云管家错误报告（非正常）")
-                    .text1(format!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err).as_str())
-                    .sound(Some(Sound::SMS))
-                    .duration(Duration::Short)
-                    .show().expect("unable to toast");
-                println!("[Error] {} Volume::serialization_read, error: {:?}, so try to rebuild index", self.drive, err);
+                let title = wide_null("出现错误");
+                let content = wide_null(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str());
+                unsafe {
+                    MessageBoxW(0 as isize, content.as_ptr(), title.as_ptr(), MB_OK);
+                }
                 self.build_index(None);
             });
         };
