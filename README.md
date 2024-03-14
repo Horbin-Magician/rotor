@@ -20,7 +20,7 @@ I think an open source software to bring these small tools together is very nece
 ## Screenshot
 
 1. Shortcut key `Shift+C` prints screen, it is not yet customizable.
-2. By default, the captured image is fixed to the screen, and press `ESC` to close it, `s` to save it, `Enter` to copy it, 'h' to minimize it.
+2. By default, the captured image is fixed to the screen, and press `ESC` to close it, `s` to save it, `Enter` to copy it, `h` to minimize it.
 
 # Contribution
 
