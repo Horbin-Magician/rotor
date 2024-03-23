@@ -7,11 +7,9 @@ use windows_sys::Win32::{
     System::IO,
     System::Ioctl,
     Foundation,
-    UI::WindowsAndMessaging::{MessageBoxW, MB_OK},
 };
 
-use crate::wide_null;
-
+use crate::core::util::log_util::{log_error, log_info};
 
 struct File {
     parent_index: u64,
@@ -223,7 +221,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
-        println!("[info] {} Begin Volume::build_index", self.drive);
+        log_info(format!("{} Begin Volume::build_index", self.drive));
 
         self.release_index();
 
@@ -287,15 +285,11 @@ impl Volume {
         }
 
         #[cfg(debug_assertions)]
-        println!("[info] {} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        log_info(format!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
         
         Self::close_drive(h_vol);
         self.serialization_write().unwrap_or_else(|err: io::Error| {
-            let title = wide_null("出现错误");
-            let content = wide_null(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str());
-            unsafe {
-                MessageBoxW(0 as isize, content.as_ptr(), title.as_ptr(), MB_OK);
-            }
+            log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
         });
         
         if let Some(sender) = sender {
@@ -306,7 +300,10 @@ impl Volume {
     // Clears the database
     pub fn release_index(&mut self) {
         if self.file_map.is_empty() {return;}
-        println!("[info] {} Volume::release_index", self.drive);
+
+        #[cfg(debug_assertions)]
+        log_info(format!("{} Begin Volume::release_index", self.drive));
+
         self.file_map.clear();
     }
 
@@ -323,18 +320,14 @@ impl Volume {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
-        println!("[info] {} Begin Volume::Find {query}", self.drive);
+        log_info(format!("{} Begin Volume::Find {query}", self.drive));
 
         let mut result = Vec::new();
 
         if query.is_empty() { let _ = sender.send(None); return; }
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
-                let title = wide_null("出现错误");
-                let content = wide_null(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str());
-                unsafe {
-                    MessageBoxW(0 as isize, content.as_ptr(), title.as_ptr(), MB_OK);
-                }
+                log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
                 self.build_index(None);
             });
         };
@@ -348,7 +341,7 @@ impl Volume {
         let mut find_num = 0;
         for (_, file) in self.file_map.iter().rev() {
             if self.stop_receiver.try_recv().is_ok() {
-                println!("[info] {} Stop Volume::Find", self.drive);
+                log_info(format!("{} Stop Volume::Find", self.drive));
                 let _ = sender.send(None);
                 return;
             }
@@ -369,23 +362,18 @@ impl Volume {
         }
 
         #[cfg(debug_assertions)]
-        println!("[info] {} End Volume::find {query}, use tiem: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len());
-        
+        log_info(format!("{} End Volume::Find {query}, use time: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len()));
         let _ = sender.send(Some(result));
     }
 
     // update index, add new file, remove deleted file
     pub fn update_index(&mut self) {
         #[cfg(debug_assertions)]
-        println!("[info] {} Volume::update_index", self.drive);
+        log_info(format!("{} Begin Volume::update_index", self.drive));
 
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
-                let title = wide_null("出现错误");
-                let content = wide_null(format!("[Error] {} Volume::serialization_write, error: {:?}", self.drive, err).as_str());
-                unsafe {
-                    MessageBoxW(0 as isize, content.as_ptr(), title.as_ptr(), MB_OK);
-                }
+                log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
                 self.build_index(None);
             });
         };
@@ -448,7 +436,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
-        println!("[info] {} Begin Volume::serialization_write", self.drive);
+        log_info(format!("{} Begin Volume::serialization_write", self.drive));
 
         if self.file_map.is_empty() {return Ok(())};
         
@@ -471,8 +459,8 @@ impl Volume {
         self.release_index();
 
         #[cfg(debug_assertions)]
-        println!("[info] {} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
-        
+        log_info(format!("{} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
+
         Ok(())
     }
 
@@ -481,7 +469,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
-        println!("[info] {} Volume::serialization_read", self.drive);
+        log_info(format!("{} Begin Volume::serialization_read", self.drive));
         
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
         let file_path_str = file_path.to_str().unwrap();
@@ -515,7 +503,7 @@ impl Volume {
         }
 
         #[cfg(debug_assertions)]
-        println!("[info] {} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis());
+        log_info(format!("{} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
 
         Ok(())
     }
