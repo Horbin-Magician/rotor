@@ -341,6 +341,7 @@ impl Volume {
         let mut find_num = 0;
         for (_, file) in self.file_map.iter().rev() {
             if self.stop_receiver.try_recv().is_ok() {
+                #[cfg(debug_assertions)]
                 log_info(format!("{} Stop Volume::Find", self.drive));
                 let _ = sender.send(None);
                 return;
@@ -363,6 +364,7 @@ impl Volume {
 
         #[cfg(debug_assertions)]
         log_info(format!("{} End Volume::Find {query}, use time: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len()));
+        
         let _ = sender.send(Some(result));
     }
 
