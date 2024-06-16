@@ -1,4 +1,4 @@
-import { StyleMetrics } from "std-widgets.slint";
+import { Palette } from "std-widgets.slint";
 
 component TitleBtn inherits Rectangle {
     in property<image> img <=> image.source;
@@ -13,7 +13,7 @@ component TitleBtn inherits Rectangle {
         image := Image {
             height: 14px;
             width: 14px;
-            colorize: StyleMetrics.default-text-color;
+            colorize: Palette.foreground;
         }
     }
 
@@ -35,7 +35,7 @@ export component TitleBar inherits Rectangle {
 
     height: 40px;
     width: 100%;
-    background: StyleMetrics.window-background.darker(0.4);
+    background: Palette.background.darker(0.4);
 
     touch := TouchArea {
         pointer-event(event) => {
