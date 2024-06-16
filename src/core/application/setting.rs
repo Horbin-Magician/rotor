@@ -89,7 +89,7 @@ impl Setting {
 }
 
 slint::slint! {
-    import { CheckBox, StandardListView, StyleMetrics, Button } from "std-widgets.slint";
+    import { CheckBox, StandardListView, Palette, Button } from "std-widgets.slint";
     import { AboutPage, BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/UI/pages/pages.slint";
     import { SideBar } from "src/core/application/setting/UI/side_bar.slint";
     import { TitleBar } from "src/core/application/setting/UI/title_bar.slint";
@@ -116,11 +116,11 @@ slint::slint! {
         in-out property <bool> power_boot;
 
         Rectangle {
-            height: root.height - 4px;
-            width: root.width - 4px;
+            height: (root.height) - 4px;
+            width: (root.width) - 4px;
 
-            background: StyleMetrics.window-background;
-            border-color: StyleMetrics.window-background.brighter(1).with_alpha(0.2);
+            background: Palette.background;
+            border-color: Palette.background.brighter(1).with_alpha(0.2);
             border-width: 2px;
             border-radius: 5px;
             clip: true;
@@ -160,7 +160,7 @@ slint::slint! {
             Rectangle {
                 height: root.height;
                 width: root.width;
-                background: StyleMetrics.window-background.with_alpha(0.5);
+                background: Palette.background.with_alpha(0.5);
 
                 in-out property <int> update_modal_state <=> root.update_modal_state;
                 in-out property <string> current_version <=> root.current_version;
@@ -171,10 +171,10 @@ slint::slint! {
                     Rectangle {
                         height: 150px;
                         width: 200px;
-                        background: StyleMetrics.window-background;
+                        background: Palette.background;
                         border-width: 2px;
                         border-radius: 5px;
-                        border-color: StyleMetrics.window-background.brighter(1);
+                        border-color: Palette.background.brighter(1);
 
                         if (current_version == latest_version):
                             VerticalLayout {

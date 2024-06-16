@@ -195,7 +195,7 @@ impl Searcher {
 }
 
 slint::slint! {
-    import { Button, VerticalBox, LineEdit, ListView , HorizontalBox, StyleMetrics} from "std-widgets.slint";
+    import { Button, VerticalBox, LineEdit, ListView , HorizontalBox, Palette} from "std-widgets.slint";
 
     struct SearchResult_slint {
         id: int,
@@ -232,7 +232,7 @@ slint::slint! {
         VerticalBox {
             Rectangle {
                 border-radius: 5px;
-                background: StyleMetrics.window-background;
+                background: Palette.background;
 
                 key-handler := FocusScope {
                     key-released(event) => {
@@ -321,7 +321,7 @@ slint::slint! {
                                                         admin_btn_img := Image {
                                                             height: 20px;
                                                             width: 20px;
-                                                            colorize: StyleMetrics.default-text-color;
+                                                            colorize: Palette.foreground;
                                                             source: @image-url("assets/icon/admin.svg");
                                                         }
                                                     }
@@ -340,7 +340,7 @@ slint::slint! {
                                                         file_btn_img := Image {
                                                             height: 20px;
                                                             width: 20px;
-                                                            colorize: StyleMetrics.default-text-color;
+                                                            colorize: Palette.foreground;
                                                             source: @image-url("assets/icon/file.svg");
                                                         }
                                                     }
@@ -357,7 +357,7 @@ slint::slint! {
 
                                 states [
                                     active when root.active_id == data.id && !search_result_item_touch.has-hover: {
-                                        background: StyleMetrics.textedit-background-disabled;
+                                        background: Palette.alternate-background;
                                         active_bar.x: 0px;
                                         item_content.width: self.width;
                                     }
@@ -367,14 +367,14 @@ slint::slint! {
                                         item_content.width: self.width;
                                     }
                                     active_hover when root.active_id == data.id && search_result_item_touch.has-hover: {
-                                        background: StyleMetrics.textedit-background-disabled;
+                                        background: Palette.alternate-background;
                                         active_bar.x: 0px;
-                                        item_content.width: self.width - item_menu.width;
+                                        item_content.width: (self.width) - item_menu.width;
                                     }
                                     hover when search_result_item_touch.has-hover: {
-                                        background: StyleMetrics.textedit-background-disabled;
+                                        background: Palette.alternate-background;
                                         active_bar.x: -2px;
-                                        item_content.width: self.width - item_menu.width;
+                                        item_content.width: (self.width) - item_menu.width;
                                     }
                                 ]
                             }

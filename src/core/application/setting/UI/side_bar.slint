@@ -1,4 +1,4 @@
-import { StyleMetrics } from "std-widgets.slint";
+import { Palette } from "std-widgets.slint";
 
 component SideBarItem inherits Rectangle {
     in-out property<string> text <=> label.text;
@@ -13,7 +13,6 @@ component SideBarItem inherits Rectangle {
             animate background { duration: 150ms; }
 
             label := Text {
-                color: StyleMetrics.default-text-color;
                 vertical-alignment: center;
                 horizontal-alignment: center;
                 font-size: 14px;
@@ -37,12 +36,9 @@ export component SideBar inherits Rectangle {
     width: 140px;
 
     Rectangle {
-        background: StyleMetrics.window-background.darker(0.2);
+        background: Palette.background.darker(0.2);
         VerticalLayout {
-            padding-left: StyleMetrics.layout-padding;
-            padding-right: StyleMetrics.layout-padding;
-            padding-top: StyleMetrics.layout-padding;
-            padding-bottom: StyleMetrics.layout-padding;
+            padding: 4px;
             spacing: 4px;
             alignment: start;
 
