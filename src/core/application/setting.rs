@@ -90,7 +90,7 @@ impl Setting {
 
 slint::slint! {
     import { CheckBox, StandardListView, Palette, Button } from "std-widgets.slint";
-    import { AboutPage, BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/UI/pages/pages.slint";
+    import { BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/UI/pages/pages.slint";
     import { SideBar } from "src/core/application/setting/UI/side_bar.slint";
     import { TitleBar } from "src/core/application/setting/UI/title_bar.slint";
     export component SettingWindow inherits Window {
@@ -103,7 +103,7 @@ slint::slint! {
 
         callback minimize <=> title_bar.minimize;
         callback close <=> title_bar.close;
-        callback win_move <=> title_bar.win_move;
+        callback win_move;
 
         callback power_boot_changed(bool);
         callback check_update();
@@ -115,42 +115,48 @@ slint::slint! {
         in-out property <string> latest_version;
         in-out property <bool> power_boot;
 
-        Rectangle {
-            height: (root.height) - 4px;
-            width: (root.width) - 4px;
+        touch := TouchArea {
+            pointer-event(event) => {
+                if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                    win_move();
+                }
+            }
 
-            background: Palette.background;
-            border-color: Palette.background.brighter(1).with_alpha(0.2);
-            border-width: 2px;
-            border-radius: 5px;
-            clip: true;
+            Rectangle {
+                height: (root.height) - 4px;
+                width: (root.width) - 4px;
 
-            VerticalLayout {
-                title_bar := TitleBar {}
+                background: Palette.background;
+                border-color: Palette.background.brighter(1).with_alpha(0.2);
+                border-width: 2px;
+                border-radius: 5px;
+                clip: true;
+                
                 HorizontalLayout {
                     side-bar := SideBar {
                         model: [
                             @tr("Menu" => "基础"),
                             @tr("Menu" => "搜索"),
                             @tr("Menu" => "截图"),
-                            @tr("Menu" => "关于"),
                         ];
                     }
-                    Rectangle {
-                        if(side-bar.current-item == 0) : 
-                            base_setting_page := BaseSettingPage {
-                                power_boot <=> root.power_boot;
-                                power_boot_changed(power_boot) => { root.power_boot_changed(power_boot); }
-                            }
-                        if(side-bar.current-item == 1) :
-                            SearchSettingPage {}
-                        if(side-bar.current-item == 2) :
-                            ScreenShotterSettingPage {}
-                        if(side-bar.current-item == 3) :
-                            about_page := AboutPage { 
-                                version: version; 
-                                check_update() => { root.check_update(); }
-                            }
+
+                    VerticalLayout {
+                        title_bar := TitleBar {}
+
+                        Rectangle {
+                            if(side-bar.current-item == 0) : 
+                                base_setting_page := BaseSettingPage {
+                                    version: version;
+                                    check_update() => { root.check_update(); }
+                                    power_boot <=> root.power_boot;
+                                    power_boot_changed(power_boot) => { root.power_boot_changed(power_boot); }
+                                }
+                            if(side-bar.current-item == 1) :
+                                SearchSettingPage {}
+                            if(side-bar.current-item == 2) :
+                                ScreenShotterSettingPage {}
+                        }
                     }
                 }
             }
