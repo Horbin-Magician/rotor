@@ -3,8 +3,10 @@ import { Page } from "page.slint";
 
 export component BaseSettingPage inherits Page {
     in-out property <bool> power_boot;
+    in property <string> version: "unknown";
 
     callback power_boot_changed(bool);
+    callback check_update <=> check_update_btn.clicked;
 
     HorizontalLayout {
         alignment: start;
@@ -22,6 +24,7 @@ export component BaseSettingPage inherits Page {
             enabled: false;
         }
     }
+
     HorizontalLayout {
         alignment: start;
         spacing: 20px;
@@ -38,6 +41,7 @@ export component BaseSettingPage inherits Page {
             enabled: false;
         }
     }
+
     HorizontalLayout {
         alignment: start;
         spacing: 20px;
@@ -90,6 +94,20 @@ export component BaseSettingPage inherits Page {
                     text: "Ctrl+C";
                 }
             }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: start;
+        spacing: 20px;
+        Text {
+            text: @tr("当前版本 {}", version);
+            height: 30px;
+            width: 100px;
+            vertical-alignment: center;
+        }
+        check_update_btn := Button {
+            text: "检查更新";
         }
     }
 }

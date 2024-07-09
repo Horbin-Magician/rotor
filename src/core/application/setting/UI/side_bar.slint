@@ -31,12 +31,25 @@ component SideBarItem inherits Rectangle {
 }
 
 export component SideBar inherits Rectangle {
+    
     in property<[string]> model: [];
     out property<int> current-item: 0;
-    width: 140px;
 
-    Rectangle {
-        background: Palette.background.darker(0.2);
+    width: 120px;
+    background: Palette.background.darker(0.2);
+    
+    VerticalLayout {
+        alignment: start;
+        padding-top: 10px;
+
+        Rectangle {
+            width: 120px;
+            Image {
+                source: @image-url("../../../../../assets/logo.svg");
+                height: 50px;
+            }
+        }
+
         VerticalLayout {
             padding: 4px;
             spacing: 4px;
