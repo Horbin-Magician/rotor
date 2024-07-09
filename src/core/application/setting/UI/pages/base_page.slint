@@ -6,7 +6,7 @@ export component BaseSettingPage inherits Page {
     in property <string> version: "unknown";
 
     callback power_boot_changed(bool);
-    callback check_update <=> check_update_btn.clicked;
+    callback check_update();
 
     HorizontalLayout {
         alignment: start;
@@ -108,6 +108,7 @@ export component BaseSettingPage inherits Page {
         }
         check_update_btn := Button {
             text: "检查更新";
+            clicked => {root.check_update();}
         }
     }
 }

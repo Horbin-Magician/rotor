@@ -339,8 +339,8 @@ slint::slint! {
 
                         root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor) * 1px;
                         root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor) * 1px;
-                        root.select-rect.width = ceil(abs((root.mouse_move_pos.x - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
-                        root.select-rect.height = ceil(abs((root.mouse_move_pos.y - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
+                        root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
+                        root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
                     }
                 }
 
@@ -348,8 +348,8 @@ slint::slint! {
                     border-color: rgb(0, 175, 255);
                     border-width: 1px;
 
-                    x: root.select-rect.x / root.scale_factor - self.border-width;
-                    y: root.select-rect.y / root.scale_factor - self.border-width;
+                    x: root.select-rect.x / (root.scale_factor) - self.border-width;
+                    y: root.select-rect.y / (root.scale_factor) - self.border-width;
                     width: root.select-rect.width / root.scale_factor + self.border-width * 2;
                     height: root.select-rect.height / root.scale_factor + self.border-width * 2;
 
@@ -374,10 +374,10 @@ slint::slint! {
         amplifier := Rectangle {
             width: 120px;
             height:140px; // 90px + 50px
-            x: (touch-area.mouse-x + self.width > root.width) ? 
-                touch-area.mouse-x - self.width : touch-area.mouse-x;
-            y: (touch-area.mouse-y + 25px + self.height > root.height) ? 
-                touch-area.mouse-y - 25px - self.height : touch-area.mouse-y + 25px;
+            x: ((touch-area.mouse-x) + self.width > root.width) ? 
+                (touch-area.mouse-x) - self.width : touch-area.mouse-x;
+            y: ((touch-area.mouse-y) + 25px + self.height > root.height) ? 
+                (touch-area.mouse-y) - 25px - self.height : touch-area.mouse-y + 25px;
             background: black.with_alpha(0.6);
 
             VerticalLayout {
@@ -390,8 +390,8 @@ slint::slint! {
                     border-color: white;
                     
                     Image {
-                        width: parent.width - 2px;
-                        height: parent.height - 2px;
+                        width: (parent.width) - 2px;
+                        height: (parent.height) - 2px;
                         source: bac_image;
                         image-fit: fill;
                         source-clip-x: (touch-area.mouse-x / 1px - self.width / 8px) * root.scale_factor;

@@ -146,11 +146,11 @@ slint::slint! {
 
                         Rectangle {
                             if(side-bar.current-item == 0) : 
-                                base_setting_page := BaseSettingPage {
+                                BaseSettingPage {
                                     version: version;
-                                    check_update() => { root.check_update(); }
                                     power_boot <=> root.power_boot;
                                     power_boot_changed(power_boot) => { root.power_boot_changed(power_boot); }
+                                    check_update() => { root.check_update(); }
                                 }
                             if(side-bar.current-item == 1) :
                                 SearchSettingPage {}
