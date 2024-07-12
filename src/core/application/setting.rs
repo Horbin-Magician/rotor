@@ -127,9 +127,9 @@ slint::slint! {
                 width: (root.width) - 4px;
 
                 background: Palette.background;
-                border-color: Palette.background.brighter(1).with_alpha(0.2);
-                border-width: 2px;
-                border-radius: 5px;
+                border-color: Palette.background.brighter(1);
+                border-width: 1px;
+                border-radius: 14px;
                 clip: true;
                 
                 HorizontalLayout {

@@ -183,8 +183,8 @@ slint::slint! {
 
                 x: win_border_width;
                 y: win_border_width;
-                width: win_width - win_border_width * 2;
-                height: win_height - win_border_width * 2;
+                width: (win_width) - win_border_width * 2;
+                height: (win_height) - win_border_width * 2;
 
                 source-clip-x: img_x / 1px  * root.scale_factor;
                 source-clip-y: img_y / 1px  * root.scale_factor;
@@ -194,14 +194,14 @@ slint::slint! {
                 move_touch_area := TouchArea {
                     mouse-cursor: move;
                     moved => {
-                        root.win_move(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                        root.win_move((self.mouse-x) - self.pressed-x, (self.mouse-y) - self.pressed-y);
                     }
 
                     scroll-event(event) => {
                         if (event.delta-y > 0) {
                             if (root.zoom_factor < 50) { root.zoom_factor = root.zoom_factor + 1; }
                         } else if (event.delta-y < 0) {
-                            if (root.zoom_factor > 2) { root.zoom_factor = root.zoom_factor - 1; }
+                            if (root.zoom_factor > 2) { root.zoom_factor = (root.zoom_factor) - 1; }
                         }
                         accept
                     }
