@@ -32,7 +32,7 @@ impl Module for Searcher{
                 match msg_reciever.recv().unwrap() {
                     ModuleMessage::Trigger => {
                         search_win_clone.upgrade_in_event_loop(move |win| {
-                            // BUG1: a trick to make on_lose_focus_trick work on the first time
+                            // TODO BUG1: a trick to make on_lose_focus_trick work on the first time
                             win.show().unwrap();
                             win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                 winit_win.focus_window();
@@ -84,6 +84,7 @@ impl Searcher {
 
         { // add key event hander
             let search_win_clone = search_win.as_weak();
+            let searcher_msg_sender_clone = searcher_msg_sender.clone();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_key_pressed(move |event| {
                 let search_win_clone = search_win_clone.unwrap();
@@ -99,11 +100,15 @@ impl Searcher {
                     }
                 }else if event.text == slint::SharedString::from(slint::platform::Key::DownArrow) {
                     let mut active_id = search_win_clone.get_active_id();
-                    if active_id < (search_result_model_clone.row_count() - 1) as i32 { 
+                    if active_id < (search_result_model_clone.row_count() - 1) as i32 { // If no more item
                         active_id += 1;
                         search_win_clone.set_active_id(active_id);
                         let viewport_y = search_win_clone.get_viewport_y();
                         if (-viewport_y / 60. + 7.) as i32 <= active_id { search_win_clone.set_viewport_y(viewport_y - 60.); }
+                    }
+                    // If to the bottom, try to find more
+                    if active_id == (search_result_model_clone.row_count() - 1) as i32 {
+                        searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string())).unwrap();
                     }
                 }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
                     let active_id = search_win_clone.get_active_id();
@@ -248,7 +253,6 @@ slint::slint! {
                             height: 60px;
                             placeholder-text: "请输入需要搜索的内容";
                             edited(str) => {
-                                debug(str);
                                 root.query_change(str);
                             }
                         }

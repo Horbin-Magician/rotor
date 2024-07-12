@@ -153,6 +153,8 @@ pub struct Volume {
     start_usn: i64,
     file_map: FileMap,
     stop_receiver: mpsc::Receiver<()>,
+    last_query: String,
+    last_search_num: usize,
 }
 
 impl Volume {
@@ -164,6 +166,8 @@ impl Volume {
             start_usn: 0x0,
             ujd: Ioctl::USN_JOURNAL_DATA_V0{ UsnJournalID: 0x0, FirstUsn: 0x0, NextUsn: 0x0, LowestValidUsn: 0x0, MaxUsn: 0x0, MaximumSize: 0x0, AllocationDelta: 0x0 },
             stop_receiver,
+            last_query: String::new(),
+            last_search_num: 0,
         }
     }
 
@@ -301,6 +305,9 @@ impl Volume {
     pub fn release_index(&mut self) {
         if self.file_map.is_empty() {return;}
 
+        self.last_query = String::new();
+        self.last_search_num = 0;
+
         #[cfg(debug_assertions)]
         log_info(format!("{} Begin Volume::release_index", self.drive));
 
@@ -316,7 +323,7 @@ impl Volume {
     }
 
     // searching
-    pub fn find(&mut self, query: String, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
+    pub fn find(&mut self, query: String, batch: u8, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
@@ -324,7 +331,7 @@ impl Volume {
 
         let mut result = Vec::new();
 
-        if query.is_empty() { let _ = sender.send(None); return; }
+        if query.is_empty() { let _ = sender.send(None); return;}
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
                 log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
@@ -335,17 +342,25 @@ impl Volume {
         let query_lower = query.to_lowercase();
         let query_filter = Self::make_filter(&query_lower);
         
-        // clear channel before find !!! need to use a better way
+        // clear channel before find !!! TODO need to use a better way
         while self.stop_receiver.try_recv().is_ok() { }
+        
+        if self.last_query != query {
+            self.last_search_num = 0;
+            self.last_query = query.clone();
+        }
+        let file_map_iter = self.file_map.iter().rev().skip(self.last_search_num);
 
         let mut find_num = 0;
-        for (_, file) in self.file_map.iter().rev() {
+        let mut search_num: usize = 0;
+        for (_, file) in file_map_iter {
             if self.stop_receiver.try_recv().is_ok() {
                 #[cfg(debug_assertions)]
                 log_info(format!("{} Stop Volume::Find", self.drive));
                 let _ = sender.send(None);
                 return;
             }
+            search_num += 1;
             if (file.filter & query_filter) == query_filter {
                 let file_name = file.file_name.clone();
                 if Self::match_str(&file_name, &query_lower) {
@@ -356,7 +371,7 @@ impl Volume {
                             rank: file.rank,
                         });
                         find_num += 1;
-                        if find_num >= 20 { break; }
+                        if find_num >= batch { break;}
                     }
                 }
             }
@@ -365,6 +380,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         log_info(format!("{} End Volume::Find {query}, use time: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len()));
         
+        self.last_search_num += search_num;
         let _ = sender.send(Some(result));
     }
 

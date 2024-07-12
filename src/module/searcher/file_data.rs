@@ -34,6 +34,8 @@ pub struct FileData {
     search_win: slint::Weak<SearchWindow>,
     volume_packs: Vec<VolumePack>,
     state: FileState,
+    show_num: usize,
+    batch: u8,
 }
 
 impl FileData {
@@ -48,6 +50,8 @@ impl FileData {
             waiting_init: 0,
             search_win,
             state: FileState::Unbuild,
+            show_num: 20,
+            batch: 20,
         };
 
         file_data
@@ -185,26 +189,70 @@ impl FileData {
         }
     }
 
+    fn update_result_model(&mut self, filename: String, update_result: Vec<volume::SearchResultItem>, increment_find: bool) {
+        self.search_win.clone().upgrade_in_event_loop(move |search_win| {
+            if slint::SharedString::from(filename) != search_win.get_query() {return;}
+
+            let search_result_model = search_win.get_search_result();
+            let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
+                .expect("search_result_model set a VecModel earlier");
+
+            let mut result_list = Vec::new();
+            for (id, item) in update_result.into_iter().enumerate() {
+                let icon = 
+                    file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
+                    .unwrap_or_else(|| slint::Image::load_from_path(std::path::Path::new("./assets/logo.png")).unwrap());
+                result_list.push(
+                    SearchResult_slint { 
+                        id: id as i32,
+                        icon,
+                        filename: slint::SharedString::from(item.file_name.clone()),
+                        path: slint::SharedString::from(item.path.clone()),
+                    }
+                );
+            }
+            search_result_model.set_vec(result_list);
+            if increment_find == false {
+                search_win.set_viewport_y(0.);
+                search_win.set_active_id(0);
+            }
+        }).unwrap();
+    }
+
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
         self.update_valid_vols();
 
         let mut reply: Option<SearcherMessage> = None;
         
-        if self.finding_name == filename { return reply; }
-        self.finding_name = filename.clone();
-        self.finding_result.items.clear();
-        self.finding_result.query = filename.clone();
+        let mut increment_find = false;
+        if self.finding_name == filename { 
+            increment_find = true;
+            self.show_num += self.batch as usize;
+
+            if self.finding_result.items.len() > self.show_num {
+                let return_result = self.finding_result.items[..self.show_num].to_vec();
+                self.update_result_model(filename, return_result, increment_find);
+                return reply;
+            }
+        } else { 
+            self.finding_name = filename.clone();
+            self.show_num = self.batch as usize;
+            self.finding_result.items.clear();
+            self.finding_result.query = filename.clone();
+        }
+        
         if filename.is_empty() { return reply; } 
 
         self.waiting_finder = self.volume_packs.len() as u8;
         let (find_result_sender, find_result_receiver) = mpsc::channel::<Option<Vec<volume::SearchResultItem>>>();
         for VolumePack{volume, ..} in &mut self.volume_packs {
             let find_result_sender: mpsc::Sender<Option<Vec<volume::SearchResultItem>>> = find_result_sender.clone();
+            let batch = self.batch;
             let volume = volume.clone();
             let filename = filename.clone();
             let _ = thread::spawn(move || {
                 let mut volume = volume.lock().unwrap();
-                volume.find(filename.clone(), find_result_sender);
+                volume.find(filename.clone(), batch, find_result_sender);
             });
         }
 
@@ -226,34 +274,9 @@ impl FileData {
                     self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
                     
                     let return_result = 
-                        if self.finding_result.items.len() > 20 { self.finding_result.items[..20].to_vec() }
-                        else { self.finding_result.items.to_vec() };
-                    
-                    self.search_win.clone().upgrade_in_event_loop(move |search_win| {
-                        if slint::SharedString::from(filename) != search_win.get_query() {return;}
-
-                        let search_result_model = search_win.get_search_result();
-                        let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
-                            .expect("search_result_model set a VecModel earlier");
-
-                        let mut result_list = Vec::new();
-                        for (id, item) in return_result.into_iter().enumerate() {
-                            let icon = 
-                                file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
-                                .unwrap_or_else(|| slint::Image::load_from_path(std::path::Path::new("./assets/logo.png")).unwrap());
-                            result_list.push(
-                                SearchResult_slint { 
-                                    id: id as i32,
-                                    icon,
-                                    filename: slint::SharedString::from(item.file_name.clone()),
-                                    path: slint::SharedString::from(item.path.clone()),
-                                }
-                            );
-                        }
-                        search_result_model.set_vec(result_list);
-                        search_win.set_viewport_y(0.);
-                        search_win.set_active_id(0);
-                    }).unwrap();
+                        if self.finding_result.items.len() > self.show_num { self.finding_result.items[..self.show_num].to_vec() }
+                        else { self.finding_result.items.to_vec() }; // TODO 搜索不到更多文件了
+                    self.update_result_model(filename, return_result, increment_find);
                 }
                 break;
             }
@@ -278,6 +301,8 @@ impl FileData {
     pub fn release_index(&mut self) {
         self.update_valid_vols();
         
+        self.finding_name = String::new();
+
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {
