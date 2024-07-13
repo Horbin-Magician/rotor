@@ -189,7 +189,6 @@ impl ScreenShotter{
         }
 
         // event listen
-        // let pin_wins_clone = pin_wins.clone(); // TODO: clear pin_wins
         let pin_windows_clone = pin_windows.clone();
         std::thread::spawn(move || {
             loop {
@@ -199,9 +198,8 @@ impl ScreenShotter{
                             ScreenShotter::pin_win_move_hander(pin_windows.clone(), id);
                         },
                         ShotterMessage::Close(id) => {
-                            println!("close pin_win: {}", id);
                             pin_windows_clone.lock().unwrap().remove(&id);
-                            // pin_wins_clone.lock().unwrap().remove(&id);
+                            // pin_wins_clone.lock().unwrap().remove(&id); // TODO: clear pin_wins
                         }
                     }
                 }

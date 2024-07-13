@@ -275,7 +275,7 @@ impl FileData {
                     
                     let return_result = 
                         if self.finding_result.items.len() > self.show_num { self.finding_result.items[..self.show_num].to_vec() }
-                        else { self.finding_result.items.to_vec() }; // TODO 搜索不到更多文件了
+                        else { self.finding_result.items.to_vec() };
                     self.update_result_model(filename, return_result, increment_find);
                 }
                 break;
