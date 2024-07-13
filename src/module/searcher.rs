@@ -32,7 +32,6 @@ impl Module for Searcher{
                 match msg_reciever.recv().unwrap() {
                     ModuleMessage::Trigger => {
                         search_win_clone.upgrade_in_event_loop(move |win| {
-                            // TODO BUG1: a trick to make on_lose_focus_trick work on the first time
                             win.show().unwrap();
                             win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                 winit_win.focus_window();

@@ -297,7 +297,7 @@ impl Volume {
         });
         
         if let Some(sender) = sender {
-            let _ = sender.send(true); // TODO return false when failed
+            let _ = sender.send(true);
         }
     }
 
@@ -342,8 +342,7 @@ impl Volume {
         let query_lower = query.to_lowercase();
         let query_filter = Self::make_filter(&query_lower);
         
-        // clear channel before find !!! TODO need to use a better way
-        while self.stop_receiver.try_recv().is_ok() { }
+        while self.stop_receiver.try_recv().is_ok() { } // clear channel before find
         
         if self.last_query != query {
             self.last_search_num = 0;
