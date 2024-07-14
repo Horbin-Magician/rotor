@@ -34,6 +34,7 @@ impl Setting {
             
             let app_config = AppConfig::global().lock().unwrap();
             setting_win.set_power_boot(app_config.get_power_boot());
+            setting_win.set_theme(app_config.get_theme() as i32);
         }
 
         { // power boot
@@ -41,6 +42,19 @@ impl Setting {
                 let mut app_config = AppConfig::global().lock().unwrap();
                 app_config.set_power_boot(power_boot);
             });
+        }
+
+        {// theme
+            setting_win.on_theme_changed(move |theme| {
+                let mut app_config = AppConfig::global().lock().unwrap();
+                app_config.set_theme(theme as u8);
+            });
+            // if theme == 0 {
+            //     setting_win_clone.global::<Palette>().set_color_scheme("unknown");
+            // } else {
+            //     setting_win_clone.global::<Palette>().set_color_scheme("unknown");
+            // }
+            // // Palette.color-scheme = self.checked ? ColorScheme.dark : ColorScheme.light; 
         }
 
         { // minimize, close, win move
@@ -93,6 +107,7 @@ slint::slint! {
     import { BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "src/core/application/setting/UI/pages/pages.slint";
     import { SideBar } from "src/core/application/setting/UI/side_bar.slint";
     import { TitleBar } from "src/core/application/setting/UI/title_bar.slint";
+
     export component SettingWindow inherits Window {
         width: 500px;
         height: 400px;
@@ -106,6 +121,7 @@ slint::slint! {
         callback win_move;
 
         callback power_boot_changed(bool);
+        callback theme_changed(int);
         callback check_update();
         callback update();
 
@@ -114,6 +130,7 @@ slint::slint! {
         in-out property <string> current_version;
         in-out property <string> latest_version;
         in-out property <bool> power_boot;
+        in-out property <int> theme;
 
         touch := TouchArea {
             pointer-event(event) => {
@@ -149,6 +166,8 @@ slint::slint! {
                                 BaseSettingPage {
                                     version: version;
                                     power_boot <=> root.power_boot;
+                                    theme <=> root.theme;
+                                    theme_changed(theme) => { root.theme_changed(theme); }
                                     power_boot_changed(power_boot) => { root.power_boot_changed(power_boot); }
                                     check_update() => { root.check_update(); }
                                 }
