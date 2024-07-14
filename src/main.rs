@@ -7,6 +7,7 @@ mod module;
 // use i_slint_backend_winit::winit::platform::windows::WindowBuilderExtWindows;
 
 use crate::core::util::sys_util;
+use crate::core::util::file_util;
 use crate::core::application::Application;
 
 
@@ -19,6 +20,8 @@ fn main() {
     // slint::platform::set_platform(Box::new(backend)).unwrap();
 
     if sys_util::run_as_admin() == true {return;}
+
+    file_util::del_useless_files(); // del tmp and .fd files
 
     let _app = Application::new();
 

@@ -48,6 +48,15 @@ impl AppConfig {
     pub fn get_power_boot(&self) -> bool {
         self.power_boot
     }
+
+    pub fn set_theme(&mut self, theme: u8) {
+        self.theme = theme;
+        self.save();
+    }
+
+    pub fn get_theme(&self) -> u8 {
+        self.theme
+    }
 }
 
 static INSTANCE: Lazy<Mutex<AppConfig>> = Lazy::new(|| {

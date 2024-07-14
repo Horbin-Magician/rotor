@@ -1,13 +1,33 @@
 use std::error::Error;
 use std::ffi::c_void;
 use std::process::Command;
-use std::{ptr, mem, fs, io};
+use std::{ptr, mem, fs, io, env};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows_sys::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, ShellExecuteW};
 use windows_sys::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
 use windows_sys::Win32::Graphics::Gdi::{BITMAP, BITMAPINFOHEADER, GetBitmapBits, DeleteObject, HGDIOBJ, HBITMAP, self};
+
+pub fn del_useless_files() {
+    let binding = env::current_exe().unwrap();
+    let app_path = binding.parent().unwrap();
+    let tmp_path = app_path.join("tmp");
+    let userdata_path = app_path.join("userdata");
+
+    let _ = fs::remove_dir_all(tmp_path);
+    let _ = fs::remove_file(".fd");
+
+    // del all .fd file in userdata
+    for entry in fs::read_dir(userdata_path).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            if let Some(extension) = path.extension() {
+                if extension == "fd" { let _ = fs::remove_file(&path); }
+            }
+        }
+    }
+}
 
 pub fn open_file(file_full_name: String) {
     let mut cmd = Command::new("explorer.exe");
