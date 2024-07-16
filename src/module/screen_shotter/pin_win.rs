@@ -96,9 +96,6 @@ impl PinWin {
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
-                    let app_config = AppConfig::global().lock().unwrap();
-                    let save_path = app_config.get_save_path();
-
                     let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
                     let params = DialogParams {
                         title: "Select an image to save",
