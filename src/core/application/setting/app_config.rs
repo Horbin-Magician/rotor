@@ -15,9 +15,7 @@ pub struct AppConfig {
     #[serde(default = "default_u8")]
     theme: u8,
     #[serde(default = "default_string")]
-    def_save_path: String,
-    #[serde(default = "default_string")]
-    pre_save_path: String,
+    save_path: String,
 }
 
 fn default_false() -> bool { false }
@@ -63,22 +61,13 @@ impl AppConfig {
         self.theme
     }
 
-    pub fn set_def_save_path(&mut self, path: String) {
-        self.def_save_path = path;
+    pub fn set_save_path(&mut self, path: String) {
+        self.save_path = path;
         self.save();
     }
 
-    pub fn get_def_save_path(&self) -> String {
-        self.def_save_path.clone()
-    }
-
-    pub fn set_pre_save_path(&mut self, path: String) {
-        self.pre_save_path = path;
-        self.save();
-    }
-
-    pub fn get_pre_save_path(&self) -> String {
-        self.pre_save_path.clone()
+    pub fn get_save_path(&self) -> String {
+        self.save_path.clone()
     }
 }
 
