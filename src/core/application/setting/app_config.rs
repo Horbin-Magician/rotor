@@ -14,10 +14,15 @@ pub struct AppConfig {
     language: u8,
     #[serde(default = "default_u8")]
     theme: u8,
+    #[serde(default = "default_string")]
+    def_save_path: String,
+    #[serde(default = "default_string")]
+    pre_save_path: String,
 }
 
 fn default_false() -> bool { false }
 fn default_u8() -> u8 { 0 }
+fn default_string() -> String { String::new() }
 
 impl AppConfig {
     fn new() -> AppConfig {
@@ -56,6 +61,24 @@ impl AppConfig {
 
     pub fn get_theme(&self) -> u8 {
         self.theme
+    }
+
+    pub fn set_def_save_path(&mut self, path: String) {
+        self.def_save_path = path;
+        self.save();
+    }
+
+    pub fn get_def_save_path(&self) -> String {
+        self.def_save_path.clone()
+    }
+
+    pub fn set_pre_save_path(&mut self, path: String) {
+        self.pre_save_path = path;
+        self.save();
+    }
+
+    pub fn get_pre_save_path(&self) -> String {
+        self.pre_save_path.clone()
     }
 }
 

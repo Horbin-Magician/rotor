@@ -1,5 +1,5 @@
+pub mod setting;
 mod system_tray;
-mod setting;
 
 use std::{sync::{mpsc, mpsc::Sender}, collections::HashMap};
 
