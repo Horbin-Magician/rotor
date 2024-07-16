@@ -1,4 +1,4 @@
-mod app_config;
+pub mod app_config;
 
 use i_slint_backend_winit::WinitWindowAccessor;
 use windows_sys::Win32::UI::WindowsAndMessaging;
