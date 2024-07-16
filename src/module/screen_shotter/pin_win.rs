@@ -8,6 +8,7 @@ use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
 use chrono;
 
+use crate::core::application::setting::app_config::AppConfig;
 use super::Rect;
 use super::ShotterMessage;
 
@@ -95,12 +96,17 @@ impl PinWin {
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
+                    let app_config = AppConfig::global().lock().unwrap();
+                    let mut save_path = app_config.get_def_save_path();
+                    if save_path == "" { save_path = app_config.get_pre_save_path();}
+
                     let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
                     let params = DialogParams {
                         title: "Select an image to save",
                         file_types: vec![("PNG Files", "*.png")],
                         default_extension: "png",
                         file_name: &file_name,
+                        default_folder: &save_path,
                         ..Default::default()
                     };
                     pin_window.hide().unwrap();
