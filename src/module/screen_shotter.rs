@@ -12,11 +12,15 @@ use screenshots::Screen;
 use super::{Module, ModuleMessage};
 use pin_win::PinWin;
 use pin_win::PinWindow;
+use toolbar::Toolbar;
 
 
 pub enum ShotterMessage {
     Move(u32),
     Close(u32),
+    ShowToolbar(u32, i32, i32),
+    MoveToolbar(u32, f32, f32),
+    FinishToolbar(u32),
 }
 
 pub struct ScreenShotter {
@@ -24,6 +28,7 @@ pub struct ScreenShotter {
     id: Option<u32>,
     _max_pin_win_id: Arc<Mutex<u32>>,
     _pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
+    _toolbar: Toolbar,
 }
 
 impl Module for ScreenShotter {
@@ -59,7 +64,7 @@ impl ScreenShotter{
     pub fn new() -> ScreenShotter {
         // get screens and info
         let screens = Screen::all().unwrap();
-        let mut primary_screen_op = None ;
+        let mut primary_screen_op = None;
         for screen in screens {
             if screen.display_info.is_primary {
                 primary_screen_op = Some(screen);
@@ -67,6 +72,7 @@ impl ScreenShotter{
         }
         
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
+        let toolbar = Toolbar::new();
 
         mask_win.window().set_position(slint::PhysicalPosition::new(0, 0) );
         mask_win.set_state(0);
@@ -175,6 +181,7 @@ impl ScreenShotter{
                 let pin_windows_clone_clone = pin_windows_clone.clone();
                 let id = *max_pin_win_id;
                 pin_window_clone.unwrap().window().on_close_requested(move || {
+                    // this is necessary for systemed close
                     pin_wins_clone_clone.lock().unwrap().remove(&id);
                     pin_windows_clone_clone.lock().unwrap().remove(&id);
                     slint::CloseRequestResponse::HideWindow
@@ -190,6 +197,8 @@ impl ScreenShotter{
 
         // event listen
         let pin_windows_clone = pin_windows.clone();
+        let toolbar_window_clone = toolbar.get_window();
+        // let pin_wins_clone = pin_wins.clone();
         std::thread::spawn(move || {
             loop {
                 if let Ok(message) = message_reciever.recv() {
@@ -200,7 +209,22 @@ impl ScreenShotter{
                         ShotterMessage::Close(id) => {
                             pin_windows_clone.lock().unwrap().remove(&id);
                             // pin_wins_clone.lock().unwrap().remove(&id); // TODO: clear pin_wins
-                        }
+                        },
+                        ShotterMessage::ShowToolbar(id, x, y) => {
+                            toolbar_window_clone.upgrade_in_event_loop(move |win| {
+                                win.invoke_show_pos(id as i32, x, y);
+                            }).unwrap();
+                        },
+                        ShotterMessage::MoveToolbar(id, x, y) => {
+                            toolbar_window_clone.upgrade_in_event_loop(move |win| {
+                                win.invoke_move(id as i32, x, y);
+                            }).unwrap();
+                        },
+                        ShotterMessage::FinishToolbar(id) => {
+                            toolbar_window_clone.upgrade_in_event_loop(move |win| {
+                                win.invoke_finish(id as i32);
+                            }).unwrap();
+                        },
                     }
                 }
             }
@@ -211,18 +235,19 @@ impl ScreenShotter{
             mask_win,
             _max_pin_win_id: max_pin_win_id,
             _pin_wins: pin_wins,
+            _toolbar: toolbar,
         }
     }
 
-    fn pin_win_move_hander(pin_wins: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32) {
+    fn pin_win_move_hander(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32) {
         slint::invoke_from_event_loop(move || {
             let padding = 10;
-            let pin_wins = pin_wins.lock().unwrap();
-            let move_win = &pin_wins[&move_win_id].unwrap();
-            for pin_win_id in pin_wins.keys(){
+            let pin_windows = pin_windows.lock().unwrap();
+            let move_win = &pin_windows[&move_win_id].unwrap();
+            for pin_win_id in pin_windows.keys(){
                 if move_win_id != *pin_win_id {
-                    let other_win = &pin_wins[pin_win_id].unwrap();
-                    
+                    let other_win = &pin_windows[pin_win_id].unwrap();
+
                     let move_pos = move_win.window().position();
                     let move_size = move_win.window().size();
                     let other_pos = other_win.window().position();

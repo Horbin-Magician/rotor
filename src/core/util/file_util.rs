@@ -16,14 +16,15 @@ pub fn del_useless_files() {
     let userdata_path = app_path.join("userdata");
 
     let _ = fs::remove_dir_all(tmp_path);
-    let _ = fs::remove_file(".fd");
-
-    // del all .fd file in userdata
-    for entry in fs::read_dir(userdata_path).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_file() {
-            if let Some(extension) = path.extension() {
-                if extension == "fd" { let _ = fs::remove_file(&path); }
+    
+    if userdata_path.exists() {
+        // del all .fd file in userdata
+        for entry in fs::read_dir(userdata_path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                if let Some(extension) = path.extension() {
+                    if extension == "fd" { let _ = fs::remove_file(&path); }
+                }
             }
         }
     }

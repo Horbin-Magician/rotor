@@ -66,29 +66,34 @@ impl PinWin {
             });
         }
 
-        { // code for key press
-            let pin_window_clone = pin_window.as_weak();
-            let message_sender_clone = message_sender.clone();
-
-            let img_rc_clone = img_rc.clone();
-            let buffer = (*img_rc_clone.lock().unwrap()).clone();
-
-            let scale_factor = pin_window.get_scale_factor();
-            let img_x = pin_window.get_img_x() * scale_factor;
-            let img_y = pin_window.get_img_y() * scale_factor;
-            let img_height = pin_window.get_img_height() * scale_factor;
-            let img_width = pin_window.get_img_width() * scale_factor;
-
-            pin_window.on_key_release(move |event| {
-                let pin_window = pin_window_clone.unwrap();
-                if event.text == slint::SharedString::from(slint::platform::Key::Escape) { // close win
-                    pin_window.hide().unwrap();
+        { // code for function
+            { // for close
+                let pin_window_clone = pin_window.as_weak();
+                let message_sender_clone = message_sender.clone();
+                pin_window.on_close(move || {
+                    pin_window_clone.unwrap().hide().unwrap();
                     message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
-                } else if event.text == "h" { // hide win
-                    pin_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+                });
+    
+                let pin_window_clone = pin_window.as_weak();
+                pin_window.on_hide(move || {
+                    pin_window_clone.unwrap().window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                         winit_win.set_minimized(true);
                     });
-                } else if event.text == "s" { // save pic
+                });
+            }
+
+            { // for save and copy
+                // save
+                let pin_window_clone = pin_window.as_weak();
+                let img_rc_clone = img_rc.clone();
+                let buffer = (*img_rc_clone.lock().unwrap()).clone();
+                let scale_factor = pin_window.get_scale_factor();
+                let img_x = pin_window.get_img_x() * scale_factor;
+                let img_y = pin_window.get_img_y() * scale_factor;
+                let img_height = pin_window.get_img_height() * scale_factor;
+                let img_width = pin_window.get_img_width() * scale_factor;
+                pin_window.on_save(move || {
                     let mut img = image::DynamicImage::ImageRgba8(
                         image::RgbaImage::from_vec(
                             buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
@@ -98,7 +103,7 @@ impl PinWin {
                     
                     let app_config = AppConfig::global().lock().unwrap();
                     let save_path = app_config.get_save_path();
-
+    
                     let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
                     let params = DialogParams {
                         title: "Select an image to save",
@@ -108,22 +113,28 @@ impl PinWin {
                         default_folder: &save_path,
                         ..Default::default()
                     };
-                    pin_window.hide().unwrap();
-
+                    pin_window_clone.unwrap().hide().unwrap();
+    
                     let dialog_result = wfd::save_dialog(params);
                     if let Ok(file_path_result) = dialog_result {
                         img.save(file_path_result.selected_file_path).unwrap();
                     }
+    
+                    pin_window_clone.unwrap().invoke_close();
+                });
 
-                    message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
-                } else if event.text == slint::SharedString::from(slint::platform::Key::Return) { // copy pic and close
+                //copy
+                let pin_window_clone = pin_window.as_weak();
+                let img_rc_clone = img_rc.clone();
+                let buffer = (*img_rc_clone.lock().unwrap()).clone();
+                pin_window.on_copy(move || {
                     let mut img = image::DynamicImage::ImageRgba8(
                         image::RgbaImage::from_vec(
                             buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
                         ).unwrap()
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
-
+    
                     let mut clipboard = Clipboard::new().unwrap();
                     let img_data = ImageData {
                         width: img.width() as usize,
@@ -132,8 +143,50 @@ impl PinWin {
                     };
                     clipboard.set_image(img_data).unwrap();
                     
-                    pin_window.hide().unwrap();
-                    message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
+                    pin_window_clone.unwrap().invoke_close();
+                });
+            }
+
+            { // for show toolbar
+                let pin_window_clone = pin_window.as_weak();
+                let message_sender_clone = message_sender.clone();
+                pin_window.on_show_toolbar(move |x, y| {
+                    let pin_window = pin_window_clone.unwrap();
+                    let position = pin_window.window().position();
+                    let scale = pin_window.window().scale_factor();
+                    let center_x = position.x + (x * scale) as i32;
+                    let center_y = position.y + (y * scale) as i32;
+                    message_sender_clone.send(ShotterMessage::ShowToolbar(id, center_x, center_y)).unwrap();
+                });
+            }
+
+            { // for move toolbar
+                let message_sender_clone = message_sender.clone();
+                pin_window.on_move_toolbar(move |x, y| {
+                    message_sender_clone.send(ShotterMessage::MoveToolbar(id, x, y)).unwrap();
+                });
+            }
+
+            { // for finish toolbar
+                let message_sender_clone = message_sender.clone();
+                pin_window.on_finish_toolbar(move || {
+                    message_sender_clone.send(ShotterMessage::FinishToolbar(id)).unwrap();
+                });
+            }
+        }
+
+        { // code for key press
+            let pin_window_clone = pin_window.as_weak();
+            pin_window.on_key_release(move |event| {
+                let pin_window = pin_window_clone.unwrap();
+                if event.text == slint::SharedString::from(slint::platform::Key::Escape) { // close win
+                    pin_window.invoke_close();
+                } else if event.text == "h" { // hide win
+                    pin_window.invoke_hide();
+                } else if event.text == "s" { // save pic
+                    pin_window.invoke_save();
+                } else if event.text == slint::SharedString::from(slint::platform::Key::Return) { // copy pic and close
+                    pin_window.invoke_copy();
                 }
             });
         }
@@ -155,7 +208,7 @@ slint::slint! {
         always-on-top: true;
         title: "小云视窗";
         forward-focus: key_focus;
-
+        
         in property <image> bac_image;
         in property <length> win_border_width: 1px;
         in property <float> scale_factor;
@@ -169,11 +222,21 @@ slint::slint! {
         in-out property <length> win_width: (img_width * zoom_factor / 10) + win_border_width * 2;
         in-out property <length> win_height: (img_height * zoom_factor / 10) + win_border_width * 2;
 
-        in-out property <bool> is_stick_x;
-        in-out property <bool> is_stick_y;
+        in-out property <bool> can_move: false;
+        in-out property <bool> is_stick_x: false;
+        in-out property <bool> is_stick_y: false;
+        in-out property <bool> is_shown_toolbar: false;
 
         callback win_move(length, length);
         callback key_release(KeyEvent);
+        callback show_toolbar(float, float);
+        callback move_toolbar(float, float);
+        callback finish_toolbar();
+
+        callback close();
+        callback hide();
+        callback save();
+        callback copy();
 
         width <=> win_width;
         height <=> win_height;
@@ -199,7 +262,31 @@ slint::slint! {
                 move_touch_area := TouchArea {
                     mouse-cursor: move;
                     moved => {
-                        root.win_move((self.mouse-x) - self.pressed-x, (self.mouse-y) - self.pressed-y);
+                        if (root.can_move) {
+                            root.win_move((self.mouse-x) - self.pressed-x, (self.mouse-y) - self.pressed-y);
+                        }
+                    }
+                    
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down) {
+                            if (event.button == PointerEventButton.left) {
+                                root.can_move = true;
+                            } else if (event.button == PointerEventButton.right){
+                                root.is_shown_toolbar = true;
+                                root.show_toolbar(self.mouse-x / 1px, self.mouse-y / 1px);
+                            }
+                        } else if (event.kind == PointerEventKind.up) {
+                            if (event.button == PointerEventButton.left) {
+                                root.can_move = false;
+                            } else if (event.button == PointerEventButton.right){
+                                root.is_shown_toolbar = false;
+                                root.finish_toolbar();
+                            }
+                        } else if (event.kind == PointerEventKind.move) {
+                            if (root.is_shown_toolbar) {
+                                root.move_toolbar(self.mouse-x / 1px, self.mouse-y / 1px);
+                            }
+                        }
                     }
 
                     scroll-event(event) => {
