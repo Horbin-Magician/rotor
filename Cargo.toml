@@ -12,8 +12,8 @@ build = "build.rs"
 embed-resource = "2.2.0"
 
 [dependencies]
-slint = "1.6.0"
-i-slint-backend-winit = "1.6.0"
+slint = "1.7.0"
+i-slint-backend-winit = "1.7.0"
 raw-window-handle = "0.5.2"
 muda = "0.9.3"
 tray-icon = "0.8.1" 
