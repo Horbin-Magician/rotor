@@ -24,8 +24,8 @@ pub enum PinOperation {
 pub enum ShotterMessage {
     Move(u32),
     Close(u32),
-    ShowToolbar(u32, i32, i32),
-    MoveToolbar(u32, f32, f32),
+    ShowToolbar(i32, i32),
+    MoveToolbar(f32, f32),
     FinishToolbar(u32),
     OperatePin(u32, PinOperation),
 }
@@ -217,14 +217,14 @@ impl ScreenShotter{
                             pin_windows_clone.lock().unwrap().remove(&id);
                             // pin_wins_clone.lock().unwrap().remove(&id); // TODO: clear pin_wins
                         },
-                        ShotterMessage::ShowToolbar(id, x, y) => {
+                        ShotterMessage::ShowToolbar(x, y) => {
                             toolbar_window_clone.upgrade_in_event_loop(move |win| {
-                                win.invoke_show_pos(id as i32, x, y);
+                                win.invoke_show_pos(x, y);
                             }).unwrap();
                         },
-                        ShotterMessage::MoveToolbar(id, x, y) => {
+                        ShotterMessage::MoveToolbar(x, y) => {
                             toolbar_window_clone.upgrade_in_event_loop(move |win| {
-                                win.invoke_move(id as i32, x, y);
+                                win.invoke_move(x, y);
                             }).unwrap();
                         },
                         ShotterMessage::FinishToolbar(id) => {
