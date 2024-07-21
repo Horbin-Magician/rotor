@@ -226,6 +226,8 @@ slint::slint! {
         in-out property <bool> is_stick_x: false;
         in-out property <bool> is_stick_y: false;
         in-out property <bool> is_shown_toolbar: false;
+        in-out property <length> toolbar_center_x;
+        in-out property <length> toolbar_center_y;
 
         callback win_move(length, length);
         callback key_release(KeyEvent);
@@ -273,6 +275,8 @@ slint::slint! {
                                 root.can_move = true;
                             } else if (event.button == PointerEventButton.right){
                                 root.is_shown_toolbar = true;
+                                root.toolbar_center_x = self.mouse-x;
+                                root.toolbar_center_y = self.mouse-y;
                                 root.show_toolbar(self.mouse-x / 1px, self.mouse-y / 1px);
                             }
                         } else if (event.kind == PointerEventKind.up) {
@@ -284,7 +288,7 @@ slint::slint! {
                             }
                         } else if (event.kind == PointerEventKind.move) {
                             if (root.is_shown_toolbar) {
-                                root.move_toolbar(self.mouse-x / 1px, self.mouse-y / 1px);
+                                root.move_toolbar(((self.mouse-x) - root.toolbar_center_x) / 1px, ((self.mouse-y) - root.toolbar_center_y) / 1px);
                             }
                         }
                     }
