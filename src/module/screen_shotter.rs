@@ -14,6 +14,12 @@ use pin_win::PinWin;
 use pin_win::PinWindow;
 use toolbar::Toolbar;
 
+pub enum PinOperation {
+    Close(),
+    Hide(),
+    Save(),
+    Copy(),
+}
 
 pub enum ShotterMessage {
     Move(u32),
@@ -21,6 +27,7 @@ pub enum ShotterMessage {
     ShowToolbar(u32, i32, i32),
     MoveToolbar(u32, f32, f32),
     FinishToolbar(u32),
+    OperatePin(u32, PinOperation),
 }
 
 pub struct ScreenShotter {
@@ -72,8 +79,6 @@ impl ScreenShotter{
         }
         
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
-        let toolbar = Toolbar::new();
-
         mask_win.window().set_position(slint::PhysicalPosition::new(0, 0) );
         mask_win.set_state(0);
 
@@ -81,6 +86,8 @@ impl ScreenShotter{
         let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
         let pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>> =  Arc::new(Mutex::new(HashMap::new()));
         let (message_sender, message_reciever) = mpsc::channel::<ShotterMessage>();
+
+        let toolbar = Toolbar::new(message_sender.clone());
 
         let primary_screen = primary_screen_op.unwrap();
         let physical_width = primary_screen.display_info.width;
@@ -225,6 +232,33 @@ impl ScreenShotter{
                                 win.invoke_finish(id as i32);
                             }).unwrap();
                         },
+                        ShotterMessage::OperatePin(id, operation) => {
+                            let pin_windows = pin_windows_clone.lock().unwrap();
+                            if let Some(pin_win) = pin_windows.get(&id) {
+                                match operation {
+                                    PinOperation::Close() => {
+                                        pin_win.upgrade_in_event_loop(move |win| {
+                                            win.invoke_close();
+                                        }).unwrap();
+                                    },
+                                    PinOperation::Hide() => {
+                                        pin_win.upgrade_in_event_loop(move |win| {
+                                            win.invoke_hide();
+                                        }).unwrap();
+                                    },
+                                    PinOperation::Save() => {
+                                        pin_win.upgrade_in_event_loop(move |win| {
+                                            win.invoke_save();
+                                        }).unwrap();
+                                    },
+                                    PinOperation::Copy() => {
+                                        pin_win.upgrade_in_event_loop(move |win| {
+                                            win.invoke_copy();
+                                        }).unwrap();
+                                    },
+                                }
+                            }
+                        }
                     }
                 }
             }
