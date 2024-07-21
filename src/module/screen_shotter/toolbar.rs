@@ -14,7 +14,7 @@ impl Toolbar {
         let toolbar_window = ToolbarWindow::new().unwrap();
 
         let toolbar_window_clone = toolbar_window.as_weak();
-        toolbar_window.on_show_pos(move |id, x, y| {
+        toolbar_window.on_show_pos(move |x, y| {
             let toolbar_window = toolbar_window_clone.unwrap();
 
             let height = toolbar_window.get_win_height() as f32;
@@ -31,7 +31,7 @@ impl Toolbar {
         });
 
         let toolbar_window_clone = toolbar_window.as_weak();
-        toolbar_window.on_move(move |id, x, y| {
+        toolbar_window.on_move(move |x, y| {
             let toolbar_window = toolbar_window_clone.unwrap();
             let r = x * x + y * y;
             let mut angle = y.atan2(x) * 180.0 / 3.14 + 135.0;
@@ -158,8 +158,8 @@ slint::slint! {
         width: win_width * 1px;
         height: win_height * 1px;
 
-        callback show_pos(int, int, int);
-        callback move(int, float, float);
+        callback show_pos(int, int);
+        callback move(float, float);
         callback finish(int);
 
         Rectangle {

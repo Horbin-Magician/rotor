@@ -156,14 +156,14 @@ impl PinWin {
                     let scale = pin_window.window().scale_factor();
                     let center_x = position.x + (x * scale) as i32;
                     let center_y = position.y + (y * scale) as i32;
-                    message_sender_clone.send(ShotterMessage::ShowToolbar(id, center_x, center_y)).unwrap();
+                    message_sender_clone.send(ShotterMessage::ShowToolbar(center_x, center_y)).unwrap();
                 });
             }
 
             { // for move toolbar
                 let message_sender_clone = message_sender.clone();
                 pin_window.on_move_toolbar(move |x, y| {
-                    message_sender_clone.send(ShotterMessage::MoveToolbar(id, x, y)).unwrap();
+                    message_sender_clone.send(ShotterMessage::MoveToolbar(x, y)).unwrap();
                 });
             }
 
