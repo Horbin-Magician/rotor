@@ -159,6 +159,7 @@ impl ScreenShotter{
             mask_win.on_key_released(move |event| {
                 let mask_win = mask_win_clone.unwrap();
                 if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
+                    mask_win.set_mouse_left_press(false);
                     mask_win.hide().unwrap();
                 } else if event.text == "z" || event.text == "Z"  { // switch Dec or Hex
                     let color_type_dec = mask_win_clone.unwrap().get_color_type_Dec();
@@ -347,6 +348,7 @@ slint::slint! {
         in-out property <image> bac_image;
         in property <float> scale_factor;
         in-out property <Rect> select_rect;
+        in-out property <bool> mouse_left_press;
         in-out property <Point> mouse_down_pos;
         in-out property <Point> mouse_move_pos;
         in-out property <int> state; // 0:before shot; 1:shotting before left button press; 2:shotting，left button press
@@ -381,23 +383,27 @@ slint::slint! {
                     pointer-event(event) => {
                         if(event.button == PointerEventButton.left) {
                             if(event.kind == PointerEventKind.down) {
+                                root.mouse_left_press = true;
                                 root.mouse_down_pos.x = touch_area.mouse-x;
                                 root.mouse_down_pos.y = touch_area.mouse-y;
                                 root.mouse_move_pos.x = touch_area.mouse-x;
                                 root.mouse_move_pos.y = touch_area.mouse-y;
                             } else if (event.kind == PointerEventKind.up) {
                                 root.new_pin_win(root.select_rect);
+                                root.mouse_left_press = false;
                             }
                         }
                     }
                     moved() => {
-                        root.mouse_move_pos.x = touch_area.mouse-x;
-                        root.mouse_move_pos.y = touch_area.mouse-y;
+                        if(mouse_left_press == true) {
+                            root.mouse_move_pos.x = touch_area.mouse-x;
+                            root.mouse_move_pos.y = touch_area.mouse-y;
 
-                        root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor) * 1px;
-                        root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor) * 1px;
-                        root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
-                        root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
+                            root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor) * 1px;
+                            root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor) * 1px;
+                            root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
+                            root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
+                        }
                     }
                 }
 
