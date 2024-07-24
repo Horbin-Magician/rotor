@@ -7,7 +7,9 @@ use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 use i_slint_backend_winit::WinitWindowAccessor;
 use global_hotkey::hotkey::{HotKey, Modifiers, Code};
-use screenshots::Screen;
+use xcap::Monitor;
+use windows_sys::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
+use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
 use super::{Module, ModuleMessage};
 use pin_win::PinWin;
@@ -69,17 +71,7 @@ impl Module for ScreenShotter {
 
 impl ScreenShotter{
     pub fn new() -> ScreenShotter {
-        // get screens and info
-        let screens = Screen::all().unwrap();
-        let mut primary_screen_op = None;
-        for screen in screens {
-            if screen.display_info.is_primary {
-                primary_screen_op = Some(screen);
-            }
-        }
-        
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
-        mask_win.window().set_position(slint::PhysicalPosition::new(0, 0) );
         mask_win.set_state(0);
 
         let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
@@ -89,42 +81,55 @@ impl ScreenShotter{
 
         let toolbar = Toolbar::new(message_sender.clone());
 
-        let primary_screen = primary_screen_op.unwrap();
-        let physical_width = primary_screen.display_info.width;
-        let physical_height = primary_screen.display_info.height;
         let bac_buffer_rc = Arc::new(Mutex::new(
-            SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-                &primary_screen.capture().unwrap(),
-                physical_width,
-                physical_height,
-            )
+            SharedPixelBuffer::<Rgba8Pixel>::new(1, 1)
         ));
-        
+
         { // code for shot
             let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
             let mask_win_clone = mask_win.as_weak();
             mask_win.on_shot(move || {
                 let mask_win = mask_win_clone.unwrap();
 
+                // get screens and info
+                let mut point = POINT{x: 0, y: 0};
+                unsafe { GetCursorPos(&mut point); }
+                let monitor = Monitor::from_point(point.x, point.y).unwrap();
+                mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
+                mask_win.set_offset_x(monitor.x());
+                mask_win.set_offset_y(monitor.y());
+
+                let physical_width = monitor.width();
+                let physical_height = monitor.height();
+
                 let mut bac_buffer = bac_buffer_rc_clone.lock().unwrap();
                 *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-                        &primary_screen.capture().unwrap(),
-                        physical_width,
-                        physical_height,
-                    );
+                    &monitor.capture_image().unwrap(),
+                    physical_width,
+                    physical_height,
+                );
                 
-                mask_win.set_scale_factor(mask_win.window().scale_factor());
+                let mut scale_factor = 0.0;
+                unsafe{ 
+                    let mut dpi_x: u32 = 0;
+                    let mut dpi_y: u32 = 0;
+                    GetDpiForMonitor(monitor.id() as isize, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+                    scale_factor = dpi_x as f32 / 96.0;
+                }
+
+                mask_win.set_scale_factor(scale_factor);
                 mask_win.set_state(1);
                 mask_win.set_select_rect(Rect{x: -1., y: -1., height: -1., width: -1.});
                 mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
 
-                mask_win.show().unwrap();
-                mask_win.window().set_size(
-                    slint::PhysicalSize::new(
-                        primary_screen.display_info.width,
-                        primary_screen.display_info.height + 1) // +1 to fix the bug
-                ); // set_fullscreen does not work well
+                // +1 to fix the bug and set_fullscreen does not work well TODO: fix this bug
+                let mut scale = 1.0;
+                if (scale_factor == 1.0) && mask_win.window().scale_factor() == 1.5 { scale = 1.5; } // to fix scale problem
+                let window_width = ((monitor.width() as f32) * scale) as u32;
+                let window_height = ((monitor.height() as f32) * scale) as u32 + 1;
+                mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
 
+                mask_win.show().unwrap();
                 mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                     winit_win.focus_window();
                 });
@@ -178,10 +183,14 @@ impl ScreenShotter{
             let pin_windows_clone = pin_windows.clone();
             let message_sender_clone = message_sender.clone();
             mask_win.on_new_pin_win(move |rect| {
+                let mask_win = mask_win_clone.unwrap();
                 let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
                 let message_sender_clone = message_sender_clone.clone();
                 
-                let pin_win = PinWin::new(bac_buffer_rc.clone(), rect, *max_pin_win_id, message_sender_clone);
+                let pin_win = PinWin::new(
+                    bac_buffer_rc.clone(), rect,
+                    mask_win.get_offset_x(), mask_win.get_offset_y(),
+                    *max_pin_win_id, message_sender_clone);
                 
                 let pin_window_clone = pin_win.pin_window.as_weak();
 
@@ -199,14 +208,14 @@ impl ScreenShotter{
                 pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
     
                 *max_pin_win_id += 1;
-                mask_win_clone.unwrap().hide().unwrap();
+                mask_win.hide().unwrap();
             });
         }
 
         // event listen
         let pin_windows_clone = pin_windows.clone();
-        let toolbar_window_clone = toolbar.get_window();
         // let pin_wins_clone = pin_wins.clone();
+        let toolbar_window_clone = toolbar.get_window();
         std::thread::spawn(move || {
             loop {
                 if let Ok(message) = message_reciever.recv() {
@@ -325,7 +334,7 @@ impl ScreenShotter{
                             delta_y = move_pos.y - other_pos.y;
                         }
                     }
-
+                    
                     move_win.window().set_position(slint::PhysicalPosition::new(move_pos.x - delta_x, move_pos.y - delta_y));
                 }
             }
@@ -351,6 +360,8 @@ slint::slint! {
         in-out property <bool> mouse_left_press;
         in-out property <Point> mouse_down_pos;
         in-out property <Point> mouse_move_pos;
+        in-out property <int> offset_x;
+        in-out property <int> offset_y;
         in-out property <int> state; // 0:before shot; 1:shotting before left button press; 2:shotting，left button press
 
         in-out property <bool> color_type_Dec: true;

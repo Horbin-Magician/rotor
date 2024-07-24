@@ -19,11 +19,11 @@ pub struct PinWin {
 }
 
 impl PinWin {
-    pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
+    pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, offset_x: i32, offset_y: i32, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
         let pin_window = PinWindow::new().unwrap();
         let border_width = pin_window.get_win_border_width();
         let scale_factor = pin_window.window().scale_factor();
-        pin_window.window().set_position(slint::LogicalPosition::new(rect.x / scale_factor - border_width, rect.y / scale_factor - border_width));
+        pin_window.window().set_position(slint::LogicalPosition::new((rect.x + offset_x as f32) / scale_factor - border_width, (rect.y + offset_y as f32) / scale_factor - border_width));
         pin_window.set_scale_factor(pin_window.window().scale_factor());
 
         pin_window.set_bac_image(slint::Image::from_rgba8((*img_rc.lock().unwrap()).clone()));
