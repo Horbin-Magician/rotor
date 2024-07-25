@@ -22,15 +22,21 @@ impl PinWin {
     pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, offset_x: i32, offset_y: i32, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
         let pin_window = PinWindow::new().unwrap();
         let border_width = pin_window.get_win_border_width();
+
         let scale_factor = pin_window.window().scale_factor();
         pin_window.window().set_position(slint::LogicalPosition::new((rect.x + offset_x as f32) / scale_factor - border_width, (rect.y + offset_y as f32) / scale_factor - border_width));
-        pin_window.set_scale_factor(pin_window.window().scale_factor());
-
         pin_window.set_bac_image(slint::Image::from_rgba8((*img_rc.lock().unwrap()).clone()));
         pin_window.set_img_x(rect.x / scale_factor);
         pin_window.set_img_y(rect.y / scale_factor);
         pin_window.set_img_width(rect.width / scale_factor);
         pin_window.set_img_height(rect.height / scale_factor);
+
+        pin_window.set_scale_factor(scale_factor);
+        // if win_scale_factor != scale_factor {
+        //     pin_window.set_scale_factor(scale_factor);
+        // } else {
+        //     pin_window.set_scale_factor(win_scale_factor);
+        // }
 
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
@@ -207,7 +213,7 @@ slint::slint! {
         no-frame: true;
         always-on-top: true;
         title: "小云视窗";
-        forward-focus: key_focus;
+        // forward-focus: key_focus;
         
         in property <image> bac_image;
         in property <length> win_border_width: 1px;
@@ -246,15 +252,14 @@ slint::slint! {
         image_border := Rectangle {
             border-color: rgb(0, 175, 255);
             border-width: win_border_width;
-
             pin_image := Image {
                 source: bac_image;
                 image-fit: contain;
 
                 x: win_border_width;
                 y: win_border_width;
-                width: (win_width) - win_border_width * 2;
-                height: (win_height) - win_border_width * 2;
+                width: (root.width) - win_border_width * 2;
+                height: (root.height) - win_border_width * 2;
 
                 source-clip-x: img_x / 1px  * root.scale_factor;
                 source-clip-y: img_y / 1px  * root.scale_factor;
