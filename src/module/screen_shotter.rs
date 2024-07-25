@@ -72,7 +72,6 @@ impl Module for ScreenShotter {
 impl ScreenShotter{
     pub fn new() -> ScreenShotter {
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
-        mask_win.set_state(0);
 
         let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
         let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
@@ -89,27 +88,14 @@ impl ScreenShotter{
             let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
             let mask_win_clone = mask_win.as_weak();
             mask_win.on_shot(move || {
-                let mask_win = mask_win_clone.unwrap();
-
                 // get screens and info
                 let mut point = POINT{x: 0, y: 0};
                 unsafe { GetCursorPos(&mut point); }
                 let monitor = Monitor::from_point(point.x, point.y).unwrap();
-                mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
-                mask_win.set_offset_x(monitor.x());
-                mask_win.set_offset_y(monitor.y());
-
                 let physical_width = monitor.width();
                 let physical_height = monitor.height();
-
-                let mut bac_buffer = bac_buffer_rc_clone.lock().unwrap();
-                *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-                    &monitor.capture_image().unwrap(),
-                    physical_width,
-                    physical_height,
-                );
-                
-                let mut scale_factor = 0.0;
+                let monitor_img = monitor.capture_image().unwrap();
+                let scale_factor;
                 unsafe{ 
                     let mut dpi_x: u32 = 0;
                     let mut dpi_y: u32 = 0;
@@ -117,14 +103,28 @@ impl ScreenShotter{
                     scale_factor = dpi_x as f32 / 96.0;
                 }
 
+                // get img buffer
+                let mut bac_buffer = bac_buffer_rc_clone.lock().unwrap();
+                *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
+                    &monitor_img,
+                    physical_width,
+                    physical_height,
+                );
+
+                // refresh mask_win
+                let mask_win = mask_win_clone.unwrap();
+                let pre_scale_factor = mask_win.get_scale_factor();
+                mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
+                mask_win.set_offset_x(monitor.x());
+                mask_win.set_offset_y(monitor.y());
+                
                 mask_win.set_scale_factor(scale_factor);
-                mask_win.set_state(1);
                 mask_win.set_select_rect(Rect{x: -1., y: -1., height: -1., width: -1.});
                 mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
 
                 // +1 to fix the bug and set_fullscreen does not work well TODO: fix this bug
                 let mut scale = 1.0;
-                if (scale_factor == 1.0) && mask_win.window().scale_factor() == 1.5 { scale = 1.5; } // to fix scale problem
+                if pre_scale_factor != 0.0 && pre_scale_factor > scale_factor { scale = pre_scale_factor / scale_factor; } // to fix scale problem
                 let window_width = ((monitor.width() as f32) * scale) as u32;
                 let window_height = ((monitor.height() as f32) * scale) as u32 + 1;
                 mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
@@ -142,19 +142,20 @@ impl ScreenShotter{
             mask_win.on_refresh_rgb_trick(move |mouse_x, mouse_y, color_type_dec| {
                 let mask_win = mask_win_clone.unwrap();
                 let scale_factor = mask_win.window().scale_factor();
+
                 let bac_buffer = bac_buffer_rc_clone.lock().unwrap();
+                let width = bac_buffer.width() as u32;
+                let height = bac_buffer.height() as u32;
                 let img: image::DynamicImage = image::DynamicImage::ImageRgba8(
-                    image::RgbaImage::from_vec(
-                        bac_buffer.width() as u32, bac_buffer.height() as u32, bac_buffer.as_bytes().to_vec()
-                    ).unwrap()
+                    image::RgbaImage::from_vec(width, height, bac_buffer.as_bytes().to_vec()).unwrap()
                 );
-                let pixel: Rgba<u8> = img.get_pixel((mouse_x * scale_factor) as u32, (mouse_y * scale_factor) as u32);
+                
+                let point_x = ((mouse_x * scale_factor) as u32).clamp(0, width-1);
+                let point_y = ((mouse_y * scale_factor) as u32).clamp(0, height-1);
+                let pixel: Rgba<u8> = img.get_pixel(point_x, point_y);
                 let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
-                if color_type_dec {
-                    mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
-                } else {
-                    mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into());
-                }
+                if color_type_dec { mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
+                } else { mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into()); }
                 true
             });
         }
@@ -186,7 +187,6 @@ impl ScreenShotter{
                 let mask_win = mask_win_clone.unwrap();
                 let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
                 let message_sender_clone = message_sender_clone.clone();
-                
                 let pin_win = PinWin::new(
                     bac_buffer_rc.clone(), rect,
                     mask_win.get_offset_x(), mask_win.get_offset_y(),
@@ -353,16 +353,16 @@ slint::slint! {
     export component MaskWindow inherits Window {
         no-frame: true;
         forward-focus: focus_scope;
+        title: "截图窗口";
         
         in-out property <image> bac_image;
-        in property <float> scale_factor;
+        in-out property <float> scale_factor: 0;
         in-out property <Rect> select_rect;
         in-out property <bool> mouse_left_press;
         in-out property <Point> mouse_down_pos;
         in-out property <Point> mouse_move_pos;
         in-out property <int> offset_x;
         in-out property <int> offset_y;
-        in-out property <int> state; // 0:before shot; 1:shotting before left button press; 2:shotting，left button press
 
         in-out property <bool> color_type_Dec: true;
         in-out property <string> color_str: "RGB:(???,???,???)";
@@ -374,7 +374,7 @@ slint::slint! {
 
         always-on-top: refresh_rgb_trick(touch_area.mouse-x / 1px, touch_area.mouse-y / 1px, color_type_Dec);
 
-        Image {
+        bac-img := Image {
             height: 100%;
             width: 100%;
 
@@ -395,10 +395,10 @@ slint::slint! {
                         if(event.button == PointerEventButton.left) {
                             if(event.kind == PointerEventKind.down) {
                                 root.mouse_left_press = true;
-                                root.mouse_down_pos.x = touch_area.mouse-x;
-                                root.mouse_down_pos.y = touch_area.mouse-y;
-                                root.mouse_move_pos.x = touch_area.mouse-x;
-                                root.mouse_move_pos.y = touch_area.mouse-y;
+                                root.mouse_down_pos.x = clamp(touch_area.mouse-x, 0, root.width);
+                                root.mouse_down_pos.y = clamp(touch_area.mouse-y, 0, root.height);
+                                root.mouse_move_pos.x = clamp(touch_area.mouse-x, 0, root.width);
+                                root.mouse_move_pos.y = clamp(touch_area.mouse-y, 0, root.height);
                             } else if (event.kind == PointerEventKind.up) {
                                 root.new_pin_win(root.select_rect);
                                 root.mouse_left_press = false;
@@ -407,13 +407,16 @@ slint::slint! {
                     }
                     moved() => {
                         if(mouse_left_press == true) {
-                            root.mouse_move_pos.x = touch_area.mouse-x;
-                            root.mouse_move_pos.y = touch_area.mouse-y;
+                            root.mouse_move_pos.x = clamp(touch_area.mouse-x, 0, (root.width)-1px);
+                            root.mouse_move_pos.y = clamp(touch_area.mouse-y, 0, (root.height)-1px);
 
                             root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor) * 1px;
                             root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor) * 1px;
                             root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
                             root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
+                            
+                            debug("x:{} y:{} width:{} height:{}", root.select-rect.x, root.select-rect.y, root.select-rect.width, root.select-rect.height);
+                            debug("x+width:{} y+height:{}", root.select-rect.x+root.select-rect.width, root.select-rect.y+root.select-rect.height);
                         }
                     }
                 }
@@ -449,9 +452,9 @@ slint::slint! {
             width: 120px;
             height:140px; // 90px + 50px
             x: ((touch-area.mouse-x) + self.width > root.width) ? 
-                (touch-area.mouse-x) - self.width : touch-area.mouse-x;
+                min(touch-area.mouse-x, root.width) - self.width : max(touch-area.mouse-x, 0);
             y: ((touch-area.mouse-y) + 25px + self.height > root.height) ? 
-                (touch-area.mouse-y) - 25px - self.height : touch-area.mouse-y + 25px;
+                min((touch-area.mouse-y) - 25px, root.height) - self.height : max(touch-area.mouse-y + 25px, 0);
             background: black.with_alpha(0.6);
 
             VerticalLayout {
