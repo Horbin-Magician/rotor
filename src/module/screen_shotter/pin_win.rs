@@ -32,11 +32,6 @@ impl PinWin {
         pin_window.set_img_height(rect.height / scale_factor);
 
         pin_window.set_scale_factor(scale_factor);
-        // if win_scale_factor != scale_factor {
-        //     pin_window.set_scale_factor(scale_factor);
-        // } else {
-        //     pin_window.set_scale_factor(win_scale_factor);
-        // }
 
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
@@ -213,7 +208,7 @@ slint::slint! {
         no-frame: true;
         always-on-top: true;
         title: "小云视窗";
-        // forward-focus: key_focus;
+        forward-focus: key_focus;
         
         in property <image> bac_image;
         in property <length> win_border_width: 1px;
