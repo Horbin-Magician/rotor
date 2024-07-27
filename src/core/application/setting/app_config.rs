@@ -61,10 +61,10 @@ impl AppConfig {
         self.theme
     }
 
-    pub fn set_save_path(&mut self, path: String) {
-        self.save_path = path;
-        self.save();
-    }
+    // pub fn set_save_path(&mut self, path: String) {
+    //     self.save_path = path;
+    //     self.save();
+    // }
 
     pub fn get_save_path(&self) -> String {
         self.save_path.clone()
