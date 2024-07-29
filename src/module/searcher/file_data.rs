@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::collections::VecDeque;
@@ -29,7 +29,6 @@ pub struct FileData {
     vols: Vec<char>,
     finding_name: String,
     finding_result: volume::SearchResult,
-    waiting_init: u8,
     waiting_finder: u8,
     search_win: slint::Weak<SearchWindow>,
     volume_packs: Vec<VolumePack>,
@@ -47,7 +46,6 @@ impl FileData {
             finding_name: String::new(),
             finding_result: volume::SearchResult{items: Vec::new(), query: String::new()},
             waiting_finder: 0,
-            waiting_init: 0,
             search_win,
             state: FileState::Unbuild,
             show_num: 20,
@@ -92,7 +90,7 @@ impl FileData {
                                     wait_deals.push_back(rtn);
                                 }
                             },
-                            _ => { continue; },
+                            _ => {},
                         }
                     },
                     Ok(SearcherMessage::Release) => {
@@ -113,27 +111,26 @@ impl FileData {
     // Check whether the disk represented by a drive letter is in ntfs format
     fn is_ntfs(vol: char) -> bool {
         let root_path_name = CString::new(format!("{}:\\", vol)).unwrap();
-        let mut volume_name_buffer: [u8; Foundation::MAX_PATH as usize] = [0; Foundation::MAX_PATH as usize];
+        let mut volume_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
         let mut volume_serial_number: u32 = 0;
         let mut maximum_component_length: u32 = 0;
         let mut file_system_flags: u32 = 0;
-        let mut file_system_name_buffer:[u8; Foundation::MAX_PATH as usize] = [0; Foundation::MAX_PATH as usize];
+        let mut file_system_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
 
         unsafe {
             if FileSystem::GetVolumeInformationA(
                     root_path_name.as_ptr() as *const u8,
-                    &mut (volume_name_buffer[0]) as *mut _,
-                    Foundation::MAX_PATH,
+                    volume_name_buffer.as_mut_ptr(),
+                    volume_name_buffer.len() as u32,
                     &mut volume_serial_number,
                     &mut maximum_component_length,
                     &mut file_system_flags,
-                    &mut (file_system_name_buffer[0]) as *mut _,
-                    Foundation::MAX_PATH
+                    file_system_name_buffer.as_mut_ptr(),
+                    file_system_name_buffer.len() as u32,
                 ) != 0 {
-                let result = String::from_utf8_lossy(&file_system_name_buffer);
-                let mut result = String::from(result);
-                result.retain(|c| c!='\0');
-                return result == "NTFS";
+
+                let result = CStr::from_ptr(file_system_name_buffer.as_ptr() as *const i8);
+                return result.to_string_lossy() == "NTFS";
             }
         }
         false
@@ -151,42 +148,12 @@ impl FileData {
             bit_mask >>= 1;
         }
 
-        self.volume_packs.retain(|VolumePack{volume, ..}| {
-            let volume = volume.lock().unwrap();
+        self.volume_packs.retain(|volume_pack| {
+            let volume = volume_pack.volume.lock().unwrap();
             self.vols.contains(&volume.drive)
         });
 
         self.vols.len() as u8
-    }
-
-    pub fn init_volumes(&mut self) -> bool {
-        self.waiting_init = self.update_valid_vols();
-
-        let (build_sender, build_receiver) = mpsc::channel::<bool>();
-
-        for c in &self.vols {
-            let (stop_sender, stop_receiver) = mpsc::channel::<()>();
-            let volume = Arc::new(Mutex::new(volume::Volume::new(*c, stop_receiver)));
-            
-            self.volume_packs.push(VolumePack {
-                volume: volume.clone(),
-                stop_sender,
-            });
-
-            let build_sender_clone = build_sender.clone();
-            let _ = thread::spawn(move || {
-                volume.lock().unwrap().build_index(Some(build_sender_clone));
-            });
-        }
-
-        loop{
-            let result = build_receiver.recv().unwrap();
-            if result {
-                self.waiting_init -= 1;
-                if self.waiting_init == 0 { return true; }
-            }
-            else { return false; }
-        }
     }
 
     fn update_result_model(&mut self, filename: String, update_result: Vec<volume::SearchResultItem>, increment_find: bool) {
@@ -220,11 +187,9 @@ impl FileData {
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
-        self.update_valid_vols();
-
         let mut reply: Option<SearcherMessage> = None;
-        
         let mut increment_find = false;
+
         if self.finding_name == filename { 
             increment_find = true;
             self.show_num += self.batch as usize;
@@ -252,7 +217,7 @@ impl FileData {
             let filename = filename.clone();
             let _ = thread::spawn(move || {
                 let mut volume = volume.lock().unwrap();
-                volume.find(filename.clone(), batch, find_result_sender);
+                volume.find(filename, batch, find_result_sender);
             });
         }
 
@@ -263,6 +228,7 @@ impl FileData {
                     let _ = volume_pack.stop_sender.send(());
                 }
                 reply = Some(searcher_msg);
+                break;
             }
             
             if let Ok( op_result ) = find_result_receiver.try_recv() {
@@ -272,7 +238,6 @@ impl FileData {
                     if self.waiting_finder != 0 { continue; }
 
                     self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
-                    
                     let return_result = 
                         if self.finding_result.items.len() > self.show_num { self.finding_result.items[..self.show_num].to_vec() }
                         else { self.finding_result.items.to_vec() };
@@ -284,6 +249,28 @@ impl FileData {
         reply
     }
 
+    pub fn init_volumes(&mut self) {
+        self.volume_packs.clear();
+        self.update_valid_vols();
+
+        let handles = self.vols.iter().map(|&c| {
+            let (stop_sender, stop_receiver) = mpsc::channel::<()>();
+            let volume = Arc::new(Mutex::new(volume::Volume::new(c, stop_receiver)));
+            
+            self.volume_packs.push(VolumePack { volume: volume.clone(), stop_sender });
+
+            thread::spawn(move || {
+                volume.lock().unwrap().build_index();
+            })
+        }).collect::<Vec<_>>();
+
+        for handle in handles {
+            if let Err(e) = handle.join() {
+                eprintln!("Thread panicked: {:?}", e); // TODO handle error
+            }
+        }
+    }
+
     pub fn update_index(&mut self) {
         self.update_valid_vols();
 
@@ -293,8 +280,11 @@ impl FileData {
                 volume.lock().unwrap().update_index();
             })
         }).collect::<Vec<_>>();
+
         for handle in handles {
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                eprintln!("Thread panicked: {:?}", e); // TODO handle error
+            }
         }
     }
 
@@ -302,15 +292,17 @@ impl FileData {
         self.update_valid_vols();
         
         self.finding_name = String::new();
-
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {
                 volume.lock().unwrap().release_index();
             })
         }).collect::<Vec<_>>();
+
         for handle in handles {
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                eprintln!("Thread panicked: {:?}", e); // TODO handle error
+            }
         }
     }
 }

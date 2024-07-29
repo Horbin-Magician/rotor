@@ -221,7 +221,7 @@ impl Volume {
     }
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
-    pub fn build_index(&mut self, sender: Option<mpsc::Sender<bool>>) {
+    pub fn build_index(&mut self) {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
@@ -295,10 +295,6 @@ impl Volume {
         self.serialization_write().unwrap_or_else(|err: io::Error| {
             log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
         });
-        
-        if let Some(sender) = sender {
-            let _ = sender.send(true);
-        }
     }
 
     // Clears the database
@@ -326,32 +322,31 @@ impl Volume {
     pub fn find(&mut self, query: String, batch: u8, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
+
         #[cfg(debug_assertions)]
         log_info(format!("{} Begin Volume::Find {query}", self.drive));
-
-        let mut result = Vec::new();
 
         if query.is_empty() { let _ = sender.send(None); return;}
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
                 log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
-                self.build_index(None);
+                self.build_index();
             });
         };
-
-        let query_lower = query.to_lowercase();
-        let query_filter = Self::make_filter(&query_lower);
         
         while self.stop_receiver.try_recv().is_ok() { } // clear channel before find
         
+        let mut result = Vec::new();
+        let mut find_num = 0;
+        let mut search_num: usize = 0;
+        let query_lower = query.to_lowercase();
+        let query_filter = Self::make_filter(&query_lower);
         if self.last_query != query {
             self.last_search_num = 0;
             self.last_query = query.clone();
         }
-        let file_map_iter = self.file_map.iter().rev().skip(self.last_search_num);
 
-        let mut find_num = 0;
-        let mut search_num: usize = 0;
+        let file_map_iter = self.file_map.iter().rev().skip(self.last_search_num);
         for (_, file) in file_map_iter {
             if self.stop_receiver.try_recv().is_ok() {
                 #[cfg(debug_assertions)]
@@ -360,18 +355,15 @@ impl Volume {
                 return;
             }
             search_num += 1;
-            if (file.filter & query_filter) == query_filter {
-                let file_name = file.file_name.clone();
-                if Self::match_str(&file_name, &query_lower) {
-                    if let Some(path) = self.file_map.get_path(&file.parent_index){
-                        result.push(SearchResultItem {
-                            path,
-                            file_name,
-                            rank: file.rank,
-                        });
-                        find_num += 1;
-                        if find_num >= batch { break;}
-                    }
+            if (file.filter & query_filter) == query_filter && Self::match_str(&file.file_name, &query_lower) {
+                if let Some(path) = self.file_map.get_path(&file.parent_index) {
+                    result.push(SearchResultItem {
+                        path,
+                        file_name: file.file_name.clone(),
+                        rank: file.rank,
+                    });
+                    find_num += 1;
+                    if find_num >= batch { break; }
                 }
             }
         }
@@ -391,7 +383,7 @@ impl Volume {
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
                 log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
-                self.build_index(None);
+                self.build_index();
             });
         };
 
