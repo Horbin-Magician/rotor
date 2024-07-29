@@ -88,8 +88,10 @@ impl Searcher {
             search_win.on_key_pressed(move |event| {
                 let search_win_clone = search_win_clone.unwrap();
                 if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
+                    // ESC
                     search_win_clone.hide().unwrap();
                 }else if event.text == slint::SharedString::from(slint::platform::Key::UpArrow) {
+                    // UpArrow
                     let mut active_id = search_win_clone.get_active_id();
                     if active_id > 0 { 
                         active_id -= 1;
@@ -98,6 +100,7 @@ impl Searcher {
                         if (-viewport_y / 60.) as i32 > active_id { search_win_clone.set_viewport_y(viewport_y + 60.); }
                     }
                 }else if event.text == slint::SharedString::from(slint::platform::Key::DownArrow) {
+                    // DownArrow
                     let mut active_id = search_win_clone.get_active_id();
                     if active_id < (search_result_model_clone.row_count() - 1) as i32 { // If no more item
                         active_id += 1;
@@ -110,6 +113,7 @@ impl Searcher {
                         searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string())).unwrap();
                     }
                 }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
+                    // Enter
                     let active_id = search_win_clone.get_active_id();
                     let data = search_result_model_clone.row_data(active_id as usize);
                     if let Some(f) = data {
