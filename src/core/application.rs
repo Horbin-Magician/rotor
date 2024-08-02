@@ -31,15 +31,13 @@ impl Application {
 
         let _system_tray = SystemTray::new(_msg_sender.clone());
         let _setting: Setting = Setting::new();
-        
-        let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyD);
-        _hotkey_manager.register(hotkey).expect("Failed to register hotkey.");
 
         let mut _modules: Vec<Box<dyn Module>> = Vec::new();
         _modules.push(Box::new(Searcher::new()));
         _modules.push(Box::new(ScreenShotter::new()));
         let mut module_ports: HashMap<u32, Sender<ModuleMessage>> = HashMap::new();
         for module in &mut _modules {
+            println!("register hotkey");
             _hotkey_manager.register(module.get_hotkey()).expect("Failed to register hotkey."); // register it
             module_ports.insert(module.get_id().unwrap(), module.run());
         }
@@ -83,7 +81,6 @@ fn app_loop (
         }
 
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-            println!("{:?}", event);
             for module_port in &module_ports {
                 if event.state == HotKeyState::Released && event.id == *module_port.0 {
                     module_port.1.send(ModuleMessage::Trigger).unwrap();
