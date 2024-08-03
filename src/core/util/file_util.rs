@@ -9,6 +9,10 @@ use windows_sys::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, She
 use windows_sys::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
 use windows_sys::Win32::Graphics::Gdi::{BITMAP, BITMAPINFOHEADER, GetBitmapBits, DeleteObject, HGDIOBJ, HBITMAP, self};
 
+fn file_exists(path: &str) -> bool {
+    fs::metadata(path).is_ok()
+}
+
 pub fn del_useless_files() {
     let binding = env::current_exe().unwrap();
     let app_path = binding.parent().unwrap();
@@ -50,6 +54,9 @@ pub fn open_file_admin(file_full_name: String) {
     };
 }
 
+// TODO 
+// thread 'main' panicked at src\core\util\file_util.rs:211:71:
+// called `Result::unwrap()` on an `Err` value: Unsupported(UnsupportedError { format: Exact(Bmp), kind: GenericFeature("Image dimensions (0x0 w/4 channels) are too large") })
 pub fn get_icon(path: &str) -> Option<slint::Image> {
     #[repr(C)]
     struct Iconheader {
@@ -120,6 +127,8 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
             }
         }
     }
+
+    if file_exists(path) == false { return None; }
 
     unsafe {
         let h_icon = get_icon_from_file(path);
