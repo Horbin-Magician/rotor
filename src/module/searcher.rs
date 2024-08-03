@@ -245,7 +245,6 @@ slint::slint! {
                 key-handler := FocusScope {
                     key-released(event) => {
                         root.key_pressed(event);
-                        debug(event);
                         accept
                     }
 

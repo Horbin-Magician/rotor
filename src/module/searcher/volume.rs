@@ -391,7 +391,7 @@ impl Volume {
         let mut cb: u32 = 0;
         let mut rujd: Ioctl::READ_USN_JOURNAL_DATA_V0 = Ioctl::READ_USN_JOURNAL_DATA_V0 {
                 StartUsn: self.start_usn,
-                ReasonMask: Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_NEW_NAME,
+                ReasonMask: Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_NEW_NAME | Ioctl::USN_REASON_RENAME_OLD_NAME,
                 ReturnOnlyOnClose: 0,
                 Timeout: 0,
                 BytesToWaitFor: 0,
@@ -430,6 +430,9 @@ impl Volume {
                     }
                     else if (*record_ptr).Reason & Ioctl::USN_REASON_RENAME_NEW_NAME == Ioctl::USN_REASON_RENAME_NEW_NAME {
                         self.file_map.insert((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
+                    }
+                    else if (*record_ptr).Reason & Ioctl::USN_REASON_RENAME_OLD_NAME == Ioctl::USN_REASON_RENAME_OLD_NAME {
+                        self.file_map.remove(&(*record_ptr).FileReferenceNumber);
                     }
                     record_ptr = (record_ptr as usize + (*record_ptr).RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
