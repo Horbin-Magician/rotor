@@ -4,7 +4,7 @@ mod system_tray;
 use std::{sync::{mpsc, mpsc::Sender}, collections::HashMap};
 
 use slint::ComponentHandle;
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}, HotKeyState};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use system_tray::SystemTray;
 use setting::{Setting, SettingWindow};
