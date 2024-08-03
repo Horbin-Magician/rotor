@@ -76,6 +76,12 @@ impl Toolbar {
 slint::slint! {
     import { Button, Palette} from "std-widgets.slint";
 
+    struct Tool_slint {
+        id: int,
+        icon: image,
+        name: string,
+    }
+
     component Arc inherits Path {
         in-out property <bool> active: false;
         in-out property <int> out_radius: 100;
@@ -115,7 +121,7 @@ slint::slint! {
 
     component ArcBtn inherits Rectangle{
         in-out property <image> icon;
-        in-out property <int> out_radius: 100;
+        in-out property <int> out_radius: 80;
         in-out property <int> inner_radius: 50;
         in-out property <int> begin_angle;
         in-out property <int> end_angle;
@@ -125,14 +131,14 @@ slint::slint! {
             active: active;
             out_radius: out_radius;
             inner_radius: inner_radius;
-            out_start_x: 100 + sin(begin_angle * 1deg) * out_radius;
-            out_start_y: 100 - cos(begin_angle * 1deg) * out_radius;
-            out_end_x: 100 + sin(end_angle * 1deg) * out_radius;
-            out_end_y: 100 - cos(end_angle * 1deg) * out_radius;
-            inner_start_x: 100 + sin(begin_angle * 1deg) * inner_radius;
-            inner_start_y: 100 - cos(begin_angle * 1deg) * inner_radius;
-            inner_end_x: 100 + sin(end_angle * 1deg) * inner_radius;
-            inner_end_y: 100 - cos(end_angle * 1deg) * inner_radius;
+            out_start_x: (out_radius) + sin(begin_angle * 1deg) * out_radius;
+            out_start_y: (out_radius) - cos(begin_angle * 1deg) * out_radius;
+            out_end_x: (out_radius) + sin(end_angle * 1deg) * out_radius;
+            out_end_y: (out_radius) - cos(end_angle * 1deg) * out_radius;
+            inner_start_x: (out_radius) + sin(begin_angle * 1deg) * inner_radius;
+            inner_start_y: (out_radius) - cos(begin_angle * 1deg) * inner_radius;
+            inner_end_x: (out_radius) + sin(end_angle * 1deg) * inner_radius;
+            inner_end_y: (out_radius) - cos(end_angle * 1deg) * inner_radius;
         }
 
         Image {
@@ -140,8 +146,8 @@ slint::slint! {
             source: icon;
             height: root.height / 8;
             width: root.width / 8;
-            x: 100px + sin((begin_angle + end_angle) / 2 * 1deg) * (out_radius + inner_radius) / 2 * 1px - self.width / 2;
-            y: 100px - cos((begin_angle + end_angle) / 2 * 1deg) * (out_radius + inner_radius) / 2 * 1px - self.height / 2;
+            x: ((out_radius) + sin((begin_angle + end_angle) / 2 * 1deg) * (out_radius + inner_radius) / 2) * 1px - self.width / 2;
+            y: ((out_radius) - cos((begin_angle + end_angle) / 2 * 1deg) * (out_radius + inner_radius) / 2) * 1px - self.height / 2;
         }
     }
 
@@ -151,9 +157,16 @@ slint::slint! {
         title: "菜单栏";
         always-on-top: true;
 
-        in-out property <int> win_height: 200;
-        in-out property <int> win_width: 200;
+        in-out property <int> win_height: 160;
+        in-out property <int> win_width: 160;
         in-out property <int> active_num: -1;
+
+        in-out property <[Tool_slint]> tools: [
+            { id: 0, icon: @image-url("./assets/icon/min.svg"), name: "最小化" },
+            { id: 1, icon: @image-url("./assets/icon/right.svg"), name: "复制" },
+            { id: 2, icon: @image-url("./assets/icon/close.svg"), name: "关闭" },
+            { id: 3, icon: @image-url("./assets/icon/save.svg"), name: "保存" },
+        ];
 
         width: win_width * 1px;
         height: win_height * 1px;
@@ -168,32 +181,20 @@ slint::slint! {
             border-radius: self.height / 2;
             background: Palette.background.with-alpha(0.5);
 
-            ArcBtn{
-                icon: @image-url("./assets/icon/min.svg");
-                begin_angle: -45;
-                end_angle: 45;
-                active: active_num == 0;
+            for tool in root.tools: ArcBtn{
+                icon: tool.icon;
+                begin_angle: 360/tools.length * (tool.id) - 360/tools.length/2;
+                end_angle: 360/tools.length * (tool.id) + 360/tools.length/2;
+                active: active_num == tool.id;
             }
 
-            ArcBtn{
-                icon: @image-url("./assets/icon/right.svg");
-                begin_angle: 45;
-                end_angle: 135;
-                active: active_num == 1;
-            }
-
-            ArcBtn{
-                icon: @image-url("./assets/icon/close.svg");
-                begin_angle: 135;
-                end_angle: 225;
-                active: active_num == 2;
-            }
-
-            ArcBtn{
-                icon: @image-url("./assets/icon/save.svg");
-                begin_angle: 225;
-                end_angle: 315;
-                active: active_num == 3;
+            tool-tips := Text {
+                font-size: 14px;
+                text: (active_num == -1) ? "" : tools[active_num].name;
+                height: root.height;
+                width: root.width;
+                vertical-alignment: center;
+                horizontal-alignment: center;
             }
         }
     }
