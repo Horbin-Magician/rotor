@@ -37,7 +37,6 @@ impl Application {
         _modules.push(Box::new(ScreenShotter::new()));
         let mut module_ports: HashMap<u32, Sender<ModuleMessage>> = HashMap::new();
         for module in &mut _modules {
-            println!("register hotkey");
             _hotkey_manager.register(module.get_hotkey()).expect("Failed to register hotkey."); // register it
             module_ports.insert(module.get_id().unwrap(), module.run());
         }
