@@ -81,18 +81,18 @@ impl Setting {
         { // update
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_check_update(move || {
-                let latest_version_info = net_util::get_latest_version().unwrap();
-                let latest_version = latest_version_info.tag_name[1..].to_string();
+                // TODO deal with unknown version
+                let latest_version = net_util::Updater::global().lock().unwrap().get_latest_version().unwrap_or("unknown".to_string());
                 let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
                 let setting_window = setting_win_clone.unwrap();
-                setting_window.set_update_modal_state(1);
                 setting_window.set_current_version(current_version.into());
                 setting_window.set_latest_version(latest_version.into());
+                setting_window.set_update_modal_state(1);
             });
 
             setting_win.on_update(move || {
-                let latest_version_info = net_util::get_latest_version().unwrap();
-                net_util::update_software(latest_version_info).unwrap();
+                // TODO deal update failed
+                net_util::Updater::global().lock().unwrap().update_software().unwrap();
             });
         }
 

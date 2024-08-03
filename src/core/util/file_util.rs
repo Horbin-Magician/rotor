@@ -54,9 +54,6 @@ pub fn open_file_admin(file_full_name: String) {
     };
 }
 
-// TODO 
-// thread 'main' panicked at src\core\util\file_util.rs:211:71:
-// called `Result::unwrap()` on an `Err` value: Unsupported(UnsupportedError { format: Exact(Bmp), kind: GenericFeature("Image dimensions (0x0 w/4 channels) are too large") })
 pub fn get_icon(path: &str) -> Option<slint::Image> {
     #[repr(C)]
     struct Iconheader {
