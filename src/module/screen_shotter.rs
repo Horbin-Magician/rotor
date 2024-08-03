@@ -414,9 +414,6 @@ slint::slint! {
                             root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor) * 1px;
                             root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
                             root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
-                            
-                            debug("x:{} y:{} width:{} height:{}", root.select-rect.x, root.select-rect.y, root.select-rect.width, root.select-rect.height);
-                            debug("x+width:{} y+height:{}", root.select-rect.x+root.select-rect.width, root.select-rect.y+root.select-rect.height);
                         }
                     }
                 }
