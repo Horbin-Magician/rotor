@@ -231,13 +231,13 @@ slint::slint! {
         no-frame: true;
         forward-focus: input;
         default-font-size: 18px;
-        default-font-family: "Microsoft YaHei UI";
         icon: @image-url("assets/logo.png");
         width: ui_width * 1px;
         always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
         background: transparent;
 
         VerticalBox {
+            padding: 0px;
             Rectangle {
                 border-radius: 5px;
                 background: Palette.background;
@@ -284,7 +284,7 @@ slint::slint! {
                                                     width: 2px;
                                                     border-radius: 1px;
                                                     height: 30px;
-                                                    background: cyan;
+                                                    background: Palette.accent-background;
                                                 }
                                             }
                                             Rectangle {

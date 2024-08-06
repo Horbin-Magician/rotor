@@ -12,7 +12,7 @@ build = "build.rs"
 embed-resource = "2.2.0"
 
 [dependencies]
-slint = "1.7.1"
+slint = { version = "1.7.1", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-femtovg"]}
 i-slint-backend-winit = "1.7.1"
 raw-window-handle = "0.5.2"
 muda = "0.9.3"
