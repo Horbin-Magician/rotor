@@ -109,6 +109,7 @@ slint::slint! {
     import { TitleBar } from "src/core/application/setting/UI/title_bar.slint";
 
     export component SettingWindow inherits Window {
+        default-font-size: 14px;
         width: 500px;
         height: 400px;
         title: @tr("设置");
