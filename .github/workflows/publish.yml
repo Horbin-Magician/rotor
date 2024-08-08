@@ -27,6 +27,9 @@ jobs:
           echo "Latest tag is $latestTag"
           echo "::set-output name=tag::$latestTag"
 
+      - name: Cancel filename limit
+        run: New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" ` -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+
       - name: Build
         run: cargo build --release
 
