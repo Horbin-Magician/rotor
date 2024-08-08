@@ -3,7 +3,7 @@ mod volume;
 
 use slint::{ComponentHandle, Model};
 use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
-use i_slint_backend_winit::{winit::{platform::windows::WindowExtWindows}, WinitWindowAccessor};
+use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use windows_sys::Win32::UI::WindowsAndMessaging;
 use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 
