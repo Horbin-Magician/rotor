@@ -3,7 +3,7 @@ mod volume;
 
 use slint::{ComponentHandle, Model};
 use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
-use i_slint_backend_winit::WinitWindowAccessor;
+use i_slint_backend_winit::{winit::{platform::windows::WindowExtWindows}, WinitWindowAccessor};
 use windows_sys::Win32::UI::WindowsAndMessaging;
 use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 
@@ -58,6 +58,10 @@ impl Module for Searcher{
 impl Searcher {
     pub fn new() -> Searcher {
         let search_win = SearchWindow::new().unwrap();
+
+        search_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+            winit_win.set_skip_taskbar(true);
+        });
 
         let width: f32 = 500.;
         search_win.set_ui_width(width);
