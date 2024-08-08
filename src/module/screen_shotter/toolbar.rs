@@ -1,6 +1,6 @@
 use std::sync::mpsc::Sender;
 
-use i_slint_backend_winit::WinitWindowAccessor;
+use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 
 use super::{PinOperation, ShotterMessage};
 
@@ -12,6 +12,9 @@ pub struct Toolbar {
 impl Toolbar {
     pub fn new(message_sender: Sender<ShotterMessage>) -> Toolbar {
         let toolbar_window = ToolbarWindow::new().unwrap();
+        toolbar_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+            winit_win.set_skip_taskbar(true);
+        });
 
         let toolbar_window_clone = toolbar_window.as_weak();
         toolbar_window.on_show_pos(move |x, y| {

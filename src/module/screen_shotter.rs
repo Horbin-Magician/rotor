@@ -5,7 +5,7 @@ use arboard::Clipboard;
 use image::{self, GenericImageView, Rgba};
 use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
 use slint::{SharedPixelBuffer, Rgba8Pixel};
-use i_slint_backend_winit::WinitWindowAccessor;
+use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 use xcap::Monitor;
 use windows_sys::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
@@ -72,6 +72,9 @@ impl Module for ScreenShotter {
 impl ScreenShotter{
     pub fn new() -> ScreenShotter {
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
+        mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+            winit_win.set_skip_taskbar(true);
+        });
 
         let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
         let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
