@@ -217,12 +217,12 @@ slint::slint! {
 
         in property <length> img_x;
         in property <length> img_y;
-        in-out property <int> zoom_factor: 10; // neet to be divided by ten
+        in-out property <int> zoom_factor: 100; // neet to be divided by one hundred
         in-out property <length> img_width;
         in-out property <length> img_height;
 
-        in-out property <length> win_width: (img_width * zoom_factor / 10) + win_border_width * 2;
-        in-out property <length> win_height: (img_height * zoom_factor / 10) + win_border_width * 2;
+        in-out property <length> win_width: (img_width * zoom_factor / 100) + win_border_width * 2;
+        in-out property <length> win_height: (img_height * zoom_factor / 100) + win_border_width * 2;
 
         in-out property <bool> can_move: false;
         in-out property <bool> is_stick_x: false;
@@ -296,9 +296,9 @@ slint::slint! {
 
                     scroll-event(event) => {
                         if (event.delta-y > 0) {
-                            if (root.zoom_factor < 50) { root.zoom_factor = root.zoom_factor + 1; }
+                            if (root.zoom_factor < 500) { root.zoom_factor = root.zoom_factor + 1; }
                         } else if (event.delta-y < 0) {
-                            if (root.zoom_factor > 2) { root.zoom_factor = (root.zoom_factor) - 1; }
+                            if (root.zoom_factor > 10) { root.zoom_factor = (root.zoom_factor) - 1; }
                         }
                         accept
                     }
