@@ -209,6 +209,7 @@ slint::slint! {
         always-on-top: true;
         title: "小云视窗";
         forward-focus: key_focus;
+        icon: @image-url("assets/logo.png");
         
         in property <image> bac_image;
         in property <length> win_border_width: 1px;
