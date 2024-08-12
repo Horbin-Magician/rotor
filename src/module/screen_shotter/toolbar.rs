@@ -106,20 +106,13 @@ slint::slint! {
         stroke: rgb(0, 175, 255);
         stroke-width: 2px;
 
-        MoveTo { x: inner_start_x; y: inner_start_y; }
-        LineTo { x: out_start_x;   y: out_start_y;   }
-
-        ArcTo {
-            x: out_end_x; y: out_end_y;
-            radius-x: out_radius; radius-y: out_radius; sweep: true;
-        }
-
-        LineTo { x:  inner_end_x; y: inner_end_y; }
-
-        ArcTo {
-            x: inner_start_x; y: inner_start_y;
-            radius-x: inner_radius; radius-y: inner_radius;
-        }
+        commands: @tr("M {} {} L {} {} A {} {} 0 0 0 {} {} L {} {} A {} {} 0 0 0 {} {}",
+            inner_start_x, inner_start_y,
+            out_start_x, out_start_y,
+            out_radius, out_radius, out_end_x, out_end_y,
+            inner_end_x, inner_end_y,
+            inner_radius, inner_radius, inner_start_x, inner_start_y
+        );
     }
 
     component ArcBtn inherits Rectangle{

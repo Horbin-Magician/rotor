@@ -122,7 +122,6 @@ impl ScreenShotter{
                 mask_win.set_offset_y(monitor.y());
                 
                 mask_win.set_scale_factor(scale_factor);
-                mask_win.set_select_rect(Rect{x: -1., y: -1., height: -1., width: -1.});
                 mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
 
                 // +1 to fix the bug and set_fullscreen does not work well TODO: fix this bug
@@ -133,9 +132,6 @@ impl ScreenShotter{
                 mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
 
                 mask_win.show().unwrap();
-                mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
-                    winit_win.focus_window();
-                });
             });
         }
 
@@ -405,6 +401,10 @@ slint::slint! {
                             } else if (event.kind == PointerEventKind.up) {
                                 root.new_pin_win(root.select_rect);
                                 root.mouse_left_press = false;
+                                root.select-rect.x = -1px;
+                                root.select-rect.y = -1px;
+                                root.select-rect.width = 0px;
+                                root.select-rect.height = 0px;
                             }
                         }
                     }
@@ -450,7 +450,7 @@ slint::slint! {
 
         amplifier := Rectangle {
             width: 120px;
-            height:140px; // 90px + 50px
+            height:146px; // 90px + 50px + 2px * 3
             x: ((touch-area.mouse-x) + self.width > root.width) ? 
                 min(touch-area.mouse-x, root.width) - self.width : max(touch-area.mouse-x, 0);
             y: ((touch-area.mouse-y) + 25px + self.height > root.height) ? 
@@ -497,7 +497,7 @@ slint::slint! {
 
                 Text {
                     horizontal-alignment: center;
-                    text: "Z键切换 C键复制"; // "HSV(%1,%2,%3)"
+                    text: "Z键切换 C键复制";
                     color: white;
                 } // draw tips
             }
