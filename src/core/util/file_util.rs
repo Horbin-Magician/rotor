@@ -127,97 +127,106 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
 
     if file_exists(path) == false { return None; }
 
+
+    let h_icon = get_icon_from_file(path);
+    
+    // init and get nesesary message
+    let icon_header = Iconheader { 
+        id_count: 1, // number of Icondirs
+        id_reserved: 0, 
+        id_type: 1// Type 1 = ICON (type 2 = CURSOR)
+    };
+
+    let mut icon_info = ICONINFO{ fIcon: 0, hbmColor: 0, hbmMask: 0, xHotspot: 0, yHotspot: 0 }; 
+    let mut bmp_color = BITMAP { bmBits: ptr::null_mut(), bmBitsPixel: 0, bmHeight: 0, bmPlanes: 0, bmType: 0, bmWidth: 0, bmWidthBytes: 0};
+    let mut bmp_mask = BITMAP{ bmBits: ptr::null_mut(), bmBitsPixel: 0, bmHeight: 0, bmPlanes: 0, bmType: 0, bmWidth: 0, bmWidthBytes: 0};
+
     unsafe {
-        let h_icon = get_icon_from_file(path);
-        
-        // init and get nesesary message
-        let icon_header = Iconheader { 
-            id_count: 1, // number of Icondirs
-            id_reserved: 0, 
-            id_type: 1// Type 1 = ICON (type 2 = CURSOR)
-        };
-
-        let mut icon_info = ICONINFO{ fIcon: 0, hbmColor: 0, hbmMask: 0, xHotspot: 0, yHotspot: 0 }; 
-        let mut bmp_color = BITMAP { bmBits: ptr::null_mut(), bmBitsPixel: 0, bmHeight: 0, bmPlanes: 0, bmType: 0, bmWidth: 0, bmWidthBytes: 0};
-        let mut bmp_mask = BITMAP{ bmBits: ptr::null_mut(), bmBitsPixel: 0, bmHeight: 0, bmPlanes: 0, bmType: 0, bmWidth: 0, bmWidthBytes: 0};
-
         GetIconInfo(h_icon, &mut icon_info);
         Gdi::GetObjectW(icon_info.hbmColor, mem::size_of_val(&bmp_color) as i32, &mut bmp_color as *mut BITMAP as *mut c_void);
         Gdi::GetObjectW(icon_info.hbmMask, mem::size_of_val(&bmp_mask) as i32, &mut bmp_mask as *mut BITMAP as *mut c_void);
+    }
 
-        let icon_header_size = mem::size_of::<Iconheader>();
-        let icon_dir_size = mem::size_of::<Icondir>();
-        let info_header_size = mem::size_of::<BITMAPINFOHEADER>();
-        let bitmap_bytes_count = get_bitmap_count(&bmp_color) as usize;
-        let mask_bytes_count = get_bitmap_count(&bmp_mask) as usize;
-        let image_bytes_count = bitmap_bytes_count + mask_bytes_count;
-        let complete_size = icon_header_size + icon_dir_size + info_header_size + image_bytes_count;
+    let icon_header_size = mem::size_of::<Iconheader>();
+    let icon_dir_size = mem::size_of::<Icondir>();
+    let info_header_size = mem::size_of::<BITMAPINFOHEADER>();
+    let bitmap_bytes_count = get_bitmap_count(&bmp_color) as usize;
+    let mask_bytes_count = get_bitmap_count(&bmp_mask) as usize;
+    let image_bytes_count = bitmap_bytes_count + mask_bytes_count;
+    let complete_size = icon_header_size + icon_dir_size + info_header_size + image_bytes_count;
 
-        let bi_header = BITMAPINFOHEADER {
-            biSize: info_header_size as u32,
-            biWidth: bmp_color.bmWidth,
-            biHeight: bmp_color.bmHeight * 2, // height of color+mono
-            biPlanes: bmp_color.bmPlanes,
-            biBitCount: bmp_color.bmBitsPixel,
-            biSizeImage: image_bytes_count as u32,
-            biClrImportant: 0,
-            biClrUsed: 0,
-            biCompression: 0,
-            biXPelsPerMeter: 0,
-            biYPelsPerMeter: 0
-        };
+    let bi_header = BITMAPINFOHEADER {
+        biSize: info_header_size as u32,
+        biWidth: bmp_color.bmWidth,
+        biHeight: bmp_color.bmHeight * 2, // height of color+mono
+        biPlanes: bmp_color.bmPlanes,
+        biBitCount: bmp_color.bmBitsPixel,
+        biSizeImage: image_bytes_count as u32,
+        biClrImportant: 0,
+        biClrUsed: 0,
+        biCompression: 0,
+        biXPelsPerMeter: 0,
+        biYPelsPerMeter: 0
+    };
 
-        let mut bytes = Vec::<u8>::with_capacity(complete_size);
-        bytes.set_len(complete_size);
+    let mut bytes = Vec::<u8>::with_capacity(complete_size);
+    unsafe { bytes.set_len(complete_size); }
 
-        // 1.write the icon_header
+    // 1.write the icon_header
+    unsafe {
         let byte_ptr: *mut u8 = mem::transmute(&icon_header);
         ptr::copy_nonoverlapping(byte_ptr, bytes.as_mut_ptr(), icon_header_size); 
+    }
 
-        // 2.write Icondir
-        let pos = icon_header_size;
+    // 2.write Icondir
+    let pos = icon_header_size;
 
-        let color_count = if bmp_color.bmBitsPixel >= 8 { 
-            0 
-        } else { 
-            1 << (bmp_color.bmBitsPixel * bmp_color.bmPlanes) 
-        };
-    
-        let icon_dir = Icondir {
-            b_width: bmp_color.bmWidth as u8,
-            b_height: bmp_color.bmHeight as u8,
-            b_color_count: color_count,
-            b_reserved: 0,
-            w_planes: bmp_color.bmPlanes,
-            w_bit_count: bmp_color.bmBitsPixel,
-            dw_bytes_in_res: (mem::size_of::<BITMAPINFOHEADER>() + image_bytes_count) as u32,
-            dw_image_offset: (icon_header_size + 16) as u32,
-        };
+    let color_count = if bmp_color.bmBitsPixel >= 8 { 
+        0 
+    } else { 
+        1 << (bmp_color.bmBitsPixel * bmp_color.bmPlanes) 
+    };
 
+    let icon_dir = Icondir {
+        b_width: bmp_color.bmWidth as u8,
+        b_height: bmp_color.bmHeight as u8,
+        b_color_count: color_count,
+        b_reserved: 0,
+        w_planes: bmp_color.bmPlanes,
+        w_bit_count: bmp_color.bmBitsPixel,
+        dw_bytes_in_res: (mem::size_of::<BITMAPINFOHEADER>() + image_bytes_count) as u32,
+        dw_image_offset: (icon_header_size + 16) as u32,
+    };
+
+    unsafe {
         let byte_ptr: *mut u8 = mem::transmute(&icon_dir);
         ptr::copy_nonoverlapping(byte_ptr, bytes[pos..].as_mut_ptr(), icon_dir_size); 
-        let pos = pos + icon_dir_size;
-        
-        // 3.write bitmap_info_header + colortable
+    }
+    let pos = pos + icon_dir_size;
+    
+    // 3.write bitmap_info_header + colortable
+    unsafe {
         let byte_ptr: *mut u8 = mem::transmute(&bi_header);
-        ptr::copy_nonoverlapping(byte_ptr, bytes[pos..].as_mut_ptr(), info_header_size); 
-        let pos = pos + info_header_size;
+        ptr::copy_nonoverlapping(byte_ptr, bytes[pos..].as_mut_ptr(), info_header_size);
+    }
+    let pos = pos + info_header_size;
 
-        // 5.write color and mask bitmaps
-        write_icon_data_to_memory(&mut bytes[pos..], icon_info.hbmColor, &bmp_color, bitmap_bytes_count as usize);
-        let pos = pos + bitmap_bytes_count as usize;
-        write_icon_data_to_memory(&mut bytes[pos..], icon_info.hbmMask, &bmp_mask, mask_bytes_count as usize);
+    // 5.write color and mask bitmaps
+    write_icon_data_to_memory(&mut bytes[pos..], icon_info.hbmColor, &bmp_color, bitmap_bytes_count as usize);
+    let pos = pos + bitmap_bytes_count as usize;
+    write_icon_data_to_memory(&mut bytes[pos..], icon_info.hbmMask, &bmp_mask, mask_bytes_count as usize);
 
-        // clear
+    // clear
+    unsafe {
         DestroyIcon(h_icon);
         DeleteObject(icon_info.hbmColor as HGDIOBJ);
         DeleteObject(icon_info.hbmMask as HGDIOBJ);
-
-        // convert and output
-        let im: image::DynamicImage = image::load_from_memory(&bytes).unwrap();
-        let pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(im.as_bytes(), im.width(), im.height());
-        Some(slint::Image::from_rgba8(pixel_buffer))
     }
+
+    // convert and output
+    let im: image::DynamicImage = image::load_from_memory(&bytes).unwrap_or_default();
+    let pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(im.as_bytes(), im.width(), im.height());
+    Some(slint::Image::from_rgba8(pixel_buffer))
 }
 
 pub fn unzip(zip_path: &std::path::PathBuf , out_root_path: &std::path::PathBuf ) -> Result<(), Box<dyn Error>> {
