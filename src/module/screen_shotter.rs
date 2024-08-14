@@ -4,7 +4,7 @@ mod toolbar;
 use arboard::Clipboard;
 use image::{self, GenericImageView, Rgba};
 use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
-use slint::{SharedPixelBuffer, Rgba8Pixel};
+use slint::{Rgba8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 use xcap::Monitor;
@@ -26,9 +26,8 @@ pub enum PinOperation {
 pub enum ShotterMessage {
     Move(u32),
     Close(u32),
-    ShowToolbar(i32, i32),
-    MoveToolbar(f32, f32),
-    FinishToolbar(u32),
+    ShowToolbar(i32, i32, u32, Weak<PinWindow>),
+    HideToolbar(bool),
     OperatePin(u32, PinOperation),
 }
 
@@ -189,7 +188,8 @@ impl ScreenShotter{
                 let pin_win = PinWin::new(
                     bac_buffer_rc.clone(), rect,
                     mask_win.get_offset_x(), mask_win.get_offset_y(),
-                    *max_pin_win_id, message_sender_clone);
+                    *max_pin_win_id, message_sender_clone
+                );
                 
                 let pin_window_clone = pin_win.pin_window.as_weak();
 
@@ -214,54 +214,59 @@ impl ScreenShotter{
         // event listen
         let pin_windows_clone = pin_windows.clone();
         // let pin_wins_clone = pin_wins.clone();
-        let toolbar_window_clone = toolbar.get_window();
+        let toolbar_window_clone: slint::Weak<toolbar::ToolbarWindow> = toolbar.get_window();
         std::thread::spawn(move || {
             loop {
                 if let Ok(message) = message_reciever.recv() {
                     match message {
                         ShotterMessage::Move(id) => {
-                            ScreenShotter::pin_win_move_hander(pin_windows.clone(), id);
+                            ScreenShotter::pin_win_move_hander(pin_windows.clone(), id, toolbar_window_clone.clone());
                         },
                         ShotterMessage::Close(id) => {
                             pin_windows_clone.lock().unwrap().remove(&id);
                             // pin_wins_clone.lock().unwrap().remove(&id); // TODO: clear pin_wins
                         },
-                        ShotterMessage::ShowToolbar(x, y) => {
+                        ShotterMessage::ShowToolbar(x, y, id, pin_window) => {
                             toolbar_window_clone.upgrade_in_event_loop(move |win| {
-                                win.invoke_show_pos(x, y);
+                                win.invoke_show_pos(x, y, id as i32);
+                            }).unwrap();
+                            // focus the pin window
+                            pin_window.upgrade_in_event_loop(move |win| {
+                                win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+                                    winit_win.focus_window();
+                                    winit_win.request_redraw(); // TODO to fix the error win size
+                                });
                             }).unwrap();
                         },
-                        ShotterMessage::MoveToolbar(x, y) => {
+                        ShotterMessage::HideToolbar(if_force) => {
                             toolbar_window_clone.upgrade_in_event_loop(move |win| {
-                                win.invoke_move(x, y);
-                            }).unwrap();
-                        },
-                        ShotterMessage::FinishToolbar(id) => {
-                            toolbar_window_clone.upgrade_in_event_loop(move |win| {
-                                win.invoke_finish(id as i32);
+                                win.invoke_try_hide(if_force);
                             }).unwrap();
                         },
                         ShotterMessage::OperatePin(id, operation) => {
+                            // toolbar_window_clone.upgrade_in_event_loop(move |win| {
+                            //     win.invoke_try_hide(true);
+                            // }).unwrap(); // TODO del?
                             let pin_windows = pin_windows_clone.lock().unwrap();
-                            if let Some(pin_win) = pin_windows.get(&id) {
+                            if let Some(pin_window) = pin_windows.get(&id) {
                                 match operation {
                                     PinOperation::Close() => {
-                                        pin_win.upgrade_in_event_loop(move |win| {
+                                        pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_close();
                                         }).unwrap();
                                     },
                                     PinOperation::Hide() => {
-                                        pin_win.upgrade_in_event_loop(move |win| {
+                                        pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_hide();
                                         }).unwrap();
                                     },
                                     PinOperation::Save() => {
-                                        pin_win.upgrade_in_event_loop(move |win| {
+                                        pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_save();
                                         }).unwrap();
                                     },
                                     PinOperation::Copy() => {
-                                        pin_win.upgrade_in_event_loop(move |win| {
+                                        pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_copy();
                                         }).unwrap();
                                     },
@@ -282,22 +287,24 @@ impl ScreenShotter{
         }
     }
 
-    fn pin_win_move_hander(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32) {
+    fn pin_win_move_hander(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32, toolbar_window: slint::Weak<toolbar::ToolbarWindow>) {
         slint::invoke_from_event_loop(move || {
             let padding = 10;
             let pin_windows = pin_windows.lock().unwrap();
             let move_win = &pin_windows[&move_win_id].unwrap();
+
+            let move_pos = move_win.window().position();
+            let move_size = move_win.window().size();
+            let move_bottom = move_pos.y + move_size.height as i32;
+            let move_right = move_pos.x + move_size.width as i32;
+
+            toolbar_window.unwrap().invoke_win_move(move_right, move_bottom);
+
             for pin_win_id in pin_windows.keys(){
                 if move_win_id != *pin_win_id {
                     let other_win = &pin_windows[pin_win_id].unwrap();
-
-                    let move_pos = move_win.window().position();
-                    let move_size = move_win.window().size();
                     let other_pos = other_win.window().position();
                     let other_size = other_win.window().size();
-
-                    let move_bottom = move_pos.y + move_size.height as i32;
-                    let move_right = move_pos.x + move_size.width as i32;
                     let other_bottom = other_pos.y + other_size.height as i32;
                     let other_right = other_pos.x + other_size.width as i32;
 
@@ -334,7 +341,9 @@ impl ScreenShotter{
                         }
                     }
                     
-                    move_win.window().set_position(slint::PhysicalPosition::new(move_pos.x - delta_x, move_pos.y - delta_y));
+                    if delta_x != 0 || delta_y != 0 {
+                        move_win.window().set_position(slint::PhysicalPosition::new(move_pos.x - delta_x, move_pos.y - delta_y));
+                    }
                 }
             }
         }).unwrap();
