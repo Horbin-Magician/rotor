@@ -37,7 +37,6 @@ impl PinWin {
             let pin_window_clone = pin_window.as_weak();
             let message_sender_clone = message_sender.clone();
             pin_window.on_win_move(move |mut delta_x, mut delta_y| {
-
                 let pin_window_clone = pin_window_clone.unwrap();
                 let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
                 let is_stick_x = pin_window_clone.get_is_stick_x();
@@ -67,17 +66,46 @@ impl PinWin {
             });
         }
 
+        { // code for focuse change
+            let pin_window_clone = pin_window.as_weak();
+            let message_sender_clone = message_sender.clone();
+            pin_window.on_focus_trick(
+                move |has_focus| {
+                    let pin_window = pin_window_clone.unwrap();
+                    if has_focus {
+                        let position = pin_window.window().position();
+                        let scale_factor = pin_window.get_scale_factor();
+                        let width = pin_window.get_win_width();
+                        let height = pin_window.get_win_height();
+                        let left_bottom_x = position.x + (width * scale_factor) as i32;
+                        let left_bottom_y = position.y + (height * scale_factor) as i32;
+                        message_sender_clone.send(ShotterMessage::ShowToolbar(left_bottom_x, left_bottom_y, id, pin_window.as_weak())).unwrap();
+                    } else {
+                        if pin_window.window().is_visible() == false || pin_window.window().is_minimized() {
+                            message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
+                        } else {
+                            message_sender_clone.send(ShotterMessage::HideToolbar(false)).unwrap();
+                        }
+                    }
+                    true
+                }
+            );
+        }
+
         { // code for function
-            { // for close
+            { // for close and hide
                 let pin_window_clone = pin_window.as_weak();
                 let message_sender_clone = message_sender.clone();
                 pin_window.on_close(move || {
+                    message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
                     pin_window_clone.unwrap().hide().unwrap();
                     message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
                 });
     
                 let pin_window_clone = pin_window.as_weak();
+                let message_sender_clone = message_sender.clone();
                 pin_window.on_hide(move || {
+                    message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
                     pin_window_clone.unwrap().window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                         winit_win.set_minimized(true);
                     });
@@ -102,26 +130,25 @@ impl PinWin {
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
-                    let app_config = AppConfig::global().lock().unwrap();
-                    let save_path = app_config.get_save_path();
-    
-                    let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
-                    let params = DialogParams {
-                        title: "Select an image to save",
-                        file_types: vec![("PNG Files", "*.png")],
-                        default_extension: "png",
-                        file_name: &file_name,
-                        default_folder: &save_path,
-                        ..Default::default()
-                    };
-                    pin_window_clone.unwrap().hide().unwrap();
-    
-                    let dialog_result = wfd::save_dialog(params);
-                    if let Ok(file_path_result) = dialog_result {
-                        img.save(file_path_result.selected_file_path).unwrap();
-                    }
-    
                     pin_window_clone.unwrap().invoke_close();
+                    
+                    std::thread::spawn(move || {
+                        let app_config = AppConfig::global().lock().unwrap();
+                        let save_path = app_config.get_save_path();
+                        let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
+                        let params = DialogParams {
+                            title: "Select an image to save",
+                            file_types: vec![("PNG Files", "*.png")],
+                            default_extension: "png",
+                            file_name: &file_name,
+                            default_folder: &save_path,
+                            ..Default::default()
+                        };
+                        let dialog_result = wfd::save_dialog(params);
+                        if let Ok(file_path_result) = dialog_result {
+                            img.save(file_path_result.selected_file_path).unwrap();
+                        }
+                    });
                 });
 
                 //copy
@@ -135,43 +162,18 @@ impl PinWin {
                         ).unwrap()
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
-    
-                    let mut clipboard = Clipboard::new().unwrap();
-                    let img_data = ImageData {
-                        width: img.width() as usize,
-                        height: img.height() as usize,
-                        bytes: Cow::from(img.to_rgba8().to_vec())
-                    };
-                    clipboard.set_image(img_data).unwrap();
                     
                     pin_window_clone.unwrap().invoke_close();
-                });
-            }
 
-            { // for show toolbar
-                let pin_window_clone = pin_window.as_weak();
-                let message_sender_clone = message_sender.clone();
-                pin_window.on_show_toolbar(move |x, y| {
-                    let pin_window = pin_window_clone.unwrap();
-                    let position = pin_window.window().position();
-                    let scale = pin_window.window().scale_factor();
-                    let center_x = position.x + (x * scale) as i32;
-                    let center_y = position.y + (y * scale) as i32;
-                    message_sender_clone.send(ShotterMessage::ShowToolbar(center_x, center_y)).unwrap();
-                });
-            }
-
-            { // for move toolbar
-                let message_sender_clone = message_sender.clone();
-                pin_window.on_move_toolbar(move |x, y| {
-                    message_sender_clone.send(ShotterMessage::MoveToolbar(x, y)).unwrap();
-                });
-            }
-
-            { // for finish toolbar
-                let message_sender_clone = message_sender.clone();
-                pin_window.on_finish_toolbar(move || {
-                    message_sender_clone.send(ShotterMessage::FinishToolbar(id)).unwrap();
+                    std::thread::spawn(move || {
+                        let mut clipboard = Clipboard::new().unwrap();
+                        let img_data = ImageData {
+                            width: img.width() as usize,
+                            height: img.height() as usize,
+                            bytes: Cow::from(img.to_rgba8().to_vec())
+                        };
+                        clipboard.set_image(img_data).unwrap();
+                    });
                 });
             }
         }
@@ -206,11 +208,13 @@ slint::slint! {
 
     export component PinWindow inherits Window {
         no-frame: true;
-        always-on-top: true;
         title: "小云视窗";
-        forward-focus: key_focus;
+        forward-focus: key-focus;
         icon: @image-url("assets/logo.png");
         
+        pure callback focus_trick(bool) -> bool;
+        always-on-top: focus_trick(key-focus.has-focus);
+
         in property <image> bac_image;
         in property <length> win_border_width: 1px;
         in property <float> scale_factor;
