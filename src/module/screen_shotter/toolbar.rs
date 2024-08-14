@@ -139,10 +139,10 @@ slint::slint! {
 
     export component ToolbarWindow inherits Window {
         no-frame: true;
-        height: 40px;
+        height: 30px;
         forward-focus: focus_scope;
 
-        in-out property <int> win_width: tools.length * 40;
+        in-out property <int> win_width: tools.length * 30;
         width: win_width * 1px;
 
         pure callback focus_trick(bool, bool) -> bool;
@@ -171,8 +171,8 @@ slint::slint! {
                 padding: 0;
 
                 for tool in root.tools: ToolBtn{
-                    width: 40px;
-                    height: 40px;
+                    width: 30px;
+                    height: 30px;
                     icon: tool.icon;
                     clicked => { root.click(root.id, tool.id); }
                 }
