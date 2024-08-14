@@ -27,7 +27,6 @@ impl Toolbar {
                 toolbar_window.set_pin_focused(true);
                 toolbar_window.set_id(id);
 
-                println!("{}", toolbar_window.window().is_visible());
                 if toolbar_window.window().is_visible() == false {
                     toolbar_window.show().unwrap();
                 }

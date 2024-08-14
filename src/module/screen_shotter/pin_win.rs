@@ -36,33 +36,83 @@ impl PinWin {
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
             let message_sender_clone = message_sender.clone();
-            pin_window.on_win_move(move |mut delta_x, mut delta_y| {
+            pin_window.on_win_move(move |mut delta_x, mut delta_y, mouse_direction| {
                 let pin_window_clone = pin_window_clone.unwrap();
                 let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
-                let is_stick_x = pin_window_clone.get_is_stick_x();
-                let is_stick_y = pin_window_clone.get_is_stick_y();
+                let mut img_x = pin_window_clone.get_img_x();
+                let mut img_y = pin_window_clone.get_img_y();
+                let mut img_width = pin_window_clone.get_img_width();
+                let mut img_height = pin_window_clone.get_img_height();
+                let zoom_factor = pin_window_clone.get_zoom_factor() as f32 / 100.;
 
-                if is_stick_x {
-                    if delta_x.abs() > 20. {
-                        pin_window_clone.set_is_stick_x(false);
-                    } else {
+                match mouse_direction {
+                    Direction::Center => {
+                        let is_stick_x = pin_window_clone.get_is_stick_x();
+                        let is_stick_y = pin_window_clone.get_is_stick_y();
+                        if is_stick_x {
+                            if delta_x.abs() > 20. { pin_window_clone.set_is_stick_x(false); }
+                            else { delta_x = 0.; }
+                        }
+                        if is_stick_y {
+                            if delta_y.abs() > 20. { pin_window_clone.set_is_stick_y(false); }
+                            else { delta_y = 0.; }
+                        }
+                        if is_stick_x && is_stick_y { return; }
+                    },
+                    Direction::Upper => {
+                        img_y = img_y + delta_y / zoom_factor;
+                        img_height = img_height - delta_y / zoom_factor;
                         delta_x = 0.;
-                    }
-                }
-                if is_stick_y {
-                    if delta_y.abs() > 20. {
-                        pin_window_clone.set_is_stick_y(false);
-                    } else {
+                    },
+                    Direction::Lower => {
+                        pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
+                        delta_x = 0.;
                         delta_y = 0.;
-                    }
+                    },
+                    Direction::Left => {
+                        img_x = img_x + delta_x / zoom_factor;
+                        img_width = img_width - delta_x / zoom_factor;
+                        delta_y = 0.;
+                    },
+                    Direction::Right => {
+                        pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
+                        delta_x = 0.;
+                        delta_y = 0.;
+                    },
+                    Direction::LeftUpper => {
+                        img_x = img_x + delta_x / zoom_factor;
+                        img_y = img_y + delta_y / zoom_factor;
+                        img_width = img_width - delta_x / zoom_factor;
+                        img_height = img_height - delta_y / zoom_factor;
+                    },
+                    Direction::LeftLower => {
+                        img_x = img_x + delta_x / zoom_factor;
+                        img_width = img_width - delta_x / zoom_factor;
+                        pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
+                        delta_y = 0.;
+                    },
+                    Direction::RightUpper => {
+                        img_y = img_y + delta_y / zoom_factor;
+                        pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
+                        img_height = img_height - delta_y / zoom_factor;
+                        delta_x = 0.;
+                    },
+                    Direction::RightLower => {
+                        pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
+                        pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
+                        delta_x = 0.;
+                        delta_y = 0.;
+                    },
                 }
-                
-                if !is_stick_x || !is_stick_y {
-                    let change_pos_x = now_pos.x + delta_x;
-                    let change_pos_y = now_pos.y + delta_y;
-                    pin_window_clone.window().set_position(slint::LogicalPosition::new(change_pos_x, change_pos_y));
-                    message_sender_clone.send(ShotterMessage::Move(id)).unwrap();
-                }
+
+                let change_pos_x = now_pos.x + delta_x;
+                let change_pos_y = now_pos.y + delta_y;
+                pin_window_clone.set_img_x(img_x);
+                pin_window_clone.set_img_y(img_y);
+                pin_window_clone.set_img_width(img_width);
+                pin_window_clone.set_img_height(img_height);
+                pin_window_clone.window().set_position(slint::LogicalPosition::new(change_pos_x, change_pos_y));
+                message_sender_clone.send(ShotterMessage::Move(id)).unwrap();
             });
         }
 
@@ -74,7 +124,7 @@ impl PinWin {
                     let pin_window = pin_window_clone.unwrap();
                     if has_focus {
                         let position = pin_window.window().position();
-                        let scale_factor = pin_window.get_scale_factor();
+                        let scale_factor = pin_window.window().scale_factor();
                         let width = pin_window.get_win_width();
                         let height = pin_window.get_win_height();
                         let left_bottom_x = position.x + (width * scale_factor) as i32;
@@ -117,12 +167,13 @@ impl PinWin {
                 let pin_window_clone = pin_window.as_weak();
                 let img_rc_clone = img_rc.clone();
                 let buffer = (*img_rc_clone.lock().unwrap()).clone();
-                let scale_factor = pin_window.get_scale_factor();
-                let img_x = pin_window.get_img_x() * scale_factor;
-                let img_y = pin_window.get_img_y() * scale_factor;
-                let img_height = pin_window.get_img_height() * scale_factor;
-                let img_width = pin_window.get_img_width() * scale_factor;
                 pin_window.on_save(move || {
+                    let pin_window = pin_window_clone.unwrap();
+                    let scale_factor = pin_window.get_scale_factor();
+                    let img_x = pin_window.get_img_x() * scale_factor;
+                    let img_y = pin_window.get_img_y() * scale_factor;
+                    let img_height = pin_window.get_img_height() * scale_factor;
+                    let img_width = pin_window.get_img_width() * scale_factor;
                     let mut img = image::DynamicImage::ImageRgba8(
                         image::RgbaImage::from_vec(
                             buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
@@ -130,7 +181,7 @@ impl PinWin {
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
-                    pin_window_clone.unwrap().invoke_close();
+                    pin_window.invoke_close();
                     
                     std::thread::spawn(move || {
                         let app_config = AppConfig::global().lock().unwrap();
@@ -156,6 +207,13 @@ impl PinWin {
                 let img_rc_clone = img_rc.clone();
                 let buffer = (*img_rc_clone.lock().unwrap()).clone();
                 pin_window.on_copy(move || {
+                    let pin_window = pin_window_clone.unwrap();
+                    let scale_factor = pin_window.get_scale_factor();
+                    let img_x = pin_window.get_img_x() * scale_factor;
+                    let img_y = pin_window.get_img_y() * scale_factor;
+                    let img_height = pin_window.get_img_height() * scale_factor;
+                    let img_width = pin_window.get_img_width() * scale_factor;
+
                     let mut img = image::DynamicImage::ImageRgba8(
                         image::RgbaImage::from_vec(
                             buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
@@ -163,7 +221,7 @@ impl PinWin {
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
-                    pin_window_clone.unwrap().invoke_close();
+                    pin_window.invoke_close();
 
                     std::thread::spawn(move || {
                         let mut clipboard = Clipboard::new().unwrap();
@@ -206,6 +264,12 @@ impl PinWin {
 slint::slint! {
     import { Button } from "std-widgets.slint";
 
+    enum Direction {
+        Upper, Lower, Left, Right,
+        LeftUpper, LeftLower, RightUpper, RightLower,
+        Center,
+    }
+
     export component PinWindow inherits Window {
         no-frame: true;
         title: "小云视窗";
@@ -225,21 +289,22 @@ slint::slint! {
         in-out property <length> img_width;
         in-out property <length> img_height;
 
-        in-out property <length> win_width: (img_width * zoom_factor / 100) + win_border_width * 2;
-        in-out property <length> win_height: (img_height * zoom_factor / 100) + win_border_width * 2;
+        in-out property <length> delta_img_width: 0px;
+        in-out property <length> delta_img_height: 0px;
 
-        in-out property <bool> can_move: false;
+        in-out property <length> win_width: ((img_width + delta_img_width) * zoom_factor / 100) + win_border_width * 2;
+        in-out property <length> win_height: ((img_height + delta_img_height) * zoom_factor / 100) + win_border_width * 2;
+
         in-out property <bool> is_stick_x: false;
         in-out property <bool> is_stick_y: false;
-        in-out property <bool> is_shown_toolbar: false;
-        in-out property <length> toolbar_center_x;
-        in-out property <length> toolbar_center_y;
 
-        callback win_move(length, length);
+        property <bool> can_move: false;
+        property <Direction> mouse_direction;
+        property <length> extend_scope: 6px;
+        property <MouseCursor> mouse_type: MouseCursor.move;
+
+        callback win_move(length, length, Direction);
         callback key_release(KeyEvent);
-        callback show_toolbar(float, float);
-        callback move_toolbar(float, float);
-        callback finish_toolbar();
 
         callback close();
         callback hide();
@@ -263,14 +328,14 @@ slint::slint! {
 
                 source-clip-x: img_x / 1px  * root.scale_factor;
                 source-clip-y: img_y / 1px  * root.scale_factor;
-                source-clip-width: img_width / 1px  * root.scale_factor;
-                source-clip-height: img_height / 1px  * root.scale_factor;
+                source-clip-width: (img_width + delta_img_width) / 1px  * root.scale_factor;
+                source-clip-height: (img_height + delta_img_height) / 1px  * root.scale_factor;
 
                 move_touch_area := TouchArea {
-                    mouse-cursor: move;
+                    mouse-cursor: mouse_type;
                     moved => {
-                        if (root.can_move) {
-                            root.win_move((self.mouse-x) - self.pressed-x, (self.mouse-y) - self.pressed-y);
+                        if root.can_move {
+                            root.win_move((self.mouse-x) - self.pressed-x, (self.mouse-y) - self.pressed-y, mouse_direction);
                         }
                     }
                     
@@ -278,22 +343,44 @@ slint::slint! {
                         if (event.kind == PointerEventKind.down) {
                             if (event.button == PointerEventButton.left) {
                                 root.can_move = true;
-                            } else if (event.button == PointerEventButton.right){
-                                root.is_shown_toolbar = true;
-                                root.toolbar_center_x = self.mouse-x;
-                                root.toolbar_center_y = self.mouse-y;
-                                root.show_toolbar(self.mouse-x / 1px, self.mouse-y / 1px);
                             }
                         } else if (event.kind == PointerEventKind.up) {
-                            if (event.button == PointerEventButton.left) {
-                                root.can_move = false;
-                            } else if (event.button == PointerEventButton.right){
-                                root.is_shown_toolbar = false;
-                                root.finish_toolbar();
+                            if (event.button == PointerEventButton.left) { 
+                                root.can_move = false; 
+                                root.img_height = root.img_height + root.delta_img_height;
+                                root.img_width = root.img_width + root.delta_img_width;
+                                root.delta_img_height = 0px;
+                                root.delta_img_width = 0px;
                             }
                         } else if (event.kind == PointerEventKind.move) {
-                            if (root.is_shown_toolbar) {
-                                root.move_toolbar(((self.mouse-x) - root.toolbar_center_x) / 1px, ((self.mouse-y) - root.toolbar_center_y) / 1px);
+                            if root.can_move { return; }
+                            if (self.mouse-x < extend_scope && self.mouse-y < extend_scope) {
+                                root.mouse_direction = Direction.LeftUpper;
+                                root.mouse_type = MouseCursor.nwse-resize;
+                            } else if (self.mouse-x < extend_scope && self.mouse-y > ((win_height) - extend_scope)) {
+                                root.mouse_direction = Direction.LeftLower;
+                                root.mouse_type = MouseCursor.nesw-resize;
+                            } else if (self.mouse-x > ((win_width) - extend_scope) && self.mouse-y < extend_scope) {
+                                root.mouse_direction = Direction.RightUpper;
+                                root.mouse_type = MouseCursor.nesw-resize;
+                            } else if (self.mouse-x > ((win_width) - extend_scope) && self.mouse-y > ((win_height) - extend_scope)) {
+                                root.mouse_direction = Direction.RightLower;
+                                root.mouse_type = MouseCursor.nwse-resize;
+                            } else if (self.mouse-x < extend_scope) {
+                                root.mouse_direction = Direction.Left;
+                                root.mouse_type = MouseCursor.ew-resize;
+                            } else if (self.mouse-x > ((win_width) - extend_scope)) {
+                                root.mouse_direction = Direction.Right;
+                                root.mouse_type = MouseCursor.ew-resize;
+                            } else if (self.mouse-y < extend_scope) {
+                                root.mouse_direction = Direction.Upper;
+                                root.mouse_type = MouseCursor.ns-resize;
+                            } else if (self.mouse-y > ((win_height) - extend_scope)) {
+                                root.mouse_direction = Direction.Lower;
+                                root.mouse_type = MouseCursor.ns-resize;
+                            } else {
+                                root.mouse_direction = Direction.Center;
+                                root.mouse_type = MouseCursor.move;
                             }
                         }
                     }
