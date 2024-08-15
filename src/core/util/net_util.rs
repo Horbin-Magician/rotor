@@ -3,6 +3,7 @@ use std::env;
 use std::error::Error;
 use std::io::Write;
 use std::fs::{self, File};
+use std::str::FromStr;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -64,8 +65,11 @@ impl Updater {
             let zip_name = &asset.name;
         
             let file_response = reqwest::blocking::Client::new()
-                .get(download_url)
-                .send()?;
+                .get(download_url).send()
+                .or_else( |_| {
+                        reqwest::blocking::Client::new().get(format!("mirror.ghproxy.com/{}", download_url)).send()
+                    }
+                )?;
         
             if file_response.status().is_success() {
                 let exe_path = env::current_exe()?;
@@ -74,21 +78,21 @@ impl Updater {
                 let zip_path = tmp_path.clone().join(&zip_name);
                 let zip_out_path = tmp_path.clone().join(version);
                 let script_path = tmp_path.clone().join("update.bat");
-        
+                
                 if tmp_path.exists() { fs::remove_dir_all(tmp_path.clone())?; } // remove old tmp dir
                 fs::create_dir_all(zip_out_path.clone())?;
-        
+                
                 let mut zip_file = File::create(&zip_path)?;
                 let content = file_response.bytes()?;
                 zip_file.write_all(&content)?;
                 drop(zip_file);
-        
+                
                 unzip(&zip_path, &zip_out_path)?;
-        
+                
                 let old_dic = app_path.to_str().unwrap();
                 let new_dic = zip_out_path.to_str().unwrap();
                 let app_name = "rotor.exe";
-        
+                
                 let bat_content = format!(r#"
                 setlocal
                 set "OLD_DIC={old_dic}"
@@ -111,6 +115,8 @@ impl Updater {
                     .spawn()?;
         
                 slint::quit_event_loop().unwrap();
+            } else {
+                return Err("Failed to update software, file response is not success".into());
             }
             return Ok(());
         } else {
