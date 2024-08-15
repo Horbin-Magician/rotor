@@ -1,5 +1,12 @@
 use std::{
-    collections::{BTreeMap, HashMap}, env, error::Error, ffi::{c_void, CString}, fs, io::{self, Write}, sync::mpsc, time::SystemTime
+    collections::{BTreeMap, HashMap},
+    env,
+    error::Error,
+    ffi::{c_void, CString},
+    fs,
+    io::{self, Write},
+    sync::mpsc,
+    time::SystemTime
 };
 
 use windows_sys::Win32::{
@@ -47,14 +54,14 @@ struct FileKey {
 
 struct FileMap {
     main_map: BTreeMap<FileKey, File>,
-    rank_map: HashMap<u64, i8>,
+    rank_map: HashMap<u64, i8, std::hash::BuildHasherDefault<fxhash::FxHasher>>,
 }
 
 impl FileMap {
     pub fn new() -> FileMap{
         FileMap {
             main_map: BTreeMap::new(),
-            rank_map: HashMap::new(),
+            rank_map: HashMap::default(),
         }
     }
 
@@ -72,12 +79,12 @@ impl FileMap {
 
     // insert a file to the database by index and file struct
     pub fn insert_simple(&mut self, index: u64, file: File) {
-        let file_key = FileKey {
+        let key = FileKey {
             rank: file.rank,
             index,
         };
         self.rank_map.insert(index, file.rank);
-        self.main_map.insert(file_key, file);
+        self.main_map.insert(key, file);
     }
 
     // get a File by index
@@ -266,25 +273,25 @@ impl Volume {
                 Ioctl::FSCTL_ENUM_USN_DATA, 
                 &med as *const _ as *const c_void, 
                 std::mem::size_of::<Ioctl::MFT_ENUM_DATA_V0>() as u32, 
-                &mut data as *mut _ as *mut c_void, 
+                data.as_mut_ptr() as *mut c_void, 
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
                 &mut cb as *mut u32, 
                 std::ptr::null_mut::<IO::OVERLAPPED>()
             ) != 0 {
-                let mut record_ptr: *const Ioctl::USN_RECORD_V2 = &(data[1]) as *const u64 as *const Ioctl::USN_RECORD_V2;
-                while (record_ptr as usize) < (&(data[0]) as *const u64 as usize + cb as usize) {
-                    let file_name_begin_ptr = record_ptr as usize + (*record_ptr).FileNameOffset as usize;
-                    let file_name_length = (*record_ptr).FileNameLength / (std::mem::size_of::<u16>() as u16);
-                    let mut file_name_list: Vec<u16> = Vec::new();
-                    for i in 0..file_name_length {
-                        let c = *((file_name_begin_ptr + (i * 2) as usize) as *const u16);
-                        file_name_list.push(c);
-                    }
-                    let file_name = String::from_utf16(&file_name_list).unwrap_or(String::from("unknown"));
-                    self.file_map.insert((*record_ptr).FileReferenceNumber, file_name, (*record_ptr).ParentFileReferenceNumber);
-                    record_ptr = (record_ptr as usize + (*record_ptr).RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
+                let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
+                let data_end = data.as_ptr() as usize + cb as usize;
+
+                while (record_ptr as usize) < data_end {
+                    let record = &*record_ptr;
+                    let file_name_begin_ptr = (record_ptr as usize + record.FileNameOffset as usize) as *const u16;
+                    let file_name_length = record.FileNameLength as usize / std::mem::size_of::<u16>();
+                    let file_name_list = std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
+                    let file_name = String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
+                    self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
+                    record_ptr = (record_ptr as usize + record.RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
-                med.StartFileReferenceNumber = *(&(data[0]) as *const u64);
+
+                med.StartFileReferenceNumber = data[0];
             }
         }
 
