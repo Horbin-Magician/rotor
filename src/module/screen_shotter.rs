@@ -131,6 +131,9 @@ impl ScreenShotter{
                 mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
 
                 mask_win.show().unwrap();
+                mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+                    winit_win.focus_window();
+                });
             });
         }
 
@@ -244,9 +247,6 @@ impl ScreenShotter{
                             }).unwrap();
                         },
                         ShotterMessage::OperatePin(id, operation) => {
-                            // toolbar_window_clone.upgrade_in_event_loop(move |win| {
-                            //     win.invoke_try_hide(true);
-                            // }).unwrap(); // TODO del?
                             let pin_windows = pin_windows_clone.lock().unwrap();
                             if let Some(pin_window) = pin_windows.get(&id) {
                                 match operation {
