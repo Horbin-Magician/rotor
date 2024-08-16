@@ -1,9 +1,9 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    fs,
     env,
+    collections::{BTreeMap, HashMap},
     error::Error,
     ffi::{c_void, CString},
-    fs,
     io::{self, Write},
     sync::mpsc,
     time::SystemTime
@@ -69,12 +69,7 @@ impl FileMap {
     pub fn insert(&mut self, index: u64, file_name: String, parent_index: u64) {
         let filter = Volume::make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
-        self.insert_simple(index, File {
-            parent_index,
-            file_name,
-            filter,
-            rank,
-        });
+        self.insert_simple(index, File { parent_index, file_name, filter, rank });
     }
 
     // insert a file to the database by index and file struct
