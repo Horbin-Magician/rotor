@@ -190,7 +190,7 @@ impl ScreenShotter{
                 let message_sender_clone = message_sender_clone.clone();
                 let pin_win = PinWin::new(
                     bac_buffer_rc.clone(), rect,
-                    mask_win.get_offset_x(), mask_win.get_offset_y(),
+                    mask_win.get_offset_x(), mask_win.get_offset_y(), mask_win.get_scale_factor(),
                     *max_pin_win_id, message_sender_clone
                 );
                 
