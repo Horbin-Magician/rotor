@@ -1,9 +1,7 @@
 use std::sync::mpsc::Sender;
-
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 
 use super::{PinOperation, ShotterMessage};
-
 
 pub struct Toolbar {
     pub toolbar_window: ToolbarWindow,
@@ -20,8 +18,15 @@ impl Toolbar {
             let toolbar_window_clone = toolbar_window.as_weak();
             toolbar_window.on_show_pos(move |x, y, id| {
                 let toolbar_window = toolbar_window_clone.unwrap();
-                let win_size = toolbar_window.window().size();
-                let x_pos = x - win_size.width as i32;
+
+                // fix the bug of error scale_factor TODO
+                let unit_scale = (30. * toolbar_window.window().scale_factor()) as u32;
+                let tool_len = toolbar_window.get_tool_len();
+                let win_width = tool_len as u32 * unit_scale;
+                let win_height = unit_scale;
+                toolbar_window.window().set_size(slint::PhysicalSize::new( win_width, win_height));
+
+                let x_pos = x - win_width as i32;
                 let y_pos = y;
                 toolbar_window.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos + 2)));
                 toolbar_window.set_pin_focused(true);
@@ -82,6 +87,7 @@ impl Toolbar {
             toolbar_window.on_win_move(move |x, y| {
                 let toolbar_window = toolbar_window_clone.unwrap();
                 let scale_factor = toolbar_window.window().scale_factor();
+
                 let win_width = toolbar_window.get_win_width() as f32 * scale_factor;
                 let x_pos = x - win_width as i32;
                 let y_pos = y;
@@ -138,18 +144,10 @@ slint::slint! {
 
     export component ToolbarWindow inherits Window {
         no-frame: true;
-        height: 30px;
         forward-focus: focus_scope;
-
-        in-out property <int> win_width: tools.length * 30;
-        width: win_width * 1px;
 
         pure callback focus_trick(bool, bool) -> bool;
         always-on-top: focus_trick(pin_focused, toolbar_focused);
-
-        in-out property <bool> pin_focused: false;
-        in-out property <bool> toolbar_focused: focus_scope.has-focus;
-        in-out property <int> id: -1;
 
         in-out property <[Tool_slint]> tools: [
             { id: 0, icon: @image-url("./assets/icon/min.svg"), name: "最小化" },
@@ -157,6 +155,12 @@ slint::slint! {
             { id: 2, icon: @image-url("./assets/icon/close.svg"), name: "关闭" },
             { id: 1, icon: @image-url("./assets/icon/right.svg"), name: "复制" },
         ];
+        
+        in-out property <int> win_width: tools.length * (self.height / 1px);
+        in-out property <int> tool_len: tools.length;
+        in-out property <bool> pin_focused: false;
+        in-out property <bool> toolbar_focused: focus_scope.has-focus;
+        in-out property <int> id: -1;
 
         callback show_pos(int, int, int);
         callback try_hide(bool);
@@ -170,8 +174,8 @@ slint::slint! {
                 padding: 0;
 
                 for tool in root.tools: ToolBtn{
-                    width: 30px;
-                    height: 30px;
+                    width: root.height;
+                    height: root.height;
                     icon: tool.icon;
                     clicked => { root.click(root.id, tool.id); }
                 }

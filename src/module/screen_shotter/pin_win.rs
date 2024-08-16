@@ -19,7 +19,7 @@ pub struct PinWin {
 }
 
 impl PinWin {
-    pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, offset_x: i32, offset_y: i32, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
+    pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, offset_x: i32, offset_y: i32, true_scale_factor: f32, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
         let pin_window = PinWindow::new().unwrap();
         let border_width = pin_window.get_win_border_width();
 
@@ -30,9 +30,8 @@ impl PinWin {
         pin_window.set_img_y(rect.y / scale_factor);
         pin_window.set_img_width(rect.width / scale_factor);
         pin_window.set_img_height(rect.height / scale_factor);
-
         pin_window.set_scale_factor(scale_factor);
-
+        
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
             let message_sender_clone = message_sender.clone();
@@ -253,6 +252,17 @@ impl PinWin {
         }
 
         pin_window.show().unwrap();
+        
+        // fix the bug of error scale_factor TODO
+        if scale_factor != true_scale_factor {
+            let pin_window_clone = pin_window.as_weak();
+            std::thread::spawn(move || {
+                pin_window_clone.upgrade_in_event_loop(move |pin_window| {
+                    pin_window.set_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
+                }).unwrap();
+            });
+        }
+
         PinWin {
             _img_rc: img_rc,
             _id: id,
