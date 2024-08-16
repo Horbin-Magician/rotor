@@ -3,7 +3,6 @@ use std::env;
 use std::error::Error;
 use std::io::Write;
 use std::fs::{self, File};
-use std::str::FromStr;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use reqwest::header::{HeaderMap, HeaderValue};
