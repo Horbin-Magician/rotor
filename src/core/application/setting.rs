@@ -107,7 +107,7 @@ impl Setting {
                 let setting_win_clone = setting_win_clone.clone();
                 std::thread::spawn(move || {
                     net_util::Updater::global().lock().unwrap().update_software().unwrap_or_else(
-                        |e| {
+                        |_| {
                             setting_win_clone.upgrade_in_event_loop(move |setting_window| {
                                 setting_window.set_block(false);
                                 setting_window.set_update_state(2);
