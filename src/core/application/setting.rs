@@ -186,6 +186,12 @@ slint::slint! {
                             ];
                         }
 
+                        // divider
+                        Rectangle { 
+                            width: 1px;
+                            background: Palette.background.brighter(1);
+                        }
+
                         VerticalLayout {
                             title_bar := TitleBar {}
 
