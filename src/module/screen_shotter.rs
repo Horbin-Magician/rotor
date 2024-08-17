@@ -97,31 +97,30 @@ impl ScreenShotter{
                 let physical_width = monitor.width();
                 let physical_height = monitor.height();
                 let monitor_img = monitor.capture_image().unwrap();
-                let scale_factor;
-                unsafe{ 
+                let scale_factor = unsafe{ 
                     let mut dpi_x: u32 = 0;
                     let mut dpi_y: u32 = 0;
                     GetDpiForMonitor(monitor.id() as isize, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
-                    scale_factor = dpi_x as f32 / 96.0;
-                }
+                    dpi_x as f32 / 96.0
+                };
 
-                // get img buffer
+                let mask_win = mask_win_clone.unwrap();
+
+                // refresh img
                 let mut bac_buffer = bac_buffer_rc_clone.lock().unwrap();
                 *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
                     &monitor_img,
                     physical_width,
                     physical_height,
                 );
+                mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
 
-                // refresh mask_win
-                let mask_win = mask_win_clone.unwrap();
+                // refresh window
                 let pre_scale_factor = mask_win.get_scale_factor();
                 mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
                 mask_win.set_offset_x(monitor.x());
                 mask_win.set_offset_y(monitor.y());
-                
                 mask_win.set_scale_factor(scale_factor);
-                mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
 
                 // +1 to fix the bug and set_fullscreen does not work well TODO: fix this bug
                 let mut scale = 1.0;
@@ -195,7 +194,7 @@ impl ScreenShotter{
                 );
                 
                 let pin_window_clone = pin_win.pin_window.as_weak();
-
+                
                 let pin_wins_clone_clone = pin_wins_clone.clone();
                 let pin_windows_clone_clone = pin_windows_clone.clone();
                 let id = *max_pin_win_id;
@@ -363,18 +362,20 @@ slint::slint! {
         forward-focus: focus_scope;
         title: "截图窗口";
         
-        in-out property <image> bac_image;
-        in-out property <float> scale_factor: 0;
-        in-out property <Rect> select_rect;
+        property <Rect> select_rect;
+        property <Point> mouse_down_pos;
+        property <Point> mouse_move_pos;
+
+        in property <image> bac_image;
+        
         in-out property <bool> mouse_left_press;
-        in-out property <Point> mouse_down_pos;
-        in-out property <Point> mouse_move_pos;
+        in-out property <float> scale_factor: 0;
         in-out property <int> offset_x;
         in-out property <int> offset_y;
-
+        
         in-out property <bool> color_type_Dec: true;
         in-out property <string> color_str: "RGB:(???,???,???)";
-
+        
         callback shot();
         callback key_released(KeyEvent);
         callback new_pin_win(Rect);
