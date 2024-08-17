@@ -243,6 +243,7 @@ slint::slint! {
                     border-width: 1px;
                     border-radius: 14px;
                     border-color: Palette.background.brighter(1);
+                    clip: true;
                     
                     if (update_state == 1 && current_version == latest_version) : VerticalLayout {
                         alignment: center;
