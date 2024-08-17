@@ -40,7 +40,9 @@ pub struct FileData {
 impl FileData {
     pub fn new(search_win: slint::Weak<SearchWindow>) -> FileData {
 
-        let file_data = FileData {
+        
+
+        FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
             finding_name: String::new(),
@@ -50,9 +52,7 @@ impl FileData {
             state: FileState::Unbuild,
             show_num: 20,
             batch: 20,
-        };
-
-        file_data
+        }
     }
 
     pub fn event_loop (
@@ -62,12 +62,11 @@ impl FileData {
         std::thread::spawn(move || {
             let mut wait_deals: VecDeque<SearcherMessage> = VecDeque::new();
             loop {
-                let msg: Result<SearcherMessage, mpsc::RecvError>;
-                if wait_deals.len() > 0 {
-                    msg = Ok(wait_deals.pop_front().unwrap());
+                let msg: Result<SearcherMessage, mpsc::RecvError> = if !wait_deals.is_empty() {
+                    Ok(wait_deals.pop_front().unwrap())
                 } else {
-                    msg = msg_reciever.recv();
-                }
+                    msg_reciever.recv()
+                };
 
                 match msg {
                     Ok(SearcherMessage::Init) => {
@@ -94,12 +93,9 @@ impl FileData {
                         }
                     },
                     Ok(SearcherMessage::Release) => {
-                        match file_data.state {
-                            FileState::Ready => { 
-                                file_data.release_index();
-                                file_data.state = FileState::Released;
-                            },
-                            _ => {},
+                        if let FileState::Ready = file_data.state { 
+                            file_data.release_index();
+                            file_data.state = FileState::Released;
                         }
                     },
                     Err(_) => {}
@@ -141,9 +137,7 @@ impl FileData {
         self.vols.clear();
         let mut vol = 'A';
         while bit_mask != 0 {
-            if bit_mask & 0x1 != 0 {
-                if Self::is_ntfs(vol) { self.vols.push(vol); }
-            }
+            if bit_mask & 0x1 != 0 && Self::is_ntfs(vol) { self.vols.push(vol); }
             vol = (vol as u8 + 1) as char;
             bit_mask >>= 1;
         }
@@ -158,7 +152,7 @@ impl FileData {
 
     fn update_result_model(&mut self, filename: String, update_result: Vec<volume::SearchResultItem>, increment_find: bool) {
         self.search_win.clone().upgrade_in_event_loop(move |search_win| {
-            if slint::SharedString::from(filename) != search_win.get_query() {return;}
+            if search_win.get_query() != filename {return;}
 
             let search_result_model = search_win.get_search_result();
             let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
@@ -179,7 +173,7 @@ impl FileData {
                 );
             }
             search_result_model.set_vec(result_list);
-            if increment_find == false {
+            if !increment_find {
                 search_win.set_viewport_y(0.);
                 search_win.set_active_id(0);
             }

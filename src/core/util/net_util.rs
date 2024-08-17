@@ -74,7 +74,7 @@ impl Updater {
                 let exe_path = env::current_exe()?;
                 let app_path = exe_path.parent().unwrap();
                 let tmp_path = app_path.join("tmp/");
-                let zip_path = tmp_path.clone().join(&zip_name);
+                let zip_path = tmp_path.clone().join(zip_name);
                 let zip_out_path = tmp_path.clone().join(version);
                 let script_path = tmp_path.clone().join("update.bat");
                 
@@ -109,7 +109,7 @@ impl Updater {
                 file.write_all(bat_content.as_bytes())?;
         
                 Command::new("cmd")
-                    .args(&["/C", script_path.to_str().unwrap()])
+                    .args(["/C", script_path.to_str().unwrap()])
                     .creation_flags(0x08000000) // CREATE_NO_WINDOW
                     .spawn()?;
         
@@ -117,9 +117,9 @@ impl Updater {
             } else {
                 return Err("Failed to update software, file response is not success".into());
             }
-            return Ok(());
+            Ok(())
         } else {
-            return Err("Failed to update software, version info is None".into());
+            Err("Failed to update software, version info is None".into())
         }
     }
 }

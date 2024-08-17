@@ -9,7 +9,7 @@ use crate::core::application::Application;
 
 fn main() {
 
-    if sys_util::run_as_admin() == true {return;}
+    if sys_util::run_as_admin() {return;}
 
     file_util::del_useless_files(); // del tmp and .fd files
 

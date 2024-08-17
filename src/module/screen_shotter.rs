@@ -54,17 +54,17 @@ impl Module for ScreenShotter {
                 }
             }
         });
-        return msg_sender;
+        msg_sender
     }
 
     fn get_hotkey(&mut self) -> HotKey {
         let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyC);
         self.id = Some(hotkey.id());
-        return  hotkey;
+        hotkey
     }
 
     fn get_id(&self) -> Option<u32> {
-        return self.id;
+        self.id
     }
 }
 
@@ -144,8 +144,8 @@ impl ScreenShotter{
                 let scale_factor = mask_win.window().scale_factor();
 
                 let bac_buffer = bac_buffer_rc_clone.lock().unwrap();
-                let width = bac_buffer.width() as u32;
-                let height = bac_buffer.height() as u32;
+                let width = bac_buffer.width();
+                let height = bac_buffer.height();
                 let img: image::DynamicImage = image::DynamicImage::ImageRgba8(
                     image::RgbaImage::from_vec(width, height, bac_buffer.as_bytes().to_vec()).unwrap()
                 );
@@ -310,7 +310,7 @@ impl ScreenShotter{
                     let mut delta_x = 0;
                     let mut delta_y = 0;
                     
-                    if !(move_pos.x > other_right) && !(move_right < other_pos.x) && !(move_pos.y > other_bottom) && !(move_bottom < other_pos.y) {
+                    if move_pos.x <= other_right && move_right >= other_pos.x && move_pos.y <= other_bottom && move_bottom >= other_pos.y {
                         if (move_right - other_pos.x).abs() < padding {
                             move_win.set_is_stick_x(true);
                             delta_x = move_right - other_pos.x - 2; // -1 to fix the border width

@@ -59,8 +59,8 @@ impl PinWin {
                         if is_stick_x && is_stick_y { return; }
                     },
                     Direction::Upper => {
-                        img_y = img_y + delta_y / zoom_factor;
-                        img_height = img_height - delta_y / zoom_factor;
+                        img_y += delta_y / zoom_factor;
+                        img_height -= delta_y / zoom_factor;
                         delta_x = 0.;
                     },
                     Direction::Lower => {
@@ -69,8 +69,8 @@ impl PinWin {
                         delta_y = 0.;
                     },
                     Direction::Left => {
-                        img_x = img_x + delta_x / zoom_factor;
-                        img_width = img_width - delta_x / zoom_factor;
+                        img_x += delta_x / zoom_factor;
+                        img_width -= delta_x / zoom_factor;
                         delta_y = 0.;
                     },
                     Direction::Right => {
@@ -79,21 +79,21 @@ impl PinWin {
                         delta_y = 0.;
                     },
                     Direction::LeftUpper => {
-                        img_x = img_x + delta_x / zoom_factor;
-                        img_y = img_y + delta_y / zoom_factor;
-                        img_width = img_width - delta_x / zoom_factor;
-                        img_height = img_height - delta_y / zoom_factor;
+                        img_x += delta_x / zoom_factor;
+                        img_y += delta_y / zoom_factor;
+                        img_width -= delta_x / zoom_factor;
+                        img_height -= delta_y / zoom_factor;
                     },
                     Direction::LeftLower => {
-                        img_x = img_x + delta_x / zoom_factor;
-                        img_width = img_width - delta_x / zoom_factor;
+                        img_x += delta_x / zoom_factor;
+                        img_width -= delta_x / zoom_factor;
                         pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
                         delta_y = 0.;
                     },
                     Direction::RightUpper => {
-                        img_y = img_y + delta_y / zoom_factor;
+                        img_y += delta_y / zoom_factor;
                         pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
-                        img_height = img_height - delta_y / zoom_factor;
+                        img_height -= delta_y / zoom_factor;
                         delta_x = 0.;
                     },
                     Direction::RightLower => {
@@ -129,12 +129,10 @@ impl PinWin {
                         let left_bottom_x = position.x + (width * scale_factor) as i32;
                         let left_bottom_y = position.y + (height * scale_factor) as i32;
                         message_sender_clone.send(ShotterMessage::ShowToolbar(left_bottom_x, left_bottom_y, id, pin_window.as_weak())).unwrap();
+                    } else if !pin_window.window().is_visible() || pin_window.window().is_minimized() {
+                        message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
                     } else {
-                        if pin_window.window().is_visible() == false || pin_window.window().is_minimized() {
-                            message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
-                        } else {
-                            message_sender_clone.send(ShotterMessage::HideToolbar(false)).unwrap();
-                        }
+                        message_sender_clone.send(ShotterMessage::HideToolbar(false)).unwrap();
                     }
                     true
                 }
@@ -175,7 +173,7 @@ impl PinWin {
                     let img_width = pin_window.get_img_width() * scale_factor;
                     let mut img = image::DynamicImage::ImageRgba8(
                         image::RgbaImage::from_vec(
-                            buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
+                            buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
                         ).unwrap()
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
@@ -215,7 +213,7 @@ impl PinWin {
 
                     let mut img = image::DynamicImage::ImageRgba8(
                         image::RgbaImage::from_vec(
-                            buffer.width() as u32, buffer.height() as u32, buffer.as_bytes().to_vec()
+                            buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
                         ).unwrap()
                     );
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
