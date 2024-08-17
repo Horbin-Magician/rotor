@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use crossbeam::channel::Sender;
 
 use tray_icon::{
     menu::{Menu, MenuEvent},
@@ -12,7 +12,7 @@ pub struct SystemTray {
 }
 
 impl SystemTray {
-    pub fn new( msg_sender:mpsc::Sender<AppMessage> ) -> SystemTray {
+    pub fn new( msg_sender: Sender<AppMessage> ) -> SystemTray {
         let tray_menu = Menu::new();
         let menuitem_setting = MenuItem::new("设置", true, None);
         let menuitem_quit = MenuItem::new("退出", true, None);
@@ -30,20 +30,24 @@ impl SystemTray {
         let _quit_id = menuitem_quit.id().clone();
         std::thread::spawn(move || {
             loop {
-                if let Ok(event) = TrayIconEvent::receiver().try_recv() {
-                    if event.click_type == ClickType::Left {
-                        msg_sender.send(AppMessage::ShowSetting).unwrap();
+                crossbeam::select! {
+                    recv(TrayIconEvent::receiver()) -> event => {
+                        if let Ok(event) = event {
+                            if event.click_type == ClickType::Left {
+                                msg_sender.send(AppMessage::ShowSetting).unwrap();
+                            }
+                        }
+                    }
+                    recv(MenuEvent::receiver()) -> event => {
+                        if let Ok(event) = event {
+                            if event.id == _setting_id {
+                                msg_sender.send(AppMessage::ShowSetting).unwrap();
+                            } else if event.id == _quit_id {
+                                msg_sender.send(AppMessage::Quit).unwrap();
+                            }
+                        }
                     }
                 }
-
-                if let Ok(event) = MenuEvent::receiver().try_recv() {
-                    if event.id == _setting_id {
-                        msg_sender.send(AppMessage::ShowSetting).unwrap();
-                    } else if event.id == _quit_id {
-                        msg_sender.send(AppMessage::Quit).unwrap();
-                    }
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         });
 
