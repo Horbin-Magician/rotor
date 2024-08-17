@@ -119,7 +119,7 @@ impl FileMap {
     }
 
     // return rank by filename
-    fn get_file_rank(file_name: &String) -> i8 {
+    fn get_file_rank(file_name: &str) -> i8 {
         let mut rank: i8 = 0;
 
         if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
@@ -194,7 +194,7 @@ impl Volume {
     }
 
     // Calculates a 32bit value that is used to filter out many files before comparing their filenames
-    fn make_filter(str: &String) -> u32 {
+    fn make_filter(str: &str) -> u32 {
         /*
         Creates an address that is used to filter out strings that don't contain the queried characters
         Explanation of the meaning of the single bits:
@@ -209,9 +209,9 @@ impl Volume {
         let str_lower = str.to_lowercase();
 
         for c in str_lower.chars() {
-            if ('a'..='z').contains(&c) {
+            if c.is_ascii_lowercase() {
                 address |= 1 << (c as u32 - 97);
-            } else if ('0'..'9').contains(&c) {
+            } else if ('0'..='9').contains(&c) {
                 address |= 1 << 26;
             } else if c > 127 as char {
                 address |= 1 << 27;
@@ -461,14 +461,14 @@ impl Volume {
         let mut save_file = fs::File::create(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive))?;
 
         let mut buf = Vec::new();
-        buf.write(&self.start_usn.to_be_bytes())?;
+        buf.write_all(&self.start_usn.to_be_bytes())?;
         for (file_key, file) in self.file_map.iter() {
-            buf.write(&file_key.index.to_be_bytes())?;
-            buf.write(&file.parent_index.to_be_bytes())?;
-            buf.write(&(file.file_name.len() as u16).to_be_bytes())?;
-            buf.write(file.file_name.as_bytes())?;
-            buf.write(&file.filter.to_be_bytes())?;
-            buf.write(&file.rank.to_be_bytes())?;
+            buf.write_all(&file_key.index.to_be_bytes())?;
+            buf.write_all(&file.parent_index.to_be_bytes())?;
+            buf.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
+            buf.write_all(file.file_name.as_bytes())?;
+            buf.write_all(&file.filter.to_be_bytes())?;
+            buf.write_all(&file.rank.to_be_bytes())?;
         }
         let _ = save_file.write(&buf.to_vec());
         self.release_index();

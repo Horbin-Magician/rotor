@@ -125,7 +125,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         }
     }
 
-    if file_exists(path) == false { return None; }
+    if !file_exists(path) { return None; }
 
 
     let h_icon = get_icon_from_file(path);

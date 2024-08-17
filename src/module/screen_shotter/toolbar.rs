@@ -32,7 +32,7 @@ impl Toolbar {
                 toolbar_window.set_pin_focused(true);
                 toolbar_window.set_id(id);
 
-                if toolbar_window.window().is_visible() == false {
+                if !toolbar_window.window().is_visible() {
                     toolbar_window.show().unwrap();
                 }
             });
@@ -57,7 +57,7 @@ impl Toolbar {
             let toolbar_window_clone = toolbar_window.as_weak();
             toolbar_window.on_try_hide(move |if_force| {
                 let toolbar_window = toolbar_window_clone.unwrap();
-                if if_force == false {
+                if !if_force {
                     let toolbar_focused = toolbar_window.get_toolbar_focused();
                     let pin_focused = toolbar_window.get_pin_focused();
                     if toolbar_focused || pin_focused { 

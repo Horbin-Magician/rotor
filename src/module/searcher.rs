@@ -41,17 +41,17 @@ impl Module for Searcher{
                 }
             }
         });
-        return msg_sender;
+        msg_sender
     }
 
     fn get_hotkey(&mut self) -> HotKey {
         let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyF);
         self.id = Some(hotkey.id());
-        return hotkey;
+        hotkey
     }
 
     fn get_id(&self) -> Option<u32> {
-        return self.id;
+        self.id
     }
 }
 
