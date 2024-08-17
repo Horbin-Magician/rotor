@@ -31,6 +31,7 @@ reqwest = { version = "0.11", features = ["blocking", "json"] }
 zip = "0.6.6"
 xcap = "0.0.10"
 fxhash = "0.2.1"
+crossbeam = "0.8.4"
 
 [dependencies.windows-sys]
 version = "0.48"
