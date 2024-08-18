@@ -1,4 +1,4 @@
-import { Button, ComboBox, Switch, GroupBox, LineEdit } from "std-widgets.slint";
+import { Button, ComboBox, Switch, GroupBox, LineEdit, Palette } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component BaseSettingPage inherits Page {
@@ -6,12 +6,17 @@ export component BaseSettingPage inherits Page {
     in-out property <int> theme;
     in property <string> version: "unknown";
 
+    in property <string> shortcut_search: "Shift+F";
+    in property <string> shortcut_screenshot: "Shift+C";
+
     callback theme_changed(int);
     callback power_boot_changed(bool);
+    callback shortcut_changed(string, KeyEvent);
     callback check_update();
 
     HorizontalLayout {
-        alignment: start;
+        alignment: space-between;
+        padding-right: 80px;
         spacing: 20px;
         Text {
             text: @tr("语言");
@@ -28,7 +33,8 @@ export component BaseSettingPage inherits Page {
     }
 
     HorizontalLayout {
-        alignment: start;
+        alignment: space-between;
+        padding-right: 80px;
         spacing: 20px;
         Text {
             text: @tr("主题");
@@ -48,7 +54,8 @@ export component BaseSettingPage inherits Page {
     }
 
     HorizontalLayout {
-        alignment: start;
+        alignment: space-between;
+        padding-right: 80px;
         spacing: 20px;
         Text {
             text: @tr("开机自启");
@@ -67,48 +74,102 @@ export component BaseSettingPage inherits Page {
     GroupBox {
         title: @tr("全局快捷键");
         VerticalLayout {
+            padding-left: 20px;
+            padding-right: 80px;
             spacing: 10px;
             HorizontalLayout {
-                alignment: start;
+                alignment: space-between;
                 spacing: 20px;
                 Text {
                     text: @tr("开始搜索");
                     height: 30px;
-                    width: 100px;
                     vertical-alignment: center;
                 }
-                LineEdit {
-                    height: 30px;
-                    enabled: false;
-                    text: "Shift+F";
+                Rectangle {
+                    border-radius: 5px;
+                    width: 150px;
+                    border-width: 1px;
+
+                    property <bool> active: false;
+
+                    FocusScope {
+                        Text {
+                            text: root.shortcut_search;
+                            vertical-alignment: center;
+                        }
+                        
+                        focus-changed-event() => {
+                            parent.active = self.has-focus;
+                        }
+
+                        key-released(event) => {
+                            shortcut_changed("search", event);
+                            accept
+                        }
+                    }
+
+                    states [
+                        active when active: {
+                            border-color: Palette.accent-background;
+                        }
+                        inactive when !active: {
+                            border-color: Palette.alternate-background;
+                        }
+                    ]
                 }
             }
 
             HorizontalLayout {
-                alignment: start;
+                alignment: space-between;
                 spacing: 20px;
                 Text {
                     text: @tr("开始截图");
                     height: 30px;
-                    width: 100px;
                     vertical-alignment: center;
                 }
-                LineEdit {
-                    height: 30px;
-                    enabled: false;
-                    text: "Shift+C";
+                Rectangle {
+                    border-radius: 5px;
+                    width: 150px;
+                    border-width: 1px;
+
+                    property <bool> active: false;
+
+                    FocusScope {
+                        Text {
+                            text: root.shortcut_screenshot;
+                            vertical-alignment: center;
+                        }
+                        
+                        focus-changed-event() => {
+                            parent.active = self.has-focus;
+                        }
+
+                        key-released(event) => {
+                            shortcut_changed("screenshot", event);
+                            accept
+                        }
+                    }
+
+                    states [
+                        active when active: {
+                            border-color: Palette.accent-background;
+                        }
+                        inactive when !active: {
+                            border-color: Palette.alternate-background;
+                        }
+                    ]
                 }
             }
         }
     }
 
     HorizontalLayout {
-        alignment: start;
+        alignment: space-between;
+        padding-right: 80px;
         spacing: 20px;
         Text {
             text: @tr("当前版本：{}", version);
             height: 30px;
-            width: 100px;
             vertical-alignment: center;
         }
         check_update_btn := Button {

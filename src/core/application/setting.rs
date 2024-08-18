@@ -1,17 +1,19 @@
 pub mod app_config;
 
+use crossbeam::channel::Sender;
 use i_slint_backend_winit::WinitWindowAccessor;
 use windows_sys::Win32::UI::WindowsAndMessaging;
-use app_config::AppConfig;
 
+use app_config::AppConfig;
 use crate::core::util::net_util;
+use super::AppMessage;
 
 pub struct Setting {
     pub setting_win: SettingWindow,
 }
 
 impl Setting {
-    pub fn new() -> Setting {
+    pub fn new( msg_sender: Sender<AppMessage> ) -> Setting {
         let setting_win = SettingWindow::new().unwrap();
 
         {
@@ -35,26 +37,61 @@ impl Setting {
             let app_config = AppConfig::global().lock().unwrap();
             setting_win.set_power_boot(app_config.get_power_boot());
             setting_win.set_theme(app_config.get_theme() as i32);
+            setting_win.set_shortcut_search(app_config.get_shortcut("search").unwrap_or(&"unkown".to_string()).into());
+            setting_win.set_shortcut_screenshot(app_config.get_shortcut("screenshot").unwrap_or(&"unkown".to_string()).into());
         }
 
-        { // power boot
-            setting_win.on_power_boot_changed(move |power_boot| {
-                let mut app_config = AppConfig::global().lock().unwrap();
-                app_config.set_power_boot(power_boot);
-            });
-        }
+        { // code for setting change
+            { // power boot
+                setting_win.on_power_boot_changed(move |power_boot| {
+                    let mut app_config = AppConfig::global().lock().unwrap();
+                    app_config.set_power_boot(power_boot);
+                });
+            }
 
-        {// theme
-            setting_win.on_theme_changed(move |theme| {
-                let mut app_config = AppConfig::global().lock().unwrap();
-                app_config.set_theme(theme as u8);
-            });
-            // if theme == 0 {
-            //     setting_win_clone.global::<Palette>().set_color_scheme("unknown");
-            // } else {
-            //     setting_win_clone.global::<Palette>().set_color_scheme("unknown");
-            // }
-            // // Palette.color-scheme = self.checked ? ColorScheme.dark : ColorScheme.light; 
+            {// theme
+                setting_win.on_theme_changed(move |theme| {
+                    let mut app_config = AppConfig::global().lock().unwrap();
+                    app_config.set_theme(theme as u8);
+                });
+                // if theme == 0 {
+                //     setting_win_clone.global::<Palette>().set_color_scheme("unknown");
+                // } else {
+                //     setting_win_clone.global::<Palette>().set_color_scheme("unknown");
+                // }
+                // // Palette.color-scheme = self.checked ? ColorScheme.dark : ColorScheme.light; 
+            }
+
+            {// shortcut
+                let setting_win_clone = setting_win.as_weak();
+                let msg_sender = msg_sender.clone();
+                setting_win.on_shortcut_changed(move |id, shortcut| {
+                    //TODO: handle F1-F12
+                    let mut text = shortcut.text.to_string();
+                    if text == "\u{1b}" { text = "Esc".into(); } // escape
+                    else if text == " " { text = "Space".into(); } // space
+                    else if text == "\n" { text = "Enter".into(); } // enter
+                    else if text.as_str() > "\u{1f}" && text.as_str() < "\u{7f}" { text = text.to_uppercase(); } // char
+                    else { return; } // exclude other control string
+                    
+                    let mut shortcut_str = String::new();
+                    if shortcut.modifiers.control { shortcut_str += "Ctrl+"; }
+                    if shortcut.modifiers.shift { shortcut_str += "Shift+"; }
+                    if shortcut.modifiers.meta { shortcut_str += "Win+"; }
+                    if shortcut.modifiers.alt { shortcut_str += "Alt+"; }
+                    else { shortcut_str += &text; }
+
+                    msg_sender.send(AppMessage::ChangeHotkey(id.to_string(), shortcut_str.clone())).unwrap();
+
+                    // TODO Batch setting
+                    let setting_win = setting_win_clone.unwrap();
+                    if id == "search" { setting_win.set_shortcut_search(shortcut_str.clone().into());
+                    } else if id == "screenshot" { setting_win.set_shortcut_screenshot(shortcut_str.clone().into());}
+
+                    let mut app_config = AppConfig::global().lock().unwrap();
+                    app_config.set_shortcut(id.to_string(), shortcut_str);
+                });
+            }
         }
 
         { // minimize, close, win move
@@ -147,8 +184,12 @@ slint::slint! {
         callback theme_changed(int);
         callback check_update();
         callback update();
+        callback shortcut_changed(string, KeyEvent);
 
         in property <string> version;
+        in property <string> shortcut_search;
+        in property <string> shortcut_screenshot;
+        
         in-out property <int> update_state: 0;
         in-out property <string> current_version;
         in-out property <string> latest_version;
@@ -170,7 +211,7 @@ slint::slint! {
                 width: (root.width) - 4px;
 
                 background: Palette.background;
-                border-color: Palette.background.brighter(1);
+                border-color: Palette.alternate-background;
                 border-width: 1px;
                 border-radius: 14px;
                 clip: true;
@@ -189,7 +230,7 @@ slint::slint! {
                         // divider
                         Rectangle { 
                             width: 1px;
-                            background: Palette.background.brighter(1);
+                            background: Palette.alternate-background;
                         }
 
                         VerticalLayout {
@@ -201,8 +242,12 @@ slint::slint! {
                                         version: version;
                                         power_boot <=> root.power_boot;
                                         theme <=> root.theme;
+                                        shortcut_search: root.shortcut_search;
+                                        shortcut_screenshot: root.shortcut_screenshot;
+
                                         theme_changed(theme) => { root.theme_changed(theme); }
                                         power_boot_changed(power_boot) => { root.power_boot_changed(power_boot); }
+                                        shortcut_changed(shortcut, event) => { root.shortcut_changed(shortcut, event); }
                                         check_update() => { root.check_update(); }
                                     }
                                 if(side-bar.current-item == 1) :
@@ -242,7 +287,7 @@ slint::slint! {
                     background: Palette.background;
                     border-width: 1px;
                     border-radius: 14px;
-                    border-color: Palette.background.brighter(1);
+                    border-color: Palette.alternate-background;
                     clip: true;
                     
                     if (update_state == 1 && current_version == latest_version) : VerticalLayout {
