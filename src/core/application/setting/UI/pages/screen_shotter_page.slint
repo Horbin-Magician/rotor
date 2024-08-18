@@ -1,69 +1,179 @@
-import { GroupBox, LineEdit } from "std-widgets.slint";
+import { GroupBox, LineEdit, Palette } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component ScreenShotterSettingPage inherits Page {
+    in property <string> shortcut_pinwin_save;
+    in property <string> shortcut_pinwin_close;
+    in property <string> shortcut_pinwin_copy;
+    in property <string> shortcut_pinwin_hide;
+
+    callback shortcut_changed(string, KeyEvent);
+
     GroupBox {
         title: @tr("快捷键");
         VerticalLayout {
-            spacing: 10px;
+            padding-left: 20px;
+            padding-right: 50px;
+            spacing: 5px;
             HorizontalLayout {
-                alignment: start;
-                spacing: 20px;
+                alignment: space-between;
                 Text {
                     text: @tr("关闭贴图");
                     height: 30px;
-                    width: 100px;
                     vertical-alignment: center;
                 }
-                LineEdit {
-                    height: 30px;
-                    enabled: false;
-                    text: "ESC";
+                Rectangle {
+                    border-radius: 5px;
+                    width: 150px;
+                    border-width: 1px;
+                    property <bool> active: false;
+                    FocusScope {
+                        Text {
+                            text: root.shortcut_pinwin_close;
+                            vertical-alignment: center;
+                        }
+                        
+                        focus-changed-event() => {
+                            parent.active = self.has-focus;
+                        }
+
+                        key-released(event) => {
+                            shortcut_changed("pinwin_close", event);
+                            accept
+                        }
+                    }
+
+                    states [
+                        active when active: {
+                            border-color: Palette.accent-background;
+                        }
+                        inactive when !active: {
+                            border-color: Palette.alternate-background;
+                        }
+                    ]
                 }
             }
             HorizontalLayout {
-                alignment: start;
-                spacing: 20px;
+                alignment: space-between;
                 Text {
                     text: @tr("复制贴图");
                     height: 30px;
                     width: 100px;
                     vertical-alignment: center;
                 }
-                LineEdit {
-                    height: 30px;
-                    enabled: false;
-                    text: "Enter";
+                Rectangle {
+                    border-radius: 5px;
+                    width: 150px;
+                    border-width: 1px;
+
+                    property <bool> active: false;
+
+                    FocusScope {
+                        Text {
+                            text: root.shortcut_pinwin_copy;
+                            vertical-alignment: center;
+                        }
+                        
+                        focus-changed-event() => {
+                            parent.active = self.has-focus;
+                        }
+
+                        key-released(event) => {
+                            shortcut_changed("pinwin_copy", event);
+                            accept
+                        }
+                    }
+
+                    states [
+                        active when active: {
+                            border-color: Palette.accent-background;
+                        }
+                        inactive when !active: {
+                            border-color: Palette.alternate-background;
+                        }
+                    ]
                 }
             }
             HorizontalLayout {
-                alignment: start;
-                spacing: 20px;
+                alignment: space-between;
                 Text {
                     text: @tr("保存贴图");
                     height: 30px;
                     width: 100px;
                     vertical-alignment: center;
                 }
-                LineEdit {
-                    height: 30px;
-                    enabled: false;
-                    text: "S";
+                Rectangle {
+                    border-radius: 5px;
+                    width: 150px;
+                    border-width: 1px;
+
+                    property <bool> active: false;
+
+                    FocusScope {
+                        Text {
+                            text: root.shortcut_pinwin_save;
+                            vertical-alignment: center;
+                        }
+                        
+                        focus-changed-event() => {
+                            parent.active = self.has-focus;
+                        }
+
+                        key-released(event) => {
+                            shortcut_changed("pinwin_save", event);
+                            accept
+                        }
+                    }
+
+                    states [
+                        active when active: {
+                            border-color: Palette.accent-background;
+                        }
+                        inactive when !active: {
+                            border-color: Palette.alternate-background;
+                        }
+                    ]
                 }
             }
             HorizontalLayout {
-                alignment: start;
-                spacing: 20px;
+                alignment: space-between;
                 Text {
                     text: @tr("隐藏贴图");
                     height: 30px;
                     width: 100px;
                     vertical-alignment: center;
                 }
-                LineEdit {
-                    height: 30px;
-                    enabled: false;
-                    text: "H";
+                Rectangle {
+                    border-radius: 5px;
+                    width: 150px;
+                    border-width: 1px;
+
+                    property <bool> active: false;
+
+                    FocusScope {
+                        Text {
+                            text: root.shortcut_pinwin_hide;
+                            vertical-alignment: center;
+                        }
+                        
+                        focus-changed-event() => {
+                            parent.active = self.has-focus;
+                        }
+
+                        key-released(event) => {
+                            shortcut_changed("pinwin_hide", event);
+                            accept
+                        }
+                    }
+
+                    states [
+                        active when active: {
+                            border-color: Palette.accent-background;
+                        }
+                        inactive when !active: {
+                            border-color: Palette.alternate-background;
+                        }
+                    ]
                 }
             }
         }
@@ -72,18 +182,20 @@ export component ScreenShotterSettingPage inherits Page {
     GroupBox {
         title: @tr("其他");
         VerticalLayout {
-            spacing: 10px;
+            padding-left: 20px;
+            padding-right: 50px;
+            spacing: 5px;
             HorizontalLayout {
-                alignment: start;
-                spacing: 20px;
+                alignment: space-between;
                 Text {
-                    text: @tr("默认保存路径");
+                    text: @tr("默认存储路径");
                     height: 30px;
                     width: 100px;
                     vertical-alignment: center;
                 }
                 LineEdit {
                     height: 30px;
+                    width: 150px;
                     enabled: false;
                     text: "与上次路径一致";
                 }
