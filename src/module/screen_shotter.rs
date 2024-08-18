@@ -6,11 +6,12 @@ use image::{self, GenericImageView, Rgba};
 use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
 use slint::{Rgba8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
-use global_hotkey::hotkey::{HotKey, Modifiers, Code};
+use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
 use windows_sys::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
+use crate::core::application::setting::app_config::AppConfig;
 use super::{Module, ModuleMessage};
 use pin_win::PinWin;
 use pin_win::PinWindow;
@@ -33,13 +34,14 @@ pub enum ShotterMessage {
 
 pub struct ScreenShotter {
     pub mask_win: MaskWindow,
-    id: Option<u32>,
     _max_pin_win_id: Arc<Mutex<u32>>,
     _pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
     _toolbar: Toolbar,
 }
 
 impl Module for ScreenShotter {
+    fn flag(&self) -> &str { "screenshot" }
+
     fn run(&self) -> Sender<ModuleMessage> {
         let (msg_sender, msg_reciever) = mpsc::channel();
         let mask_win_clone = self.mask_win.as_weak();
@@ -57,14 +59,9 @@ impl Module for ScreenShotter {
         msg_sender
     }
 
-    fn get_hotkey(&mut self) -> HotKey {
-        let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyC);
-        self.id = Some(hotkey.id());
-        hotkey
-    }
-
-    fn get_id(&self) -> Option<u32> {
-        self.id
+    fn get_hotkey(&mut self) -> Option<HotKey> {
+        let app_config = AppConfig::global().lock().unwrap();
+        app_config.get_hotkey_from_str("screenshot")
     }
 }
 
@@ -278,7 +275,6 @@ impl ScreenShotter{
         });
 
         ScreenShotter{
-            id: None,
             mask_win,
             _max_pin_win_id: max_pin_win_id,
             _pin_wins: pin_wins,

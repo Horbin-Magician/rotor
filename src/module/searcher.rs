@@ -5,9 +5,9 @@ use slint::{ComponentHandle, Model};
 use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use windows_sys::Win32::UI::WindowsAndMessaging;
-use global_hotkey::hotkey::{HotKey, Modifiers, Code};
+use global_hotkey::hotkey::HotKey;
 
-use crate::core::util::file_util;
+use crate::core::{application::setting::app_config::AppConfig, util::file_util};
 use crate::module::{Module, ModuleMessage};
 use file_data::FileData;
 
@@ -20,10 +20,11 @@ pub enum SearcherMessage {
 
 pub struct Searcher {
     pub search_win: SearchWindow,
-    id: Option<u32>,
 }
 
 impl Module for Searcher{
+    fn flag(&self) -> &str { "search" }
+
     fn run(&self) -> Sender<ModuleMessage> {
         let (msg_sender, msg_reciever) = mpsc::channel();
         let search_win_clone = self.search_win.as_weak();
@@ -44,14 +45,9 @@ impl Module for Searcher{
         msg_sender
     }
 
-    fn get_hotkey(&mut self) -> HotKey {
-        let hotkey = HotKey::new(Some(Modifiers::SHIFT), Code::KeyF);
-        self.id = Some(hotkey.id());
-        hotkey
-    }
-
-    fn get_id(&self) -> Option<u32> {
-        self.id
+    fn get_hotkey(&mut self) -> Option<HotKey> {
+        let app_config = AppConfig::global().lock().unwrap();
+        app_config.get_hotkey_from_str("search")
     }
 }
 
@@ -201,7 +197,6 @@ impl Searcher {
 
         Searcher {
             search_win,
-            id: None,
         }
     }
 }

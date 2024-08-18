@@ -10,7 +10,7 @@ pub enum ModuleMessage {
 }
 
 pub trait Module {
+    fn flag(&self) -> &str;
     fn run(&self) -> Sender<ModuleMessage>;
-    fn get_hotkey(&mut self) -> HotKey;
-    fn get_id(&self) -> Option<u32>;
+    fn get_hotkey(&mut self) -> Option<HotKey>;
 }

@@ -1,8 +1,9 @@
 use toml;
-use std::{fs, env};
+use std::{collections::HashMap, env, fs};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use serde::{Serialize, Deserialize};
+use global_hotkey::hotkey::HotKey;
 
 use crate::core::util::sys_util;
 
@@ -16,11 +17,23 @@ pub struct AppConfig {
     theme: u8,
     #[serde(default = "default_string")]
     save_path: String,
+    #[serde(default = "default_shortcuts")]
+    shortcuts: HashMap<String, String>,
 }
 
 fn default_false() -> bool { false }
 fn default_u8() -> u8 { 0 }
 fn default_string() -> String { String::new() }
+fn default_shortcuts() -> HashMap<String, String> { 
+    let mut shortcuts = HashMap::new();
+    shortcuts.insert("search".into(), "Shift+F".into());
+    shortcuts.insert("screenshot".into(), "Shift+C".into());
+    shortcuts.insert("PinWin_save".into(), "S".into());
+    shortcuts.insert("PinWin_exit".into(), "Esc".into());
+    shortcuts.insert("PinWin_copy".into(), "Enter".into());
+    shortcuts.insert("PinWin_minimaze".into(), "H".into());
+    shortcuts
+}
 
 impl AppConfig {
     fn new() -> AppConfig {
@@ -68,6 +81,25 @@ impl AppConfig {
 
     pub fn get_save_path(&self) -> String {
         self.save_path.clone()
+    }
+
+    pub fn set_shortcut(&mut self, key: String, value: String) {
+        self.shortcuts.insert(key, value);
+        self.save();
+    }
+
+    pub fn get_shortcut(&self, key: &str) -> Option<&String> {
+        self.shortcuts.get(key)
+    }
+
+    pub fn get_hotkey_from_str(&self, key: &str) -> Option<HotKey> {
+        let shortcut = self.get_shortcut(key);
+        if let Some(shortcut) = shortcut {
+            if let Ok(hotkey) = shortcut.parse::<HotKey>() {
+                return Some(hotkey);
+            }
+        }
+        None
     }
 }
 
