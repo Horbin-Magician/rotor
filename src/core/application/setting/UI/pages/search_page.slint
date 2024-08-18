@@ -1,20 +1,27 @@
-import { ComboBox, LineEdit } from "std-widgets.slint";
+import { ComboBox, LineEdit, GroupBox } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component SearchSettingPage inherits Page {
-    HorizontalLayout { // TODO exclude path
-        alignment: start;
-        spacing: 20px;
-        Text {
-            text: @tr("排除路径");
-            height: 30px;
-            width: 100px;
-            vertical-alignment: center;
-        }
-        LineEdit {
-            height: 30px;
-            enabled: false;
-            text: "";
+    GroupBox {
+        title: @tr("其他");
+        VerticalLayout {
+            padding-left: 20px;
+            padding-right: 50px;
+            spacing: 5px;
+            HorizontalLayout { // TODO exclude path
+                alignment: space-between;
+                Text {
+                    text: @tr("排除路径");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    height: 30px;
+                    enabled: false;
+                    text: "";
+                }
+            }
         }
     }
 }

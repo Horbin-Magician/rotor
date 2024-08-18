@@ -37,8 +37,13 @@ impl Setting {
             let app_config = AppConfig::global().lock().unwrap();
             setting_win.set_power_boot(app_config.get_power_boot());
             setting_win.set_theme(app_config.get_theme() as i32);
+            // TODO Batch setting
             setting_win.set_shortcut_search(app_config.get_shortcut("search").unwrap_or(&"unkown".to_string()).into());
             setting_win.set_shortcut_screenshot(app_config.get_shortcut("screenshot").unwrap_or(&"unkown".to_string()).into());
+            setting_win.set_shortcut_pinwin_save(app_config.get_shortcut("pinwin_save").unwrap_or(&"unkown".to_string()).into());
+            setting_win.set_shortcut_pinwin_close(app_config.get_shortcut("pinwin_close").unwrap_or(&"unkown".to_string()).into());
+            setting_win.set_shortcut_pinwin_copy(app_config.get_shortcut("pinwin_copy").unwrap_or(&"unkown".to_string()).into());
+            setting_win.set_shortcut_pinwin_hide(app_config.get_shortcut("pinwin_hide").unwrap_or(&"unkown".to_string()).into());
         }
 
         { // code for setting change
@@ -87,6 +92,10 @@ impl Setting {
                     let setting_win = setting_win_clone.unwrap();
                     if id == "search" { setting_win.set_shortcut_search(shortcut_str.clone().into());
                     } else if id == "screenshot" { setting_win.set_shortcut_screenshot(shortcut_str.clone().into());}
+                    else if id == "pinwin_save" { setting_win.set_shortcut_pinwin_save(shortcut_str.clone().into());}
+                    else if id == "pinwin_close" { setting_win.set_shortcut_pinwin_close(shortcut_str.clone().into());}
+                    else if id == "pinwin_copy" { setting_win.set_shortcut_pinwin_copy(shortcut_str.clone().into());}
+                    else if id == "pinwin_hide" { setting_win.set_shortcut_pinwin_hide(shortcut_str.clone().into());}
 
                     let mut app_config = AppConfig::global().lock().unwrap();
                     app_config.set_shortcut(id.to_string(), shortcut_str);
@@ -187,8 +196,13 @@ slint::slint! {
         callback shortcut_changed(string, KeyEvent);
 
         in property <string> version;
+
         in property <string> shortcut_search;
         in property <string> shortcut_screenshot;
+        in property <string> shortcut_pinwin_save;
+        in property <string> shortcut_pinwin_close;
+        in property <string> shortcut_pinwin_copy;
+        in property <string> shortcut_pinwin_hide;
         
         in-out property <int> update_state: 0;
         in-out property <string> current_version;
@@ -253,7 +267,13 @@ slint::slint! {
                                 if(side-bar.current-item == 1) :
                                     SearchSettingPage {}
                                 if(side-bar.current-item == 2) :
-                                    ScreenShotterSettingPage {}
+                                    ScreenShotterSettingPage {
+                                        shortcut_pinwin_save: root.shortcut_pinwin_save;
+                                        shortcut_pinwin_close: root.shortcut_pinwin_close;
+                                        shortcut_pinwin_copy: root.shortcut_pinwin_copy;
+                                        shortcut_pinwin_hide: root.shortcut_pinwin_hide;
+                                        shortcut_changed(shortcut, event) => { root.shortcut_changed(shortcut, event); }
+                                    }
                             }
                         }
                     }

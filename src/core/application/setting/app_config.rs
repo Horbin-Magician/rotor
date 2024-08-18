@@ -28,10 +28,10 @@ fn default_shortcuts() -> HashMap<String, String> {
     let mut shortcuts = HashMap::new();
     shortcuts.insert("search".into(), "Shift+F".into());
     shortcuts.insert("screenshot".into(), "Shift+C".into());
-    shortcuts.insert("PinWin_save".into(), "S".into());
-    shortcuts.insert("PinWin_exit".into(), "Esc".into());
-    shortcuts.insert("PinWin_copy".into(), "Enter".into());
-    shortcuts.insert("PinWin_minimaze".into(), "H".into());
+    shortcuts.insert("pinwin_save".into(), "S".into());
+    shortcuts.insert("pinwin_close".into(), "Esc".into());
+    shortcuts.insert("pinwin_copy".into(), "Enter".into());
+    shortcuts.insert("pinwin_hide".into(), "H".into());
     shortcuts
 }
 
