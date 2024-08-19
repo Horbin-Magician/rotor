@@ -235,9 +235,9 @@ slint::slint! {
                     HorizontalLayout {
                         side-bar := SideBar {
                             model: [
-                                @tr("Menu" => "基础"),
-                                @tr("Menu" => "搜索"),
-                                @tr("Menu" => "截图"),
+                                @tr("基础"),
+                                @tr("搜索"),
+                                @tr("截图"),
                             ];
                         }
 

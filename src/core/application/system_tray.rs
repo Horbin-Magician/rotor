@@ -14,14 +14,14 @@ pub struct SystemTray {
 impl SystemTray {
     pub fn new( msg_sender: Sender<AppMessage> ) -> SystemTray {
         let tray_menu = Menu::new();
-        let menuitem_setting = MenuItem::new("设置", true, None);
-        let menuitem_quit = MenuItem::new("退出", true, None);
+        let menuitem_setting = MenuItem::new("设置", true, None); // TODO wait to translate
+        let menuitem_quit = MenuItem::new("退出", true, None); // TODO wait to translate
         tray_menu.append(&menuitem_setting).unwrap();
         tray_menu.append(&menuitem_quit).unwrap();
         
         let _tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
-            .with_tooltip("小云管家")
+            .with_tooltip("小云管家") // TODO wait to translate
             .with_icon(Icon::from_path("assets/logo.ico", Some((128, 128))).unwrap())
             .build()
             .unwrap();

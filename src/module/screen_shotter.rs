@@ -491,7 +491,7 @@ slint::slint! {
                             "宽{}×高{}",
                             round(root.select_rect.width / 1px * root.scale-factor),
                             round(root.select_rect.height / 1px * root.scale-factor)
-                        ) : "左键划选区域";
+                        ) : @tr("左键划选区域");
                     color: white;
                 } // draw width and height
 
@@ -503,7 +503,7 @@ slint::slint! {
 
                 Text {
                     horizontal-alignment: center;
-                    text: "Z键切换 C键复制";
+                    text: @tr("Z键切换 C键复制");
                     color: white;
                 } // draw tips
             }

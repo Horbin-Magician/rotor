@@ -46,7 +46,7 @@ export component BaseSettingPage inherits Page {
                 theme_box := ComboBox {
                     width: 150px;
                     height: 30px;
-                    model: ["跟随系统", "暗色", "亮色"];
+                    model: [@tr("跟随系统"), @tr("暗色"), @tr("亮色")];
                     current-index: root.theme;
                     enabled: false;
                     selected(string) => {
@@ -79,7 +79,7 @@ export component BaseSettingPage inherits Page {
                     vertical-alignment: center;
                 }
                 check_update_btn := Button {
-                    text: "检查更新";
+                    text: @tr("检查更新");
                     clicked => {root.check_update();}
                 }
             }

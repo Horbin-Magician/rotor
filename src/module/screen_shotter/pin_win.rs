@@ -302,7 +302,7 @@ slint::slint! {
 
     export component PinWindow inherits Window {
         no-frame: true;
-        title: "小云视窗";
+        title: @tr("小云视窗");
         forward-focus: key-focus;
         icon: @image-url("assets/logo.png");
         
