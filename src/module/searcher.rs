@@ -226,7 +226,7 @@ slint::slint! {
         callback open_file_dir(int);
         pure callback lose_focus_trick(bool) -> bool;
 
-        title: "小云搜索";
+        title: @tr("小云搜索");
         no-frame: true;
         forward-focus: input;
         default-font-size: 18px;
@@ -252,7 +252,7 @@ slint::slint! {
                         spacing: 0;
                         input := LineEdit {
                             height: 60px;
-                            placeholder-text: "请输入需要搜索的内容";
+                            placeholder-text: @tr("请输入需要搜索的内容");
                             edited(str) => {
                                 root.query_change(str);
                             }

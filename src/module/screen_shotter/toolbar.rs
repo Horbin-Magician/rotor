@@ -150,10 +150,10 @@ slint::slint! {
         always-on-top: focus_trick(pin_focused, toolbar_focused);
 
         in-out property <[Tool_slint]> tools: [
-            { id: 0, icon: @image-url("./assets/icon/min.svg"), name: "最小化" },
-            { id: 3, icon: @image-url("./assets/icon/save.svg"), name: "保存" },
-            { id: 2, icon: @image-url("./assets/icon/close.svg"), name: "关闭" },
-            { id: 1, icon: @image-url("./assets/icon/right.svg"), name: "复制" },
+            { id: 0, icon: @image-url("./assets/icon/min.svg"), name: @tr("最小化") },
+            { id: 3, icon: @image-url("./assets/icon/save.svg"), name: @tr("保存") },
+            { id: 2, icon: @image-url("./assets/icon/close.svg"), name: @tr("关闭") },
+            { id: 1, icon: @image-url("./assets/icon/right.svg"), name: @tr("复制") },
         ];
         
         in-out property <int> win_width: tools.length * (self.height / 1px);

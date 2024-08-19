@@ -26,7 +26,7 @@ fn write_log(message: &String) -> std::io::Result<()> {
 }
 
 pub fn log_error_without_log(content: &str) {
-    let title = wide_null("发生错误");
+    let title = wide_null("Error");
     let content = wide_null(content);
     unsafe {
         MessageBoxW(0_isize, content.as_ptr(), title.as_ptr(), MB_OK);
