@@ -292,7 +292,7 @@ impl PinWin {
 }
 
 slint::slint! {
-    import { Button } from "std-widgets.slint";
+    import { Button, Palette } from "std-widgets.slint";
 
     enum Direction {
         Upper, Lower, Left, Right,
@@ -432,6 +432,17 @@ slint::slint! {
                     }
                 }
             }
+
+            // Rectangle {
+            //     x: ((root.width) - self.width) / 2;
+            //     y: ((root.height) - self.height) / 2;
+            //     width: 38px;
+            //     height: 20px;
+            //     background: Palette.background.with-alpha(0.5);
+            //     Text {
+            //         text: @tr("{}%", zoom_factor);
+            //     }
+            // }
         }
     }
 }
