@@ -49,6 +49,8 @@ impl Toolbar {
                     message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Close())).unwrap();
                 } else if active_num == 3 {
                     message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Save())).unwrap();
+                } else if active_num == 4 {
+                    message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::TriggerDraw())).unwrap();
                 }
             });
         }
@@ -109,15 +111,22 @@ impl Toolbar {
 slint::slint! {
     import { Button, Palette} from "std-widgets.slint";
 
+    enum ToolType {
+        Trigger,
+        Clicker,
+    }
+
     struct Tool_slint {
         id: int,
         icon: image,
         name: string,
+        type: ToolType,
     }
 
     component ToolBtn inherits Rectangle { // TODO merge with TitleBtn
         in property<image> icon <=> image.source;
         in property<color> hover_color: Palette.accent-background;
+        in property <bool> active: false;
         callback clicked <=> touch.clicked;
 
         width: 40px;
@@ -133,10 +142,13 @@ slint::slint! {
         }
 
         states [
-            pressed when touch.pressed : {
+            pressed when touch.pressed:{
                 root.background: hover_color.darker(0.5);
             }
-            hover when touch.has-hover : {
+            active when self.active:{
+                root.background: hover_color;
+            }
+            hover when touch.has-hover:{
                 root.background: hover_color;
             }
         ]
@@ -150,10 +162,11 @@ slint::slint! {
         always-on-top: focus_trick(pin_focused, toolbar_focused);
 
         in-out property <[Tool_slint]> tools: [
-            { id: 0, icon: @image-url("./assets/icon/min.svg"), name: @tr("最小化") },
-            { id: 3, icon: @image-url("./assets/icon/save.svg"), name: @tr("保存") },
-            { id: 2, icon: @image-url("./assets/icon/close.svg"), name: @tr("关闭") },
-            { id: 1, icon: @image-url("./assets/icon/right.svg"), name: @tr("复制") },
+            // { id: 4, icon: @image-url("./assets/icon/draw.svg"), name: @tr("绘制"), type: ToolType.Trigger },
+            { id: 0, icon: @image-url("./assets/icon/min.svg"), name: @tr("最小化"), type: ToolType.Clicker },
+            { id: 3, icon: @image-url("./assets/icon/save.svg"), name: @tr("保存"), type: ToolType.Clicker },
+            { id: 2, icon: @image-url("./assets/icon/close.svg"), name: @tr("关闭"), type: ToolType.Clicker },
+            { id: 1, icon: @image-url("./assets/icon/right.svg"), name: @tr("复制"), type: ToolType.Clicker },
         ];
         
         in-out property <int> win_width: tools.length * (self.height / 1px);
@@ -161,6 +174,8 @@ slint::slint! {
         in-out property <bool> pin_focused: false;
         in-out property <bool> toolbar_focused: focus_scope.has-focus;
         in-out property <int> id: -1;
+
+        property <string> active_name: ""; // TODO 获取不同pinwin的状态信息
 
         callback show_pos(int, int, int);
         callback try_hide(bool);
@@ -177,7 +192,13 @@ slint::slint! {
                     width: root.height;
                     height: root.height;
                     icon: tool.icon;
-                    clicked => { root.click(root.id, tool.id); }
+                    active: root.active_name == tool.name;
+                    clicked => { 
+                        if tool.type == ToolType.Trigger {
+                            root.active_name = root.active_name == tool.name ? "" : tool.name;
+                        }
+                        root.click(root.id, tool.id); 
+                    }
                 }
             }
         }

@@ -4,7 +4,7 @@ use image;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
-use slint::{SharedPixelBuffer, Rgba8Pixel};
+use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 use i_slint_backend_winit::WinitWindowAccessor;
 use chrono;
 
@@ -231,6 +231,28 @@ impl PinWin {
                     });
                 });
             }
+
+            { // code for draw
+                let pin_window_clone = pin_window.as_weak();
+                pin_window.on_trigger_draw(move || {
+                    let pin_window = pin_window_clone.unwrap();
+                    let state = pin_window.get_state();
+                    if state == PinState::DrawFree {
+                        pin_window.set_state(PinState::Normal);
+                    } else {
+                        pin_window.set_state(PinState::DrawFree);
+                    }
+                });
+
+                let pin_window_clone = pin_window.as_weak();
+                pin_window.on_draw_path(move |path| {
+                    let pin_window = pin_window_clone.unwrap();
+                    let pathes_rc = pin_window.get_pathes();
+                    let pathes = pathes_rc.as_any().downcast_ref::<VecModel<SharedString>>()
+                        .expect("We know we set a VecModel earlier");
+                    pathes.push(path.into());
+                });
+            }
         }
 
         { // code for key press
@@ -300,6 +322,10 @@ slint::slint! {
         Center,
     }
 
+    enum PinState {
+        Normal, Move, DrawFree,
+    }
+
     export component PinWindow inherits Window {
         no-frame: true;
         title: @tr("小云视窗");
@@ -328,10 +354,13 @@ slint::slint! {
         in-out property <bool> is_stick_x: false;
         in-out property <bool> is_stick_y: false;
 
-        property <bool> can_move: false;
+        in-out property <PinState> state: PinState.Normal;
+        in-out property <[string]> pathes: [];
+        in-out property <string> drawing_path: "";
+        
+        property <MouseCursor> mouse_type: MouseCursor.move;
         property <Direction> mouse_direction;
         property <length> extend_scope: 6px;
-        property <MouseCursor> mouse_type: MouseCursor.move;
 
         callback win_move(length, length, Direction);
         callback key_release(KeyEvent);
@@ -340,6 +369,8 @@ slint::slint! {
         callback hide();
         callback save();
         callback copy();
+        callback trigger_draw();
+        callback draw_path(string);
 
         width <=> win_width;
         height <=> win_height;
@@ -364,26 +395,43 @@ slint::slint! {
                 move_touch_area := TouchArea {
                     mouse-cursor: mouse_type;
                     moved => {
-                        if root.can_move {
+                        if root.state == PinState.Move { // move window
                             root.win_move((self.mouse-x) - self.pressed-x, (self.mouse-y) - self.pressed-y, mouse_direction);
+                        } else if root.state == PinState.DrawFree { // draw line
+                            if root.drawing_path == "" {
+                                root.drawing_path = @tr("M {} {}", self.mouse-x / 1px, self.mouse-y / 1px);
+                            } else {
+                                root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / 1px, self.mouse-y / 1px);
+                            }
                         }
                     }
                     
                     pointer-event(event) => {
                         if (event.kind == PointerEventKind.down) {
-                            if (event.button == PointerEventButton.left) {
-                                root.can_move = true;
+                            if (root.state == PinState.Normal && event.button == PointerEventButton.left) {
+                                root.state = PinState.Move;
                             }
                         } else if (event.kind == PointerEventKind.up) {
-                            if (event.button == PointerEventButton.left) { 
-                                root.can_move = false; 
-                                root.img_height = root.img_height + root.delta_img_height;
-                                root.img_width = root.img_width + root.delta_img_width;
-                                root.delta_img_height = 0px;
-                                root.delta_img_width = 0px;
+                            if (event.button == PointerEventButton.left) {
+                                if root.state == PinState.Move {
+                                    root.state = PinState.Normal;
+                                    root.img_height = root.img_height + root.delta_img_height;
+                                    root.img_width = root.img_width + root.delta_img_width;
+                                    root.delta_img_height = 0px;
+                                    root.delta_img_width = 0px;
+                                } else if root.state == PinState.DrawFree {
+                                    draw_path(root.drawing_path);
+                                    debug(root.drawing_path);
+                                    root.drawing_path = "";
+                                }
                             }
                         } else if (event.kind == PointerEventKind.move) {
-                            if root.can_move { return; }
+                            if root.state != PinState.Normal { 
+                                if root.state == PinState.DrawFree {
+                                    root.mouse_type = MouseCursor.crosshair;
+                                }
+                                return;
+                            }
                             if (self.mouse-x < extend_scope && self.mouse-y < extend_scope) {
                                 root.mouse_direction = Direction.LeftUpper;
                                 root.mouse_type = MouseCursor.nwse-resize;
@@ -431,6 +479,25 @@ slint::slint! {
                         }
                     }
                 }
+            }
+
+            for path in root.pathes:
+                Path {
+                    viewbox-width: root.width / 1px;
+                    viewbox-height: root.height / 1px;
+                    clip: true;
+                    commands: path;
+                    stroke: red;
+                    stroke-width: 2px;
+                }
+            
+            Path {
+                viewbox-width: root.width / 1px;
+                viewbox-height: root.height / 1px;
+                clip: true;
+                commands: drawing_path;
+                stroke: red;
+                stroke-width: 2px;
             }
 
             // Rectangle {
