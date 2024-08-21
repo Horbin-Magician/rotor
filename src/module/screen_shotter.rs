@@ -22,6 +22,7 @@ pub enum PinOperation {
     Hide(),
     Save(),
     Copy(),
+    TriggerDraw(),
 }
 
 pub enum ShotterMessage {
@@ -264,6 +265,11 @@ impl ScreenShotter{
                                     PinOperation::Copy() => {
                                         pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_copy();
+                                        }).unwrap();
+                                    },
+                                    PinOperation::TriggerDraw() => {
+                                        pin_window.upgrade_in_event_loop(move |win| {
+                                            win.invoke_trigger_draw();
                                         }).unwrap();
                                     },
                                 }
@@ -510,7 +516,6 @@ slint::slint! {
 
             // draw cross curve
             Path {
-                y: 0px;
                 width: 100%;
                 height: 90px;
                 commands: "M 60 0 v 90";
@@ -519,7 +524,6 @@ slint::slint! {
             } // draw vertical lines
 
             Path {
-                y: 0px;
                 width: 100%;
                 height: 90px;
                 commands: "M 0 45 L 120 45";
