@@ -1,5 +1,7 @@
 import { Button, Palette} from "std-widgets.slint";
 
+import { BaseWindow } from "../frame/base_win.slint";
+
 enum ToolType {
     Trigger,
     Clicker,
@@ -43,8 +45,7 @@ component ToolBtn inherits Rectangle { // TODO merge with TitleBtn
     ]
 }
 
-export component ToolbarWindow inherits Window {
-    no-frame: true;
+export component ToolbarWindow inherits BaseWindow {
     forward-focus: focus_scope;
 
     pure callback focus_trick(bool, bool) -> bool;

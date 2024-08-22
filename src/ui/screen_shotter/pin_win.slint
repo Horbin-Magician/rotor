@@ -1,5 +1,7 @@
 import { Button, Palette } from "std-widgets.slint";
 
+import { BaseWindow } from "../frame/base_win.slint";
+
 enum Direction {
     Upper, Lower, Left, Right,
     LeftUpper, LeftLower, RightUpper, RightLower,
@@ -10,11 +12,9 @@ enum PinState {
     Normal, Move, DrawFree,
 }
 
-export component PinWindow inherits Window {
-    no-frame: true;
+export component PinWindow inherits BaseWindow {
     title: @tr("小云视窗");
     forward-focus: key-focus;
-    icon: @image-url("../assets/logo.png");
     
     pure callback focus_trick(bool) -> bool;
     always-on-top: focus_trick(key-focus.has-focus);

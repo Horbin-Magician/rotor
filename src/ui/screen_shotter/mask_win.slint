@@ -1,11 +1,12 @@
+import { BaseWindow } from "../frame/base_win.slint";
+
 struct Rect {
     x: length,
     y: length,
     width: length,
     height: length,
 }
-export component MaskWindow inherits Window {
-    no-frame: true;
+export component MaskWindow inherits BaseWindow {
     forward-focus: focus_scope;
     title: "截图窗口";
     

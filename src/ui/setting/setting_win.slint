@@ -1,20 +1,14 @@
 import { CheckBox, StandardListView, Palette, Button, ProgressIndicator } from "std-widgets.slint";
+
+import { BaseWindow } from "../frame/base_win.slint";
 import { BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "./pages/pages.slint";
 import { SideBar } from "./side_bar.slint";
 import { TitleBar } from "./title_bar.slint";
 
-export component SettingWindow inherits Window {
-    default-font-size: 14px;
+export component SettingWindow inherits BaseWindow {
     width: 500px;
     height: 400px;
     title: @tr("设置");
-    icon: @image-url("../assets/logo.png");
-    no-frame: true;
-    background: transparent;
-
-    callback minimize <=> title_bar.minimize;
-    callback close <=> title_bar.close;
-    callback win_move;
 
     public function change_theme(theme: int) { 
         if theme == 0 {
@@ -25,6 +19,10 @@ export component SettingWindow inherits Window {
             Palette.color-scheme = ColorScheme.light;
         }
     }
+
+    callback minimize <=> title_bar.minimize;
+    callback close <=> title_bar.close;
+    callback win_move;
 
     callback power_boot_changed(bool);
     callback theme_changed(int);
