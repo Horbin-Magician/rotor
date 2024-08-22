@@ -1,12 +1,10 @@
-slint::include_modules!();
-
 mod pin_win;
 mod toolbar;
 
 use arboard::Clipboard;
 use image::{self, GenericImageView, Rgba};
 use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
-use slint::{Rgba8Pixel, SharedPixelBuffer, Weak};
+use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
@@ -14,6 +12,7 @@ use windows_sys::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POIN
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
 use crate::core::application::setting::app_config::AppConfig;
+use crate::ui::{MaskWindow, PinWindow, ToolbarWindow};
 use super::{Module, ModuleMessage};
 use pin_win::PinWin;
 use toolbar::Toolbar;
@@ -215,7 +214,7 @@ impl ScreenShotter{
         // event listen
         let pin_windows_clone = pin_windows.clone();
         // let pin_wins_clone = pin_wins.clone();
-        let toolbar_window_clone: slint::Weak<toolbar::ToolbarWindow> = toolbar.get_window();
+        let toolbar_window_clone: slint::Weak<ToolbarWindow> = toolbar.get_window();
         std::thread::spawn(move || {
             loop {
                 if let Ok(message) = message_reciever.recv() {
@@ -289,7 +288,7 @@ impl ScreenShotter{
         }
     }
 
-    fn pin_win_move_hander(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32, toolbar_window: slint::Weak<toolbar::ToolbarWindow>) {
+    fn pin_win_move_hander(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32, toolbar_window: slint::Weak<ToolbarWindow>) {
         slint::invoke_from_event_loop(move || {
             let padding = 10;
             let pin_windows = pin_windows.lock().unwrap();

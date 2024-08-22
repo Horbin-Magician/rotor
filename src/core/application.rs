@@ -9,10 +9,11 @@ use slint;
 use slint::ComponentHandle;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
-use system_tray::SystemTray;
-use setting::{Setting, SettingWindow};
+use crate::ui::SettingWindow;
 use crate::module::{searcher::Searcher, Module, ModuleMessage};
 use crate::module::screen_shotter::ScreenShotter;
+use system_tray::SystemTray;
+use setting::Setting;
 
 pub enum AppMessage {
     Quit,

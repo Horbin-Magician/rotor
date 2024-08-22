@@ -1,8 +1,8 @@
-slint::include_modules!();
-
 use std::sync::mpsc::Sender;
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
+use slint::ComponentHandle;
 
+use crate::ui::ToolbarWindow;
 use super::{PinOperation, ShotterMessage};
 
 pub struct Toolbar {

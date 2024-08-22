@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod core;
+mod ui;
 mod module;
 
 use crate::core::util::sys_util;

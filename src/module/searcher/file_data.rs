@@ -8,10 +8,10 @@ use windows_sys::Win32::Storage::FileSystem;
 use windows_sys::Win32::Foundation;
 
 use crate::core::util::file_util;
+use crate::ui::SearchResult_slint;
 use super::SearchWindow;
 use super::SearcherMessage;
 use super::volume;
-use super::SearchResult_slint;
 
 #[derive(Debug)]
 enum FileState {
