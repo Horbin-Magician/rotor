@@ -1,5 +1,7 @@
 import { Button, VerticalBox, LineEdit, ListView , HorizontalBox, Palette} from "std-widgets.slint";
 
+import { BaseWindow } from "../frame/base_win.slint";
+
 struct SearchResult_slint {
     id: int,
     icon: image,
@@ -7,7 +9,7 @@ struct SearchResult_slint {
     path: string,
 }
 
-export component SearchWindow inherits Window {
+export component SearchWindow inherits BaseWindow {
     in property <float> ui_width;
     in property <[SearchResult_slint]> search_result;
     in property <int> active_id;
@@ -23,13 +25,10 @@ export component SearchWindow inherits Window {
     pure callback lose_focus_trick(bool) -> bool;
 
     title: @tr("小云搜索");
-    no-frame: true;
     forward-focus: input;
     default-font-size: 18px;
-    icon: @image-url("../assets/logo.png");
     width: ui_width * 1px;
     always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
-    background: transparent;
 
     VerticalBox {
         padding: 0px;
