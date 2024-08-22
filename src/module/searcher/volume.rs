@@ -6,7 +6,6 @@ use std::{
     ffi::{c_void, CString},
     io::{self, Write},
     sync::mpsc,
-    time::SystemTime
 };
 
 use windows_sys::Win32::{
@@ -16,6 +15,9 @@ use windows_sys::Win32::{
     Foundation,
 };
 
+#[allow(unused_imports)]
+use std::time::SystemTime;
+#[allow(unused_imports)]
 use crate::core::util::log_util::{log_error, log_info};
 
 struct File {
