@@ -55,6 +55,11 @@ impl Module for Searcher{
 impl Searcher {
     pub fn new() -> Searcher {
         let search_win = SearchWindow::new().unwrap();
+        {
+            let mut app_config = AppConfig::global().lock().unwrap();
+            search_win.invoke_change_theme(app_config.get_theme() as i32);
+            app_config.search_win = Some(search_win.as_weak());
+        }
 
         search_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);

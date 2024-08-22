@@ -2,7 +2,7 @@ use std::sync::mpsc::Sender;
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use slint::ComponentHandle;
 
-use crate::ui::ToolbarWindow;
+use crate::{core::application::setting::app_config::AppConfig, ui::ToolbarWindow};
 use super::{PinOperation, ShotterMessage};
 
 pub struct Toolbar {
@@ -12,6 +12,13 @@ pub struct Toolbar {
 impl Toolbar {
     pub fn new(message_sender: Sender<ShotterMessage>) -> Toolbar {
         let toolbar_window = ToolbarWindow::new().unwrap();
+        {
+            let mut app_config = AppConfig::global().lock().unwrap();
+            toolbar_window.invoke_change_theme(app_config.get_theme() as i32);
+            app_config.toolbar_win = Some(toolbar_window.as_weak());
+        }
+
+
         toolbar_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
         });

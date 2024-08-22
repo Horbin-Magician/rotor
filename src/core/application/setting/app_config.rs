@@ -1,3 +1,4 @@
+use slint::Weak;
 use toml;
 use std::{collections::HashMap, env, fs};
 use once_cell::sync::Lazy;
@@ -6,9 +7,10 @@ use serde::{Serialize, Deserialize};
 use global_hotkey::hotkey::HotKey;
 
 use crate::core::util::sys_util;
+use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AppConfig {
+pub struct Config {
     #[serde(default = "default_false")]
     power_boot: bool,
     #[serde(default = "default_u8")]
@@ -35,19 +37,34 @@ fn default_shortcuts() -> HashMap<String, String> {
     shortcuts
 }
 
+pub struct AppConfig {
+    config: Config,
+    pub search_win: Option<Weak<SearchWindow>>,
+    pub setting_win: Option<Weak<SettingWindow>>,
+    pub toolbar_win: Option<Weak<ToolbarWindow>>,
+}
+
 impl AppConfig {
     fn new() -> AppConfig {
         let path = env::current_exe().unwrap().parent().unwrap().join("userdata").join("config.toml");
         let config_str = fs::read_to_string(path).unwrap_or_else(|_| String::new());
-        match toml::from_str::<AppConfig>(&config_str) {
+
+        let config = match toml::from_str::<Config>(&config_str) {
             Ok(config) => config,
             Err(e) => panic!("[ERROR] AppConfig read config: {:?}", e),
+        };
+
+        AppConfig {
+            config,
+            search_win: None,
+            setting_win: None,
+            toolbar_win: None,
         }
     }
 
     fn save(&self) {
         let path = env::current_exe().unwrap().parent().unwrap().join("userdata").join("config.toml");
-        let config_str = toml::to_string_pretty(self).unwrap();
+        let config_str = toml::to_string_pretty(&self.config).unwrap();
         fs::write(path, config_str).unwrap();
     }
 
@@ -56,22 +73,40 @@ impl AppConfig {
     }
 
     pub fn set_power_boot(&mut self, power_boot: bool) {
-        self.power_boot = power_boot;
+        self.config.power_boot = power_boot;
         let _ = sys_util::set_power_boot(power_boot);
         self.save();
     }
 
     pub fn get_power_boot(&self) -> bool {
-        self.power_boot
+        self.config.power_boot
     }
 
     pub fn set_theme(&mut self, theme: u8) {
-        self.theme = theme;
+        if let Some(search_win) = &self.search_win {
+            if let Some(search_win) = search_win.upgrade() {
+                search_win.invoke_change_theme(theme as i32);
+            }
+        }
+
+        if let Some(setting_win) = &self.setting_win {
+            if let Some(setting_win) = setting_win.upgrade() {
+                setting_win.invoke_change_theme(theme as i32);
+            }
+        }
+
+        if let Some(toolbar_win) = &self.toolbar_win {
+            if let Some(toolbar_win) = toolbar_win.upgrade() {
+                toolbar_win.invoke_change_theme(theme as i32);
+            }
+        }
+
+        self.config.theme = theme;
         self.save();
     }
 
     pub fn get_theme(&self) -> u8 {
-        self.theme
+        self.config.theme
     }
 
     // pub fn set_save_path(&mut self, path: String) {
@@ -80,16 +115,16 @@ impl AppConfig {
     // }
 
     pub fn get_save_path(&self) -> String {
-        self.save_path.clone()
+        self.config.save_path.clone()
     }
 
     pub fn set_shortcut(&mut self, key: String, value: String) {
-        self.shortcuts.insert(key, value);
+        self.config.shortcuts.insert(key, value);
         self.save();
     }
 
     pub fn get_shortcut(&self, key: &str) -> Option<&String> {
-        self.shortcuts.get(key)
+        self.config.shortcuts.get(key)
     }
 
     pub fn get_hotkey_from_str(&self, key: &str) -> Option<HotKey> {

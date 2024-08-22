@@ -17,6 +17,11 @@ pub struct Setting {
 impl Setting {
     pub fn new( msg_sender: Sender<AppMessage> ) -> Setting {
         let setting_win = SettingWindow::new().unwrap();
+        {
+            let mut app_config = AppConfig::global().lock().unwrap();
+            setting_win.invoke_change_theme(app_config.get_theme() as i32);
+            app_config.setting_win = Some(setting_win.as_weak());
+        }
 
         {
             let width: f32 = 500.;
@@ -57,10 +62,10 @@ impl Setting {
             }
 
             {// theme
-                let setting_win_clone = setting_win.as_weak();
+                // let setting_win_clone = setting_win.as_weak();
                 setting_win.on_theme_changed(move |theme| {
-                    let setting_win = setting_win_clone.unwrap();
-                    setting_win.invoke_change_theme(theme);
+                    // let setting_win = setting_win_clone.unwrap();
+                    // setting_win.invoke_change_theme(theme);
                     let mut app_config = AppConfig::global().lock().unwrap();
                     app_config.set_theme(theme as u8);
                 });

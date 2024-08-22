@@ -48,6 +48,16 @@ component ToolBtn inherits Rectangle { // TODO merge with TitleBtn
 export component ToolbarWindow inherits BaseWindow {
     forward-focus: focus_scope;
 
+    public function change_theme(theme: int) { 
+        if theme == 0 {
+            Palette.color-scheme = ColorScheme.unknown;
+        } else if theme == 1 {
+            Palette.color-scheme = ColorScheme.dark;
+        } else if theme == 2 {
+            Palette.color-scheme = ColorScheme.light;
+        }
+    }
+
     pure callback focus_trick(bool, bool) -> bool;
     always-on-top: focus_trick(pin_focused, toolbar_focused);
 
