@@ -168,6 +168,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4aa90d7ce82d4be67b64039a3d588d38dbcc6736577de4a847025ce5b0c468d1"
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
+
+[[package]]
 name = "android-activity"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1634,6 +1640,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fontdue"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efe23d02309319171d00d794c9ff48d4f903c0e481375b1b04b017470838af04"
+dependencies = [
+ "hashbrown",
+ "rayon",
+ "ttf-parser 0.21.1",
+]
+
+[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2210,6 +2227,11 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+ "allocator-api2",
+ "rayon",
+]
 
 [[package]]
 name = "heck"
@@ -2419,7 +2441,9 @@ dependencies = [
  "codemap",
  "codemap-diagnostic",
  "derive_more",
+ "fontdue",
  "i-slint-common",
+ "image 0.24.9",
  "itertools 0.13.0",
  "linked_hash_set",
  "lyon_extra",
@@ -2428,6 +2452,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
+ "resvg",
  "rowan",
  "smol_str",
  "strum",
@@ -4348,6 +4373,7 @@ dependencies = [
  "reqwest",
  "serde",
  "slint",
+ "slint-build",
  "toml",
  "tray-icon",
  "wfd",
@@ -4721,6 +4747,18 @@ dependencies = [
  "pin-weak",
  "slint-macros",
  "vtable",
+]
+
+[[package]]
+name = "slint-build"
+version = "1.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08b4f1d7f9a1b8a992d56ffa7b7bd04db759b5217811825f3ab6fc0bf6a7c4d1"
+dependencies = [
+ "i-slint-compiler",
+ "spin_on",
+ "thiserror",
+ "toml_edit 0.22.20",
 ]
 
 [[package]]

@@ -1,3 +1,5 @@
+slint::include_modules!();
+
 use std::sync::mpsc::Sender;
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 
@@ -105,102 +107,5 @@ impl Toolbar {
 
     pub fn get_window(&self) -> slint::Weak<ToolbarWindow> {
         self.toolbar_window.as_weak()
-    }
-}
-
-slint::slint! {
-    import { Button, Palette} from "std-widgets.slint";
-
-    enum ToolType {
-        Trigger,
-        Clicker,
-    }
-
-    struct Tool_slint {
-        id: int,
-        icon: image,
-        name: string,
-        type: ToolType,
-    }
-
-    component ToolBtn inherits Rectangle { // TODO merge with TitleBtn
-        in property<image> icon <=> image.source;
-        in property<color> hover_color: Palette.accent-background;
-        in property <bool> active: false;
-        callback clicked <=> touch.clicked;
-
-        width: 40px;
-        background: transparent;
-        animate background { duration: 150ms; }
-
-        touch := TouchArea {
-            image := Image {
-                height: 16px;
-                width: 16px;
-                colorize: Palette.foreground;
-            }
-        }
-
-        states [
-            pressed when touch.pressed:{
-                root.background: hover_color.darker(0.5);
-            }
-            active when self.active:{
-                root.background: hover_color;
-            }
-            hover when touch.has-hover:{
-                root.background: hover_color;
-            }
-        ]
-    }
-
-    export component ToolbarWindow inherits Window {
-        no-frame: true;
-        forward-focus: focus_scope;
-
-        pure callback focus_trick(bool, bool) -> bool;
-        always-on-top: focus_trick(pin_focused, toolbar_focused);
-
-        in-out property <[Tool_slint]> tools: [
-            // { id: 4, icon: @image-url("./assets/icon/draw.svg"), name: @tr("绘制"), type: ToolType.Trigger },
-            { id: 0, icon: @image-url("./assets/icon/min.svg"), name: @tr("最小化"), type: ToolType.Clicker },
-            { id: 3, icon: @image-url("./assets/icon/save.svg"), name: @tr("保存"), type: ToolType.Clicker },
-            { id: 2, icon: @image-url("./assets/icon/close.svg"), name: @tr("关闭"), type: ToolType.Clicker },
-            { id: 1, icon: @image-url("./assets/icon/right.svg"), name: @tr("复制"), type: ToolType.Clicker },
-        ];
-        
-        in-out property <int> win_width: tools.length * (self.height / 1px);
-        in-out property <int> tool_len: tools.length;
-        in-out property <bool> pin_focused: false;
-        in-out property <bool> toolbar_focused: focus_scope.has-focus;
-        in-out property <int> id: -1;
-
-        property <string> active_name: ""; // TODO 获取不同pinwin的状态信息
-
-        callback show_pos(int, int, int);
-        callback try_hide(bool);
-        callback win_move(int, int);
-        callback click(int, int);
-        callback key_released(KeyEvent);
-
-        focus_scope := FocusScope {
-            HorizontalLayout {
-                spacing: 0;
-                padding: 0;
-
-                for tool in root.tools: ToolBtn{
-                    width: root.height;
-                    height: root.height;
-                    icon: tool.icon;
-                    active: root.active_name == tool.name;
-                    clicked => { 
-                        if tool.type == ToolType.Trigger {
-                            root.active_name = root.active_name == tool.name ? "" : tool.name;
-                        }
-                        root.click(root.id, tool.id); 
-                    }
-                }
-            }
-        }
     }
 }

@@ -1,0 +1,198 @@
+import { Button, Palette } from "std-widgets.slint";
+
+enum Direction {
+    Upper, Lower, Left, Right,
+    LeftUpper, LeftLower, RightUpper, RightLower,
+    Center,
+}
+
+enum PinState {
+    Normal, Move, DrawFree,
+}
+
+export component PinWindow inherits Window {
+    no-frame: true;
+    title: @tr("小云视窗");
+    forward-focus: key-focus;
+    icon: @image-url("../assets/logo.png");
+    
+    pure callback focus_trick(bool) -> bool;
+    always-on-top: focus_trick(key-focus.has-focus);
+
+    in property <image> bac_image;
+    in property <length> win_border_width: 1px;
+    in property <float> scale_factor;
+
+    in property <length> img_x;
+    in property <length> img_y;
+    in-out property <int> zoom_factor: 100; // neet to be divided by one hundred
+    in-out property <length> img_width;
+    in-out property <length> img_height;
+
+    in-out property <length> delta_img_width: 0px;
+    in-out property <length> delta_img_height: 0px;
+
+    in-out property <length> win_width: ((img_width + delta_img_width) * zoom_factor / 100) + win_border_width * 2;
+    in-out property <length> win_height: ((img_height + delta_img_height) * zoom_factor / 100) + win_border_width * 2;
+
+    in-out property <bool> is_stick_x: false;
+    in-out property <bool> is_stick_y: false;
+
+    in-out property <PinState> state: PinState.Normal;
+    in-out property <[string]> pathes: [];
+    in-out property <string> drawing_path: "";
+    
+    property <MouseCursor> mouse_type: MouseCursor.move;
+    property <Direction> mouse_direction;
+    property <length> extend_scope: 6px;
+
+    callback win_move(length, length, Direction);
+    callback key_release(KeyEvent);
+
+    callback close();
+    callback hide();
+    callback save();
+    callback copy();
+    callback trigger_draw();
+    callback draw_path(string);
+
+    width <=> win_width;
+    height <=> win_height;
+
+    image_border := Rectangle {
+        border-color: rgb(0, 175, 255);
+        border-width: win_border_width;
+        pin_image := Image {
+            source: bac_image;
+            image-fit: contain;
+
+            x: win_border_width;
+            y: win_border_width;
+            width: (root.width) - win_border_width * 2;
+            height: (root.height) - win_border_width * 2;
+
+            source-clip-x: img_x / 1px  * root.scale_factor;
+            source-clip-y: img_y / 1px  * root.scale_factor;
+            source-clip-width: (img_width + delta_img_width) / 1px  * root.scale_factor;
+            source-clip-height: (img_height + delta_img_height) / 1px  * root.scale_factor;
+
+            move_touch_area := TouchArea {
+                mouse-cursor: mouse_type;
+                moved => {
+                    if root.state == PinState.Move { // move window
+                        root.win_move((self.mouse-x) - self.pressed-x, (self.mouse-y) - self.pressed-y, mouse_direction);
+                    } else if root.state == PinState.DrawFree { // draw line
+                        if root.drawing_path == "" {
+                            root.drawing_path = @tr("M {} {}", self.mouse-x / 1px, self.mouse-y / 1px);
+                        } else {
+                            root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / 1px, self.mouse-y / 1px);
+                        }
+                    }
+                }
+                
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        if (root.state == PinState.Normal && event.button == PointerEventButton.left) {
+                            root.state = PinState.Move;
+                        }
+                    } else if (event.kind == PointerEventKind.up) {
+                        if (event.button == PointerEventButton.left) {
+                            if root.state == PinState.Move {
+                                root.state = PinState.Normal;
+                                root.img_height = root.img_height + root.delta_img_height;
+                                root.img_width = root.img_width + root.delta_img_width;
+                                root.delta_img_height = 0px;
+                                root.delta_img_width = 0px;
+                            } else if root.state == PinState.DrawFree {
+                                draw_path(root.drawing_path);
+                                debug(root.drawing_path);
+                                root.drawing_path = "";
+                            }
+                        }
+                    } else if (event.kind == PointerEventKind.move) {
+                        if root.state != PinState.Normal { 
+                            if root.state == PinState.DrawFree {
+                                root.mouse_type = MouseCursor.crosshair;
+                            }
+                            return;
+                        }
+                        if (self.mouse-x < extend_scope && self.mouse-y < extend_scope) {
+                            root.mouse_direction = Direction.LeftUpper;
+                            root.mouse_type = MouseCursor.nwse-resize;
+                        } else if (self.mouse-x < extend_scope && self.mouse-y > ((win_height) - extend_scope)) {
+                            root.mouse_direction = Direction.LeftLower;
+                            root.mouse_type = MouseCursor.nesw-resize;
+                        } else if (self.mouse-x > ((win_width) - extend_scope) && self.mouse-y < extend_scope) {
+                            root.mouse_direction = Direction.RightUpper;
+                            root.mouse_type = MouseCursor.nesw-resize;
+                        } else if (self.mouse-x > ((win_width) - extend_scope) && self.mouse-y > ((win_height) - extend_scope)) {
+                            root.mouse_direction = Direction.RightLower;
+                            root.mouse_type = MouseCursor.nwse-resize;
+                        } else if (self.mouse-x < extend_scope) {
+                            root.mouse_direction = Direction.Left;
+                            root.mouse_type = MouseCursor.ew-resize;
+                        } else if (self.mouse-x > ((win_width) - extend_scope)) {
+                            root.mouse_direction = Direction.Right;
+                            root.mouse_type = MouseCursor.ew-resize;
+                        } else if (self.mouse-y < extend_scope) {
+                            root.mouse_direction = Direction.Upper;
+                            root.mouse_type = MouseCursor.ns-resize;
+                        } else if (self.mouse-y > ((win_height) - extend_scope)) {
+                            root.mouse_direction = Direction.Lower;
+                            root.mouse_type = MouseCursor.ns-resize;
+                        } else {
+                            root.mouse_direction = Direction.Center;
+                            root.mouse_type = MouseCursor.move;
+                        }
+                    }
+                }
+
+                scroll-event(event) => {
+                    if (event.delta-y > 0) {
+                        if (root.zoom_factor < 500) { root.zoom_factor = root.zoom_factor + 1; }
+                    } else if (event.delta-y < 0) {
+                        if (root.zoom_factor > 10) { root.zoom_factor = (root.zoom_factor) - 1; }
+                    }
+                    accept
+                }
+
+                key_focus := FocusScope {
+                    key-released(event) => {
+                        key_release(event);
+                        accept;
+                    }
+                }
+            }
+        }
+
+        for path in root.pathes:
+            Path {
+                viewbox-width: root.width / 1px;
+                viewbox-height: root.height / 1px;
+                clip: true;
+                commands: path;
+                stroke: red;
+                stroke-width: 2px;
+            }
+        
+        Path {
+            viewbox-width: root.width / 1px;
+            viewbox-height: root.height / 1px;
+            clip: true;
+            commands: drawing_path;
+            stroke: red;
+            stroke-width: 2px;
+        }
+
+        // Rectangle {
+        //     x: ((root.width) - self.width) / 2;
+        //     y: ((root.height) - self.height) / 2;
+        //     width: 38px;
+        //     height: 20px;
+        //     background: Palette.background.with-alpha(0.5);
+        //     Text {
+        //         text: @tr("{}%", zoom_factor);
+        //     }
+        // }
+    }
+}
