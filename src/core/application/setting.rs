@@ -1,13 +1,13 @@
-slint::include_modules!();
-
 pub mod app_config;
 
 use crossbeam::channel::Sender;
 use i_slint_backend_winit::WinitWindowAccessor;
+use slint::ComponentHandle;
 use windows_sys::Win32::UI::WindowsAndMessaging;
 
 use app_config::AppConfig;
 use crate::core::util::net_util;
+use crate::ui::SettingWindow;
 use super::AppMessage;
 
 pub struct Setting {

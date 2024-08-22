@@ -1,5 +1,3 @@
-slint::include_modules!();
-
 mod file_data;
 mod volume;
 
@@ -10,6 +8,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging;
 use global_hotkey::hotkey::HotKey;
 
 use crate::core::{application::setting::app_config::AppConfig, util::file_util};
+use crate::ui::SearchWindow;
 use crate::module::{Module, ModuleMessage};
 use file_data::FileData;
 

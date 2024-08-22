@@ -9,11 +9,8 @@ use i_slint_backend_winit::WinitWindowAccessor;
 use chrono;
 
 use crate::core::application::setting::app_config::AppConfig;
+use crate::ui::{PinWindow, Rect, Direction, PinState};
 use super::ShotterMessage;
-use super::PinWindow;
-use super::Rect;
-use super::Direction;
-use super::PinState;
 
 pub struct PinWin {
     _img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
