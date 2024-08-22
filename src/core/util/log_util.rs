@@ -42,6 +42,7 @@ pub fn log_error(message: String)  {
     log_error_without_log(&error_content);
 }
 
+#[allow(dead_code)]
 pub fn log_info(message: String)  {
     let now_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let error_content = format!("{now_time} [info] {message}");
