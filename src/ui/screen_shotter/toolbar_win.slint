@@ -83,23 +83,28 @@ export component ToolbarWindow inherits BaseWindow {
     callback click(int, int);
     callback key_released(KeyEvent);
 
-    focus_scope := FocusScope {
-        HorizontalLayout {
-            spacing: 0;
-            padding: 0;
-
-            for tool in root.tools: ToolBtn{
-                width: root.height;
-                height: root.height;
-                icon: tool.icon;
-                active: root.active_name == tool.name;
-                clicked => { 
-                    if tool.type == ToolType.Trigger {
-                        root.active_name = root.active_name == tool.name ? "" : tool.name;
+    Rectangle {
+        background: Palette.background;
+        focus_scope := FocusScope {
+            HorizontalLayout {
+                spacing: 0;
+                padding: 0;
+    
+                for tool in root.tools: ToolBtn{
+                    width: root.height;
+                    height: root.height;
+                    icon: tool.icon;
+                    active: root.active_name == tool.name;
+                    clicked => { 
+                        if tool.type == ToolType.Trigger {
+                            root.active_name = root.active_name == tool.name ? "" : tool.name;
+                        }
+                        root.click(root.id, tool.id); 
                     }
-                    root.click(root.id, tool.id); 
                 }
             }
         }
     }
+
+
 }
