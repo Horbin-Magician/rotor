@@ -88,7 +88,7 @@ fn app_loop (
         crossbeam::select! {
             recv(GlobalHotKeyEvent::receiver()) -> event => {
                 let event = event.unwrap();
-                if event.state == HotKeyState::Released {
+                if event.state == HotKeyState::Pressed {
                     module_ports[&event.id].send(ModuleMessage::Trigger).unwrap();
                 }
             }
