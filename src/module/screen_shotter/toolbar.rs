@@ -1,5 +1,5 @@
 use std::sync::mpsc::Sender;
-use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor, winit::window::WindowLevel};
+use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use slint::ComponentHandle;
 
 use crate::{core::application::setting::app_config::AppConfig, ui::ToolbarWindow};
