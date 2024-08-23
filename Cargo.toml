@@ -1,6 +1,6 @@
 [package]
 name = "rotor"
-version = "0.5.9"
+version = "0.6.0"
 authors = ["Horbin"]
 edition = "2021"
 license = "MIT"
