@@ -10,6 +10,8 @@ use crate::core::application::Application;
 
 fn main() {
 
+    // slint::init_translations!(concat!("./assets/", "/lang/"));
+
     if sys_util::run_as_admin() {return;}
 
     file_util::del_useless_files(); // del tmp and .fd files

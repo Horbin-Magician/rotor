@@ -1,0 +1,255 @@
+
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2024-08-23 07:04+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: \n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/ui/screen_shotter/mask_win.slint:142
+msgctxt "MaskWindow"
+msgid "宽{}×高{}"
+msgstr ""
+
+#: src/ui/screen_shotter/mask_win.slint:146
+msgctxt "MaskWindow"
+msgid "左键划选区域"
+msgstr ""
+
+#: src/ui/screen_shotter/mask_win.slint:158
+msgctxt "MaskWindow"
+msgid "Z键切换 C键复制"
+msgstr ""
+
+#: src/ui/screen_shotter/pin_win.slint:16
+msgctxt "PinWindow"
+msgid "小云视窗"
+msgstr ""
+
+#: src/ui/screen_shotter/pin_win.slint:86
+msgctxt "PinWindow"
+msgid "M {} {}"
+msgstr ""
+
+#: src/ui/screen_shotter/pin_win.slint:88
+msgctxt "PinWindow"
+msgid "{} L {} {}"
+msgstr ""
+
+#. { id: 4, icon: @image-url("./assets/icon/draw.svg"), name: @tr("绘制"), type: ToolType.Trigger },
+#: src/ui/screen_shotter/toolbar_win.slint:66
+msgctxt "ToolbarWindow"
+msgid "最小化"
+msgstr ""
+
+#: src/ui/screen_shotter/toolbar_win.slint:67
+msgctxt "ToolbarWindow"
+msgid "保存"
+msgstr ""
+
+#: src/ui/screen_shotter/toolbar_win.slint:68
+msgctxt "ToolbarWindow"
+msgid "关闭"
+msgstr ""
+
+#: src/ui/screen_shotter/toolbar_win.slint:69
+msgctxt "ToolbarWindow"
+msgid "复制"
+msgstr ""
+
+#: src/ui/searcher/searcher_win.slint:37
+msgctxt "SearchWindow"
+msgid "小云搜索"
+msgstr ""
+
+#: src/ui/searcher/searcher_win.slint:60
+msgctxt "SearchWindow"
+msgid "请输入需要搜索的内容"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:18
+msgctxt "BaseSettingPage"
+msgid "通用"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:26
+msgctxt "BaseSettingPage"
+msgid "语言"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:42
+msgctxt "BaseSettingPage"
+msgid "主题"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:49
+msgctxt "BaseSettingPage"
+msgid "跟随系统"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:49
+msgctxt "BaseSettingPage"
+msgid "暗色"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:49
+msgctxt "BaseSettingPage"
+msgid "亮色"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:60
+msgctxt "BaseSettingPage"
+msgid "开机自启"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:76
+msgctxt "BaseSettingPage"
+msgid "当前版本：{}"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:81
+msgctxt "BaseSettingPage"
+msgid "检查更新"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:89
+msgctxt "BaseSettingPage"
+msgid "全局快捷键"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:97
+msgctxt "BaseSettingPage"
+msgid "开始搜索"
+msgstr ""
+
+#: src/ui/setting/pages/base_page.slint:138
+msgctxt "BaseSettingPage"
+msgid "开始截图"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:13
+msgctxt "ScreenShotterSettingPage"
+msgid "快捷键"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:21
+msgctxt "ScreenShotterSettingPage"
+msgid "关闭贴图"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:59
+msgctxt "ScreenShotterSettingPage"
+msgid "复制贴图"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:100
+msgctxt "ScreenShotterSettingPage"
+msgid "保存贴图"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:141
+msgctxt "ScreenShotterSettingPage"
+msgid "隐藏贴图"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:183
+msgctxt "ScreenShotterSettingPage"
+msgid "其他"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:191
+msgctxt "ScreenShotterSettingPage"
+msgid "默认存储路径"
+msgstr ""
+
+#: src/ui/setting/pages/screen_shotter_page.slint:200
+msgctxt "ScreenShotterSettingPage"
+msgid "与上次路径一致"
+msgstr ""
+
+#: src/ui/setting/pages/search_page.slint:6
+msgctxt "SearchSettingPage"
+msgid "其他"
+msgstr ""
+
+#: src/ui/setting/pages/search_page.slint:14
+msgctxt "SearchSettingPage"
+msgid "排除路径"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:11
+msgctxt "SettingWindow"
+msgid "设置"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:73
+msgctxt "SettingWindow"
+msgid "基础"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:74
+msgctxt "SettingWindow"
+msgid "搜索"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:75
+msgctxt "SettingWindow"
+msgid "截图"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:154
+msgctxt "SettingWindow"
+msgid "当前已是最新版本"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:162 src/ui/setting/setting_win.slint:229 src/ui/setting/setting_win.slint:256
+msgctxt "SettingWindow"
+msgid "确定"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:175
+msgctxt "SettingWindow"
+msgid "当前版本: {}"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:180
+msgctxt "SettingWindow"
+msgid "最新版本: {}"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:185
+msgctxt "SettingWindow"
+msgid "是否更新至最新版本？"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:195
+msgctxt "SettingWindow"
+msgid "是"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:201
+msgctxt "SettingWindow"
+msgid "否"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:213
+msgctxt "SettingWindow"
+msgid "获取版本信息失败"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:219 src/ui/setting/setting_win.slint:246
+msgctxt "SettingWindow"
+msgid "请检查网络环境"
+msgstr ""
+
+#: src/ui/setting/setting_win.slint:241
+msgctxt "SettingWindow"
+msgid "更新失败"
+msgstr ""
+
