@@ -1,5 +1,5 @@
 use std::sync::mpsc::Sender;
-use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
+use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor, winit::window::WindowLevel};
 use slint::ComponentHandle;
 
 use crate::{core::application::setting::app_config::AppConfig, ui::ToolbarWindow};
@@ -39,10 +39,14 @@ impl Toolbar {
                 let y_pos = y;
                 toolbar_window.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos + 2)));
                 toolbar_window.set_pin_focused(true);
-                toolbar_window.set_id(id);
 
+                let old_id = toolbar_window.get_id();
                 if !toolbar_window.window().is_visible() {
                     toolbar_window.show().unwrap();
+                } else if old_id != id {
+                    toolbar_window.hide().unwrap(); // Prevents being blocked by other pin_wins
+                    toolbar_window.show().unwrap();
+                    toolbar_window.set_id(id);
                 }
             });
         }
