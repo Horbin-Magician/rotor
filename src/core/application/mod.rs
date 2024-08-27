@@ -6,10 +6,8 @@ use std::collections::HashMap;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use global_hotkey::hotkey::HotKey;
 use slint;
-use slint::ComponentHandle;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
-use crate::ui::SettingWindow;
 use crate::module::{setting::Setting, screen_shotter::ScreenShotter, searcher::Searcher, Module, ModuleMessage};
 use system_tray::SystemTray;
 
@@ -21,7 +19,6 @@ pub enum AppMessage {
 
 pub struct Application {
     _system_tray: SystemTray,
-    _setting: Setting,
     _modules: Vec<Box<dyn Module>>,
     _msg_sender: Sender<AppMessage>,
 }
@@ -32,32 +29,28 @@ impl Application {
         let hotkey_manager_rc: Arc<Mutex<GlobalHotKeyManager>> = Arc::new(Mutex::new(GlobalHotKeyManager::new().unwrap())); // initialize the hotkeys manager
 
         let _system_tray = SystemTray::new(_msg_sender.clone());
-        let _setting: Setting = Setting::new(_msg_sender.clone());
 
         let mut _modules: Vec<Box<dyn Module>> = Vec::new();
         _modules.push(Box::new(Searcher::new()));
         _modules.push(Box::new(ScreenShotter::new()));
+        _modules.push(Box::new(Setting::new(_msg_sender.clone())));
 
-        let mut module_profiles: HashMap<String, (HotKey, mpsc::Sender<ModuleMessage>)> = HashMap::new();
+        let mut module_profiles: HashMap<String, (Option<HotKey>, mpsc::Sender<ModuleMessage>)> = HashMap::new();
         for module in &mut _modules {
-            if let Some(hotkey) = module.get_hotkey() {
-                module_profiles.insert(module.flag().to_string(), (hotkey, module.run()));
-            }
+            let hotkey = module.get_hotkey();
+            module_profiles.insert(module.flag().to_string(), (hotkey, module.run()));
         }
 
-        let setting_win = _setting.setting_win.as_weak();
         std::thread::spawn(move || {
             app_loop(
                 hotkey_manager_rc,
                 msg_receiver,
-                setting_win,
                 module_profiles,
             );
         });
 
         Application {
             _system_tray,
-            _setting,
             _modules,
             _msg_sender,
         }
@@ -67,19 +60,20 @@ impl Application {
 fn app_loop (
     hotkey_manager_rc: Arc<Mutex<GlobalHotKeyManager>>,
     msg_receiver: Receiver<AppMessage>,
-    setting_win: slint::Weak<SettingWindow>,
-    mut module_profiles: HashMap<String, (HotKey, mpsc::Sender<ModuleMessage>)>,
+    mut module_profiles: HashMap<String, (Option<HotKey>, mpsc::Sender<ModuleMessage>)>,
 ) {
     let mut module_ports: HashMap<u32, mpsc::Sender<ModuleMessage>> = HashMap::new();
     let cloned_module_profiles = module_profiles.clone();
     for (_, (hotkey, runner)) in cloned_module_profiles {
-        let hotkey_clone = hotkey.clone();
-        let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
-        slint::invoke_from_event_loop(move || {
-            let hotkey_manager = hotkey_manager_rc_clone.lock().unwrap();
-            hotkey_manager.register(hotkey_clone).expect("Error in register hotkey"); // TODO deal with the error
-        }).unwrap();
-        module_ports.insert(hotkey.id(), runner.clone());
+        if let Some(hotkey) = hotkey {
+            let hotkey_clone = hotkey.clone();
+            let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
+            slint::invoke_from_event_loop(move || {
+                let hotkey_manager = hotkey_manager_rc_clone.lock().unwrap();
+                hotkey_manager.register(hotkey_clone).expect("Error in register hotkey"); // TODO deal with the error
+            }).unwrap();
+            module_ports.insert(hotkey.id(), runner.clone());
+        }
     }
 
     loop {
@@ -97,12 +91,10 @@ fn app_loop (
                         break;
                     },
                     AppMessage::ShowSetting => {
-                        setting_win.clone().upgrade_in_event_loop(move |win| {
-                            win.show().unwrap();
-                        }).unwrap();
+                        module_profiles.get("setting").unwrap().1.send(ModuleMessage::Trigger).unwrap();
                     },
                     AppMessage::ChangeHotkey(key, value) => {
-                        if let Some((hotkey, runner)) = module_profiles.remove(&key) {
+                        if let Some((Some(hotkey), runner)) = module_profiles.remove(&key) {
                             let msg_sender = module_ports.remove(&hotkey.id()).unwrap();
                             
                             let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
@@ -118,7 +110,7 @@ fn app_loop (
                                 hotkey_manager.register(hotkey).expect("Error in register hotkey"); // TODO deal with the error
                             }).unwrap();
                             
-                            module_profiles.insert(key, (hotkey, runner));
+                            module_profiles.insert(key, (Some(hotkey), runner));
                             module_ports.insert(hotkey.id(), msg_sender);
                         }
                     }

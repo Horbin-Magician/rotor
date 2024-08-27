@@ -1,4 +1,6 @@
-use crossbeam::channel::Sender;
+use std::sync::mpsc;
+use crossbeam;
+use global_hotkey::hotkey::HotKey;
 use i_slint_backend_winit::WinitWindowAccessor;
 use slint::ComponentHandle;
 use windows_sys::Win32::UI::WindowsAndMessaging;
@@ -6,14 +8,40 @@ use windows_sys::Win32::UI::WindowsAndMessaging;
 use crate::core::application::{AppMessage, app_config::AppConfig};
 use crate::util::net_util;
 use crate::ui::SettingWindow;
+use crate::module::{Module, ModuleMessage};
 
 
 pub struct Setting {
     pub setting_win: SettingWindow,
 }
 
+impl Module for Setting{
+    fn flag(&self) -> &str { "setting" }
+
+    fn run(&self) -> mpsc::Sender<ModuleMessage> {
+        let (msg_sender, msg_reciever) = mpsc::channel();
+        let search_win_clone = self.setting_win.as_weak();
+        std::thread::spawn(move || {
+            loop {
+                match msg_reciever.recv().unwrap() {
+                    ModuleMessage::Trigger => {
+                        search_win_clone.upgrade_in_event_loop(move |win| {
+                            win.show().unwrap();
+                        }).unwrap();
+                    }
+                }
+            }
+        });
+        msg_sender
+    }
+
+    fn get_hotkey(&mut self) -> Option<HotKey> {
+        return None;
+    }
+}
+
 impl Setting {
-    pub fn new( msg_sender: Sender<AppMessage> ) -> Setting {
+    pub fn new( msg_sender: crossbeam::channel::Sender<AppMessage> ) -> Setting {
         let setting_win = SettingWindow::new().unwrap();
         {
             let mut app_config = AppConfig::global().lock().unwrap();
