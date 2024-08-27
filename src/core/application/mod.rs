@@ -1,4 +1,4 @@
-pub mod setting;
+pub mod app_config;
 mod system_tray;
 
 use std::sync::{mpsc, Arc, Mutex};
@@ -10,10 +10,8 @@ use slint::ComponentHandle;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::ui::SettingWindow;
-use crate::module::{searcher::Searcher, Module, ModuleMessage};
-use crate::module::screen_shotter::ScreenShotter;
+use crate::module::{setting::Setting, screen_shotter::ScreenShotter, searcher::Searcher, Module, ModuleMessage};
 use system_tray::SystemTray;
-use setting::Setting;
 
 pub enum AppMessage {
     Quit,

@@ -1,7 +1,8 @@
+pub mod setting;
 pub mod searcher;
 pub mod screen_shotter;
-use std::sync::mpsc::Sender;
 
+use std::sync::mpsc::Sender;
 use global_hotkey::hotkey::HotKey;
 
 

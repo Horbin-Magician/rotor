@@ -11,7 +11,7 @@ use xcap::Monitor;
 use windows_sys::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
-use crate::core::application::setting::app_config::AppConfig;
+use crate::core::application::app_config::AppConfig;
 use crate::ui::{MaskWindow, PinWindow, ToolbarWindow};
 use super::{Module, ModuleMessage};
 use pin_win::PinWin;

@@ -2,7 +2,7 @@ use std::sync::mpsc::Sender;
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use slint::ComponentHandle;
 
-use crate::{core::application::setting::app_config::AppConfig, ui::ToolbarWindow};
+use crate::{core::application::app_config::AppConfig, ui::ToolbarWindow};
 use super::{PinOperation, ShotterMessage};
 
 pub struct Toolbar {
