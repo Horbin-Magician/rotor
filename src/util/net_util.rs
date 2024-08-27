@@ -9,7 +9,7 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::process::Command;
 use std::os::windows::process::CommandExt;
-use crate::core::util::file_util::unzip;
+use crate::util::file_util::unzip;
 
 #[derive(Deserialize)]
 pub struct VersionInfo {

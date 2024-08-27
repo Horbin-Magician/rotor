@@ -3,9 +3,10 @@
 mod core;
 mod ui;
 mod module;
+mod util;
 
-use crate::core::util::sys_util;
-use crate::core::util::file_util;
+use crate::util::sys_util;
+use crate::util::file_util;
 use crate::core::application::Application;
 
 fn main() {
