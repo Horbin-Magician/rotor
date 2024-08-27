@@ -7,7 +7,7 @@ use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWin
 use windows_sys::Win32::UI::WindowsAndMessaging;
 use global_hotkey::hotkey::HotKey;
 
-use crate::core::application::setting::app_config::AppConfig;
+use crate::core::application::app_config::AppConfig;
 use crate::util::file_util;
 use crate::ui::SearchWindow;
 use crate::module::{Module, ModuleMessage};

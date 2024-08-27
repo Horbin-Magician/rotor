@@ -8,7 +8,7 @@ use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel, Compon
 use i_slint_backend_winit::WinitWindowAccessor;
 use chrono;
 
-use crate::core::application::setting::app_config::AppConfig;
+use crate::core::application::app_config::AppConfig;
 use crate::ui::{PinWindow, Rect, Direction, PinState};
 use super::ShotterMessage;
 
