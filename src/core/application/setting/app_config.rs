@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use serde::{Serialize, Deserialize};
 use global_hotkey::hotkey::HotKey;
 
-use crate::core::util::sys_util;
+use crate::util::sys_util;
 use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -6,7 +6,7 @@ use slint::ComponentHandle;
 use windows_sys::Win32::UI::WindowsAndMessaging;
 
 use app_config::AppConfig;
-use crate::core::util::net_util;
+use crate::util::net_util;
 use crate::ui::SettingWindow;
 use super::AppMessage;
 
