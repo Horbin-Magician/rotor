@@ -47,7 +47,7 @@ export component BaseSettingPage inherits Page {
                     width: 150px;
                     height: 30px;
                     model: [@tr("跟随系统"), @tr("暗色"), @tr("亮色")];
-                    current-index: root.theme;
+                    current-index <=> root.theme;
                     selected(string) => {
                         root.theme_changed(self.current-index);
                     }
