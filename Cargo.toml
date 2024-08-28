@@ -45,6 +45,7 @@ features = [
     "Win32_Security",
     "Win32_System_IO",
     "Win32_System_Ioctl",
+    "Win32_Graphics_Dwm",
 ]
 
 [profile.release]

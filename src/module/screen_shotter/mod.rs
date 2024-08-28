@@ -5,11 +5,12 @@ use arboard::Clipboard;
 use image::{self, GenericImageView, Rgba};
 use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
-use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
+use i_slint_backend_winit::{winit::{platform::windows::WindowExtWindows, raw_window_handle::{HasWindowHandle, RawWindowHandle}}, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
 use windows_sys::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 
 use crate::core::application::app_config::AppConfig;
 use crate::ui::{MaskWindow, PinWindow, ToolbarWindow};
@@ -71,6 +72,18 @@ impl ScreenShotter{
         let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
         mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
+            let handle = winit_win.window_handle().unwrap();
+            if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
+                let disable: i32 = 1;
+                unsafe {
+                    DwmSetWindowAttribute(
+                        win32_handle.hwnd.into(),
+                        DWMWA_TRANSITIONS_FORCEDISABLED,
+                        &disable as *const _ as *const _,
+                        std::mem::size_of_val(&disable) as u32,
+                    );
+                }
+            }
         });
 
         let max_pin_win_id: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
