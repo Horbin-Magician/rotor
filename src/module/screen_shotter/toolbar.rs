@@ -1,5 +1,7 @@
 use std::sync::mpsc::Sender;
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
+use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 use slint::ComponentHandle;
 
 use crate::{core::application::app_config::AppConfig, ui::ToolbarWindow};
@@ -12,6 +14,21 @@ pub struct Toolbar {
 impl Toolbar {
     pub fn new(message_sender: Sender<ShotterMessage>) -> Toolbar {
         let toolbar_window = ToolbarWindow::new().unwrap();
+        toolbar_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+            let handle = winit_win.window_handle().unwrap();
+            if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
+                let disable: i32 = 1;
+                unsafe {
+                    DwmSetWindowAttribute(
+                        win32_handle.hwnd.into(),
+                        DWMWA_TRANSITIONS_FORCEDISABLED,
+                        &disable as *const _ as *const _,
+                        std::mem::size_of_val(&disable) as u32,
+                    );
+                }
+            }
+        });
+
         {
             let mut app_config = AppConfig::global().lock().unwrap();
             toolbar_window.invoke_change_theme(app_config.get_theme() as i32);

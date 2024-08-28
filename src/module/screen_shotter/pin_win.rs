@@ -6,6 +6,8 @@ use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
 use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel, ComponentHandle};
 use i_slint_backend_winit::WinitWindowAccessor;
+use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 use chrono;
 
 use crate::core::application::app_config::AppConfig;
@@ -21,6 +23,21 @@ pub struct PinWin {
 impl PinWin {
     pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, offset_x: i32, offset_y: i32, true_scale_factor: f32, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
         let pin_window = PinWindow::new().unwrap();
+        pin_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+            let handle = winit_win.window_handle().unwrap();
+            if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
+                let disable: i32 = 1;
+                unsafe {
+                    DwmSetWindowAttribute(
+                        win32_handle.hwnd.into(),
+                        DWMWA_TRANSITIONS_FORCEDISABLED,
+                        &disable as *const _ as *const _,
+                        std::mem::size_of_val(&disable) as u32,
+                    );
+                }
+            }
+        });
+
         let border_width = pin_window.get_win_border_width();
 
         let scale_factor = pin_window.window().scale_factor();
