@@ -15,14 +15,13 @@ export component MaskWindow inherits BaseWindow {
     property <Point> mouse_move_pos;
 
     in property <image> bac_image;
+    in property <bool> color_type_Dec: true;
+    in property <string> color_str: "RGB:(???,???,???)";
     
     in-out property <bool> mouse_left_press;
     in-out property <float> scale_factor: 0;
     in-out property <int> offset_x;
     in-out property <int> offset_y;
-    
-    in-out property <bool> color_type_Dec: true;
-    in-out property <string> color_str: "RGB:(???,???,???)";
     
     callback shot();
     callback key_released(KeyEvent);

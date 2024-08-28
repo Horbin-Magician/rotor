@@ -1,13 +1,14 @@
 import { Palette } from "std-widgets.slint";
 
 component TitleBtn inherits Rectangle {
-    in property<image> img <=> image.source;
-    in property<color> hover_color;
-    callback clicked <=> touch.clicked;
-
     width: 40px;
     background: transparent;
     animate background { duration: 150ms; }
+
+    in property<image> img <=> image.source;
+    in property<color> hover_color;
+    
+    callback clicked <=> touch.clicked;
 
     touch := TouchArea {
         image := Image {
@@ -28,13 +29,12 @@ component TitleBtn inherits Rectangle {
 }
 
 export component TitleBar inherits Rectangle {
-
-    callback minimize <=> min_btn.clicked;
-    callback close <=> close_btn.clicked;
-
     height: 40px;
     width: 376px;
     background: Palette.background.darker(0.1);
+
+    callback minimize <=> min_btn.clicked;
+    callback close <=> close_btn.clicked;
 
     HorizontalLayout {
         alignment: stretch;
