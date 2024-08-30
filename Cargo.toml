@@ -10,7 +10,7 @@ build = "build.rs"
 
 [build-dependencies]
 embed-resource = "2.2.0"
-slint-build = "1.6"
+slint-build = "1.7.2"
 
 [dependencies]
 slint = { version = "1.7.2", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia-opengl"]}
