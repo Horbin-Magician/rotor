@@ -60,7 +60,10 @@ impl PinWin {
                 let mut img_width = pin_window_clone.get_img_width();
                 let mut img_height = pin_window_clone.get_img_height();
                 let zoom_factor = pin_window_clone.get_zoom_factor() as f32 / 100.;
-
+                
+                let limit_px = 5.;
+                let img_width_px = img_width * zoom_factor;
+                let img_height_px = img_height * zoom_factor;
                 match mouse_direction {
                     Direction::Center => {
                         let is_stick_x = pin_window_clone.get_is_stick_x();
@@ -76,51 +79,63 @@ impl PinWin {
                         if is_stick_x && is_stick_y { return; }
                     },
                     Direction::Upper => {
+                        if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
                         img_y += delta_y / zoom_factor;
                         img_height -= delta_y / zoom_factor;
                         delta_x = 0.;
                     },
                     Direction::Lower => {
+                        if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
                         pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
                         delta_x = 0.;
                         delta_y = 0.;
                     },
                     Direction::Left => {
+                        if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
                         img_x += delta_x / zoom_factor;
                         img_width -= delta_x / zoom_factor;
                         delta_y = 0.;
                     },
                     Direction::Right => {
+                        if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
                         pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
                         delta_x = 0.;
                         delta_y = 0.;
                     },
                     Direction::LeftUpper => {
+                        if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
+                        if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
                         img_x += delta_x / zoom_factor;
                         img_y += delta_y / zoom_factor;
                         img_width -= delta_x / zoom_factor;
                         img_height -= delta_y / zoom_factor;
                     },
                     Direction::LeftLower => {
+                        if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
+                        if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
                         img_x += delta_x / zoom_factor;
                         img_width -= delta_x / zoom_factor;
                         pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
                         delta_y = 0.;
                     },
                     Direction::RightUpper => {
+                        if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
+                        if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
                         img_y += delta_y / zoom_factor;
                         pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
                         img_height -= delta_y / zoom_factor;
                         delta_x = 0.;
                     },
                     Direction::RightLower => {
+                        if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
+                        if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
                         pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
                         pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
                         delta_x = 0.;
                         delta_y = 0.;
                     },
                 }
-
+                
                 let change_pos_x = now_pos.x + delta_x;
                 let change_pos_y = now_pos.y + delta_y;
                 pin_window_clone.set_img_x(img_x);
