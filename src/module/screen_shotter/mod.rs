@@ -195,6 +195,7 @@ impl ScreenShotter{
             let pin_windows_clone = pin_windows.clone();
             let message_sender_clone = message_sender.clone();
             mask_win.on_new_pin_win(move |rect| {
+                if (rect.width * rect.height) < 1. { return; } // ignore too small rect
                 let mask_win = mask_win_clone.unwrap();
                 let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
                 let message_sender_clone = message_sender_clone.clone();
