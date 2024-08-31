@@ -38,6 +38,10 @@ impl Module for Setting{
     fn get_hotkey(&mut self) -> Option<HotKey> {
         return None;
     }
+
+    fn clean(&self) {
+        // nothing need to clean until now
+    }
 }
 
 impl Setting {
