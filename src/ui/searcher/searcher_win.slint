@@ -10,6 +10,8 @@ struct SearchResult_slint {
 }
 
 export component SearchWindow inherits BaseWindow {
+    background: transparent;
+    
     public function change_theme(theme: int) { 
         if theme == 0 {
             Palette.color-scheme = ColorScheme.unknown;
