@@ -14,4 +14,5 @@ pub trait Module {
     fn flag(&self) -> &str;
     fn run(&self) -> Sender<ModuleMessage>;
     fn get_hotkey(&mut self) -> Option<HotKey>;
+    fn clean(&self);
 }

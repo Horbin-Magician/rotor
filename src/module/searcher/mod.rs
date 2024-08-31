@@ -55,6 +55,10 @@ impl Module for Searcher{
         let app_config = AppConfig::global().lock().unwrap();
         app_config.get_hotkey_from_str("search")
     }
+
+    fn clean(&self) {
+        // nothing need to clean until now
+    }
 }
 
 impl Searcher {

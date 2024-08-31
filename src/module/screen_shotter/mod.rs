@@ -35,10 +35,11 @@ pub enum ShotterMessage {
 }
 
 pub struct ScreenShotter {
-    pub mask_win: MaskWindow,
-    _max_pin_win_id: Arc<Mutex<u32>>,
-    _pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
+    _mask_win: MaskWindow,
     _toolbar: Toolbar,
+    _max_pin_win_id: Arc<Mutex<u32>>,
+    _pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>,
+    _pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
 }
 
 impl Module for ScreenShotter {
@@ -46,7 +47,7 @@ impl Module for ScreenShotter {
 
     fn run(&self) -> Sender<ModuleMessage> {
         let (msg_sender, msg_reciever) = mpsc::channel();
-        let mask_win_clone = self.mask_win.as_weak();
+        let mask_win_clone = self._mask_win.as_weak();
         std::thread::spawn(move || {
             loop {
                 match msg_reciever.recv().unwrap() {
@@ -64,6 +65,12 @@ impl Module for ScreenShotter {
     fn get_hotkey(&mut self) -> Option<HotKey> {
         let app_config = AppConfig::global().lock().unwrap();
         app_config.get_hotkey_from_str("screenshot")
+    }
+
+    fn clean(&self) {
+        (*self._max_pin_win_id.lock().unwrap()) = 0;
+        self._pin_windows.lock().unwrap().clear();
+        self._pin_wins.lock().unwrap().clear();
     }
 }
 
@@ -234,7 +241,7 @@ impl ScreenShotter{
                 if let Ok(message) = message_reciever.recv() {
                     match message {
                         ShotterMessage::Move(id) => {
-                            ScreenShotter::pin_win_move_hander(pin_windows.clone(), id, toolbar_window_clone.clone());
+                            ScreenShotter::pin_win_move_hander(pin_windows_clone.clone(), id, toolbar_window_clone.clone());
                         },
                         ShotterMessage::Close(id) => {
                             pin_windows_clone.lock().unwrap().remove(&id);
@@ -295,10 +302,11 @@ impl ScreenShotter{
         });
 
         ScreenShotter{
-            mask_win,
-            _max_pin_win_id: max_pin_win_id,
-            _pin_wins: pin_wins,
+            _mask_win: mask_win,
             _toolbar: toolbar,
+            _max_pin_win_id: max_pin_win_id,
+            _pin_windows: pin_windows,
+            _pin_wins: pin_wins,
         }
     }
 
