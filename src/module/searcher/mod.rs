@@ -22,6 +22,7 @@ pub enum SearcherMessage {
 
 pub struct Searcher {
     pub search_win: SearchWindow,
+    searcher_msg_sender: mpsc::Sender<SearcherMessage>,
 }
 
 impl Module for Searcher{
@@ -30,11 +31,14 @@ impl Module for Searcher{
     fn run(&self) -> Sender<ModuleMessage> {
         let (msg_sender, msg_reciever) = mpsc::channel();
         let search_win_clone = self.search_win.as_weak();
+        let searcher_msg_sender_clone = self.searcher_msg_sender.clone();
         std::thread::spawn(move || {
             loop {
                 match msg_reciever.recv().unwrap() {
                     ModuleMessage::Trigger => {
+                        let searcher_msg_sender_clone_clone = searcher_msg_sender_clone.clone();
                         search_win_clone.upgrade_in_event_loop(move |win| {
+                            searcher_msg_sender_clone_clone.send(SearcherMessage::Update).unwrap();
                             win.show().unwrap();
                             win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                 winit_win.focus_window();
@@ -143,8 +147,6 @@ impl Searcher {
                     }
                     search_win.hide().unwrap();
                     searcher_msg_sender_clone.send(SearcherMessage::Release).unwrap();
-                } else if has_focus && search_win.window().is_visible() {
-                    searcher_msg_sender_clone.send(SearcherMessage::Update).unwrap();
                 }
                 true
             });
@@ -204,6 +206,7 @@ impl Searcher {
 
         Searcher {
             search_win,
+            searcher_msg_sender,
         }
     }
 }
