@@ -22,7 +22,7 @@ export component SearchWindow inherits BaseWindow {
         }
     }
 
-    in property <float> ui_width;
+    in property <length> ui_width: 500px;
     in property <[SearchResult_slint]> search_result;
     in property <int> active_id;
 
@@ -39,7 +39,7 @@ export component SearchWindow inherits BaseWindow {
     title: @tr("小云搜索");
     forward-focus: input;
     default-font-size: 18px;
-    width: ui_width * 1px;
+    width: ui_width;
     always-on-top: lose_focus_trick(input.has-focus || key-handler.has-focus);
 
     VerticalBox {

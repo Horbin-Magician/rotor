@@ -38,6 +38,18 @@ impl Module for Searcher{
                     ModuleMessage::Trigger => {
                         let searcher_msg_sender_clone_clone = searcher_msg_sender_clone.clone();
                         search_win_clone.upgrade_in_event_loop(move |win| {
+                            // Set window center
+                            let width = win.get_ui_width();
+                            let physical_width: f32;
+                            let physical_height: f32;
+                            unsafe{
+                                physical_width = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
+                                physical_height = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
+                            }
+                            let x_pos = ((physical_width - width * win.window().scale_factor()) * 0.5) as i32;
+                            let y_pos = (physical_height * 0.3) as i32;
+                            win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
+                            
                             searcher_msg_sender_clone_clone.send(SearcherMessage::Update).unwrap();
                             win.show().unwrap();
                             win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
@@ -73,19 +85,6 @@ impl Searcher {
         search_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
         });
-
-        let width: f32 = 500.;
-        search_win.set_ui_width(width);
-
-        let x_screen: f32;
-        let y_screen: f32;
-        unsafe{
-            x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
-            y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
-        }
-        let x_pos = ((x_screen - width * search_win.window().scale_factor()) * 0.5) as i32;
-        let y_pos = (y_screen * 0.3) as i32;
-        search_win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
 
         let search_result_model = Rc::new(slint::VecModel::from(vec![]));
         search_win.set_search_result(search_result_model.clone().into());
