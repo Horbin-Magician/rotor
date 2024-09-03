@@ -211,11 +211,13 @@ impl Volume {
         let str_lower = str.to_lowercase();
 
         for c in str_lower.chars() {
-            if c.is_ascii_lowercase() {
+            if c == '*' { 
+                continue; // Reserved for wildcard
+            } else if c.is_ascii_lowercase() {
                 address |= 1 << (c as u32 - 97);
             } else if ('0'..='9').contains(&c) {
                 address |= 1 << 26;
-            } else if c > 127 as char {
+            } else if c < 127 as char {
                 address |= 1 << 27;
             } else {
                 address |= 1 << 28;
@@ -316,10 +318,13 @@ impl Volume {
 
     // return true if contain query
     fn match_str(contain: &str, query_lower: &String) -> bool {
-        if contain.to_lowercase().contains(query_lower) {
-            return true;
+        let lower_contain = contain.to_lowercase();
+        for s in query_lower.split('*') { // for wildcard
+            if !lower_contain.contains(s) {
+                return false;
+            }
         }
-        false
+        true
     }
 
     // searching

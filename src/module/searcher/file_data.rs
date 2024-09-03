@@ -39,9 +39,6 @@ pub struct FileData {
 
 impl FileData {
     pub fn new(search_win: slint::Weak<SearchWindow>) -> FileData {
-
-        
-
         FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
@@ -162,7 +159,7 @@ impl FileData {
             for (id, item) in update_result.into_iter().enumerate() {
                 let icon = 
                     file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
-                    .unwrap_or_else(|| slint::Image::load_from_path(std::path::Path::new("./assets/logo.png")).unwrap());
+                    .unwrap_or_else(|| slint::Image::default());
                 result_list.push(
                     SearchResult_slint { 
                         id: id as i32,
