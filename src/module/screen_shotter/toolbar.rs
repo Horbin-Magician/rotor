@@ -15,6 +15,7 @@ impl Toolbar {
     pub fn new(message_sender: Sender<ShotterMessage>) -> Toolbar {
         let toolbar_window = ToolbarWindow::new().unwrap();
         toolbar_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+            winit_win.set_skip_taskbar(true);
             let handle = winit_win.window_handle().unwrap();
             if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
                 let disable: i32 = 1;
@@ -29,23 +30,16 @@ impl Toolbar {
             }
         });
 
-        {
-            let mut app_config = AppConfig::global().lock().unwrap();
-            toolbar_window.invoke_change_theme(app_config.get_theme() as i32);
-            app_config.toolbar_win = Some(toolbar_window.as_weak());
-        }
-
-
-        toolbar_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
-            winit_win.set_skip_taskbar(true);
-        });
+        let mut app_config = AppConfig::global().lock().unwrap();
+        toolbar_window.invoke_change_theme(app_config.get_theme() as i32);
+        app_config.toolbar_win = Some(toolbar_window.as_weak());
 
         { // code for show
             let toolbar_window_clone = toolbar_window.as_weak();
             toolbar_window.on_show_pos(move |x, y, id| {
                 let toolbar_window = toolbar_window_clone.unwrap();
 
-                // fix the bug of error scale_factor TODO
+                // trick: fix the bug of error scale_factor
                 let unit_scale = (30. * toolbar_window.window().scale_factor()) as u32;
                 let tool_len = toolbar_window.get_tool_len();
                 let win_width = tool_len as u32 * unit_scale;

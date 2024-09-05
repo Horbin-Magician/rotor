@@ -327,14 +327,9 @@ impl PinWin {
 
         pin_window.show().unwrap();
         
-        // fix the bug of error scale_factor TODO
+        // trick: fix the bug of error scale_factor
         if scale_factor != true_scale_factor {
-            let pin_window_clone = pin_window.as_weak();
-            std::thread::spawn(move || {
-                pin_window_clone.upgrade_in_event_loop(move |pin_window| {
-                    pin_window.set_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
-                }).unwrap();
-            });
+            pin_window.set_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
         }
 
         PinWin {
