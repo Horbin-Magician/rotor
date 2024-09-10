@@ -35,8 +35,10 @@ pub fn del_useless_files() {
 }
 
 pub fn open_file(file_full_name: String) {
-    let mut cmd = Command::new("explorer.exe");
-    cmd.arg(file_full_name).spawn().unwrap();
+    Command::new("explorer.exe")
+        .arg(file_full_name)
+        .spawn()
+        .unwrap();
 }
 
 pub fn open_file_admin(file_full_name: String) {

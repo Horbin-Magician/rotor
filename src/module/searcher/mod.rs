@@ -210,7 +210,7 @@ impl Searcher {
                 let search_win = search_win_clone.unwrap();
                 let data = search_result_model_clone.row_data(id as usize);
                 if let Some(f) = data {
-                    file_util::open_file((f.path[0..(f.path.to_string().len()-1)]).to_string());
+                    file_util::open_file((f.path[..(f.path.len()-1)]).to_string());
                     search_win.hide().unwrap();
                 }
             });
