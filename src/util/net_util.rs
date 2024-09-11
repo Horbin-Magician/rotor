@@ -9,7 +9,8 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::process::Command;
 use std::os::windows::process::CommandExt;
-use crate::util::file_util::unzip;
+
+use crate::util::file_util;
 
 #[derive(Deserialize)]
 pub struct VersionInfo {
@@ -86,7 +87,7 @@ impl Updater {
                 zip_file.write_all(&content)?;
                 drop(zip_file);
                 
-                unzip(&zip_path, &zip_out_path)?;
+                file_util::unzip(&zip_path, &zip_out_path)?;
                 
                 let old_dic = app_path.to_str().unwrap();
                 let new_dic = zip_out_path.to_str().unwrap();
