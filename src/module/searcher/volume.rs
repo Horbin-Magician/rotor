@@ -217,7 +217,7 @@ impl Volume {
                 address |= 1 << (c as u32 - 97);
             } else if ('0'..='9').contains(&c) {
                 address |= 1 << 26;
-            } else if c < 127 as char {
+            } else if c < 127u8 as char {
                 address |= 1 << 27;
             } else {
                 address |= 1 << 28;
@@ -263,7 +263,7 @@ impl Volume {
             LowUsn: 0,
             HighUsn: self.ujd.NextUsn,
         };
-        let mut data: [u64; 0x10000] = [0; 0x10000];
+        let mut data = [0u64; 0x10000];
         let mut cb: u32 = 0;
         
         unsafe{
@@ -275,7 +275,7 @@ impl Volume {
                 data.as_mut_ptr() as *mut c_void, 
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
                 &mut cb as *mut u32, 
-                std::ptr::null_mut::<IO::OVERLAPPED>()
+                std::ptr::null_mut()
             ) != 0 {
                 let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
                 let data_end = data.as_ptr() as usize + cb as usize;
@@ -396,7 +396,7 @@ impl Volume {
             });
         };
 
-        let mut data: [i64; 0x10000] = [0; 0x10000];
+        let mut data = [0i64; 0x10000];
         let mut cb: u32 = 0;
         let mut rujd: Ioctl::READ_USN_JOURNAL_DATA_V0 = Ioctl::READ_USN_JOURNAL_DATA_V0 {
                 StartUsn: self.start_usn,
@@ -418,7 +418,7 @@ impl Volume {
                 data.as_mut_ptr() as *mut c_void, 
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
                 &mut cb as *mut u32, 
-                std::ptr::null_mut::<IO::OVERLAPPED>()
+                std::ptr::null_mut()
             ) != 0 {
                 if cb == 8 { break };
                 let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
@@ -431,18 +431,12 @@ impl Volume {
                     let file_name_list = std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
                     let file_name = String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
                     
-                    if record.Reason & Ioctl::USN_REASON_FILE_CREATE == Ioctl::USN_REASON_FILE_CREATE {
+                    if record.Reason & (Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_RENAME_NEW_NAME) != 0 {
                         self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
-                    }
-                    else if record.Reason & Ioctl::USN_REASON_FILE_DELETE == Ioctl::USN_REASON_FILE_DELETE {
+                    } else { // Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_OLD_NAME
                         self.file_map.remove(&record.FileReferenceNumber);
                     }
-                    else if record.Reason & Ioctl::USN_REASON_RENAME_NEW_NAME == Ioctl::USN_REASON_RENAME_NEW_NAME {
-                        self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
-                    }
-                    else if record.Reason & Ioctl::USN_REASON_RENAME_OLD_NAME == Ioctl::USN_REASON_RENAME_OLD_NAME {
-                        self.file_map.remove(&record.FileReferenceNumber);
-                    }
+
                     record_ptr = (record_ptr as usize + record.RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
                 
