@@ -1,11 +1,11 @@
-mod file_index;
+mod file_map;
 
 use std::{
     fs,
     env,
     error::Error,
     ffi::{c_void, CString},
-    io::{self, Write},
+    io,
     sync::mpsc,
 };
 
@@ -20,7 +20,7 @@ use windows_sys::Win32::{
 use std::time::SystemTime;
 #[allow(unused_imports)]
 use crate::util::log_util::{log_error, log_info};
-use file_index::{FileMap, File, make_filter};
+use file_map::FileMap;
 
 
 pub struct SearchResultItem {
@@ -39,16 +39,10 @@ impl Clone for SearchResultItem {
     }
 }
 
-pub struct SearchResult {
-    pub items: Vec<SearchResultItem>,
-    pub query: String,
-}
-
 pub struct Volume {
     pub drive: char,
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
-    start_usn: i64,
     file_map: FileMap,
     stop_receiver: mpsc::Receiver<()>,
     last_query: String,
@@ -61,7 +55,6 @@ impl Volume {
             drive,
             drive_frn: 0x5000000000005,
             file_map: FileMap::new(),
-            start_usn: 0x0,
             ujd: Ioctl::USN_JOURNAL_DATA_V0{ UsnJournalID: 0x0, FirstUsn: 0x0, NextUsn: 0x0, LowestValidUsn: 0x0, MaxUsn: 0x0, MaximumSize: 0x0, AllocationDelta: 0x0 },
             stop_receiver,
             last_query: String::new(),
@@ -115,7 +108,7 @@ impl Volume {
             )
         };
 
-        self.start_usn = self.ujd.NextUsn;
+        self.file_map.start_usn = self.ujd.NextUsn;
 
         // add the root directory
         let sz_root = format!("{}:", self.drive);
@@ -145,10 +138,12 @@ impl Volume {
 
                 while (record_ptr as usize) < data_end {
                     let record = &*record_ptr;
+
                     let file_name_begin_ptr = (record_ptr as usize + record.FileNameOffset as usize) as *const u16;
                     let file_name_length = record.FileNameLength as usize / std::mem::size_of::<u16>();
                     let file_name_list = std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
                     let file_name = String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
+
                     self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
                     record_ptr = (record_ptr as usize + record.RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
@@ -179,17 +174,6 @@ impl Volume {
         self.file_map.clear();
     }
 
-    // return true if contain query
-    fn match_str(contain: &str, query_lower: &String) -> bool {
-        let lower_contain = contain.to_lowercase();
-        for s in query_lower.split('*') { // for wildcard
-            if !lower_contain.contains(s) {
-                return false;
-            }
-        }
-        true
-    }
-
     // searching
     pub fn find(&mut self, query: String, batch: u8, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
         #[cfg(debug_assertions)]
@@ -205,46 +189,21 @@ impl Volume {
                 self.build_index();
             });
         };
-        
+
         while self.stop_receiver.try_recv().is_ok() { } // clear channel before find
-        
-        let mut result = Vec::new();
-        let mut find_num = 0;
-        let mut search_num: usize = 0;
-        let query_lower = query.to_lowercase();
-        let query_filter = make_filter(&query_lower);
+
         if self.last_query != query {
             self.last_search_num = 0;
             self.last_query = query.clone();
         }
 
-        let file_map_iter = self.file_map.iter().rev().skip(self.last_search_num);
-        for (_, file) in file_map_iter {
-            if self.stop_receiver.try_recv().is_ok() {
-                #[cfg(debug_assertions)]
-                log_info(format!("{} Stop Volume::Find", self.drive));
-                let _ = sender.send(None);
-                return;
-            }
-            search_num += 1;
-            if (file.filter & query_filter) == query_filter && Self::match_str(&file.file_name, &query_lower) {
-                if let Some(path) = self.file_map.get_path(&file.parent_index) {
-                    result.push(SearchResultItem {
-                        path,
-                        file_name: file.file_name.clone(),
-                        rank: file.rank,
-                    });
-                    find_num += 1;
-                    if find_num >= batch { break; }
-                }
-            }
-        }
+        let (result, search_num) = self.file_map.search(&query, self.last_search_num, &self.stop_receiver, batch);
 
         #[cfg(debug_assertions)]
-        log_info(format!("{} End Volume::Find {query}, use time: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len()));
+        log_info(format!("{} End Volume::Find {query}, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
         
         self.last_search_num += search_num;
-        let _ = sender.send(Some(result));
+        let _ = sender.send(result);
     }
 
     // update index, add new file, remove deleted file
@@ -262,7 +221,7 @@ impl Volume {
         let mut data = [0i64; 0x10000];
         let mut cb: u32 = 0;
         let mut rujd: Ioctl::READ_USN_JOURNAL_DATA_V0 = Ioctl::READ_USN_JOURNAL_DATA_V0 {
-                StartUsn: self.start_usn,
+                StartUsn: self.file_map.start_usn,
                 ReasonMask: Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_NEW_NAME | Ioctl::USN_REASON_RENAME_OLD_NAME,
                 ReturnOnlyOnClose: 0,
                 Timeout: 0,
@@ -306,7 +265,7 @@ impl Volume {
                 rujd.StartUsn = data[0];
             }
         }
-        self.start_usn = rujd.StartUsn;
+        self.file_map.start_usn = rujd.StartUsn;
         Self::close_drive(h_vol);
     }
 
@@ -321,20 +280,10 @@ impl Volume {
         
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
         if !file_path.exists() { fs::create_dir(&file_path)?; }
+        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive);
 
-        let mut save_file = fs::File::create(format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive))?;
+        self.file_map.save(&file_name)?;
 
-        let mut buf = Vec::new();
-        buf.write_all(&self.start_usn.to_be_bytes())?;
-        for (file_key, file) in self.file_map.iter() {
-            buf.write_all(&file_key.index.to_be_bytes())?;
-            buf.write_all(&file.parent_index.to_be_bytes())?;
-            buf.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
-            buf.write_all(file.file_name.as_bytes())?;
-            buf.write_all(&file.filter.to_be_bytes())?;
-            buf.write_all(&file.rank.to_be_bytes())?;
-        }
-        let _ = save_file.write(&buf.to_vec());
         self.release_index();
 
         #[cfg(debug_assertions)]
@@ -351,35 +300,9 @@ impl Volume {
         log_info(format!("{} Begin Volume::serialization_read", self.drive));
         
         let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
-        let file_path_str = file_path.to_str().unwrap();
-        
-        let file_data = fs::read(format!("{}/{}.fd", file_path_str, self.drive))?;
+        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive);
 
-        if file_data.len() < 8 { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data too short.").into()); }
-
-        self.start_usn = i64::from_be_bytes(file_data[0..8].try_into()?);
-        let mut ptr_index = 8;
-
-        while ptr_index < file_data.len() {
-            if ptr_index + 18 > file_data.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into()); }
-            
-            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into()?);
-            ptr_index += 8;
-            let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into()?) as u64;
-            ptr_index += 8;
-            let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into()?) as u16;
-            ptr_index += 2;
-
-            if ptr_index + (file_name_len as usize) + 5 > file_data.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into()); }
-
-            let file_name = String::from_utf8(file_data[ptr_index..(ptr_index + file_name_len as usize)].to_vec())?;
-            ptr_index += file_name_len as usize;
-            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into()?);
-            ptr_index += 4;
-            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into()?);
-            ptr_index += 1;
-            self.file_map.insert_simple(index, File { parent_index, file_name, filter, rank });
-        }
+        self.file_map.read(&file_name)?;
 
         #[cfg(debug_assertions)]
         log_info(format!("{} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));

@@ -11,7 +11,8 @@ use crate::util::file_util;
 use crate::ui::SearchResult_slint;
 use super::SearchWindow;
 use super::SearcherMessage;
-use super::volume;
+use super::volume::{Volume, SearchResultItem};
+
 
 #[derive(Debug)]
 enum FileState {
@@ -21,14 +22,19 @@ enum FileState {
 }
 
 struct VolumePack {
-    volume: Arc<Mutex<volume::Volume>>,
+    volume: Arc<Mutex<Volume>>,
     stop_sender: mpsc::Sender<()>,
+}
+
+pub struct SearchResult {
+    pub items: Vec<SearchResultItem>,
+    pub query: String,
 }
 
 pub struct FileData {
     vols: Vec<char>,
     finding_name: String,
-    finding_result: volume::SearchResult,
+    finding_result: SearchResult,
     waiting_finder: u8,
     search_win: slint::Weak<SearchWindow>,
     volume_packs: Vec<VolumePack>,
@@ -43,7 +49,7 @@ impl FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
             finding_name: String::new(),
-            finding_result: volume::SearchResult{items: Vec::new(), query: String::new()},
+            finding_result: SearchResult{items: Vec::new(), query: String::new()},
             waiting_finder: 0,
             search_win,
             state: FileState::Unbuild,
@@ -147,7 +153,7 @@ impl FileData {
         self.vols.len() as u8
     }
 
-    fn update_result_model(&mut self, filename: String, update_result: Vec<volume::SearchResultItem>, increment_find: bool) {
+    fn update_result_model(&mut self, filename: String, update_result: Vec<SearchResultItem>, increment_find: bool) {
         self.search_win.clone().upgrade_in_event_loop(move |search_win| {
             if search_win.get_query() != filename {return;}
 
@@ -200,9 +206,9 @@ impl FileData {
         if filename.is_empty() { return reply; } 
 
         self.waiting_finder = self.volume_packs.len() as u8;
-        let (find_result_sender, find_result_receiver) = mpsc::channel::<Option<Vec<volume::SearchResultItem>>>();
+        let (find_result_sender, find_result_receiver) = mpsc::channel::<Option<Vec<SearchResultItem>>>();
         for VolumePack{volume, ..} in &mut self.volume_packs {
-            let find_result_sender: mpsc::Sender<Option<Vec<volume::SearchResultItem>>> = find_result_sender.clone();
+            let find_result_sender: mpsc::Sender<Option<Vec<SearchResultItem>>> = find_result_sender.clone();
             let batch = self.batch;
             let volume = volume.clone();
             let filename = filename.clone();
@@ -246,7 +252,7 @@ impl FileData {
 
         let handles = self.vols.iter().map(|&c| {
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
-            let volume = Arc::new(Mutex::new(volume::Volume::new(c, stop_receiver)));
+            let volume = Arc::new(Mutex::new(Volume::new(c, stop_receiver)));
             
             self.volume_packs.push(VolumePack { volume: volume.clone(), stop_sender });
 
