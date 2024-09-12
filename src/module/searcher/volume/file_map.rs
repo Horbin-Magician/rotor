@@ -58,7 +58,6 @@ pub struct FileMap {
     rank_map: HashMap<u64, i8, std::hash::BuildHasherDefault<fxhash::FxHasher>>,
 }
 
-// TODO 检查所有的pub是否必须pub
 impl FileMap {
     pub fn new() -> FileMap{
         FileMap {
@@ -76,25 +75,13 @@ impl FileMap {
     }
 
     // insert a file to the database by index and file struct
-    pub fn insert_simple(&mut self, index: u64, file: File) {
+    fn insert_simple(&mut self, index: u64, file: File) {
         let key = FileKey {
             rank: file.rank,
             index,
         };
         self.rank_map.insert(index, file.rank);
         self.main_map.insert(key, file);
-    }
-
-    // get a File by index
-    pub fn get(&self, index: &u64) -> Option<&File> {
-        if let Some(rank) = self.rank_map.get(index) {
-            let file_key = FileKey {
-                rank: *rank,
-                index: *index,
-            };
-            return self.main_map.get(&file_key);
-        }
-        None
     }
 
     pub fn remove(&mut self, index: &u64) {
@@ -108,8 +95,31 @@ impl FileMap {
         }
     }
 
-    pub fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, File> {
-        self.main_map.iter()
+    pub fn search(&self, query: &str, last_search_num: usize, stop_receiver: &Receiver<()>, batch: u8 ) -> (Option<Vec<SearchResultItem>>, usize) {
+        let mut result = Vec::new();
+        let mut find_num = 0;
+        let mut search_num: usize = 0;
+        let query_lower = query.to_lowercase();
+        let query_filter = make_filter(&query_lower);
+
+        let file_map_iter = self.iter().rev().skip(last_search_num);
+        for (_, file) in file_map_iter {
+            if stop_receiver.try_recv().is_ok() { return (None, 0); }
+            search_num += 1;
+            if (file.filter & query_filter) == query_filter && Self::match_str(&file.file_name, &query_lower) {
+                if let Some(path) = self.get_path(&file.parent_index) {
+                    result.push(SearchResultItem {
+                        path,
+                        file_name: file.file_name.clone(),
+                        rank: file.rank,
+                    });
+                    find_num += 1;
+                    if find_num >= batch { break; }
+                }
+            }
+        }
+
+        return (Some(result), search_num);
     }
 
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
@@ -171,6 +181,22 @@ impl FileMap {
         self.main_map.is_empty()
     }
 
+    // get a File by index
+    fn get(&self, index: &u64) -> Option<&File> {
+        if let Some(rank) = self.rank_map.get(index) {
+            let file_key = FileKey {
+                rank: *rank,
+                index: *index,
+            };
+            return self.main_map.get(&file_key);
+        }
+        None
+    }
+
+    fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, File> {
+        self.main_map.iter()
+    }
+
     // return rank by filename
     fn get_file_rank(file_name: &str) -> i8 {
         let mut rank: i8 = 0;
@@ -185,7 +211,7 @@ impl FileMap {
     }
 
     // Constructs a path for a directory
-    pub fn get_path(&self, index: &u64) -> Option<String> {
+    fn get_path(&self, index: &u64) -> Option<String> {
         let mut path = String::new();
         let mut loop_index = *index;
         while loop_index != 0 {
@@ -198,33 +224,6 @@ impl FileMap {
             }
         }
         Some(path)
-    }
-
-    pub fn search(&self, query: &str, last_search_num: usize, stop_receiver: &Receiver<()>, batch: u8 ) -> (Option<Vec<SearchResultItem>>, usize) {
-        let mut result = Vec::new();
-        let mut find_num = 0;
-        let mut search_num: usize = 0;
-        let query_lower = query.to_lowercase();
-        let query_filter = make_filter(&query_lower);
-
-        let file_map_iter = self.iter().rev().skip(last_search_num);
-        for (_, file) in file_map_iter {
-            if stop_receiver.try_recv().is_ok() { return (None, 0); }
-            search_num += 1;
-            if (file.filter & query_filter) == query_filter && Self::match_str(&file.file_name, &query_lower) {
-                if let Some(path) = self.get_path(&file.parent_index) {
-                    result.push(SearchResultItem {
-                        path,
-                        file_name: file.file_name.clone(),
-                        rank: file.rank,
-                    });
-                    find_num += 1;
-                    if find_num >= batch { break; }
-                }
-            }
-        }
-
-        return (Some(result), search_num);
     }
 
     // return true if contain query
