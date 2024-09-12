@@ -33,6 +33,9 @@ zip = "0.6.6"
 xcap = "0.0.10"
 fxhash = "0.2.1"
 crossbeam = "0.8.4"
+tantivy = "0.22.0"
+jieba-rs = "0.7.0"
+pinyin = "0.10.0"
 
 [dependencies.windows-sys]
 version = "0.48"

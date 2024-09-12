@@ -1,27 +1,67 @@
+mod file_map;
 mod file_index;
 
 use std::{
-    fs,
-    env,
-    error::Error,
-    ffi::{c_void, CString},
-    io::{self, Write},
-    sync::mpsc,
+    env, error::Error, ffi::{c_void, CString}, fs, io::{self, Write}, sync::mpsc
 };
 
 use windows_sys::Win32::{
-    Storage::FileSystem,
-    System::IO,
-    System::Ioctl,
-    Foundation,
+    Foundation::{self, INVALID_HANDLE_VALUE}, Storage::FileSystem, System::{Ioctl, IO}
 };
 
 #[allow(unused_imports)]
 use std::time::SystemTime;
 #[allow(unused_imports)]
 use crate::util::log_util::{log_error, log_info};
-use file_index::{FileMap, File, make_filter};
+use file_map::{FileMap, File, make_filter};
+use file_index::FileIndex;
 
+
+fn get_file_path(volume_handle: isize, file_id: u64) -> String {
+    let file_id_desc = FileSystem::FILE_ID_DESCRIPTOR {
+        Type: FileSystem::FileIdType,
+        dwSize: size_of::<FileSystem::FILE_ID_DESCRIPTOR>() as u32,
+        Anonymous: FileSystem::FILE_ID_DESCRIPTOR_0 {
+            FileId: file_id as i64,
+        },
+    };
+
+    unsafe {
+        let file_handle = FileSystem::OpenFileById(
+        volume_handle,
+        &file_id_desc,
+        FileSystem::FILE_GENERIC_READ,
+        FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE | FileSystem::FILE_SHARE_DELETE,
+        std::ptr::null_mut(),
+        0,
+        );
+
+        if file_handle == INVALID_HANDLE_VALUE { return String::from(""); }
+
+        let info_buffer_size =
+        size_of::<FileSystem::FILE_NAME_INFO>() + (Foundation::MAX_PATH as usize) * size_of::<u16>();
+        let mut info_buffer = vec![0u8; info_buffer_size];
+        let info_result = FileSystem::GetFileInformationByHandleEx(
+        file_handle,
+        FileSystem::FileNameInfo,
+        &mut *info_buffer as *mut _ as *mut c_void,
+        info_buffer_size as u32,
+        );
+
+        Foundation::CloseHandle(file_handle);
+
+        if info_result != 0 {
+            let (_, body, _) = info_buffer.align_to::<FileSystem::FILE_NAME_INFO>();
+            let info = &body[0];
+            let name_len = info.FileNameLength as usize / size_of::<u16>();
+            let name_u16 = std::slice::from_raw_parts(info.FileName.as_ptr() as *const u16, name_len);
+            let path = String::from_utf16(name_u16).unwrap_or(String::from(""));
+            return path;
+        }
+
+        return String::from("");
+    }
+}
 
 pub struct SearchResultItem {
     pub path: String,
@@ -50,6 +90,7 @@ pub struct Volume {
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     start_usn: i64,
     file_map: FileMap,
+    file_index: FileIndex,
     stop_receiver: mpsc::Receiver<()>,
     last_query: String,
     last_search_num: usize,
@@ -57,10 +98,13 @@ pub struct Volume {
 
 impl Volume {
     pub fn new(drive: char, stop_receiver: mpsc::Receiver<()>) -> Volume {
+        let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata").join(drive.to_string());
+
         Volume {
             drive,
             drive_frn: 0x5000000000005,
             file_map: FileMap::new(),
+            file_index: FileIndex::new(file_path.to_str().unwrap_or("")),
             start_usn: 0x0,
             ujd: Ioctl::USN_JOURNAL_DATA_V0{ UsnJournalID: 0x0, FirstUsn: 0x0, NextUsn: 0x0, LowestValidUsn: 0x0, MaxUsn: 0x0, MaximumSize: 0x0, AllocationDelta: 0x0 },
             stop_receiver,
@@ -149,7 +193,12 @@ impl Volume {
                     let file_name_length = record.FileNameLength as usize / std::mem::size_of::<u16>();
                     let file_name_list = std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
                     let file_name = String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
-                    self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
+
+                    let file_path = get_file_path(h_vol, record.ParentFileReferenceNumber);
+                    let file_full_path = format!("{}:{}\\{}", self.drive, file_path, file_name);
+                    self.file_index.add(file_name, file_full_path, false, "".to_string());
+
+                    // self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
                     record_ptr = (record_ptr as usize + record.RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
                 }
 
@@ -199,12 +248,12 @@ impl Volume {
         log_info(format!("{} Begin Volume::Find {query}", self.drive));
 
         if query.is_empty() { let _ = sender.send(None); return;}
-        if self.file_map.is_empty() { 
-            self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
-                log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
-                self.build_index();
-            });
-        };
+        // if self.file_map.is_empty() { 
+        //     self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
+        //         log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
+        //         self.build_index();
+        //     });
+        // };
         
         while self.stop_receiver.try_recv().is_ok() { } // clear channel before find
         
@@ -212,33 +261,42 @@ impl Volume {
         let mut find_num = 0;
         let mut search_num: usize = 0;
         let query_lower = query.to_lowercase();
-        let query_filter = make_filter(&query_lower);
-        if self.last_query != query {
-            self.last_search_num = 0;
-            self.last_query = query.clone();
+        // let query_filter = make_filter(&query_lower);
+        // if self.last_query != query {
+        //     self.last_search_num = 0;
+        //     self.last_query = query.clone();
+        // }
+
+        let index_result: Vec<file_index::FileView> = self.file_index.search(query_lower, 10);
+        for item in index_result {
+            result.push(SearchResultItem {
+                path: item.abs_path,
+                file_name: item.name,
+                rank: 0,
+            });
         }
 
-        let file_map_iter = self.file_map.iter().rev().skip(self.last_search_num);
-        for (_, file) in file_map_iter {
-            if self.stop_receiver.try_recv().is_ok() {
-                #[cfg(debug_assertions)]
-                log_info(format!("{} Stop Volume::Find", self.drive));
-                let _ = sender.send(None);
-                return;
-            }
-            search_num += 1;
-            if (file.filter & query_filter) == query_filter && Self::match_str(&file.file_name, &query_lower) {
-                if let Some(path) = self.file_map.get_path(&file.parent_index) {
-                    result.push(SearchResultItem {
-                        path,
-                        file_name: file.file_name.clone(),
-                        rank: file.rank,
-                    });
-                    find_num += 1;
-                    if find_num >= batch { break; }
-                }
-            }
-        }
+        // let file_map_iter = self.file_map.iter().rev().skip(self.last_search_num);
+        // for (_, file) in file_map_iter {
+        //     if self.stop_receiver.try_recv().is_ok() {
+        //         #[cfg(debug_assertions)]
+        //         log_info(format!("{} Stop Volume::Find", self.drive));
+        //         let _ = sender.send(None);
+        //         return;
+        //     }
+        //     search_num += 1;
+        //     if (file.filter & query_filter) == query_filter && Self::match_str(&file.file_name, &query_lower) {
+        //         if let Some(path) = self.file_map.get_path(&file.parent_index) {
+        //             result.push(SearchResultItem {
+        //                 path,
+        //                 file_name: file.file_name.clone(),
+        //                 rank: file.rank,
+        //             });
+        //             find_num += 1;
+        //             if find_num >= batch { break; }
+        //         }
+        //     }
+        // }
 
         #[cfg(debug_assertions)]
         log_info(format!("{} End Volume::Find {query}, use time: {:?} ms, get result num {}", self.drive, sys_time.elapsed().unwrap().as_millis(), result.len()));
