@@ -1,23 +1,11 @@
 mod file_map;
 
-use std::{
-    fs,
-    env,
-    error::Error,
-    ffi::{c_void, CString},
-    io,
-    sync::mpsc,
-};
-
-use windows_sys::Win32::{
-    Storage::FileSystem,
-    System::IO,
-    System::Ioctl,
-    Foundation,
-};
+use std::{fs, env, error::Error, ffi::{c_void, CString}, io, sync::mpsc};
+use windows_sys::Win32::{Storage::FileSystem, System::{IO, Ioctl}, Foundation};
 
 #[allow(unused_imports)]
 use std::time::SystemTime;
+
 #[allow(unused_imports)]
 use crate::util::log_util::{log_error, log_info};
 use file_map::FileMap;
