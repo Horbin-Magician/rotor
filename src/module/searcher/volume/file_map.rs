@@ -21,37 +21,6 @@ pub struct FileKey {
     pub index: u64,
 }
 
-// Calculates a 32bit value that is used to filter out many files before comparing their filenames
-pub fn make_filter(str: &str) -> u32 {
-    /*
-    Creates an address that is used to filter out strings that don't contain the queried characters
-    Explanation of the meaning of the single bits:
-    0-25 a-z
-    26 0-9
-    27 other ASCII
-    28 not in ASCII
-    */
-    let len = str.len();
-    if len == 0 { return 0;}
-    let mut address: u32 = 0;
-    let str_lower = str.to_lowercase();
-
-    for c in str_lower.chars() {
-        if c == '*' { 
-            continue; // Reserved for wildcard
-        } else if c.is_ascii_lowercase() {
-            address |= 1 << (c as u32 - 97);
-        } else if ('0'..='9').contains(&c) {
-            address |= 1 << 26;
-        } else if c < 127u8 as char {
-            address |= 1 << 27;
-        } else {
-            address |= 1 << 28;
-        }
-    }
-    address
-}
-
 pub struct FileMap {
     pub start_usn: i64,
     main_map: BTreeMap<FileKey, File>,
@@ -106,7 +75,7 @@ impl FileMap {
         for (_, file) in file_map_iter {
             if stop_receiver.try_recv().is_ok() { return (None, 0); }
             search_num += 1;
-            if (file.filter & query_filter) == query_filter && Self::match_str(&file.file_name, &query_lower) {
+            if (file.filter & query_filter) == query_filter && match_str(&file.file_name, &query_lower) {
                 if let Some(path) = self.get_path(&file.parent_index) {
                     result.push(SearchResultItem {
                         path,
@@ -226,14 +195,48 @@ impl FileMap {
         Some(path)
     }
 
-    // return true if contain query
-    fn match_str(contain: &str, query_lower: &String) -> bool {
-        let lower_contain = contain.to_lowercase();
-        for s in query_lower.split('*') { // for wildcard
-            if !lower_contain.contains(s) {
-                return false;
-            }
+}
+
+// Calculates a 32bit value that is used to filter out many files before comparing their filenames
+fn make_filter(str: &str) -> u32 {
+    /*
+    Creates an address that is used to filter out strings that don't contain the queried characters
+    Explanation of the meaning of the single bits:
+    0-25 a-z
+    26 0-9
+    27 other ASCII
+    28 not in ASCII
+    */
+    let len = str.len();
+    if len == 0 { return 0;}
+    let mut address: u32 = 0;
+    let str_lower = str.to_lowercase();
+
+    for c in str_lower.chars() {
+        if c == '*' { 
+            continue; // Reserved for wildcard
+        } else if c.is_ascii_lowercase() {
+            address |= 1 << (c as u32 - 97);
+        } else if ('0'..='9').contains(&c) {
+            address |= 1 << 26;
+        } else if c < 127u8 as char {
+            address |= 1 << 27;
+        } else {
+            address |= 1 << 28;
         }
-        true
     }
+    address
+}
+
+// return true if contain query
+fn match_str(contain: &str, query_lower: &String) -> bool {
+    let mut lower_contain = contain.to_lowercase();
+    for s in query_lower.split('*') { // for wildcard
+        if let Some(index) = lower_contain.find(s) {
+            lower_contain = (lower_contain.split_at(index).1).to_string();
+        } else {
+            return false;
+        }
+    }
+    true
 }
