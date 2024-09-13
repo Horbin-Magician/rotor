@@ -2,15 +2,13 @@ use std::ffi::{CStr, CString};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::collections::VecDeque;
-
-use slint::{Model, VecModel};
 use windows_sys::Win32::Storage::FileSystem;
 use windows_sys::Win32::Foundation;
+use slint::{Model, VecModel};
 
 use crate::util::file_util;
 use crate::ui::SearchResult_slint;
-use super::SearchWindow;
-use super::SearcherMessage;
+use super::{SearchWindow, SearcherMessage};
 use super::volume::{Volume, SearchResultItem};
 
 

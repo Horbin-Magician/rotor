@@ -6,13 +6,13 @@ use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use global_hotkey::hotkey::HotKey;
-
 use xcap::Monitor;
+
+use file_data::FileData;
 use crate::core::application::app_config::AppConfig;
 use crate::util::file_util;
 use crate::ui::SearchWindow;
 use crate::module::{Module, ModuleMessage};
-use file_data::FileData;
 
 pub enum SearcherMessage {
     Init,
