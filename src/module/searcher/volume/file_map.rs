@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-
 use std::error::Error;
 use std::io::{self, Write};
 use std::fs;
@@ -53,6 +52,7 @@ impl FileMap {
         self.main_map.insert(key, file);
     }
 
+    // remove item
     pub fn remove(&mut self, index: &u64) {
         if self.rank_map.contains_key(index) {
             let file_key = FileKey {
@@ -64,7 +64,8 @@ impl FileMap {
         }
     }
 
-    pub fn search(&self, query: &str, last_search_num: usize, stop_receiver: &Receiver<()>, batch: u8 ) -> (Option<Vec<SearchResultItem>>, usize) {
+    // search for files by query
+    pub fn search(&self, query: &str, last_search_num: usize, batch: u8, stop_receiver: &Receiver<()> ) -> (Option<Vec<SearchResultItem>>, usize) {
         let mut result = Vec::new();
         let mut find_num = 0;
         let mut search_num: usize = 0;

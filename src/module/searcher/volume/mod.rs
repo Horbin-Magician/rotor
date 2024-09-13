@@ -1,8 +1,12 @@
 mod file_map;
 
-use std::{fs, env, error::Error, ffi::{c_void, CString}, io, sync::mpsc};
-use windows_sys::Win32::{Storage::FileSystem, System::{IO, Ioctl}, Foundation};
-
+use std::{fs, env, io};
+use std::sync::mpsc;
+use std::error::Error;
+use std::ffi::{c_void, CString};
+use windows_sys::Win32::Foundation;
+use windows_sys::Win32::System::{IO, Ioctl};
+use windows_sys::Win32::Storage::FileSystem;
 #[allow(unused_imports)]
 use std::time::SystemTime;
 
@@ -171,6 +175,11 @@ impl Volume {
         log_info(format!("{} Begin Volume::Find {query}", self.drive));
 
         if query.is_empty() { let _ = sender.send(None); return;}
+        if self.last_query != query {
+            self.last_search_num = 0;
+            self.last_query = query.clone();
+        }
+
         if self.file_map.is_empty() { 
             self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
                 log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
@@ -179,13 +188,7 @@ impl Volume {
         };
 
         while self.stop_receiver.try_recv().is_ok() { } // clear channel before find
-
-        if self.last_query != query {
-            self.last_search_num = 0;
-            self.last_query = query.clone();
-        }
-
-        let (result, search_num) = self.file_map.search(&query, self.last_search_num, &self.stop_receiver, batch);
+        let (result, search_num) = self.file_map.search(&query, self.last_search_num, batch, &self.stop_receiver);
 
         #[cfg(debug_assertions)]
         log_info(format!("{} End Volume::Find {query}, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
