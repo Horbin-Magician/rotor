@@ -3,8 +3,7 @@ use std::env;
 use std::error::Error;
 use std::io::Write;
 use std::fs::{self, File};
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::process::Command;
@@ -125,6 +124,6 @@ impl Updater {
     }
 }
 
-static UPDATER_INS: Lazy<Mutex<Updater>> = Lazy::new(|| {
+static UPDATER_INS: LazyLock<Mutex<Updater>> = LazyLock::new(|| {
     Mutex::new(Updater::new())
 });

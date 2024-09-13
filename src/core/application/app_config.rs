@@ -1,8 +1,7 @@
 use slint::Weak;
 use toml;
 use std::{collections::HashMap, env, fs};
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use serde::{Serialize, Deserialize};
 use global_hotkey::hotkey::HotKey;
 
@@ -138,6 +137,6 @@ impl AppConfig {
     }
 }
 
-static INSTANCE: Lazy<Mutex<AppConfig>> = Lazy::new(|| {
+static INSTANCE: LazyLock<Mutex<AppConfig>> = LazyLock::new(|| {
     Mutex::new(AppConfig::new())
 });
