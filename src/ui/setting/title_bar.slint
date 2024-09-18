@@ -31,7 +31,7 @@ component TitleBtn inherits Rectangle {
 export component TitleBar inherits Rectangle {
     height: 40px;
     width: 376px;
-    background: Palette.background.darker(0.1);
+    background: Palette.background;
 
     callback minimize <=> min_btn.clicked;
     callback close <=> close_btn.clicked;
@@ -43,7 +43,7 @@ export component TitleBar inherits Rectangle {
 
         min_btn := TitleBtn {
             img: @image-url("../assets/icon/min.svg");
-            hover_color: grey;
+            hover_color: Palette.selection-background;
         }
 
         close_btn := TitleBtn {
