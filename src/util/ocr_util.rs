@@ -6,6 +6,7 @@ use windows::Globalization::Language;
 use windows::Storage::Streams::DataWriter;
 
 // Contains the text and the x,y coordinates of the word
+#[allow(dead_code)] // TODO remove
 pub struct Coordinates {
     pub text:           String,
     pub x :             f32,
@@ -14,6 +15,7 @@ pub struct Coordinates {
     pub width:          f32
 }
 
+#[allow(dead_code)] // TODO remove
 pub fn ocr_windows(image: DynamicImage, lang: &str) -> windows::core::Result<Vec<Coordinates>> {
     // Convert the DynamicImage to RGBA8 format
     let rgba_image = image.to_rgba8();
