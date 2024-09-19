@@ -204,11 +204,8 @@ impl PinWin {
                     let img_y = pin_window.get_img_y() * scale_factor;
                     let img_height = pin_window.get_img_height() * scale_factor;
                     let img_width = pin_window.get_img_width() * scale_factor;
-                    let mut img = image::DynamicImage::ImageRgba8(
-                        image::RgbaImage::from_vec(
-                            buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
-                        ).unwrap()
-                    );
+                    
+                    let mut img = PinWin::shared_pixel_buffer_to_dynamic_image(&buffer);
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
                     pin_window.invoke_close();
@@ -244,11 +241,7 @@ impl PinWin {
                     let img_height = pin_window.get_img_height() * scale_factor;
                     let img_width = pin_window.get_img_width() * scale_factor;
 
-                    let mut img = image::DynamicImage::ImageRgba8(
-                        image::RgbaImage::from_vec(
-                            buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
-                        ).unwrap()
-                    );
+                    let mut img = PinWin::shared_pixel_buffer_to_dynamic_image(&buffer);
                     img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                     
                     pin_window.invoke_close();
@@ -338,5 +331,13 @@ impl PinWin {
             _id: id,
             pin_window,
         }
+    }
+
+    fn shared_pixel_buffer_to_dynamic_image(buffer: &SharedPixelBuffer<Rgba8Pixel>) -> image::DynamicImage {
+        image::DynamicImage::ImageRgba8(
+            image::RgbaImage::from_vec(
+                buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
+            ).unwrap()
+        )
     }
 }
