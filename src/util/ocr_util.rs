@@ -1,4 +1,5 @@
 use image::DynamicImage;
+use windows::core::HSTRING;
 use windows::Media::Ocr::{self};
 use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
 use windows::Globalization::Language;
@@ -13,7 +14,7 @@ pub struct Coordinates {
     pub width:          f32
 }
 
-pub fn ocr_with_bounds(image: DynamicImage) -> windows::core::Result<Vec<Coordinates>> {
+pub fn ocr_windows(image: DynamicImage, lang: &str) -> windows::core::Result<Vec<Coordinates>> {
     // Convert the DynamicImage to RGBA8 format
     let rgba_image = image.to_rgba8();
     let (width, height) = rgba_image.dimensions();
@@ -31,24 +32,24 @@ pub fn ocr_with_bounds(image: DynamicImage) -> windows::core::Result<Vec<Coordin
         height as i32,
     )?;
 
-    let langs = Ocr::OcrEngine::AvailableRecognizerLanguages()?;
-    let lang = &langs.GetAt(1)?.LanguageTag()?;
-
-    for l in langs.into_iter() {
-        println!("{:?}", l.LanguageTag());
-    }
-
-    let lang = Language::CreateLanguage(lang)?;
-    let engine = Ocr::OcrEngine::TryCreateFromLanguage(&lang)?;
+    let engine = match lang {
+        "auto" => Ocr::OcrEngine::TryCreateFromUserProfileLanguages(),
+        _ => {
+            if let Ok(language) = Language::CreateLanguage(&HSTRING::from(lang)) {
+                Ocr::OcrEngine::TryCreateFromLanguage(&language)
+            } else {
+                return Err(windows::core::Error::empty()); // TODO deal with error
+            }
+        }
+    }?;
 
     let result = engine
         .RecognizeAsync(&software_bitmap)?
         .get()?
-        .Lines()?
-        ;
+        .Lines()?;
     
-    let mut collected_words:Vec<Coordinates> = Vec::new();    
-    
+    let mut collected_words:Vec<Coordinates> = Vec::new();
+
     result.into_iter().for_each(|line|{
         let line_text = line.Text().unwrap().to_string_lossy();
         let words = line.Words().unwrap();
