@@ -2,8 +2,8 @@ use std::ffi::{CStr, CString};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::collections::VecDeque;
-use windows_sys::Win32::Storage::FileSystem;
-use windows_sys::Win32::Foundation;
+use windows::Win32::Storage::FileSystem;
+use windows::Win32::Foundation;
 use slint::{Model, VecModel};
 
 use crate::util::file_util;
@@ -116,15 +116,13 @@ impl FileData {
 
         unsafe {
             if FileSystem::GetVolumeInformationA(
-                    root_path_name.as_ptr() as *const u8,
-                    volume_name_buffer.as_mut_ptr(),
-                    volume_name_buffer.len() as u32,
-                    &mut volume_serial_number,
-                    &mut maximum_component_length,
-                    &mut file_system_flags,
-                    file_system_name_buffer.as_mut_ptr(),
-                    file_system_name_buffer.len() as u32,
-                ) != 0 {
+                    windows::core::PCSTR(root_path_name.as_ptr() as *const u8),
+                    Some(&mut volume_name_buffer),
+                    Some(&mut volume_serial_number),
+                    Some(&mut maximum_component_length),
+                    Some(&mut file_system_flags),
+                    Some(&mut file_system_name_buffer),
+                ).is_ok() {
 
                 let result = CStr::from_ptr(file_system_name_buffer.as_ptr() as *const i8);
                 return result.to_string_lossy() == "NTFS";

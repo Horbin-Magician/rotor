@@ -33,18 +33,27 @@ xcap = "0.0.10"
 fxhash = "0.2.1"
 crossbeam = "0.8.4"
 
-[dependencies.windows-sys]
-version = "0.48"
-default-features = false
+[dependencies.windows]
+version = "0.58.0"
 features = [
-    "Win32_Foundation",
-    "Win32_UI_Shell",
-    "Win32_UI_WindowsAndMessaging",
+    "Media_Ocr",
+    "Graphics",                  # TODO check needed
+    "Graphics_Imaging",          # TODO check needed
+    "Globalization",             # TODO check needed
+    "Storage",                   # TODO check needed
+    "Foundation",                # TODO check needed
+    "Storage_Streams",           # TODO check needed
+    "Foundation_Collections",    # TODO check needed
     "Win32_Storage_FileSystem",
-    "Win32_Security",
-    "Win32_System_IO",
-    "Win32_System_Ioctl",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_Graphics",
+    "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
+    "Win32_UI_HiDpi",
+    "Win32_System_Ioctl",
+    "Win32_System_IO",
+    "Win32_Security",
 ]
 
 [profile.release]

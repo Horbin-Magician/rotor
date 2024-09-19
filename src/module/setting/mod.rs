@@ -3,7 +3,7 @@ use crossbeam;
 use global_hotkey::hotkey::HotKey;
 use i_slint_backend_winit::WinitWindowAccessor;
 use slint::ComponentHandle;
-use windows_sys::Win32::UI::WindowsAndMessaging;
+use windows::Win32::UI::WindowsAndMessaging;
 
 use crate::core::application::{AppMessage, app_config::AppConfig};
 use crate::util::net_util;

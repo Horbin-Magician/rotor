@@ -8,9 +8,9 @@ use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::{platform::windows::WindowExtWindows, raw_window_handle::{HasWindowHandle, RawWindowHandle}}, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
-use windows_sys::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
-use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
-use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+use windows::Win32::{Foundation::HWND, Graphics::Gdi::HMONITOR, UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}};
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+use windows::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
 
 use crate::core::application::app_config::AppConfig;
 use crate::ui::{MaskWindow, PinWindow, ToolbarWindow};
@@ -83,9 +83,9 @@ impl ScreenShotter{
             if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
                 let disable: i32 = 1;
                 unsafe {
-                    DwmSetWindowAttribute(
-                        win32_handle.hwnd.into(),
-                        DWMWA_TRANSITIONS_FORCEDISABLED,
+                    let _ = DwmSetWindowAttribute(
+                        HWND(win32_handle.hwnd.get() as *mut _),
+                        DWMWA_TRANSITIONS_FORCEDISABLED.try_into().unwrap(),
                         &disable as *const _ as *const _,
                         std::mem::size_of_val(&disable) as u32,
                     );
@@ -110,7 +110,7 @@ impl ScreenShotter{
             mask_win.on_shot(move || {
                 // get screens and info
                 let mut point = POINT{x: 0, y: 0};
-                unsafe { GetCursorPos(&mut point); }
+                unsafe { let _ = GetCursorPos(&mut point); }
                 let monitor = Monitor::from_point(point.x, point.y).unwrap();
                 let physical_width = monitor.width();
                 let physical_height = monitor.height();
@@ -118,7 +118,7 @@ impl ScreenShotter{
                 let scale_factor = unsafe{ 
                     let mut dpi_x: u32 = 0;
                     let mut dpi_y: u32 = 0;
-                    GetDpiForMonitor(monitor.id() as isize, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+                    let _ = GetDpiForMonitor(HMONITOR(monitor.id() as *mut _), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
                     dpi_x as f32 / 96.0
                 };
 
