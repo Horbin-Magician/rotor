@@ -3,8 +3,9 @@ use std::io;
 
 use i_slint_backend_winit::WinitWindowAccessor;
 use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+use windows::Win32::{Graphics::Gdi::HMONITOR, UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Shell::ShellExecuteW;
@@ -62,4 +63,13 @@ pub fn forbid_window_animation(window: &slint::Window) {
             }
         }
     });
+}
+
+pub fn get_scale_factor(monitor_id: u32) -> f32 {
+    let mut dpi_x: u32 = 0;
+    let mut dpi_y: u32 = 0;
+    unsafe{ 
+        let _ = GetDpiForMonitor(HMONITOR(monitor_id as *mut _), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+    }
+    dpi_x as f32 / 96.0
 }
