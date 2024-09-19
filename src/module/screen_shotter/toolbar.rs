@@ -1,10 +1,8 @@
 use std::sync::mpsc::Sender;
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
-use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::ComponentHandle;
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
-use windows::Win32::Foundation::HWND;
 
+use crate::sys_util;
 use crate::{core::application::app_config::AppConfig, ui::ToolbarWindow};
 use super::{PinOperation, ShotterMessage};
 
@@ -15,20 +13,9 @@ pub struct Toolbar {
 impl Toolbar {
     pub fn new(message_sender: Sender<ShotterMessage>) -> Toolbar {
         let toolbar_window = ToolbarWindow::new().unwrap();
+        sys_util::forbid_window_animation(toolbar_window.window());
         toolbar_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
-            let handle = winit_win.window_handle().unwrap();
-            if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
-                let disable: i32 = 1;
-                unsafe {
-                    let _ = DwmSetWindowAttribute(
-                        HWND(win32_handle.hwnd.get() as *mut _),
-                        DWMWA_TRANSITIONS_FORCEDISABLED,
-                        &disable as *const _ as *const _,
-                        std::mem::size_of_val(&disable) as u32,
-                    );
-                }
-            }
         });
 
         let mut app_config = AppConfig::global().lock().unwrap();

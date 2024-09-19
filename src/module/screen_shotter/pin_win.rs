@@ -1,16 +1,14 @@
 use std::borrow::Cow;
 use wfd::DialogParams;
 use image;
-use windows::Win32::Foundation::HWND;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
 use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel, ComponentHandle};
 use i_slint_backend_winit::WinitWindowAccessor;
-use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 use chrono;
 
+use crate::util::sys_util;
 use crate::core::application::app_config::AppConfig;
 use crate::ui::{PinWindow, Rect, Direction, PinState};
 use super::ShotterMessage;
@@ -24,20 +22,7 @@ pub struct PinWin {
 impl PinWin {
     pub fn new(img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, rect: Rect, offset_x: i32, offset_y: i32, true_scale_factor: f32, id: u32, message_sender: Sender<ShotterMessage>) -> PinWin {
         let pin_window = PinWindow::new().unwrap();
-        pin_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
-            let handle = winit_win.window_handle().unwrap();
-            if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
-                let disable: i32 = 1;
-                unsafe {
-                    let _ = DwmSetWindowAttribute(
-                        HWND(win32_handle.hwnd.get() as *mut _),
-                        DWMWA_TRANSITIONS_FORCEDISABLED.try_into().unwrap(),
-                        &disable as *const _ as *const _,
-                        std::mem::size_of_val(&disable) as u32,
-                    );
-                }
-            }
-        });
+        sys_util::forbid_window_animation(pin_window.window());
 
         let border_width = pin_window.get_win_border_width();
 
