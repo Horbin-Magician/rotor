@@ -8,7 +8,6 @@ use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
-use windows::Win32::{Graphics::Gdi::HMONITOR, UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}};
 use windows::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
 
 use crate::util::sys_util;
@@ -100,16 +99,12 @@ impl ScreenShotter{
                 // get screens and info
                 let mut point = POINT{x: 0, y: 0};
                 unsafe { let _ = GetCursorPos(&mut point); }
+                
                 let monitor = Monitor::from_point(point.x, point.y).unwrap();
                 let physical_width = monitor.width();
                 let physical_height = monitor.height();
                 let monitor_img = monitor.capture_image().unwrap();
-                let scale_factor = unsafe{ 
-                    let mut dpi_x: u32 = 0;
-                    let mut dpi_y: u32 = 0;
-                    let _ = GetDpiForMonitor(HMONITOR(monitor.id() as *mut _), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
-                    dpi_x as f32 / 96.0
-                };
+                let scale_factor = sys_util::get_scale_factor(monitor.id());
 
                 let mask_win = mask_win_clone.unwrap();
 

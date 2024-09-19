@@ -4,11 +4,11 @@ mod volume;
 use slint::{ComponentHandle, Model};
 use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
-use windows::Win32::{Graphics::Gdi::HMONITOR, UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
 
 use file_data::FileData;
+use crate::sys_util;
 use crate::core::application::app_config::AppConfig;
 use crate::util::file_util;
 use crate::ui::SearchWindow;
@@ -48,12 +48,7 @@ impl Module for Searcher{
                             let y = primary_monitor.y();
                             let width = win.get_ui_width();
                             
-                            let scale_factor = unsafe{ 
-                                let mut dpi_x: u32 = 0;
-                                let mut dpi_y: u32 = 0;
-                                let _ = GetDpiForMonitor(HMONITOR(primary_monitor.id() as *mut _), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
-                                dpi_x as f32 / 96.0
-                            };
+                            let scale_factor = sys_util::get_scale_factor(primary_monitor.id());
                             let x_pos = x + ((physical_width - width * scale_factor) * 0.5) as i32;
                             let y_pos = y + (physical_height * 0.3) as i32;
                             win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
