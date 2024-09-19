@@ -4,9 +4,10 @@ use std::{fs, env, io};
 use std::sync::mpsc;
 use std::error::Error;
 use std::ffi::{c_void, CString};
-use windows_sys::Win32::Foundation;
-use windows_sys::Win32::System::{IO, Ioctl};
-use windows_sys::Win32::Storage::FileSystem;
+use windows::Win32::Foundation;
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::System::{IO, Ioctl};
+use windows::Win32::Storage::FileSystem;
 #[allow(unused_imports)]
 use std::time::SystemTime;
 
@@ -55,23 +56,27 @@ impl Volume {
     }
 
     // This is a helper function that opens a handle to the volume specified by the cDriveLetter parameter.
-    fn open_drive(drive_letter: char) -> isize {
+    fn open_drive(drive_letter: char) -> Foundation::HANDLE {
         unsafe{
             let c_str: CString = CString::new(format!("\\\\.\\{}:", drive_letter)).unwrap();
-            FileSystem::CreateFileA(
-                c_str.as_ptr() as *const u8, 
-                Foundation::GENERIC_READ,
+            match FileSystem::CreateFileA(
+                windows::core::PCSTR(c_str.as_ptr() as *const u8), 
+                Foundation::GENERIC_READ.0,
                 FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE, 
-                std::ptr::null::<windows_sys::Win32::Security::SECURITY_ATTRIBUTES>(), 
+                None, 
                 FileSystem::OPEN_EXISTING, 
-                0, 
-                0)
+                windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0), 
+                None
+            ) {
+                Ok(handle) => handle,
+                Err(_) => HANDLE::default(),
+            }
         }
     }
 
     // This is a helper function that close a handle.
-    fn close_drive(h_vol: isize) {
-        unsafe { Foundation::CloseHandle(h_vol); }
+    fn close_drive(h_vol: Foundation::HANDLE) {
+        unsafe { let _ = Foundation::CloseHandle(h_vol); }
     }
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
@@ -88,16 +93,16 @@ impl Volume {
         // Query, Return statistics about the journal on the current volume
         let mut cd: u32 = 0;
         unsafe { 
-            IO::DeviceIoControl(
+            let _ = IO::DeviceIoControl(
                 h_vol, 
                 Ioctl::FSCTL_QUERY_USN_JOURNAL, 
-                std::ptr::null(), 
+                None, 
                 0, 
-                &mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0 as *mut c_void, 
+                Some(&mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0 as *mut c_void), 
                 std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>().try_into().unwrap(), 
-                &mut cd, 
-                std::ptr::null::<IO::OVERLAPPED>() as *mut IO::OVERLAPPED
-            )
+                Some(&mut cd), 
+                None
+            );
         };
 
         self.file_map.start_usn = self.ujd.NextUsn;
@@ -118,13 +123,13 @@ impl Volume {
             while IO::DeviceIoControl(
                 h_vol, 
                 Ioctl::FSCTL_ENUM_USN_DATA, 
-                &med as *const _ as *const c_void, 
+                Some(&med as *const _ as *const c_void), 
                 std::mem::size_of::<Ioctl::MFT_ENUM_DATA_V0>() as u32, 
-                data.as_mut_ptr() as *mut c_void, 
+                Some(data.as_mut_ptr() as *mut c_void), 
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
-                &mut cb as *mut u32, 
-                std::ptr::null_mut()
-            ) != 0 {
+                Some(&mut cb as *mut u32), 
+                None
+            ).is_ok() {
                 let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
                 let data_end = data.as_ptr() as usize + cb as usize;
 
@@ -226,13 +231,13 @@ impl Volume {
             while IO::DeviceIoControl(
                 h_vol, 
                 Ioctl::FSCTL_READ_USN_JOURNAL, 
-                &rujd as *const _ as *const c_void,
+                Some(&rujd as *const _ as *const c_void),
                 std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>().try_into().unwrap(), 
-                data.as_mut_ptr() as *mut c_void, 
+                Some(data.as_mut_ptr() as *mut c_void), 
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
-                &mut cb as *mut u32, 
-                std::ptr::null_mut()
-            ) != 0 {
+                Some(&mut cb as *mut u32), 
+                None
+            ).is_ok() {
                 if cb == 8 { break };
                 let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
                 let data_end = data.as_ptr() as usize + cb as usize;

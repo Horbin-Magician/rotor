@@ -1,8 +1,10 @@
 use std::env;
 use std::io;
-use windows_sys::Win32::UI::Shell::ShellExecuteW;
-use windows_sys::Win32::Foundation::HMODULE;
-use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use is_root::is_root;
 use winreg::enums::*;
 use winreg::RegKey;
@@ -11,18 +13,17 @@ pub fn run_as_admin() -> bool {
     if is_root() { return false; }
     let file_path: Vec<u16> = env::current_exe().unwrap().to_str().unwrap().encode_utf16().chain(std::iter::once(0)).collect();
     let runas_str: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
-    let ins:HMODULE = unsafe {
+    let ins = unsafe { // TODO use the method of file_util
         ShellExecuteW(
-            0,
-            runas_str.as_ptr(),
-            file_path.as_ptr(),
-            runas_str.as_ptr(),
-            std::ptr::null(),
+            HWND(std::ptr::null_mut()),
+            PCWSTR(runas_str.as_ptr()),
+            PCWSTR(file_path.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
             SW_SHOWNORMAL
         )
     };
-    if ins > 32 as HMODULE { return true; } // return true if programe run successfully
-    false
+    return !ins.is_invalid(); // return true if programe run success
 }
 
 pub fn set_power_boot(if_power_boot: bool) -> io::Result<()> {

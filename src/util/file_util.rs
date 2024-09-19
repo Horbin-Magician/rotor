@@ -4,10 +4,14 @@ use std::process::Command;
 use std::{ptr, mem, fs, io, env};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
-use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows_sys::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, ShellExecuteW};
-use windows_sys::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
-use windows_sys::Win32::Graphics::Gdi::{BITMAP, BITMAPINFOHEADER, GetBitmapBits, DeleteObject, HGDIOBJ, HBITMAP, self};
+
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::{HWND, BOOL};
+use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, ShellExecuteW};
+use windows::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
+use windows::Win32::Graphics::Gdi::{self, DeleteObject, GetBitmapBits, BITMAP, BITMAPINFOHEADER, HBITMAP, HGDIOBJ};
+
 
 fn file_exists(path: &str) -> bool {
     fs::metadata(path).is_ok()
@@ -46,11 +50,11 @@ pub fn open_file_admin(file_full_name: String) {
     let runas_str: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         ShellExecuteW(
-            0,
-            runas_str.as_ptr(),
-            file_path.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
+            HWND(std::ptr::null_mut()),
+            PCWSTR(runas_str.as_ptr()),
+            PCWSTR(file_path.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
             SW_SHOWNORMAL
         )
     };
@@ -82,13 +86,13 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
             let p_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
             let mut file_info = SHFILEINFOW {
                 dwAttributes: 0,
-                hIcon: 0,
+                hIcon: HICON(std::ptr::null_mut()),
                 iIcon: 0,
                 szDisplayName: [0_u16; 260],
                 szTypeName: [0; 80]
             };
             let file_info_size = mem::size_of_val(&file_info) as u32;
-            SHGetFileInfoW(p_path.as_ptr(), FILE_ATTRIBUTE_NORMAL, &mut file_info, file_info_size, SHGFI_ICON);
+            SHGetFileInfoW(PCWSTR(p_path.as_ptr()), FILE_ATTRIBUTE_NORMAL, Some(&mut file_info), file_info_size, SHGFI_ICON);
             file_info.hIcon
         }
     }
@@ -139,14 +143,14 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         id_type: 1// Type 1 = ICON (type 2 = CURSOR)
     };
 
-    let mut icon_info = ICONINFO{ fIcon: 0, hbmColor: 0, hbmMask: 0, xHotspot: 0, yHotspot: 0 }; 
+    let mut icon_info = ICONINFO{ fIcon: BOOL(0), hbmColor: HBITMAP(std::ptr::null_mut()), hbmMask: HBITMAP(std::ptr::null_mut()), xHotspot: 0, yHotspot: 0 }; 
     let mut bmp_color = BITMAP { bmBits: ptr::null_mut(), bmBitsPixel: 0, bmHeight: 0, bmPlanes: 0, bmType: 0, bmWidth: 0, bmWidthBytes: 0};
     let mut bmp_mask = BITMAP{ bmBits: ptr::null_mut(), bmBitsPixel: 0, bmHeight: 0, bmPlanes: 0, bmType: 0, bmWidth: 0, bmWidthBytes: 0};
 
     unsafe {
-        GetIconInfo(h_icon, &mut icon_info);
-        Gdi::GetObjectW(icon_info.hbmColor, mem::size_of_val(&bmp_color) as i32, &mut bmp_color as *mut BITMAP as *mut c_void);
-        Gdi::GetObjectW(icon_info.hbmMask, mem::size_of_val(&bmp_mask) as i32, &mut bmp_mask as *mut BITMAP as *mut c_void);
+        let _ = GetIconInfo(h_icon, &mut icon_info);
+        Gdi::GetObjectW(icon_info.hbmColor, mem::size_of_val(&bmp_color) as i32, Some(&mut bmp_color as *mut BITMAP as *mut c_void));
+        Gdi::GetObjectW(icon_info.hbmMask, mem::size_of_val(&bmp_mask) as i32, Some(&mut bmp_mask as *mut BITMAP as *mut c_void));
     }
 
     let icon_header_size = mem::size_of::<Iconheader>();
@@ -220,9 +224,9 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
 
     // clear
     unsafe {
-        DestroyIcon(h_icon);
-        DeleteObject(icon_info.hbmColor as HGDIOBJ);
-        DeleteObject(icon_info.hbmMask as HGDIOBJ);
+        let _ = DestroyIcon(h_icon);
+        let _ = DeleteObject(HGDIOBJ::from(icon_info.hbmColor));
+        let _ = DeleteObject(HGDIOBJ::from(icon_info.hbmMask));
     }
 
     // convert and output

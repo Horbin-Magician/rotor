@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use wfd::DialogParams;
 use image;
+use windows::Win32::Foundation::HWND;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
 use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel, ComponentHandle};
 use i_slint_backend_winit::WinitWindowAccessor;
 use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 use chrono;
 
 use crate::core::application::app_config::AppConfig;
@@ -28,9 +29,9 @@ impl PinWin {
             if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
                 let disable: i32 = 1;
                 unsafe {
-                    DwmSetWindowAttribute(
-                        win32_handle.hwnd.into(),
-                        DWMWA_TRANSITIONS_FORCEDISABLED,
+                    let _ = DwmSetWindowAttribute(
+                        HWND(win32_handle.hwnd.get() as *mut _),
+                        DWMWA_TRANSITIONS_FORCEDISABLED.try_into().unwrap(),
                         &disable as *const _ as *const _,
                         std::mem::size_of_val(&disable) as u32,
                     );

@@ -3,7 +3,10 @@ use std::{
 };
 use std::io::{self, Write};
 use chrono::Local;
-use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK};
+
+use windows::core::PCWSTR;
+use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK};
+use windows::Win32::Foundation::HWND;
 
 
 fn wide_null(s: &str) -> Vec<u16> {
@@ -29,7 +32,7 @@ pub fn log_error_without_log(content: &str) {
     let title = wide_null("Error");
     let content = wide_null(content);
     unsafe {
-        MessageBoxW(0_isize, content.as_ptr(), title.as_ptr(), MB_OK);
+        MessageBoxW(HWND(std::ptr::null_mut()), PCWSTR(content.as_ptr()), PCWSTR(title.as_ptr()), MB_OK);
     }
 }
 

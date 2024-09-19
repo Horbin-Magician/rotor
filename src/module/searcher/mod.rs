@@ -4,7 +4,7 @@ mod volume;
 use slint::{ComponentHandle, Model};
 use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
-use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::{Graphics::Gdi::HMONITOR, UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
 
@@ -51,7 +51,7 @@ impl Module for Searcher{
                             let scale_factor = unsafe{ 
                                 let mut dpi_x: u32 = 0;
                                 let mut dpi_y: u32 = 0;
-                                GetDpiForMonitor(primary_monitor.id() as isize, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+                                let _ = GetDpiForMonitor(HMONITOR(primary_monitor.id() as *mut _), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
                                 dpi_x as f32 / 96.0
                             };
                             let x_pos = x + ((physical_width - width * scale_factor) * 0.5) as i32;
