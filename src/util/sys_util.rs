@@ -1,10 +1,15 @@
 use std::env;
 use std::io;
 
+use i_slint_backend_winit::WinitWindowAccessor;
+use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
 use is_root::is_root;
 use winreg::enums::*;
 use winreg::RegKey;
@@ -40,4 +45,21 @@ pub fn set_power_boot(if_power_boot: bool) -> io::Result<()> {
     }
     
     Ok(())
+}
+
+pub fn forbid_window_animation(window: &slint::Window) {
+    window.with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+        let handle = winit_win.window_handle().unwrap();
+        if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
+            let disable: i32 = 1;
+            unsafe {
+                let _ = DwmSetWindowAttribute(
+                    HWND(win32_handle.hwnd.get() as *mut _),
+                    DWMWA_TRANSITIONS_FORCEDISABLED.try_into().unwrap(),
+                    &disable as *const _ as *const _,
+                    std::mem::size_of_val(&disable) as u32,
+                );
+            }
+        }
+    });
 }
