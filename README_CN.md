@@ -39,7 +39,7 @@
 
 # 贡献
 
-本项目由[Rust](https://www.rust-lang.org/)编写，使用[Slint](https://slint.dev/)作为GUI框架
+本项目由 [Rust](https://www.rust-lang.org/) 编写，使用 [Slint](https://slint.dev/) 作为GUI框架
 
 我诚挚地邀请您为本项目建言献策及提供高质量的代码。
 
