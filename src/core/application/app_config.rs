@@ -1,10 +1,11 @@
 use slint::Weak;
 use toml;
-use std::{collections::HashMap, env, fs};
+use std::{collections::HashMap, fs};
 use std::sync::{LazyLock, Mutex};
 use serde::{Serialize, Deserialize};
 use global_hotkey::hotkey::HotKey;
 
+use crate::util::file_util;
 use crate::util::sys_util;
 use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
 
@@ -45,7 +46,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     fn new() -> AppConfig {
-        let path = env::current_exe().unwrap().parent().unwrap().join("userdata").join("config.toml");
+        let path = file_util::get_userdata_path().join("config.toml");
         let config_str = fs::read_to_string(path).unwrap_or_else(|_| String::new());
 
         let config = match toml::from_str::<Config>(&config_str) {
@@ -62,7 +63,7 @@ impl AppConfig {
     }
 
     fn save(&self) {
-        let path = env::current_exe().unwrap().parent().unwrap().join("userdata").join("config.toml");
+        let path = file_util::get_userdata_path().join("config.toml");
         let config_str = toml::to_string_pretty(&self.config).unwrap();
         fs::write(path, config_str).unwrap();
     }

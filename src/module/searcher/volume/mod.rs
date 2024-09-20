@@ -1,6 +1,6 @@
 mod file_map;
 
-use std::{fs, env, io};
+use std::{fs, io};
 use std::sync::mpsc;
 use std::error::Error;
 use std::ffi::{c_void, CString};
@@ -13,6 +13,7 @@ use std::time::SystemTime;
 
 #[allow(unused_imports)]
 use crate::util::log_util::{log_error, log_info};
+use crate::util::file_util;
 use file_map::FileMap;
 
 
@@ -274,7 +275,7 @@ impl Volume {
 
         if self.file_map.is_empty() {return Ok(())};
         
-        let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
+        let file_path = file_util::get_userdata_path();
         if !file_path.exists() { fs::create_dir(&file_path)?; }
         let file_name = format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive);
 
@@ -295,7 +296,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         log_info(format!("{} Begin Volume::serialization_read", self.drive));
         
-        let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
+        let file_path = file_util::get_userdata_path();
         let file_name = format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive);
 
         self.file_map.read(&file_name)?;
