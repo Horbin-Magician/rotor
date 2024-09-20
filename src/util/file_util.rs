@@ -17,9 +17,22 @@ fn file_exists(path: &str) -> bool {
     fs::metadata(path).is_ok()
 }
 
+fn get_app_path() -> std::path::PathBuf {
+    if let Ok(exe_path) = env::current_exe() {
+        let result = exe_path.parent().unwrap_or(std::path::Path::new("."));
+        result.to_path_buf()
+    } else {
+        std::path::Path::new(".").to_path_buf()
+    }
+}
+
+pub fn get_userdata_path() -> std::path::PathBuf {
+    let app_path = get_app_path();
+    app_path.join("userdata")
+}
+
 pub fn del_useless_files() {
-    let binding = env::current_exe().unwrap();
-    let app_path = binding.parent().unwrap();
+    let app_path = get_app_path();
     let tmp_path = app_path.join("tmp");
     let userdata_path = app_path.join("userdata");
 

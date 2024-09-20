@@ -5,6 +5,7 @@ mod ui;
 mod module;
 mod util;
 
+use crate::util::log_util;
 use crate::util::sys_util;
 use crate::util::file_util;
 use crate::core::application::Application;
@@ -19,7 +20,9 @@ fn main() {
     let mut app = Application::new();
     app.run();
     while app.is_running() {
-        slint::run_event_loop().unwrap();
+        slint::run_event_loop().unwrap_or_else(
+            |err| log_util::log_error(format!("slint run_event_loop error: {:?}", err))
+        );
         app.clean()
     }
 }

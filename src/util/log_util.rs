@@ -1,5 +1,5 @@
 use std::{
-    fs::OpenOptions, env, fs,
+    fs::OpenOptions, fs,
 };
 use std::io::{self, Write};
 use chrono::Local;
@@ -8,13 +8,15 @@ use windows::core::PCWSTR;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK};
 use windows::Win32::Foundation::HWND;
 
+use crate::util::file_util;
+
 
 fn wide_null(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn write_log(message: &String) -> std::io::Result<()> {
-    let file_path = env::current_exe().unwrap().parent().unwrap().join("userdata");
+    let file_path = file_util::get_userdata_path();
     if !file_path.exists() { fs::create_dir(&file_path)?; }
     let log_path = file_path.join("log");
 
@@ -28,7 +30,7 @@ fn write_log(message: &String) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn log_error_without_log(content: &str) {
+fn log_error_without_log(content: &str) {
     let title = wide_null("Error");
     let content = wide_null(content);
     unsafe {
