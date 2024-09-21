@@ -17,12 +17,17 @@ fn main() {
     // slint::init_translations!(concat!("./assets/", "/lang/"));
 
     // start event loop
-    let mut app = Application::new();
+    let mut app = Application::new().or_else(
+        |e| {
+            log_util::log_error(format!("Application::new error: {:?}", e));
+            Err(e)
+        }
+    ).expect("Application::new error");
+    
     app.run();
     while app.is_running() {
-        slint::run_event_loop().unwrap_or_else(
-            |err| log_util::log_error(format!("slint run_event_loop error: {:?}", err))
-        );
+        slint::run_event_loop()
+            .unwrap_or_else(|e| log_util::log_error(format!("slint run_event_loop error: {:?}", e)));
         app.clean()
     }
 }

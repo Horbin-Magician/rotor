@@ -41,9 +41,8 @@ fn log_error_without_log(content: &str) {
 pub fn log_error(message: String)  {
     let now_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let error_content = format!("{now_time} [Error] {message}");
-    write_log(&error_content).unwrap_or_else(|err: io::Error| {
-        log_error_without_log(&format!("{:?}", err));
-    });
+    write_log(&error_content)
+        .unwrap_or_else(|e: io::Error| log_error_without_log(&format!("{:?}", e)));
     log_error_without_log(&error_content);
 }
 
@@ -51,8 +50,7 @@ pub fn log_error(message: String)  {
 pub fn log_info(message: String)  {
     let now_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let error_content = format!("{now_time} [info] {message}");
-    write_log(&error_content).unwrap_or_else(|err: io::Error| {
-        log_error_without_log(&format!("{:?}", err));
-    });
+    write_log(&error_content)
+        .unwrap_or_else(|e: io::Error| log_error_without_log(&format!("{:?}", e)));
     println!("{}", error_content);
 }

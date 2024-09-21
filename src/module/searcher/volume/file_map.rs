@@ -105,7 +105,7 @@ impl FileMap {
             buf.write_all(&file.filter.to_be_bytes())?;
             buf.write_all(&file.rank.to_be_bytes())?;
         }
-        let _ = save_file.write(&buf.to_vec());
+        save_file.write(&buf.to_vec())?;
 
         Ok(())
     }

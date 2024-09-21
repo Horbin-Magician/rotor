@@ -129,7 +129,7 @@ impl PinWin {
                 pin_window_clone.set_img_width(img_width);
                 pin_window_clone.set_img_height(img_height);
                 pin_window_clone.window().set_position(slint::LogicalPosition::new(change_pos_x, change_pos_y));
-                message_sender_clone.send(ShotterMessage::Move(id)).unwrap();
+                let _ = message_sender_clone.send(ShotterMessage::Move(id));
             });
         }
 
@@ -146,11 +146,11 @@ impl PinWin {
                         let height = pin_window.get_win_height();
                         let left_bottom_x = position.x + (width * scale_factor) as i32;
                         let left_bottom_y = position.y + (height * scale_factor) as i32;
-                        message_sender_clone.send(ShotterMessage::ShowToolbar(left_bottom_x, left_bottom_y, id, pin_window.as_weak())).unwrap();
+                        let _ = message_sender_clone.send(ShotterMessage::ShowToolbar(left_bottom_x, left_bottom_y, id, pin_window.as_weak()));
                     } else if !pin_window.window().is_visible() || pin_window.window().is_minimized() {
-                        message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
+                        let _ = message_sender_clone.send(ShotterMessage::HideToolbar(true));
                     } else {
-                        message_sender_clone.send(ShotterMessage::HideToolbar(false)).unwrap();
+                        let _ = message_sender_clone.send(ShotterMessage::HideToolbar(false));
                     }
                     true
                 }
@@ -162,15 +162,15 @@ impl PinWin {
                 let pin_window_clone = pin_window.as_weak();
                 let message_sender_clone = message_sender.clone();
                 pin_window.on_close(move || {
-                    message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::HideToolbar(true));
                     pin_window_clone.unwrap().hide().unwrap();
-                    message_sender_clone.send(ShotterMessage::Close(id)).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::Close(id));
                 });
     
                 let pin_window_clone = pin_window.as_weak();
                 let message_sender_clone = message_sender.clone();
                 pin_window.on_hide(move || {
-                    message_sender_clone.send(ShotterMessage::HideToolbar(true)).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::HideToolbar(true));
                     pin_window_clone.unwrap().window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                         winit_win.set_minimized(true);
                     });
@@ -259,9 +259,9 @@ impl PinWin {
                 pin_window.on_draw_path(move |path| {
                     let pin_window = pin_window_clone.unwrap();
                     let pathes_rc = pin_window.get_pathes();
-                    let pathes = pathes_rc.as_any().downcast_ref::<VecModel<SharedString>>()
-                        .expect("We know we set a VecModel earlier");
-                    pathes.push(path.into());
+                    if let Some(pathes) = pathes_rc.as_any().downcast_ref::<VecModel<SharedString>>() {
+                        pathes.push(path.into());
+                    }
                 });
             }
         }

@@ -1,11 +1,12 @@
 use slint::Weak;
 use toml;
+use std::error::Error;
 use std::{collections::HashMap, fs};
 use std::sync::{LazyLock, Mutex};
 use serde::{Serialize, Deserialize};
 use global_hotkey::hotkey::HotKey;
 
-use crate::util::file_util;
+use crate::util::{file_util, log_util};
 use crate::util::sys_util;
 use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
 
@@ -47,7 +48,8 @@ pub struct AppConfig {
 impl AppConfig {
     fn new() -> AppConfig {
         let path = file_util::get_userdata_path().join("config.toml");
-        let config_str = fs::read_to_string(path).unwrap_or_else(|_| String::new());
+        let config_str = fs::read_to_string(path)
+            .unwrap_or_else(|_| String::new());
 
         let config = match toml::from_str::<Config>(&config_str) {
             Ok(config) => config,
@@ -62,20 +64,22 @@ impl AppConfig {
         }
     }
 
-    fn save(&self) {
+    fn save(&self) -> Result<(), Box<dyn Error>> {
         let path = file_util::get_userdata_path().join("config.toml");
-        let config_str = toml::to_string_pretty(&self.config).unwrap();
-        fs::write(path, config_str).unwrap();
+        let config_str = toml::to_string_pretty(&self.config)?;
+        fs::write(path, config_str)?;
+        Ok(())
     }
 
     pub fn global() -> &'static Mutex<AppConfig> {
         &INSTANCE
     }
 
-    pub fn set_power_boot(&mut self, power_boot: bool) {
+    pub fn set_power_boot(&mut self, power_boot: bool) -> Result<(), Box<dyn Error>> {
         self.config.power_boot = power_boot;
-        let _ = sys_util::set_power_boot(power_boot);
-        self.save();
+        sys_util::set_power_boot(power_boot)?;
+        self.save()?;
+        Ok(())
     }
 
     pub fn get_power_boot(&self) -> bool {
@@ -102,7 +106,8 @@ impl AppConfig {
         }
 
         self.config.theme = theme;
-        self.save();
+        self.save()
+            .unwrap_or_else(|err| log_util::log_error(format!("AppConfig save error: {:?}", err)));
     }
 
     pub fn get_theme(&self) -> u8 {
@@ -120,7 +125,8 @@ impl AppConfig {
 
     pub fn set_shortcut(&mut self, key: String, value: String) {
         self.config.shortcuts.insert(key, value);
-        self.save();
+        self.save()
+            .unwrap_or_else(|err| log_util::log_error(format!("AppConfig save error: {:?}", err)));
     }
 
     pub fn get_shortcut(&self, key: &str) -> Option<&String> {
