@@ -77,7 +77,10 @@ impl Volume {
 
     // This is a helper function that close a handle.
     fn close_drive(h_vol: Foundation::HANDLE) {
-        unsafe { let _ = Foundation::CloseHandle(h_vol); }
+        unsafe { 
+            Foundation::CloseHandle(h_vol)
+                .unwrap_or_else(|e| log_error(format!("Volume::close_drive, error: {:?}", e)));
+        }
     }
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
@@ -94,7 +97,7 @@ impl Volume {
         // Query, Return statistics about the journal on the current volume
         let mut cd: u32 = 0;
         unsafe { 
-            let _ = IO::DeviceIoControl(
+            IO::DeviceIoControl(
                 h_vol, 
                 Ioctl::FSCTL_QUERY_USN_JOURNAL, 
                 None, 
@@ -103,7 +106,7 @@ impl Volume {
                 std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>().try_into().unwrap(), 
                 Some(&mut cd), 
                 None
-            );
+            ).unwrap_or_else(|e| log_error(format!("{} Volume::build_index, error: {:?}", self.drive, e)));
         };
 
         self.file_map.start_usn = self.ujd.NextUsn;
@@ -154,9 +157,8 @@ impl Volume {
         log_info(format!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
         
         Self::close_drive(h_vol);
-        self.serialization_write().unwrap_or_else(|err: io::Error| {
-            log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
-        });
+        self.serialization_write()
+            .unwrap_or_else(|e| log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, e)));
     }
 
     // Clears the database
@@ -180,17 +182,22 @@ impl Volume {
         #[cfg(debug_assertions)]
         log_info(format!("{} Begin Volume::Find {query}", self.drive));
 
-        if query.is_empty() { let _ = sender.send(None); return;}
+        if query.is_empty() { 
+            let _ = sender.send(None);
+            return;
+        }
+
         if self.last_query != query {
             self.last_search_num = 0;
             self.last_query = query.clone();
         }
 
         if self.file_map.is_empty() { 
-            self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
-                log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
-                self.build_index();
-            });
+            self.serialization_read()
+                .unwrap_or_else(|e| {
+                    log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, e));
+                    self.build_index();
+                });
         };
 
         while self.stop_receiver.try_recv().is_ok() { } // clear channel before find
@@ -200,6 +207,7 @@ impl Volume {
         log_info(format!("{} End Volume::Find {query}, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
         
         self.last_search_num += search_num;
+
         let _ = sender.send(result);
     }
 
@@ -209,10 +217,11 @@ impl Volume {
         log_info(format!("{} Begin Volume::update_index", self.drive));
 
         if self.file_map.is_empty() { 
-            self.serialization_read().unwrap_or_else(|err: Box<dyn Error>| {
-                log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, err));
-                self.build_index();
-            });
+            self.serialization_read()
+                .unwrap_or_else(|e: Box<dyn Error>| {
+                    log_error(format!("{} Volume::serialization_write, error: {:?}", self.drive, e));
+                    self.build_index();
+                });
         };
 
         let mut data = [0i64; 0x10000];

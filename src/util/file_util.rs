@@ -12,6 +12,8 @@ use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, ShellEx
 use windows::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
 use windows::Win32::Graphics::Gdi::{self, DeleteObject, GetBitmapBits, BITMAP, BITMAPINFOHEADER, HBITMAP, HGDIOBJ};
 
+use crate::util::log_util;
+
 
 fn file_exists(path: &str) -> bool {
     fs::metadata(path).is_ok()
@@ -36,7 +38,7 @@ pub fn del_useless_files() {
     let tmp_path = app_path.join("tmp");
     let userdata_path = app_path.join("userdata");
 
-    let _ = fs::remove_dir_all(tmp_path);
+    let _ = fs::remove_dir_all(tmp_path); // ignore error
     
     if userdata_path.exists() {
         // del all .fd file in userdata
@@ -44,7 +46,9 @@ pub fn del_useless_files() {
             let path = entry.unwrap().path();
             if path.is_file() {
                 if let Some(extension) = path.extension() {
-                    if extension == "fd" { let _ = fs::remove_file(&path); }
+                    if extension == "fd" {
+                        let _ = fs::remove_file(&path); // ignore error
+                    }
                 }
             }
         }
@@ -161,7 +165,8 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
     let mut bmp_mask = BITMAP{ bmBits: ptr::null_mut(), bmBitsPixel: 0, bmHeight: 0, bmPlanes: 0, bmType: 0, bmWidth: 0, bmWidthBytes: 0};
 
     unsafe {
-        let _ = GetIconInfo(h_icon, &mut icon_info);
+        GetIconInfo(h_icon, &mut icon_info)
+            .unwrap_or_else(|e| log_util::log_error(format!("Failed to get icon info: {:?}", e)));
         Gdi::GetObjectW(icon_info.hbmColor, mem::size_of_val(&bmp_color) as i32, Some(&mut bmp_color as *mut BITMAP as *mut c_void));
         Gdi::GetObjectW(icon_info.hbmMask, mem::size_of_val(&bmp_mask) as i32, Some(&mut bmp_mask as *mut BITMAP as *mut c_void));
     }
@@ -237,9 +242,15 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
 
     // clear
     unsafe {
-        let _ = DestroyIcon(h_icon);
-        let _ = DeleteObject(HGDIOBJ::from(icon_info.hbmColor));
-        let _ = DeleteObject(HGDIOBJ::from(icon_info.hbmMask));
+        DestroyIcon(h_icon)
+            .unwrap_or_else(|e| log_util::log_error(format!("Failed to destroy icon: {:?}", e)));
+
+        if DeleteObject(HGDIOBJ::from(icon_info.hbmColor)) == false {
+            log_util::log_error("Failed to DeleteObject".to_string());
+        }
+        if DeleteObject(HGDIOBJ::from(icon_info.hbmMask)) == false {
+            log_util::log_error("Failed to DeleteObject".to_string());
+        }
     }
 
     // convert and output

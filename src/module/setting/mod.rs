@@ -6,7 +6,7 @@ use slint::ComponentHandle;
 use windows::Win32::UI::WindowsAndMessaging;
 
 use crate::core::application::{AppMessage, app_config::AppConfig};
-use crate::util::net_util;
+use crate::util::{log_util, net_util};
 use crate::ui::SettingWindow;
 use crate::module::{Module, ModuleMessage};
 
@@ -87,7 +87,8 @@ impl Setting {
             { // power boot
                 setting_win.on_power_boot_changed(move |power_boot| {
                     let mut app_config = AppConfig::global().lock().unwrap();
-                    app_config.set_power_boot(power_boot);
+                    app_config.set_power_boot(power_boot)
+                        .unwrap_or_else(|e| log_util::log_error(format!("Failed to set power boot: {:?}", e)));
                 });
             }
 
@@ -120,7 +121,7 @@ impl Setting {
                     if shortcut.modifiers.alt { shortcut_str += "Alt+"; }
                     else { shortcut_str += &text; }
 
-                    msg_sender.send(AppMessage::ChangeHotkey(id.to_string(), shortcut_str.clone())).unwrap();
+                    let _ = msg_sender.send(AppMessage::ChangeHotkey(id.to_string(), shortcut_str.clone()));
 
                     // TODO Batch setting
                     let setting_win = setting_win_clone.unwrap();
@@ -153,7 +154,9 @@ impl Setting {
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_win_move(move || {
                 setting_win_clone.unwrap().window().with_winit_window(|winit_win| {
-                    let _ = winit_win.drag_window();
+                    winit_win.drag_window().unwrap_or_else(
+                        |e| log_util::log_error(format!("Failed to drag window: {:?}", e))
+                    );
                 });
             });
         }
@@ -186,15 +189,16 @@ impl Setting {
 
                 let setting_win_clone = setting_win_clone.clone();
                 std::thread::spawn(move || {
-                    net_util::Updater::global().lock().unwrap().update_software().unwrap_or_else(
+                    net_util::Updater::global().lock().unwrap().update_software()
+                        .unwrap_or_else(
                         |e| {
-                            println!("Failed to update software: {}", e);
-                            setting_win_clone.upgrade_in_event_loop(move |setting_window| {
-                                setting_window.set_block(false);
-                                setting_window.set_update_state(2);
-                            }).unwrap();
-                        }
-                    );
+                                log_util::log_error(format!("Failed to update software: {:?}", e));
+                                setting_win_clone.upgrade_in_event_loop(move |setting_window| {
+                                    setting_window.set_block(false);
+                                    setting_window.set_update_state(2);
+                                }).unwrap();
+                            }
+                        );
                 });
             });
         }

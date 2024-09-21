@@ -153,15 +153,11 @@ impl FileData {
         self.search_win.clone().upgrade_in_event_loop(move |search_win| {
             if search_win.get_query() != filename {return;}
 
-            let search_result_model = search_win.get_search_result();
-            let search_result_model = search_result_model.as_any().downcast_ref::<VecModel<SearchResult_slint>>()
-                .expect("search_result_model set a VecModel earlier");
-
             let mut result_list = Vec::new();
             for (id, item) in update_result.into_iter().enumerate() {
                 let icon = 
                     file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
-                    .unwrap_or_else(|| slint::Image::default());
+                        .unwrap_or_else(|| slint::Image::default());
                 result_list.push(
                     SearchResult_slint { 
                         id: id as i32,
@@ -171,10 +167,13 @@ impl FileData {
                     }
                 );
             }
-            search_result_model.set_vec(result_list);
-            if !increment_find {
-                search_win.set_viewport_y(0.);
-                search_win.set_active_id(0);
+
+            if let Some(search_result_model) = search_win.get_search_result().as_any().downcast_ref::<VecModel<SearchResult_slint>>() {
+                search_result_model.set_vec(result_list);
+                if !increment_find {
+                    search_win.set_viewport_y(0.);
+                    search_win.set_active_id(0);
+                }
             }
         }).unwrap();
     }
@@ -208,7 +207,7 @@ impl FileData {
             let batch = self.batch;
             let volume = volume.clone();
             let filename = filename.clone();
-            let _ = thread::spawn(move || {
+            thread::spawn(move || {
                 let mut volume = volume.lock().unwrap();
                 volume.find(filename, batch, find_result_sender);
             });

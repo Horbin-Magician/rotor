@@ -53,7 +53,7 @@ impl Module for Searcher{
                             let y_pos = y + (physical_height * 0.3) as i32;
                             win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
                             
-                            searcher_msg_sender_clone_clone.send(SearcherMessage::Update).unwrap();
+                            let _ = searcher_msg_sender_clone_clone.send(SearcherMessage::Update);
                             win.show().unwrap();
                             win.window().set_size(win.window().size()); // trick: fix the bug of error scale_factor
                             win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
@@ -97,7 +97,7 @@ impl Searcher {
         let (searcher_msg_sender, searcher_msg_receiver) = mpsc::channel::<SearcherMessage>();
         let _file_data = FileData::new(search_win.as_weak());
         FileData::event_loop(searcher_msg_receiver, _file_data);
-        searcher_msg_sender.send(SearcherMessage::Init).unwrap();
+        let _ = searcher_msg_sender.send(SearcherMessage::Init);
 
         { // add key event hander
             let search_win_clone = search_win.as_weak();
@@ -128,7 +128,7 @@ impl Searcher {
                     }
                     // If to the bottom, try to find more
                     if active_id == (search_result_model_clone.row_count() - 1) as i32 {
-                        searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string())).unwrap();
+                        let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string()));
                     }
                 }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
                     // Enter
@@ -153,7 +153,7 @@ impl Searcher {
                         search_win.invoke_query_change(slint::SharedString::from(""));
                     }
                     search_win.hide().unwrap();
-                    searcher_msg_sender_clone.send(SearcherMessage::Release).unwrap();
+                    let _ = searcher_msg_sender_clone.send(SearcherMessage::Release);
                 }
                 true
             });
@@ -164,7 +164,7 @@ impl Searcher {
             let search_result_model_clone = search_result_model.clone();
             search_win.on_query_change(move |query| {
                 if query.is_empty() { search_result_model_clone.set_vec(vec![]); }
-                searcher_msg_sender_clone.send(SearcherMessage::Find(query.to_string())).unwrap();
+                let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(query.to_string()));
             });
         }
 

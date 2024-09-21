@@ -10,7 +10,7 @@ use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
 use windows::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
 
-use crate::util::sys_util;
+use crate::util::{log_util, sys_util};
 use crate::core::application::app_config::AppConfig;
 use crate::ui::{MaskWindow, PinWindow, ToolbarWindow};
 use super::{Module, ModuleMessage};
@@ -98,7 +98,10 @@ impl ScreenShotter{
             mask_win.on_shot(move || {
                 // get screens and info
                 let mut point = POINT{x: 0, y: 0};
-                unsafe { let _ = GetCursorPos(&mut point); }
+                unsafe {
+                    GetCursorPos(&mut point)
+                        .unwrap_or_else(|e| { log_util::log_error(format!("Error in GetCursorPos: {:?}", e)); })
+                }
                 
                 let monitor = Monitor::from_point(point.x, point.y).unwrap();
                 let physical_width = monitor.width();
@@ -353,7 +356,7 @@ impl ScreenShotter{
                     }
                 }
             }
-        }).unwrap();
+        }).unwrap_or_else(|e| { log_util::log_error(format!("Error in pin_win_move_hander: {:?}", e)); });
     }
 
 }

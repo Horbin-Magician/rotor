@@ -15,6 +15,9 @@ use is_root::is_root;
 use winreg::enums::*;
 use winreg::RegKey;
 
+use crate::util::log_util;
+
+
 pub fn run_as_admin() -> bool {
     if is_root() { return false; }
     let file_path: Vec<u16> = env::current_exe().unwrap().to_str().unwrap().encode_utf16().chain(std::iter::once(0)).collect();
@@ -54,12 +57,12 @@ pub fn forbid_window_animation(window: &slint::Window) {
         if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
             let disable: i32 = 1;
             unsafe {
-                let _ = DwmSetWindowAttribute(
+                DwmSetWindowAttribute(
                     HWND(win32_handle.hwnd.get() as *mut _),
                     DWMWA_TRANSITIONS_FORCEDISABLED.try_into().unwrap(),
                     &disable as *const _ as *const _,
                     std::mem::size_of_val(&disable) as u32,
-                );
+                ).unwrap_or_else(|e| log_util::log_error(format!("DwmSetWindowAttribute error: {:?}", e)));
             }
         }
     });
@@ -69,7 +72,8 @@ pub fn get_scale_factor(monitor_id: u32) -> f32 {
     let mut dpi_x: u32 = 0;
     let mut dpi_y: u32 = 0;
     unsafe{ 
-        let _ = GetDpiForMonitor(HMONITOR(monitor_id as *mut _), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+        GetDpiForMonitor(HMONITOR(monitor_id as *mut _), MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y)
+            .unwrap_or_else(|e| log_util::log_error(format!("GetDpiForMonitor error: {:?}", e)));
     }
     dpi_x as f32 / 96.0
 }

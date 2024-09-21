@@ -54,15 +54,15 @@ impl Toolbar {
             let message_sender_clone = message_sender.clone();
             toolbar_window.on_click(move |id, active_num| {
                 if active_num == 0 {
-                    message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Hide())).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Hide()));
                 } else if active_num == 1 {
-                    message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Copy())).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Copy()));
                 } else if active_num == 2 {
-                    message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Close())).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Close()));
                 } else if active_num == 3 {
-                    message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Save())).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Save()));
                 } else if active_num == 4 {
-                    message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::TriggerDraw())).unwrap();
+                    let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::TriggerDraw()));
                 }
             });
         }

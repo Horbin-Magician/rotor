@@ -1,13 +1,15 @@
 pub mod app_config;
 mod system_tray;
 
+use std::error::Error;
 use std::sync::{mpsc, Arc, Mutex};
 use std::collections::HashMap;
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam::channel::{unbounded, Receiver, RecvError, Sender};
 use global_hotkey::hotkey::HotKey;
 use slint;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
+use crate::util::log_util;
 use crate::module::{setting::Setting, screen_shotter::ScreenShotter, searcher::Searcher, Module, ModuleMessage};
 use system_tray::SystemTray;
 
@@ -28,11 +30,11 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new() -> Application {
+    pub fn new() -> Result<Application, Box<dyn std::error::Error>> {
         let (_msg_sender, _msg_receiver) = unbounded();
-        let _hotkey_manager_rc: Arc<Mutex<GlobalHotKeyManager>> = Arc::new(Mutex::new(GlobalHotKeyManager::new().unwrap())); // initialize the hotkeys manager
+        let _hotkey_manager_rc: Arc<Mutex<GlobalHotKeyManager>> = Arc::new(Mutex::new(GlobalHotKeyManager::new()?)); // initialize the hotkeys manager
 
-        let _system_tray = SystemTray::new(_msg_sender.clone());
+        let _system_tray = SystemTray::new(_msg_sender.clone())?;
 
         let mut _modules: Vec<Box<dyn Module>> = Vec::new();
         _modules.push(Box::new(Searcher::new()));
@@ -45,7 +47,7 @@ impl Application {
             _module_profiles.insert(module.flag().to_string(), (hotkey, module.run()));
         }
 
-        Application {
+        Ok(Application {
             _is_running: Arc::new(Mutex::new(true)),
             _system_tray,
             _modules,
@@ -53,7 +55,7 @@ impl Application {
             _msg_receiver,
             _hotkey_manager_rc,
             _module_profiles,
-        }
+        })
     }
     
     pub fn run(&mut self) {
@@ -64,11 +66,88 @@ impl Application {
                 let hotkey_clone = hotkey.clone();
                 let hotkey_manager_rc_clone = self._hotkey_manager_rc.clone();
                 slint::invoke_from_event_loop(move || {
-                    let hotkey_manager = hotkey_manager_rc_clone.lock().unwrap();
-                    hotkey_manager.register(hotkey_clone).expect("Error in register hotkey"); // TODO deal with the error
-                }).unwrap();
+                    if let Ok(hotkey_manager) = hotkey_manager_rc_clone.lock() {
+                        hotkey_manager.register(hotkey_clone)
+                            .unwrap_or_else(|e| log_util::log_error(format!("Error in register hotkey: {:?}", e)));
+                    }
+                }).unwrap_or_else(|e| log_util::log_error(format!("Error in invoke_from_event_loop: {:?}", e)));
                 module_ports.insert(hotkey.id(), runner.clone());
             }
+        }
+
+        fn handle_global_hotkey_event(
+            event: Result<GlobalHotKeyEvent, RecvError>,
+            module_ports: &HashMap<u32, mpsc::Sender<ModuleMessage>>
+        ) {
+            match event {
+                Ok(event) => {
+                    if event.state == HotKeyState::Pressed {
+                        if let Some(sender) = module_ports.get(&event.id) {
+                            let _ = sender.send(ModuleMessage::Trigger);
+                        } else {
+                            log_util::log_error("No sender found for the event ID".to_string());
+                        }
+                    }
+                },
+                Err(e) => {log_util::log_error(format!("Failed to receive GlobalHotKeyEvent: {:?}", e));}
+            }
+        }
+
+        fn handle_quit(is_running: Arc<Mutex<bool>>) {
+            if let Ok(mut is_running) = is_running.lock() {
+                *is_running = false;
+                if let Err(e) = slint::quit_event_loop() {
+                    log_util::log_error(format!("Failed to quit event loop: {:?}", e));
+                }
+            } else {
+                log_util::log_error("Failed to lock is_running mutex".to_string());
+            }
+        }
+
+        fn handle_show_setting(module_profiles: &HashMap<String, (Option<HotKey>, mpsc::Sender<ModuleMessage>)>) {
+            if let Some((_, sender)) = module_profiles.get("setting") {
+                let _ = sender.send(ModuleMessage::Trigger);
+            } else {
+                log_util::log_error("No sender found for setting".to_string());
+            }
+        }
+
+        fn handle_change_hotkey(
+            key: String,
+            value: String,
+            module_profiles: &mut HashMap<String, (Option<HotKey>, mpsc::Sender<ModuleMessage>)>,
+            module_ports: &mut HashMap<u32, mpsc::Sender<ModuleMessage>>,
+            hotkey_manager_rc: &Arc<Mutex<GlobalHotKeyManager>>,
+        ) -> Result<(), Box<dyn Error>> {
+            if let Some((Some(hotkey), runner)) = module_profiles.remove(&key) {
+                let msg_sender = module_ports.remove(&hotkey.id())
+                    .ok_or("No sender found for the hotkey")?;
+                
+                let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
+                slint::invoke_from_event_loop(move || {
+                    if let Ok(hotkey_manager) = hotkey_manager_rc_clone.lock() {
+                        hotkey_manager.unregister(hotkey)
+                            .unwrap_or_else(|e| log_util::log_error(format!("Error in unregister hotkey: {:?}", e)));
+                    } else {
+                        log_util::log_error("Failed to lock hotkey manager".to_string());
+                    }
+                }).unwrap_or_else(|e| log_util::log_error(format!("Error in invoke_from_event_loop: {:?}", e)));
+
+                let hotkey = value.parse::<HotKey>()?;
+                let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
+                slint::invoke_from_event_loop(move || {
+                    if let Ok(hotkey_manager) = hotkey_manager_rc_clone.lock() {
+                        hotkey_manager.register(hotkey)
+                            .unwrap_or_else(|e| log_util::log_error(format!("Error in register hotkey: {:?}", e)));
+                    } else {
+                        log_util::log_error("Failed to lock hotkey manager".to_string());
+                    }
+                }).unwrap_or_else(|e| log_util::log_error(format!("Error in invoke_from_event_loop: {:?}", e)));
+                
+                module_profiles.insert(key, (Some(hotkey), runner));
+                module_ports.insert(hotkey.id(), msg_sender);
+            }
+            Ok(())
         }
 
         let is_running = self._is_running.clone();
@@ -79,42 +158,31 @@ impl Application {
             loop {
                 crossbeam::select! {
                     recv(GlobalHotKeyEvent::receiver()) -> event => {
-                        let event = event.unwrap();
-                        if event.state == HotKeyState::Pressed {
-                            module_ports[&event.id].send(ModuleMessage::Trigger).unwrap();
-                        }
+                        handle_global_hotkey_event(event, &module_ports);
                     }
                     recv(msg_receiver) -> msg => {
-                        match msg.unwrap() {
-                            AppMessage::Quit => {
-                                *is_running.lock().unwrap() = false;
-                                slint::quit_event_loop().unwrap();
-                                break;
-                            },
-                            AppMessage::ShowSetting => {
-                                module_profiles.get("setting").unwrap().1.send(ModuleMessage::Trigger).unwrap();
-                            },
-                            AppMessage::ChangeHotkey(key, value) => {
-                                if let Some((Some(hotkey), runner)) = module_profiles.remove(&key) {
-                                    let msg_sender = module_ports.remove(&hotkey.id()).unwrap();
-                                    
-                                    let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
-                                    slint::invoke_from_event_loop(move || {
-                                        let hotkey_manager = hotkey_manager_rc_clone.lock().unwrap();
-                                        hotkey_manager.unregister(hotkey).expect("Error in unregister hotkey"); // TODO deal with the error
-                                    }).unwrap();
-        
-                                    let hotkey = value.parse::<HotKey>().unwrap();
-                                    let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
-                                    slint::invoke_from_event_loop(move || {
-                                        let hotkey_manager = hotkey_manager_rc_clone.lock().unwrap();
-                                        hotkey_manager.register(hotkey).expect("Error in register hotkey"); // TODO deal with the error
-                                    }).unwrap();
-                                    
-                                    module_profiles.insert(key, (Some(hotkey), runner));
-                                    module_ports.insert(hotkey.id(), msg_sender);
+                        match msg {
+                            Ok(msg) => {
+                                match msg {
+                                    AppMessage::Quit => {
+                                        handle_quit(is_running.clone());
+                                        break;
+                                    },
+                                    AppMessage::ShowSetting => {
+                                        handle_show_setting(&module_profiles)
+                                    },
+                                    AppMessage::ChangeHotkey(key, value) => {
+                                        handle_change_hotkey(
+                                            key,
+                                            value,
+                                            &mut module_profiles,
+                                            &mut module_ports,
+                                            &hotkey_manager_rc
+                                        ).unwrap_or_else(|e| log_util::log_error(format!("Failed to change hotkey: {:?}", e)));
+                                    }
                                 }
-                            }
+                            },
+                            Err(e) => {log_util::log_error(format!("Failed to receive message: {:?}", e));}
                         }
                     },
                 }
@@ -129,6 +197,8 @@ impl Application {
     }
 
     pub fn is_running(&self) -> bool {
-        self._is_running.lock().unwrap().clone()
+        if let Ok(is_running) = self._is_running.lock() {
+            return *is_running;
+        } else { false }
     }
 }
