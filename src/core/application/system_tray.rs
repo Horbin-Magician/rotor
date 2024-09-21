@@ -2,7 +2,7 @@ use crossbeam::channel::Sender;
 
 use tray_icon::{
     menu::{Menu, MenuEvent},
-    ClickType, TrayIconBuilder, menu::MenuItem, Icon, TrayIconEvent, TrayIcon
+    TrayIconBuilder, menu::MenuItem, Icon, TrayIconEvent, TrayIcon
 };
 
 use super::AppMessage;
@@ -33,8 +33,13 @@ impl SystemTray {
                 crossbeam::select! {
                     recv(TrayIconEvent::receiver()) -> event => {
                         if let Ok(event) = event {
-                            if event.click_type == ClickType::Left {
-                                msg_sender.send(AppMessage::ShowSetting).unwrap();
+                            match event {
+                                TrayIconEvent::Click { id:_, position:_, rect:_, button, button_state } => {
+                                    if button == tray_icon::MouseButton::Left && button_state == tray_icon::MouseButtonState::Up {
+                                        msg_sender.send(AppMessage::ShowSetting).unwrap();
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
