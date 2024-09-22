@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::sync::mpsc;
 use crossbeam;
 use global_hotkey::hotkey::HotKey;
@@ -23,11 +24,16 @@ impl Module for Setting{
         let search_win_clone = self.setting_win.as_weak();
         std::thread::spawn(move || {
             loop {
-                match msg_reciever.recv().unwrap() {
-                    ModuleMessage::Trigger => {
+                match msg_reciever.recv() {
+                    Ok(ModuleMessage::Trigger) => {
                         search_win_clone.upgrade_in_event_loop(move |win| {
-                            win.show().unwrap();
-                        }).unwrap();
+                            let _ = win.show();
+                        }).unwrap_or_else(
+                            |e| log_util::log_error(format!("Setting module failed to show window: {:?}", e))
+                        );
+                    },
+                    Err(e) => {
+                        log_util::log_error(format!("Setting module failed to receive message: {:?}", e));
                     }
                 }
             }
@@ -45,60 +51,53 @@ impl Module for Setting{
 }
 
 impl Setting {
-    pub fn new( msg_sender: crossbeam::channel::Sender<AppMessage> ) -> Setting {
-        let setting_win = SettingWindow::new().unwrap();
-        {
-            let mut app_config = AppConfig::global().lock().unwrap();
-            setting_win.invoke_change_theme(app_config.get_theme() as i32);
-            app_config.setting_win = Some(setting_win.as_weak());
-        }
+    pub fn new( msg_sender: crossbeam::channel::Sender<AppMessage> ) -> Result<Setting, Box<dyn Error>> {
+        let setting_win = SettingWindow::new()?;
 
-        {
-            let width: f32 = 500.;
-            let height: f32 = 400.;
-            let x_screen: f32;
-            let y_screen: f32;
-            unsafe{
-                x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
-                y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
-            }
-            let x_pos = ((x_screen - width * setting_win.window().scale_factor()) * 0.5) as i32;
-            let y_pos = ((y_screen - height * setting_win.window().scale_factor()) * 0.4) as i32;
-            setting_win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
-        }
+        let mut app_config = AppConfig::global().lock()?;
+        setting_win.invoke_change_theme(app_config.get_theme() as i32);
+        app_config.setting_win = Some(setting_win.as_weak());
 
-        {   
-            let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
-            setting_win.set_version(version.into());
-            
-            let app_config = AppConfig::global().lock().unwrap();
-            setting_win.set_power_boot(app_config.get_power_boot());
-            setting_win.set_theme(app_config.get_theme() as i32);
-            // TODO Batch setting
-            setting_win.set_shortcut_search(app_config.get_shortcut("search").unwrap_or(&"unkown".to_string()).into());
-            setting_win.set_shortcut_screenshot(app_config.get_shortcut("screenshot").unwrap_or(&"unkown".to_string()).into());
-            setting_win.set_shortcut_pinwin_save(app_config.get_shortcut("pinwin_save").unwrap_or(&"unkown".to_string()).into());
-            setting_win.set_shortcut_pinwin_close(app_config.get_shortcut("pinwin_close").unwrap_or(&"unkown".to_string()).into());
-            setting_win.set_shortcut_pinwin_copy(app_config.get_shortcut("pinwin_copy").unwrap_or(&"unkown".to_string()).into());
-            setting_win.set_shortcut_pinwin_hide(app_config.get_shortcut("pinwin_hide").unwrap_or(&"unkown".to_string()).into());
+        let width: f32 = 500.;
+        let height: f32 = 400.;
+        let x_screen: f32;
+        let y_screen: f32;
+        unsafe{
+            x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
+            y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
         }
+        let x_pos = ((x_screen - width * setting_win.window().scale_factor()) * 0.5) as i32;
+        let y_pos = ((y_screen - height * setting_win.window().scale_factor()) * 0.4) as i32;
+        setting_win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
+
+        let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
+        setting_win.set_version(version.into());
+
+        // TODO Batch setting
+        setting_win.set_power_boot(app_config.get_power_boot());
+        setting_win.set_theme(app_config.get_theme() as i32);
+        setting_win.set_shortcut_search(app_config.get_shortcut("search").unwrap_or(&"unkown".to_string()).into());
+        setting_win.set_shortcut_screenshot(app_config.get_shortcut("screenshot").unwrap_or(&"unkown".to_string()).into());
+        setting_win.set_shortcut_pinwin_save(app_config.get_shortcut("pinwin_save").unwrap_or(&"unkown".to_string()).into());
+        setting_win.set_shortcut_pinwin_close(app_config.get_shortcut("pinwin_close").unwrap_or(&"unkown".to_string()).into());
+        setting_win.set_shortcut_pinwin_copy(app_config.get_shortcut("pinwin_copy").unwrap_or(&"unkown".to_string()).into());
+        setting_win.set_shortcut_pinwin_hide(app_config.get_shortcut("pinwin_hide").unwrap_or(&"unkown".to_string()).into());
 
         { // code for setting change
             { // power boot
                 setting_win.on_power_boot_changed(move |power_boot| {
-                    let mut app_config = AppConfig::global().lock().unwrap();
-                    app_config.set_power_boot(power_boot)
-                        .unwrap_or_else(|e| log_util::log_error(format!("Failed to set power boot: {:?}", e)));
+                    if let Ok(mut app_config) = AppConfig::global().lock() {
+                        app_config.set_power_boot(power_boot)
+                            .unwrap_or_else(|e| log_util::log_error(format!("Failed to set power boot: {:?}", e)));
+                    }
                 });
             }
 
             {// theme
-                // let setting_win_clone = setting_win.as_weak();
                 setting_win.on_theme_changed(move |theme| {
-                    // let setting_win = setting_win_clone.unwrap();
-                    // setting_win.invoke_change_theme(theme);
-                    let mut app_config = AppConfig::global().lock().unwrap();
-                    app_config.set_theme(theme as u8);
+                    if let Ok(mut app_config) = AppConfig::global().lock() {
+                        app_config.set_theme(theme as u8);
+                    }
                 });
             }
 
@@ -124,16 +123,18 @@ impl Setting {
                     let _ = msg_sender.send(AppMessage::ChangeHotkey(id.to_string(), shortcut_str.clone()));
 
                     // TODO Batch setting
-                    let setting_win = setting_win_clone.unwrap();
-                    if id == "search" { setting_win.set_shortcut_search(shortcut_str.clone().into());
-                    } else if id == "screenshot" { setting_win.set_shortcut_screenshot(shortcut_str.clone().into());}
-                    else if id == "pinwin_save" { setting_win.set_shortcut_pinwin_save(shortcut_str.clone().into());}
-                    else if id == "pinwin_close" { setting_win.set_shortcut_pinwin_close(shortcut_str.clone().into());}
-                    else if id == "pinwin_copy" { setting_win.set_shortcut_pinwin_copy(shortcut_str.clone().into());}
-                    else if id == "pinwin_hide" { setting_win.set_shortcut_pinwin_hide(shortcut_str.clone().into());}
+                    if let Some(setting_win) = setting_win_clone.upgrade() {
+                        if id == "search" { setting_win.set_shortcut_search(shortcut_str.clone().into());
+                        } else if id == "screenshot" { setting_win.set_shortcut_screenshot(shortcut_str.clone().into());}
+                        else if id == "pinwin_save" { setting_win.set_shortcut_pinwin_save(shortcut_str.clone().into());}
+                        else if id == "pinwin_close" { setting_win.set_shortcut_pinwin_close(shortcut_str.clone().into());}
+                        else if id == "pinwin_copy" { setting_win.set_shortcut_pinwin_copy(shortcut_str.clone().into());}
+                        else if id == "pinwin_hide" { setting_win.set_shortcut_pinwin_hide(shortcut_str.clone().into());}
+                    }
 
-                    let mut app_config = AppConfig::global().lock().unwrap();
-                    app_config.set_shortcut(id.to_string(), shortcut_str);
+                    if let Ok(mut app_config) = AppConfig::global().lock() {
+                        app_config.set_shortcut(id.to_string(), shortcut_str);
+                    }
                 });
             }
         }
@@ -141,70 +142,82 @@ impl Setting {
         { // minimize, close, win move
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_minimize(move || {
-                setting_win_clone.unwrap().window().with_winit_window(|winit_win| {
-                    winit_win.set_minimized(true);
-                });
+                if let Some(setting_win) = setting_win_clone.upgrade() {
+                    setting_win.window().with_winit_window(|winit_win| {
+                        winit_win.set_minimized(true);
+                    });
+                }
             });
 
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_close(move || {
-                setting_win_clone.unwrap().hide().unwrap();
+                if let Some(setting_win) = setting_win_clone.upgrade() {
+                    let _ = setting_win.hide();
+                }
             });
 
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_win_move(move || {
-                setting_win_clone.unwrap().window().with_winit_window(|winit_win| {
-                    winit_win.drag_window().unwrap_or_else(
-                        |e| log_util::log_error(format!("Failed to drag window: {:?}", e))
-                    );
-                });
+                if let Some(setting_win) = setting_win_clone.upgrade() {
+                    setting_win.window().with_winit_window(|winit_win| {
+                        winit_win.drag_window().unwrap_or_else(
+                            |e| log_util::log_error(format!("Failed to drag window: {:?}", e))
+                        );
+                    });
+                }
             });
         }
 
         { // update
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_check_update(move || {
-                let setting_window = setting_win_clone.unwrap();
-                setting_window.set_block(true);
+                if let Some(setting_win) = setting_win_clone.upgrade() {
+                    setting_win.set_block(true);
+                }
 
                 let setting_win_clone = setting_win_clone.clone();
                 std::thread::spawn(move || {
-                    let latest_version = net_util::Updater::global().lock().unwrap().get_latest_version().unwrap_or("unknown".to_string());
-                    let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
-
-                    setting_win_clone.upgrade_in_event_loop(move |setting_window| {
-                        setting_window.set_current_version(current_version.into());
-                        setting_window.set_latest_version(latest_version.into());
-                        setting_window.set_update_state(1);
-                        setting_window.set_block(false);
-                    }).unwrap();
+                    if let Ok(mut updater) = net_util::Updater::global().lock() {
+                        let latest_version = updater.get_latest_version().unwrap_or("unknown".to_string());
+                        let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
+    
+                        setting_win_clone.upgrade_in_event_loop(move |setting_window| {
+                            setting_window.set_current_version(current_version.into());
+                            setting_window.set_latest_version(latest_version.into());
+                            setting_window.set_update_state(1);
+                            setting_window.set_block(false);
+                        }).unwrap_or_else(|e| log_util::log_error(format!("Failed to check update: {:?}", e)));
+                    }
                 });
             });
 
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_update(move || {
-                let setting_window = setting_win_clone.unwrap();
-                setting_window.set_block(true);
-                setting_window.set_update_state(0);
+                if let Some(setting_win) = setting_win_clone.upgrade() {
+                    setting_win.set_block(true);
+                    setting_win.set_update_state(0);
+                }
 
                 let setting_win_clone = setting_win_clone.clone();
                 std::thread::spawn(move || {
-                    net_util::Updater::global().lock().unwrap().update_software()
-                        .unwrap_or_else(
-                        |e| {
-                                log_util::log_error(format!("Failed to update software: {:?}", e));
-                                setting_win_clone.upgrade_in_event_loop(move |setting_window| {
-                                    setting_window.set_block(false);
-                                    setting_window.set_update_state(2);
-                                }).unwrap();
-                            }
-                        );
+                    if let Ok(updater) = net_util::Updater::global().lock() {
+                        updater.update_software()
+                            .unwrap_or_else(
+                                |e| {
+                                    log_util::log_error(format!("Failed to update software: {:?}", e));
+                                    setting_win_clone.upgrade_in_event_loop(move |setting_window| {
+                                        setting_window.set_block(false);
+                                        setting_window.set_update_state(2);
+                                    }).unwrap_or_else(|e| log_util::log_error(format!("Set setting_window back from updating: {:?}", e)));
+                                }
+                            );
+                    }
                 });
             });
         }
 
-        Setting {
+        Ok(Setting {
             setting_win
-        }
+        })
     }
 }

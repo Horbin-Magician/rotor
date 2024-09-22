@@ -2,7 +2,7 @@ mod file_data;
 mod volume;
 
 use slint::{ComponentHandle, Model};
-use std::{sync::{mpsc, mpsc::Sender}, rc::Rc};
+use std::{error::Error, rc::Rc, sync::mpsc::{self, Sender}};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
@@ -35,31 +35,36 @@ impl Module for Searcher{
         let searcher_msg_sender_clone = self.searcher_msg_sender.clone();
         std::thread::spawn(move || {
             loop {
-                match msg_reciever.recv().unwrap() {
-                    ModuleMessage::Trigger => {
+                match msg_reciever.recv() {
+                    Ok(ModuleMessage::Trigger) => {
                         let searcher_msg_sender_clone_clone = searcher_msg_sender_clone.clone();
                         search_win_clone.upgrade_in_event_loop(move |win| {
                             // Set window center
-                            let monitors = Monitor::all().unwrap();
-                            let primary_monitor = monitors.iter().find(|m| m.is_primary()).unwrap();
-                            let physical_width = primary_monitor.width() as f32;
-                            let physical_height = primary_monitor.height() as f32;
-                            let x = primary_monitor.x();
-                            let y = primary_monitor.y();
-                            let width = win.get_ui_width();
-                            
-                            let scale_factor = sys_util::get_scale_factor(primary_monitor.id());
-                            let x_pos = x + ((physical_width - width * scale_factor) * 0.5) as i32;
-                            let y_pos = y + (physical_height * 0.3) as i32;
-                            win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
-                            
+                            if let Ok(monitors) = Monitor::all() {
+                                if let Some(primary_monitor) = monitors.iter().find(|m| m.is_primary()) {
+                                    let physical_width = primary_monitor.width() as f32;
+                                    let physical_height = primary_monitor.height() as f32;
+                                    let x = primary_monitor.x();
+                                    let y = primary_monitor.y();
+                                    let width = win.get_ui_width();
+                                    
+                                    let scale_factor = sys_util::get_scale_factor(primary_monitor.id());
+                                    let x_pos = x + ((physical_width - width * scale_factor) * 0.5) as i32;
+                                    let y_pos = y + (physical_height * 0.3) as i32;
+                                    win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
+                                }
+                            }
                             let _ = searcher_msg_sender_clone_clone.send(SearcherMessage::Update);
-                            win.show().unwrap();
+                            let _ = win.show();
                             win.window().set_size(win.window().size()); // trick: fix the bug of error scale_factor
                             win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                 winit_win.focus_window();
                             });
-                        }).unwrap();
+                        }).unwrap_or_else(|e| log_util::log_error(format!("Failed to show search window: {:?}", e)));
+                    },
+                    Err(e) => {
+                        log_util::log_error(format!("Failed to get message: {:?}", e));
+                        break;
                     }
                 }
             }
@@ -68,8 +73,9 @@ impl Module for Searcher{
     }
 
     fn get_hotkey(&mut self) -> Option<HotKey> {
-        let app_config = AppConfig::global().lock().unwrap();
-        app_config.get_hotkey_from_str("search")
+        if let Ok(app_config) = AppConfig::global().lock() {
+            app_config.get_hotkey_from_str("search")
+        }else{ None }
     }
 
     fn clean(&self) {
@@ -78,13 +84,12 @@ impl Module for Searcher{
 }
 
 impl Searcher {
-    pub fn new() -> Searcher {
-        let search_win = SearchWindow::new().unwrap();
-        {
-            let mut app_config = AppConfig::global().lock().unwrap();
-            search_win.invoke_change_theme(app_config.get_theme() as i32);
-            app_config.search_win = Some(search_win.as_weak());
-        }
+    pub fn new() -> Result<Searcher, Box<dyn Error>> {
+        let search_win = SearchWindow::new()?;
+        
+        let mut app_config = AppConfig::global().lock()?;
+        search_win.invoke_change_theme(app_config.get_theme() as i32);
+        app_config.search_win = Some(search_win.as_weak());
 
         search_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
@@ -104,41 +109,45 @@ impl Searcher {
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_key_pressed(move |event| {
-                let search_win_clone = search_win_clone.unwrap();
-                if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
-                    // ESC
-                    search_win_clone.hide().unwrap();
-                }else if event.text == slint::SharedString::from(slint::platform::Key::UpArrow) {
-                    // UpArrow
-                    let mut active_id = search_win_clone.get_active_id();
-                    if active_id > 0 { 
-                        active_id -= 1;
-                        search_win_clone.set_active_id(active_id);
-                        let viewport_y = search_win_clone.get_viewport_y();
-                        if (-viewport_y / 60.) as i32 > active_id { search_win_clone.set_viewport_y(viewport_y + 60.); }
-                    }
-                }else if event.text == slint::SharedString::from(slint::platform::Key::DownArrow) {
-                    // DownArrow
-                    let mut active_id = search_win_clone.get_active_id();
-                    if active_id < (search_result_model_clone.row_count() - 1) as i32 { // If no more item
-                        active_id += 1;
-                        search_win_clone.set_active_id(active_id);
-                        let viewport_y = search_win_clone.get_viewport_y();
-                        if (-viewport_y / 60. + 7.) as i32 <= active_id { search_win_clone.set_viewport_y(viewport_y - 60.); }
-                    }
-                    // If to the bottom, try to find more
-                    if active_id == (search_result_model_clone.row_count() - 1) as i32 {
-                        let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string()));
-                    }
-                }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
-                    // Enter
-                    let active_id = search_win_clone.get_active_id();
-                    let data = search_result_model_clone.row_data(active_id as usize);
-                    if let Some(f) = data {
-                        file_util::open_file((f.path + &f.filename).to_string())
-                            .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
-                        search_win_clone.hide().unwrap();
-                    }
+                match search_win_clone.upgrade() {
+                    Some(search_win_clone) => {
+                        if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
+                            // ESC
+                            let _ = search_win_clone.hide();
+                        }else if event.text == slint::SharedString::from(slint::platform::Key::UpArrow) {
+                            // UpArrow
+                            let mut active_id = search_win_clone.get_active_id();
+                            if active_id > 0 { 
+                                active_id -= 1;
+                                search_win_clone.set_active_id(active_id);
+                                let viewport_y = search_win_clone.get_viewport_y();
+                                if (-viewport_y / 60.) as i32 > active_id { search_win_clone.set_viewport_y(viewport_y + 60.); }
+                            }
+                        }else if event.text == slint::SharedString::from(slint::platform::Key::DownArrow) {
+                            // DownArrow
+                            let mut active_id = search_win_clone.get_active_id();
+                            if active_id < (search_result_model_clone.row_count() - 1) as i32 { // If no more item
+                                active_id += 1;
+                                search_win_clone.set_active_id(active_id);
+                                let viewport_y = search_win_clone.get_viewport_y();
+                                if (-viewport_y / 60. + 7.) as i32 <= active_id { search_win_clone.set_viewport_y(viewport_y - 60.); }
+                            }
+                            // If to the bottom, try to find more
+                            if active_id == (search_result_model_clone.row_count() - 1) as i32 {
+                                let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string()));
+                            }
+                        }else if event.text == slint::SharedString::from(slint::platform::Key::Return) {
+                            // Enter
+                            let active_id = search_win_clone.get_active_id();
+                            let data = search_result_model_clone.row_data(active_id as usize);
+                            if let Some(f) = data {
+                                file_util::open_file((f.path + &f.filename).to_string())
+                                    .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
+                                let _ = search_win_clone.hide();
+                            }
+                        }
+                    },
+                    None => { log_util::log_error("Failed to upgrade search_win in key event hander".to_string()); }
                 }
             });
         }
@@ -147,14 +156,15 @@ impl Searcher {
             let search_win_clone = search_win.as_weak();
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
             search_win.on_lose_focus_trick(move |has_focus| {
-                let search_win = search_win_clone.unwrap();
-                if !has_focus { 
-                    if search_win.get_query() != "" {
-                        search_win.set_query(slint::SharedString::from(""));
-                        search_win.invoke_query_change(slint::SharedString::from(""));
+                if let Some(search_win) = search_win_clone.upgrade() {
+                    if !has_focus { 
+                        if search_win.get_query() != "" {
+                            search_win.set_query(slint::SharedString::from(""));
+                            search_win.invoke_query_change(slint::SharedString::from(""));
+                        }
+                        let _ = search_win.hide();
+                        let _ = searcher_msg_sender_clone.send(SearcherMessage::Release);
                     }
-                    search_win.hide().unwrap();
-                    let _ = searcher_msg_sender_clone.send(SearcherMessage::Release);
                 }
                 true
             });
@@ -174,13 +184,14 @@ impl Searcher {
             let search_result_model_clone = search_result_model.clone();
             search_win.on_item_click(move |event, id| {
                 if event.kind == slint::private_unstable_api::re_exports::PointerEventKind::Up {
-                    let search_win = search_win_clone.unwrap();
-                    if event.button == slint::platform::PointerEventButton::Left {
-                        let data = search_result_model_clone.row_data(id as usize);
-                        if let Some(f) = data {
-                            file_util::open_file((f.path + &f.filename).to_string())
-                                .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
-                            search_win.hide().unwrap();
+                    if let Some(search_win) = search_win_clone.upgrade() {
+                        if event.button == slint::platform::PointerEventButton::Left {
+                            let data = search_result_model_clone.row_data(id as usize);
+                            if let Some(f) = data {
+                                file_util::open_file((f.path + &f.filename).to_string())
+                                    .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
+                                let _ = search_win.hide();
+                            }
                         }
                     }
                 }
@@ -191,11 +202,12 @@ impl Searcher {
             let search_win_clone = search_win.as_weak();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_open_with_admin(move |id| {
-                let search_win = search_win_clone.unwrap();
-                let data = search_result_model_clone.row_data(id as usize);
-                if let Some(f) = data {
-                    file_util::open_file_admin((f.path + &f.filename).to_string());
-                    search_win.hide().unwrap();
+                if let Some(search_win) = search_win_clone.upgrade() {
+                    let data = search_result_model_clone.row_data(id as usize);
+                    if let Some(f) = data {
+                        file_util::open_file_admin((f.path + &f.filename).to_string());
+                        let _ = search_win.hide();
+                    }
                 }
             });
         }
@@ -204,19 +216,20 @@ impl Searcher {
             let search_win_clone = search_win.as_weak();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_open_file_dir(move |id| {
-                let search_win = search_win_clone.unwrap();
-                let data = search_result_model_clone.row_data(id as usize);
-                if let Some(f) = data {
-                    file_util::open_file((f.path[..(f.path.len()-1)]).to_string())
-                        .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
-                    search_win.hide().unwrap();
+                if let Some(search_win) = search_win_clone.upgrade() {
+                    let data = search_result_model_clone.row_data(id as usize);
+                    if let Some(f) = data {
+                        file_util::open_file((f.path[..(f.path.len()-1)]).to_string())
+                            .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
+                        let _ = search_win.hide();
+                    }
                 }
             });
         }
 
-        Searcher {
+        Ok(Searcher {
             search_win,
             searcher_msg_sender,
-        }
+        })
     }
 }

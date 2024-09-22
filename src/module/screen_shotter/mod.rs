@@ -3,7 +3,7 @@ mod toolbar;
 
 use arboard::Clipboard;
 use image::{self, GenericImageView, Rgba};
-use std::{sync::{Arc, Mutex, mpsc, mpsc::Sender}, collections::HashMap};
+use std::{collections::HashMap, error::Error, sync::{mpsc::{self, Sender}, Arc, Mutex}};
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
@@ -74,8 +74,8 @@ impl Module for ScreenShotter {
 }
 
 impl ScreenShotter{
-    pub fn new() -> ScreenShotter {
-        let mask_win = MaskWindow::new().unwrap(); // init MaskWindow
+    pub fn new() -> Result<ScreenShotter, Box<dyn Error>> {
+        let mask_win = MaskWindow::new()?; // init MaskWindow
         sys_util::forbid_window_animation(mask_win.window());
         mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
@@ -86,7 +86,7 @@ impl ScreenShotter{
         let pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>> =  Arc::new(Mutex::new(HashMap::new()));
         let (message_sender, message_reciever) = mpsc::channel::<ShotterMessage>();
 
-        let toolbar = Toolbar::new(message_sender.clone());
+        let toolbar = Toolbar::new(message_sender.clone())?;
 
         let bac_buffer_rc = Arc::new(Mutex::new(
             SharedPixelBuffer::<Rgba8Pixel>::new(1, 1)
@@ -193,29 +193,30 @@ impl ScreenShotter{
                 let mask_win = mask_win_clone.unwrap();
                 let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
                 let message_sender_clone = message_sender_clone.clone();
-                let pin_win = PinWin::new(
+
+                if let Ok(pin_win) = PinWin::new(
                     bac_buffer_rc.clone(), rect,
                     mask_win.get_offset_x(), mask_win.get_offset_y(), mask_win.get_scale_factor(),
                     *max_pin_win_id, message_sender_clone
-                );
-                
-                let pin_window_clone = pin_win.pin_window.as_weak();
-                
-                let pin_wins_clone_clone = pin_wins_clone.clone();
-                let pin_windows_clone_clone = pin_windows_clone.clone();
-                let id = *max_pin_win_id;
-                pin_window_clone.unwrap().window().on_close_requested(move || {
-                    // this is necessary for systemed close
-                    pin_wins_clone_clone.lock().unwrap().remove(&id);
-                    pin_windows_clone_clone.lock().unwrap().remove(&id);
-                    slint::CloseRequestResponse::HideWindow
-                });
-                
-                pin_wins_clone.lock().unwrap().insert(*max_pin_win_id, pin_win);
-                pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
-    
-                *max_pin_win_id += 1;
-                mask_win.hide().unwrap();
+                ) {
+                    let pin_window_clone = pin_win.pin_window.as_weak();
+                    
+                    let pin_wins_clone_clone = pin_wins_clone.clone();
+                    let pin_windows_clone_clone = pin_windows_clone.clone();
+                    let id = *max_pin_win_id;
+                    pin_window_clone.unwrap().window().on_close_requested(move || {
+                        // this is necessary for systemed close
+                        pin_wins_clone_clone.lock().unwrap().remove(&id);
+                        pin_windows_clone_clone.lock().unwrap().remove(&id);
+                        slint::CloseRequestResponse::HideWindow
+                    });
+                    
+                    pin_wins_clone.lock().unwrap().insert(*max_pin_win_id, pin_win);
+                    pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
+        
+                    *max_pin_win_id += 1;
+                    mask_win.hide().unwrap();
+                }
             });
         }
 
@@ -288,13 +289,13 @@ impl ScreenShotter{
             }
         });
 
-        ScreenShotter{
+        Ok(ScreenShotter{
             _mask_win: mask_win,
             _toolbar: toolbar,
             _max_pin_win_id: max_pin_win_id,
             _pin_windows: pin_windows,
             _pin_wins: pin_wins,
-        }
+        })
     }
 
     fn pin_win_move_hander(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32, toolbar_window: slint::Weak<ToolbarWindow>) {

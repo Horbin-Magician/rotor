@@ -6,7 +6,7 @@ use windows::Win32::Storage::FileSystem;
 use windows::Win32::Foundation;
 use slint::{Model, VecModel};
 
-use crate::util::file_util;
+use crate::util::{file_util, log_util};
 use crate::ui::SearchResult_slint;
 use super::{SearchWindow, SearcherMessage};
 use super::volume::{Volume, SearchResultItem};
@@ -64,7 +64,7 @@ impl FileData {
             let mut wait_deals: VecDeque<SearcherMessage> = VecDeque::new();
             loop {
                 let msg: Result<SearcherMessage, mpsc::RecvError> = if !wait_deals.is_empty() {
-                    Ok(wait_deals.pop_front().unwrap())
+                    wait_deals.pop_front().ok_or(mpsc::RecvError)
                 } else {
                     msg_reciever.recv()
                 };
@@ -107,25 +107,26 @@ impl FileData {
 
     // Check whether the disk represented by a drive letter is in ntfs format
     fn is_ntfs(vol: char) -> bool {
-        let root_path_name = CString::new(format!("{}:\\", vol)).unwrap();
-        let mut volume_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
-        let mut volume_serial_number: u32 = 0;
-        let mut maximum_component_length: u32 = 0;
-        let mut file_system_flags: u32 = 0;
-        let mut file_system_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
-
-        unsafe {
-            if FileSystem::GetVolumeInformationA(
-                    windows::core::PCSTR(root_path_name.as_ptr() as *const u8),
-                    Some(&mut volume_name_buffer),
-                    Some(&mut volume_serial_number),
-                    Some(&mut maximum_component_length),
-                    Some(&mut file_system_flags),
-                    Some(&mut file_system_name_buffer),
-                ).is_ok() {
-
-                let result = CStr::from_ptr(file_system_name_buffer.as_ptr() as *const i8);
-                return result.to_string_lossy() == "NTFS";
+        if let Ok(root_path_name) = CString::new(format!("{}:\\", vol)) {
+            let mut volume_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
+            let mut volume_serial_number: u32 = 0;
+            let mut maximum_component_length: u32 = 0;
+            let mut file_system_flags: u32 = 0;
+            let mut file_system_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
+    
+            unsafe {
+                if FileSystem::GetVolumeInformationA(
+                        windows::core::PCSTR(root_path_name.as_ptr() as *const u8),
+                        Some(&mut volume_name_buffer),
+                        Some(&mut volume_serial_number),
+                        Some(&mut maximum_component_length),
+                        Some(&mut file_system_flags),
+                        Some(&mut file_system_name_buffer),
+                    ).is_ok() {
+    
+                    let result = CStr::from_ptr(file_system_name_buffer.as_ptr() as *const i8);
+                    return result.to_string_lossy() == "NTFS";
+                }
             }
         }
         false
@@ -142,8 +143,10 @@ impl FileData {
         }
 
         self.volume_packs.retain(|volume_pack| {
-            let volume = volume_pack.volume.lock().unwrap();
-            self.vols.contains(&volume.drive)
+            if let Ok(volume)  = volume_pack.volume.lock() {
+                return self.vols.contains(&volume.drive);
+            }
+            false
         });
 
         self.vols.len() as u8
@@ -175,7 +178,7 @@ impl FileData {
                     search_win.set_active_id(0);
                 }
             }
-        }).unwrap();
+        }).unwrap_or_else(|e| log_util::log_error(format!("update_result_model: {}", e)));
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
@@ -208,7 +211,8 @@ impl FileData {
             let volume = volume.clone();
             let filename = filename.clone();
             thread::spawn(move || {
-                let mut volume = volume.lock().unwrap();
+                let mut volume = volume.lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 volume.find(filename, batch, find_result_sender);
             });
         }
@@ -252,7 +256,9 @@ impl FileData {
             self.volume_packs.push(VolumePack { volume: volume.clone(), stop_sender });
 
             thread::spawn(move || {
-                volume.lock().unwrap().build_index();
+                if let Ok(mut volume) = volume.lock() {
+                    volume.build_index();
+                }
             })
         }).collect::<Vec<_>>();
 
@@ -269,7 +275,9 @@ impl FileData {
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {
-                volume.lock().unwrap().update_index();
+                if let Ok(mut volume) = volume.lock() {
+                    volume.update_index();
+                }
             })
         }).collect::<Vec<_>>();
 
@@ -287,7 +295,9 @@ impl FileData {
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {
-                volume.lock().unwrap().release_index();
+                if let Ok(mut volume) = volume.lock() {
+                    volume.release_index();
+                }
             })
         }).collect::<Vec<_>>();
 
