@@ -50,7 +50,10 @@ impl Updater {
         let status = response.status();
         if status.is_success() { 
             self.version_info = Some(response.json()?);
-            let version = self.version_info.as_ref().unwrap().tag_name[1..].to_string();
+            let version = self.version_info
+                .as_ref()
+                .ok_or("Failed to get version_info ref")?
+                .tag_name[1..].to_string();
             Ok(version)
         }
         else { Err(format!("Failed to get latest version, status: {status}").into()) }
@@ -72,7 +75,7 @@ impl Updater {
         
             if file_response.status().is_success() {
                 let exe_path = env::current_exe()?;
-                let app_path = exe_path.parent().unwrap();
+                let app_path = exe_path.parent().ok_or("Failed to get app path")?;
                 let tmp_path = app_path.join("tmp/");
                 let zip_path = tmp_path.clone().join(zip_name);
                 let zip_out_path = tmp_path.clone().join(version);
@@ -88,8 +91,8 @@ impl Updater {
                 
                 file_util::unzip(&zip_path, &zip_out_path)?;
                 
-                let old_dic = app_path.to_str().unwrap();
-                let new_dic = zip_out_path.to_str().unwrap();
+                let old_dic = app_path.to_str().ok_or("Failed to get app path")?;
+                let new_dic = zip_out_path.to_str().ok_or("Failed to get zip out path")?;
                 let app_name = "rotor.exe";
                 
                 let bat_content = format!(r#"
@@ -109,11 +112,11 @@ impl Updater {
                 file.write_all(bat_content.as_bytes())?;
         
                 Command::new("cmd")
-                    .args(["/C", script_path.to_str().unwrap()])
-                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .args(["/C", script_path.to_str().ok_or("Failed to get script path")?])
+                    .creation_flags(0x08000000)
                     .spawn()?;
         
-                slint::quit_event_loop().unwrap();
+                slint::quit_event_loop()?;
             } else {
                 return Err("Failed to update software, file response is not success".into());
             }

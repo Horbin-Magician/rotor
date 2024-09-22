@@ -12,9 +12,15 @@ use crate::core::application::Application;
 
 fn main() {
     // init before event loop
-    if sys_util::run_as_admin() {return;}
-    file_util::del_useless_files(); // del tmp and .fd files
-    // slint::init_translations!(concat!("./assets/", "/lang/"));
+    if sys_util::run_as_admin()
+        .unwrap_or_else( |e| {
+            log_util::log_error(format!("run_as_admin error: {:?}", e));
+            true
+        }
+    ) {return;}
+
+    file_util::del_useless_files()
+        .unwrap_or_else(|e| log_util::log_error(format!("del_useless_files error: {:?}", e))); // del tmp and .fd files
 
     // start event loop
     let mut app = Application::new().or_else(

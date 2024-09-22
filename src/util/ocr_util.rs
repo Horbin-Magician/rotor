@@ -5,6 +5,7 @@ use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
 use windows::Globalization::Language;
 use windows::Storage::Streams::DataWriter;
 
+
 // Contains the text and the x,y coordinates of the word
 #[allow(dead_code)] // TODO remove
 pub struct Coordinates {
@@ -53,8 +54,11 @@ pub fn ocr_windows(image: DynamicImage, lang: &str) -> windows::core::Result<Vec
     let mut collected_words:Vec<Coordinates> = Vec::new();
 
     result.into_iter().for_each(|line|{
-        let line_text = line.Text().unwrap().to_string_lossy();
-        let words = line.Words().unwrap();
+        let line_text = line.Text().unwrap_or(HSTRING::default()).to_string_lossy();
+        let words = match line.Words(){
+            Ok(w) => w,
+            Err(_) => return, // or handle the empty case appropriately
+        };
 
         let mut pos_x: f32 = 0.0;
         let mut pos_y: f32 = 0.0;
@@ -63,7 +67,7 @@ pub fn ocr_windows(image: DynamicImage, lang: &str) -> windows::core::Result<Vec
 
         let mut idx = 0;
         words.into_iter().for_each(|word|{ // TODO if right
-            let rect = word.BoundingRect().unwrap();
+            let rect = word.BoundingRect().unwrap_or_default();
 
             if idx == 0 { pos_x = rect.X; }
 

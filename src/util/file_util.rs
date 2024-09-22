@@ -33,7 +33,7 @@ pub fn get_userdata_path() -> std::path::PathBuf {
     app_path.join("userdata")
 }
 
-pub fn del_useless_files() {
+pub fn del_useless_files() -> Result<(), Box<dyn Error>> {
     let app_path = get_app_path();
     let tmp_path = app_path.join("tmp");
     let userdata_path = app_path.join("userdata");
@@ -42,8 +42,8 @@ pub fn del_useless_files() {
     
     if userdata_path.exists() {
         // del all .fd file in userdata
-        for entry in fs::read_dir(userdata_path).unwrap() {
-            let path = entry.unwrap().path();
+        for entry in fs::read_dir(userdata_path)? {
+            let path = entry?.path();
             if path.is_file() {
                 if let Some(extension) = path.extension() {
                     if extension == "fd" {
@@ -53,13 +53,14 @@ pub fn del_useless_files() {
             }
         }
     }
+    Ok(())
 }
 
-pub fn open_file(file_full_name: String) {
+pub fn open_file(file_full_name: String) -> Result<(), Box<dyn Error>> {
     Command::new("explorer.exe")
         .arg(file_full_name)
-        .spawn()
-        .unwrap();
+        .spawn()?;
+    Ok(())
 }
 
 pub fn open_file_admin(file_full_name: String) {
