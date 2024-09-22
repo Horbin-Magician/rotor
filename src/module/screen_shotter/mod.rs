@@ -49,12 +49,15 @@ impl Module for ScreenShotter {
         let mask_win_clone = self._mask_win.as_weak();
         std::thread::spawn(move || {
             loop {
-                match msg_reciever.recv().unwrap() {
-                    ModuleMessage::Trigger => {
+                match msg_reciever.recv() {
+                    Ok(ModuleMessage::Trigger) => {
                         mask_win_clone.upgrade_in_event_loop(move |win| {
                             win.invoke_shot();
-                        }).unwrap();
-                    }
+                        }).unwrap_or_else(|e| { log_util::log_error(format!("Error in ScreenShotter Trigger: {:?}", e)); });
+                    },
+                    Err(e) => {
+                        log_util::log_error(format!("Error in ScreenShotter msg_reciever: {:?}", e));
+                    },
                 }
             }
         });
@@ -62,14 +65,20 @@ impl Module for ScreenShotter {
     }
 
     fn get_hotkey(&mut self) -> Option<HotKey> {
-        let app_config = AppConfig::global().lock().unwrap();
+        let app_config = AppConfig::global().lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         app_config.get_hotkey_from_str("screenshot")
     }
 
     fn clean(&self) {
-        (*self._max_pin_win_id.lock().unwrap()) = 0;
-        self._pin_windows.lock().unwrap().clear();
-        self._pin_wins.lock().unwrap().clear();
+        *self._max_pin_win_id.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
+        self._pin_windows.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+        self._pin_wins.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
     }
 }
 
@@ -103,41 +112,43 @@ impl ScreenShotter{
                         .unwrap_or_else(|e| { log_util::log_error(format!("Error in GetCursorPos: {:?}", e)); })
                 }
                 
-                let monitor = Monitor::from_point(point.x, point.y).unwrap();
-                let physical_width = monitor.width();
-                let physical_height = monitor.height();
-                let monitor_img = monitor.capture_image().unwrap();
-                let scale_factor = sys_util::get_scale_factor(monitor.id());
-
-                let mask_win = mask_win_clone.unwrap();
-
-                // refresh img
-                let mut bac_buffer = bac_buffer_rc_clone.lock().unwrap();
-                *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-                    &monitor_img,
-                    physical_width,
-                    physical_height,
-                );
-                mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
-
-                // refresh window
-                let pre_scale_factor = mask_win.get_scale_factor();
-                mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
-                mask_win.set_offset_x(monitor.x());
-                mask_win.set_offset_y(monitor.y());
-                mask_win.set_scale_factor(scale_factor);
-
-                // +1 to fix the bug and set_fullscreen does not work well TODO: fix this bug
-                let mut scale = 1.0;
-                if pre_scale_factor != 0.0 && pre_scale_factor > scale_factor { scale = pre_scale_factor / scale_factor; } // to fix scale problem
-                let window_width = ((monitor.width() as f32) * scale) as u32;
-                let window_height = ((monitor.height() as f32) * scale) as u32 + 1;
-                mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
-
-                mask_win.show().unwrap();
-                mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
-                    winit_win.focus_window();
-                });
+                if let Ok(monitor) = Monitor::from_point(point.x, point.y) {
+                    let physical_width = monitor.width();
+                    let physical_height = monitor.height();
+                    let monitor_img = monitor.capture_image().unwrap_or_default();
+                    let scale_factor = sys_util::get_scale_factor(monitor.id());
+    
+                    if let Some(mask_win) = mask_win_clone.upgrade() {
+                        // refresh img
+                        let mut bac_buffer = bac_buffer_rc_clone.lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
+                            &monitor_img,
+                            physical_width,
+                            physical_height,
+                        );
+                        mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
+    
+                        // refresh window
+                        let pre_scale_factor = mask_win.get_scale_factor();
+                        mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
+                        mask_win.set_offset_x(monitor.x());
+                        mask_win.set_offset_y(monitor.y());
+                        mask_win.set_scale_factor(scale_factor);
+    
+                        // +1 to fix the bug and set_fullscreen does not work well TODO: fix this bug
+                        let mut scale = 1.0;
+                        if pre_scale_factor != 0.0 && pre_scale_factor > scale_factor { scale = pre_scale_factor / scale_factor; } // to fix scale problem
+                        let window_width = ((monitor.width() as f32) * scale) as u32;
+                        let window_height = ((monitor.height() as f32) * scale) as u32 + 1;
+                        mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
+    
+                        let _ = mask_win.show();
+                        mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+                            winit_win.focus_window();
+                        });
+                    }
+                }
             });
         }
 
@@ -145,22 +156,25 @@ impl ScreenShotter{
             let mask_win_clone = mask_win.as_weak();
             let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
             mask_win.on_refresh_rgb_trick(move |mouse_x, mouse_y, color_type_dec| {
-                let mask_win = mask_win_clone.unwrap();
-                let scale_factor = mask_win.window().scale_factor();
+                if let Some(mask_win) = mask_win_clone.upgrade() {
+                    let scale_factor = mask_win.window().scale_factor();
 
-                let bac_buffer = bac_buffer_rc_clone.lock().unwrap();
-                let width = bac_buffer.width();
-                let height = bac_buffer.height();
-                let img: image::DynamicImage = image::DynamicImage::ImageRgba8(
-                    image::RgbaImage::from_vec(width, height, bac_buffer.as_bytes().to_vec()).unwrap()
-                );
-                
-                let point_x = ((mouse_x * scale_factor) as u32).clamp(0, width-1);
-                let point_y = ((mouse_y * scale_factor) as u32).clamp(0, height-1);
-                let pixel: Rgba<u8> = img.get_pixel(point_x, point_y);
-                let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
-                if color_type_dec { mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
-                } else { mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into()); }
+                    let bac_buffer = bac_buffer_rc_clone.lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let width = bac_buffer.width();
+                    let height = bac_buffer.height();
+                    let img: image::DynamicImage = image::DynamicImage::ImageRgba8(
+                        image::RgbaImage::from_vec(width, height, bac_buffer.as_bytes().to_vec())
+                            .unwrap_or_default()
+                    );
+                    
+                    let point_x = ((mouse_x * scale_factor) as u32).clamp(0, width-1);
+                    let point_y = ((mouse_y * scale_factor) as u32).clamp(0, height-1);
+                    let pixel: Rgba<u8> = img.get_pixel(point_x, point_y);
+                    let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+                    if color_type_dec { mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
+                    } else { mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into()); }
+                }
                 true
             });
         }
@@ -168,16 +182,19 @@ impl ScreenShotter{
         { // code for key release
             let mask_win_clone = mask_win.as_weak();
             mask_win.on_key_released(move |event| {
-                let mask_win = mask_win_clone.unwrap();
-                if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
-                    mask_win.set_mouse_left_press(false);
-                    mask_win.hide().unwrap();
-                } else if event.text == "z" || event.text == "Z"  { // switch Dec or Hex
-                    let color_type_dec = mask_win_clone.unwrap().get_color_type_Dec();
-                    mask_win.set_color_type_Dec(!color_type_dec);
-                } else if event.text == "c" || event.text == "C" { // copy color code
-                    let mut clipboard = Clipboard::new().unwrap();
-                    clipboard.set_text(mask_win.get_color_str().to_string()).unwrap();
+                if let Some(mask_win) = mask_win_clone.upgrade() {
+                    if event.text == slint::SharedString::from(slint::platform::Key::Escape) {
+                        mask_win.set_mouse_left_press(false);
+                        let _ = mask_win.hide();
+                    } else if event.text == "z" || event.text == "Z"  { // switch Dec or Hex
+                        let color_type_dec = mask_win.get_color_type_Dec();
+                        mask_win.set_color_type_Dec(!color_type_dec);
+                    } else if event.text == "c" || event.text == "C" { // copy color code
+                        if let Ok(mut clipboard) = Clipboard::new() {
+                            clipboard.set_text(mask_win.get_color_str().to_string())
+                                .unwrap_or_else(|e| { log_util::log_error(format!("Error in clipboard.set_text: {:?}", e)); });
+                        }
+                    }
                 }
             });
         }
@@ -190,32 +207,45 @@ impl ScreenShotter{
             let message_sender_clone = message_sender.clone();
             mask_win.on_new_pin_win(move |rect| {
                 if (rect.width * rect.height) < 1. { return; } // ignore too small rect
-                let mask_win = mask_win_clone.unwrap();
-                let mut max_pin_win_id = max_pin_win_id_clone.lock().unwrap();
-                let message_sender_clone = message_sender_clone.clone();
+                if let Some(mask_win) = mask_win_clone.upgrade() {
+                    let mut max_pin_win_id = max_pin_win_id_clone.lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let message_sender_clone = message_sender_clone.clone();
 
-                if let Ok(pin_win) = PinWin::new(
-                    bac_buffer_rc.clone(), rect,
-                    mask_win.get_offset_x(), mask_win.get_offset_y(), mask_win.get_scale_factor(),
-                    *max_pin_win_id, message_sender_clone
-                ) {
-                    let pin_window_clone = pin_win.pin_window.as_weak();
-                    
-                    let pin_wins_clone_clone = pin_wins_clone.clone();
-                    let pin_windows_clone_clone = pin_windows_clone.clone();
-                    let id = *max_pin_win_id;
-                    pin_window_clone.unwrap().window().on_close_requested(move || {
-                        // this is necessary for systemed close
-                        pin_wins_clone_clone.lock().unwrap().remove(&id);
-                        pin_windows_clone_clone.lock().unwrap().remove(&id);
-                        slint::CloseRequestResponse::HideWindow
-                    });
-                    
-                    pin_wins_clone.lock().unwrap().insert(*max_pin_win_id, pin_win);
-                    pin_windows_clone.lock().unwrap().insert(*max_pin_win_id, pin_window_clone);
-        
-                    *max_pin_win_id += 1;
-                    mask_win.hide().unwrap();
+                    if let Ok(pin_win) = PinWin::new(
+                        bac_buffer_rc.clone(), rect,
+                        mask_win.get_offset_x(), mask_win.get_offset_y(), mask_win.get_scale_factor(),
+                        *max_pin_win_id, message_sender_clone
+                    ) {
+                        let pin_window_clone = pin_win.pin_window.as_weak();
+                        
+                        let pin_wins_clone_clone = pin_wins_clone.clone();
+                        let pin_windows_clone_clone = pin_windows_clone.clone();
+                        let id = *max_pin_win_id;
+
+                        if let Some(pin_window) = pin_window_clone.upgrade() {
+                            pin_window.window().on_close_requested(move || {
+                                // this is necessary for systemed close
+                                pin_wins_clone_clone.lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                    .remove(&id);
+                                pin_windows_clone_clone.lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                    .remove(&id);
+                                slint::CloseRequestResponse::HideWindow
+                            });
+                        }
+                        
+                        pin_wins_clone.lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .insert(*max_pin_win_id, pin_win);
+                        pin_windows_clone.lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .insert(*max_pin_win_id, pin_window_clone);
+            
+                        *max_pin_win_id += 1;
+                        let _ = mask_win.hide();
+                    }
                 }
             });
         }
@@ -232,54 +262,59 @@ impl ScreenShotter{
                             ScreenShotter::pin_win_move_hander(pin_windows_clone.clone(), id, toolbar_window_clone.clone());
                         },
                         ShotterMessage::Close(id) => {
-                            pin_windows_clone.lock().unwrap().remove(&id);
-                            // pin_wins_clone.lock().unwrap().remove(&id); // TODO: clear pin_wins
+                            pin_windows_clone.lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .remove(&id);
+                            // pin_wins_clone.lock()
+                            //     .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            //     .remove(&id); // TODO: clear pin_wins
                         },
                         ShotterMessage::ShowToolbar(x, y, id, pin_window) => {
                             toolbar_window_clone.upgrade_in_event_loop(move |win| {
                                 win.invoke_show_pos(x, y, id as i32);
-                            }).unwrap();
+                            }).unwrap_or_else(|e| log_util::log_error(format!("Error in change toolbar pos: {:?}", e)));
                             // focus the pin window
                             pin_window.upgrade_in_event_loop(move |win| {
                                 win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                     winit_win.focus_window();
                                     winit_win.request_redraw(); // TODO to fix the error win size
                                 });
-                            }).unwrap();
+                            }).unwrap_or_else(|e| log_util::log_error(format!("Error in focus the pin window: {:?}", e)));
                         },
                         ShotterMessage::HideToolbar(if_force) => {
                             toolbar_window_clone.upgrade_in_event_loop(move |win| {
                                 win.invoke_try_hide(if_force);
-                            }).unwrap();
+                            }).unwrap_or_else(|e| log_util::log_error(format!("Error in HideToolbar: {:?}", e)));
                         },
                         ShotterMessage::OperatePin(id, operation) => {
-                            let pin_windows = pin_windows_clone.lock().unwrap();
+                            let pin_windows = pin_windows_clone.lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
                             if let Some(pin_window) = pin_windows.get(&id) {
                                 match operation {
                                     PinOperation::Close() => {
                                         pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_close();
-                                        }).unwrap();
+                                        }).unwrap_or_else(|e| log_util::log_error(format!("Error in Close: {:?}", e)));
                                     },
                                     PinOperation::Hide() => {
                                         pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_hide();
-                                        }).unwrap();
+                                        }).unwrap_or_else(|e| log_util::log_error(format!("Error in Hide: {:?}", e)));
                                     },
                                     PinOperation::Save() => {
                                         pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_save();
-                                        }).unwrap();
+                                        }).unwrap_or_else(|e| log_util::log_error(format!("Error in Save: {:?}", e)));
                                     },
                                     PinOperation::Copy() => {
                                         pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_copy();
-                                        }).unwrap();
+                                        }).unwrap_or_else(|e| log_util::log_error(format!("Error in Copy: {:?}", e)));
                                     },
                                     PinOperation::TriggerDraw() => {
                                         pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_trigger_draw();
-                                        }).unwrap();
+                                        }).unwrap_or_else(|e| log_util::log_error(format!("Error in TriggerDraw: {:?}", e)));
                                     },
                                 }
                             }
@@ -299,21 +334,26 @@ impl ScreenShotter{
     }
 
     fn pin_win_move_hander(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32, toolbar_window: slint::Weak<ToolbarWindow>) {
-        slint::invoke_from_event_loop(move || {
+        fn inner_run(pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>, move_win_id: u32, toolbar_window: slint::Weak<ToolbarWindow>) -> Result<(), Box<dyn Error>> {
             let padding = 10;
-            let pin_windows = pin_windows.lock().unwrap();
-            let move_win = &pin_windows[&move_win_id].unwrap();
+            let pin_windows = pin_windows.lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let move_win = &pin_windows[&move_win_id].upgrade()
+                .ok_or(format!("Error in pin_win_move_hander: can get move_win"))?;
 
             let move_pos = move_win.window().position();
             let move_size = move_win.window().size();
             let move_bottom = move_pos.y + move_size.height as i32;
             let move_right = move_pos.x + move_size.width as i32;
 
-            toolbar_window.unwrap().invoke_win_move(move_right, move_bottom);
+            toolbar_window.upgrade()
+                .ok_or(format!("Error in pin_win_move_hander: can get toolbar_window"))?
+                .invoke_win_move(move_right, move_bottom);
 
             for pin_win_id in pin_windows.keys(){
                 if move_win_id != *pin_win_id {
-                    let other_win = &pin_windows[pin_win_id].unwrap();
+                    let other_win = &pin_windows[pin_win_id].upgrade()
+                        .ok_or(format!("Error in pin_win_move_hander: can get other_win"))?;
                     let other_pos = other_win.window().position();
                     let other_size = other_win.window().size();
                     let other_bottom = other_pos.y + other_size.height as i32;
@@ -357,6 +397,12 @@ impl ScreenShotter{
                     }
                 }
             }
+            Ok(())
+        }
+        
+        slint::invoke_from_event_loop(move || {
+            inner_run(pin_windows, move_win_id, toolbar_window)
+                .unwrap_or_else(|e| { log_util::log_error(format!("Error in pin_win_move_hander: {:?}", e)); });
         }).unwrap_or_else(|e| { log_util::log_error(format!("Error in pin_win_move_hander: {:?}", e)); });
     }
 
