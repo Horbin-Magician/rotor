@@ -37,9 +37,15 @@ impl Application {
         let _system_tray = SystemTray::new(_msg_sender.clone())?;
 
         let mut _modules: Vec<Box<dyn Module>> = Vec::new();
-        _modules.push(Box::new(Searcher::new()));
-        _modules.push(Box::new(ScreenShotter::new()));
-        _modules.push(Box::new(Setting::new(_msg_sender.clone())));
+        if let Ok(searcher) = Searcher::new() {
+            _modules.push(Box::new(searcher));
+        }
+        if let Ok(screen_shotter) = ScreenShotter::new() {
+            _modules.push(Box::new(screen_shotter));
+        }
+        if let Ok(setting) = Setting::new(_msg_sender.clone()) {
+            _modules.push(Box::new(setting));
+        }
 
         let mut _module_profiles: HashMap<String, (Option<HotKey>, mpsc::Sender<ModuleMessage>)> = HashMap::new();
         for module in &mut _modules {

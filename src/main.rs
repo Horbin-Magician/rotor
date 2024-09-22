@@ -21,19 +21,16 @@ fn main() {
 
     file_util::del_useless_files()
         .unwrap_or_else(|e| log_util::log_error(format!("del_useless_files error: {:?}", e))); // del tmp and .fd files
-
-    // start event loop
-    let mut app = Application::new().or_else(
-        |e| {
-            log_util::log_error(format!("Application::new error: {:?}", e));
-            Err(e)
-        }
-    ).expect("Application::new error");
     
-    app.run();
-    while app.is_running() {
-        slint::run_event_loop()
-            .unwrap_or_else(|e| log_util::log_error(format!("slint run_event_loop error: {:?}", e)));
-        app.clean()
+    // start event loop
+    if let Ok(mut app) = Application::new() {
+        app.run();
+        while app.is_running() {
+            slint::run_event_loop()
+                .unwrap_or_else(|e| log_util::log_error(format!("slint run_event_loop error: {:?}", e)));
+            app.clean();
+        }
+    } else {
+        log_util::log_error("Application::new error".to_string());
     }
 }

@@ -59,18 +59,21 @@ impl Volume {
     // This is a helper function that opens a handle to the volume specified by the cDriveLetter parameter.
     fn open_drive(drive_letter: char) -> Foundation::HANDLE {
         unsafe{
-            let c_str: CString = CString::new(format!("\\\\.\\{}:", drive_letter)).unwrap();
-            match FileSystem::CreateFileA(
-                windows::core::PCSTR(c_str.as_ptr() as *const u8), 
-                Foundation::GENERIC_READ.0,
-                FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE, 
-                None, 
-                FileSystem::OPEN_EXISTING, 
-                windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0), 
-                None
-            ) {
-                Ok(handle) => handle,
-                Err(_) => HANDLE::default(),
+            if let Ok(c_str) = CString::new(format!("\\\\.\\{}:", drive_letter)){
+                match FileSystem::CreateFileA(
+                    windows::core::PCSTR(c_str.as_ptr() as *const u8), 
+                    Foundation::GENERIC_READ.0,
+                    FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE, 
+                    None, 
+                    FileSystem::OPEN_EXISTING, 
+                    windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0), 
+                    None
+                ) {
+                    Ok(handle) => handle,
+                    Err(_) => HANDLE::default(),
+                }
+            } else {
+                HANDLE::default()
             }
         }
     }
@@ -103,7 +106,7 @@ impl Volume {
                 None, 
                 0, 
                 Some(&mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0 as *mut c_void), 
-                std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>().try_into().unwrap(), 
+                std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>() as u32, 
                 Some(&mut cd), 
                 None
             ).unwrap_or_else(|e| log_error(format!("{} Volume::build_index, error: {:?}", self.drive, e)));
@@ -154,7 +157,7 @@ impl Volume {
         }
 
         #[cfg(debug_assertions)]
-        log_info(format!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
+        log_info(format!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis()));
         
         Self::close_drive(h_vol);
         self.serialization_write()
@@ -204,7 +207,7 @@ impl Volume {
         let (result, search_num) = self.file_map.search(&query, self.last_search_num, batch, &self.stop_receiver);
 
         #[cfg(debug_assertions)]
-        log_info(format!("{} End Volume::Find {query}, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
+        log_info(format!("{} End Volume::Find {query}, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis()));
         
         self.last_search_num += search_num;
 
@@ -242,7 +245,7 @@ impl Volume {
                 h_vol, 
                 Ioctl::FSCTL_READ_USN_JOURNAL, 
                 Some(&rujd as *const _ as *const c_void),
-                std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>().try_into().unwrap(), 
+                std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>() as u32, 
                 Some(data.as_mut_ptr() as *mut c_void), 
                 std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
                 Some(&mut cb as *mut u32), 
@@ -286,14 +289,14 @@ impl Volume {
         
         let file_path = file_util::get_userdata_path();
         if !file_path.exists() { fs::create_dir(&file_path)?; }
-        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive);
+        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), self.drive);
 
         self.file_map.save(&file_name)?;
 
         self.release_index();
 
         #[cfg(debug_assertions)]
-        log_info(format!("{} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
+        log_info(format!("{} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis()));
 
         Ok(())
     }
@@ -306,12 +309,12 @@ impl Volume {
         log_info(format!("{} Begin Volume::serialization_read", self.drive));
         
         let file_path = file_util::get_userdata_path();
-        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap(), self.drive);
+        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), self.drive);
 
         self.file_map.read(&file_name)?;
 
         #[cfg(debug_assertions)]
-        log_info(format!("{} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap().as_millis()));
+        log_info(format!("{} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis()));
 
         Ok(())
     }
