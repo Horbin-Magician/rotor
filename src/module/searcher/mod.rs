@@ -8,7 +8,7 @@ use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
 
 use file_data::FileData;
-use crate::sys_util;
+use crate::{sys_util, util::log_util};
 use crate::core::application::app_config::AppConfig;
 use crate::util::file_util;
 use crate::ui::SearchWindow;
@@ -135,7 +135,8 @@ impl Searcher {
                     let active_id = search_win_clone.get_active_id();
                     let data = search_result_model_clone.row_data(active_id as usize);
                     if let Some(f) = data {
-                        file_util::open_file((f.path + &f.filename).to_string());
+                        file_util::open_file((f.path + &f.filename).to_string())
+                            .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
                         search_win_clone.hide().unwrap();
                     }
                 }
@@ -177,7 +178,8 @@ impl Searcher {
                     if event.button == slint::platform::PointerEventButton::Left {
                         let data = search_result_model_clone.row_data(id as usize);
                         if let Some(f) = data {
-                            file_util::open_file((f.path + &f.filename).to_string());
+                            file_util::open_file((f.path + &f.filename).to_string())
+                                .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
                             search_win.hide().unwrap();
                         }
                     }
@@ -205,7 +207,8 @@ impl Searcher {
                 let search_win = search_win_clone.unwrap();
                 let data = search_result_model_clone.row_data(id as usize);
                 if let Some(f) = data {
-                    file_util::open_file((f.path[..(f.path.len()-1)]).to_string());
+                    file_util::open_file((f.path[..(f.path.len()-1)]).to_string())
+                        .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
                     search_win.hide().unwrap();
                 }
             });
