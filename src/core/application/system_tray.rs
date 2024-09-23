@@ -22,6 +22,7 @@ impl SystemTray {
         
         let _tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
+            .with_menu_on_left_click(false)
             .with_tooltip("小云管家") // TODO wait to translate
             .with_icon(Icon::from_path("assets/logo.ico", Some((128, 128)))?)
             .build()?;
@@ -32,14 +33,9 @@ impl SystemTray {
             loop {
                 crossbeam::select! {
                     recv(TrayIconEvent::receiver()) -> event => {
-                        if let Ok(event) = event {
-                            match event {
-                                TrayIconEvent::Click { id:_, position:_, rect:_, button, button_state } => {
-                                    if button == tray_icon::MouseButton::Left && button_state == tray_icon::MouseButtonState::Up {
-                                        let _ = msg_sender.send(AppMessage::ShowSetting);
-                                    }
-                                }
-                                _ => {}
+                        if let Ok(TrayIconEvent::Click { id:_, position:_, rect:_, button, button_state } ) = event {
+                            if button == tray_icon::MouseButton::Left && button_state == tray_icon::MouseButtonState::Up {
+                                let _ = msg_sender.send(AppMessage::ShowSetting);
                             }
                         }
                     }
