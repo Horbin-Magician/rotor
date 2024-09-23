@@ -89,7 +89,7 @@ impl FileMap {
             }
         }
 
-        return (Some(result), search_num);
+        (Some(result), search_num)
     }
 
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
@@ -105,7 +105,7 @@ impl FileMap {
             buf.write_all(&file.filter.to_be_bytes())?;
             buf.write_all(&file.rank.to_be_bytes())?;
         }
-        save_file.write(&buf.to_vec())?;
+        save_file.write_all(&buf.to_vec())?;
 
         Ok(())
     }
@@ -218,7 +218,7 @@ fn make_filter(str: &str) -> u32 {
             continue; // Reserved for wildcard
         } else if c.is_ascii_lowercase() {
             address |= 1 << (c as u32 - 97);
-        } else if ('0'..='9').contains(&c) {
+        } else if c.is_ascii_digit() {
             address |= 1 << 26;
         } else if c < 127u8 as char {
             address |= 1 << 27;
@@ -230,7 +230,7 @@ fn make_filter(str: &str) -> u32 {
 }
 
 // return true if contain query
-fn match_str(contain: &str, query_lower: &String) -> bool {
+fn match_str(contain: &str, query_lower: &str) -> bool {
     let mut lower_contain = contain.to_lowercase();
     for s in query_lower.split('*') { // for wildcard
         if let Some(index) = lower_contain.find(s) {

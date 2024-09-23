@@ -29,7 +29,7 @@ pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
             SW_SHOWNORMAL
         )
     };
-    return Ok(!ins.is_invalid()); // return true if programe run success
+    Ok(!ins.is_invalid()) // return true if programe run success
 }
 
 pub fn set_power_boot(if_power_boot: bool) -> Result<(), Box<dyn Error>> {

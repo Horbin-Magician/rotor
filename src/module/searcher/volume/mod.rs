@@ -59,8 +59,8 @@ impl Volume {
     // This is a helper function that opens a handle to the volume specified by the cDriveLetter parameter.
     fn open_drive(drive_letter: char) -> Foundation::HANDLE {
         unsafe{
-            if let Ok(c_str) = CString::new(format!("\\\\.\\{}:", drive_letter)){
-                match FileSystem::CreateFileA(
+            if let Ok(c_str) = CString::new(format!("\\\\.\\{}:", drive_letter)) {
+                FileSystem::CreateFileA(
                     windows::core::PCSTR(c_str.as_ptr() as *const u8), 
                     Foundation::GENERIC_READ.0,
                     FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE, 
@@ -68,10 +68,7 @@ impl Volume {
                     FileSystem::OPEN_EXISTING, 
                     windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0), 
                     None
-                ) {
-                    Ok(handle) => handle,
-                    Err(_) => HANDLE::default(),
-                }
+                ).unwrap_or_default()
             } else {
                 HANDLE::default()
             }
