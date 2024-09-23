@@ -192,25 +192,27 @@ impl Setting {
             });
 
             let setting_win_clone = setting_win.as_weak();
+            let msg_sender = msg_sender.clone();
             setting_win.on_update(move || {
                 if let Some(setting_win) = setting_win_clone.upgrade() {
                     setting_win.set_block(true);
                     setting_win.set_update_state(0);
                 }
 
+                let msg_sender = msg_sender.clone();
                 let setting_win_clone = setting_win_clone.clone();
                 std::thread::spawn(move || {
                     if let Ok(updater) = net_util::Updater::global().lock() {
-                        updater.update_software()
-                            .unwrap_or_else(
-                                |e| {
-                                    log_util::log_error(format!("Failed to update software: {:?}", e));
-                                    setting_win_clone.upgrade_in_event_loop(move |setting_window| {
-                                        setting_window.set_block(false);
-                                        setting_window.set_update_state(2);
-                                    }).unwrap_or_else(|e| log_util::log_error(format!("Set setting_window back from updating: {:?}", e)));
-                                }
-                            );
+                        match updater.update_software() {
+                            Ok(_) => { let _ = msg_sender.send(AppMessage::Quit); },
+                            Err(e) => {
+                                log_util::log_error(format!("Failed to update software: {:?}", e));
+                                setting_win_clone.upgrade_in_event_loop(move |setting_window| {
+                                    setting_window.set_block(false);
+                                    setting_window.set_update_state(2);
+                                }).unwrap_or_else(|e| log_util::log_error(format!("Set setting_window back from updating: {:?}", e)));
+                            }
+                        }
                     }
                 });
             });

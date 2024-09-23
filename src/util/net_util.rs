@@ -69,9 +69,11 @@ impl Updater {
             let file_response = reqwest::blocking::Client::new()
                 .get(format!("https://mirror.ghproxy.com/{}", download_url)).send()
                 .or_else( |_| {
-                        reqwest::blocking::Client::new().get(download_url).send()
-                    }
-                )?;
+                    reqwest::blocking::Client::new().get(format!("https://ghp.ci/{}", download_url)).send()
+                })
+                .or_else( |_| {
+                    reqwest::blocking::Client::new().get(download_url).send()
+                })?;
         
             if file_response.status().is_success() {
                 let exe_path = env::current_exe()?;
