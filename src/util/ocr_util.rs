@@ -54,7 +54,7 @@ pub fn ocr_windows(image: DynamicImage, lang: &str) -> windows::core::Result<Vec
     let mut collected_words:Vec<Coordinates> = Vec::new();
 
     result.into_iter().for_each(|line|{
-        let line_text = line.Text().unwrap_or(HSTRING::default()).to_string_lossy();
+        let line_text = line.Text().unwrap_or_default().to_string_lossy();
         let words = match line.Words(){
             Ok(w) => w,
             Err(_) => return, // or handle the empty case appropriately

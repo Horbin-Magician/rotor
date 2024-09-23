@@ -293,7 +293,7 @@ impl PinWin {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
                         let pathes_rc = pin_window.get_pathes();
                         if let Some(pathes) = pathes_rc.as_any().downcast_ref::<VecModel<SharedString>>() {
-                            pathes.push(path.into());
+                            pathes.push(path);
                         }
                     }
                 });

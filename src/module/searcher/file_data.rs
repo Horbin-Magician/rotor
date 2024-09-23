@@ -160,7 +160,7 @@ impl FileData {
             for (id, item) in update_result.into_iter().enumerate() {
                 let icon = 
                     file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
-                        .unwrap_or_else(|| slint::Image::default());
+                        .unwrap_or_default();
                 result_list.push(
                     SearchResult_slint { 
                         id: id as i32,

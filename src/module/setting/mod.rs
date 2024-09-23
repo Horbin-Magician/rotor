@@ -42,7 +42,7 @@ impl Module for Setting{
     }
 
     fn get_hotkey(&mut self) -> Option<HotKey> {
-        return None;
+        None
     }
 
     fn clean(&self) {

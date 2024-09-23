@@ -69,11 +69,10 @@ impl Application {
         let cloned_module_profiles = self._module_profiles.clone();
         for (_, (hotkey, runner)) in cloned_module_profiles {
             if let Some(hotkey) = hotkey {
-                let hotkey_clone = hotkey.clone();
                 let hotkey_manager_rc_clone = self._hotkey_manager_rc.clone();
                 slint::invoke_from_event_loop(move || {
                     if let Ok(hotkey_manager) = hotkey_manager_rc_clone.lock() {
-                        hotkey_manager.register(hotkey_clone)
+                        hotkey_manager.register(hotkey)
                             .unwrap_or_else(|e| log_util::log_error(format!("Error in register hotkey: {:?}", e)));
                     }
                 }).unwrap_or_else(|e| log_util::log_error(format!("Error in invoke_from_event_loop: {:?}", e)));
@@ -204,7 +203,7 @@ impl Application {
 
     pub fn is_running(&self) -> bool {
         if let Ok(is_running) = self._is_running.lock() {
-            return *is_running;
+            *is_running
         } else { false }
     }
 }

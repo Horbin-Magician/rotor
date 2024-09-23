@@ -127,8 +127,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
 
     fn write_icon_data_to_memory(mem: &mut [u8], h_bitmap: HBITMAP, bmp: &BITMAP, bitmap_byte_count: usize) {
         unsafe {
-            let mut icon_data = Vec::<u8>::with_capacity(bitmap_byte_count);
-            icon_data.set_len(bitmap_byte_count);
+            let mut icon_data = vec![0; bitmap_byte_count];
     
             GetBitmapBits(h_bitmap, bitmap_byte_count as i32, icon_data.as_mut_ptr() as *mut c_void);
     
@@ -194,12 +193,11 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
         biYPelsPerMeter: 0
     };
 
-    let mut bytes = Vec::<u8>::with_capacity(complete_size);
-    unsafe { bytes.set_len(complete_size); }
+    let mut bytes = vec![0; complete_size];
 
     // 1.write the icon_header
     unsafe {
-        let byte_ptr: *mut u8 = mem::transmute(&icon_header);
+        let byte_ptr: *mut u8 = &icon_header as *const Iconheader as *mut u8;
         ptr::copy_nonoverlapping(byte_ptr, bytes.as_mut_ptr(), icon_header_size); 
     }
 
@@ -224,14 +222,14 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
     };
 
     unsafe {
-        let byte_ptr: *mut u8 = mem::transmute(&icon_dir);
+        let byte_ptr: *mut u8 = &icon_dir as *const Icondir as *mut u8;
         ptr::copy_nonoverlapping(byte_ptr, bytes[pos..].as_mut_ptr(), icon_dir_size); 
     }
     let pos = pos + icon_dir_size;
     
     // 3.write bitmap_info_header + colortable
     unsafe {
-        let byte_ptr: *mut u8 = mem::transmute(&bi_header);
+        let byte_ptr: *mut u8 = &bi_header as *const BITMAPINFOHEADER as *mut u8;
         ptr::copy_nonoverlapping(byte_ptr, bytes[pos..].as_mut_ptr(), info_header_size);
     }
     let pos = pos + info_header_size;

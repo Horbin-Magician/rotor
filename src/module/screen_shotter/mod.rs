@@ -339,7 +339,7 @@ impl ScreenShotter{
             let pin_windows = pin_windows.lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             let move_win = &pin_windows[&move_win_id].upgrade()
-                .ok_or(format!("Error in pin_win_move_hander: can get move_win"))?;
+                .ok_or("Error in pin_win_move_hander: can get move_win".to_string())?;
 
             let move_pos = move_win.window().position();
             let move_size = move_win.window().size();
@@ -347,13 +347,13 @@ impl ScreenShotter{
             let move_right = move_pos.x + move_size.width as i32;
 
             toolbar_window.upgrade()
-                .ok_or(format!("Error in pin_win_move_hander: can get toolbar_window"))?
+                .ok_or("Error in pin_win_move_hander: can get toolbar_window".to_string())?
                 .invoke_win_move(move_right, move_bottom);
 
             for pin_win_id in pin_windows.keys(){
                 if move_win_id != *pin_win_id {
                     let other_win = &pin_windows[pin_win_id].upgrade()
-                        .ok_or(format!("Error in pin_win_move_hander: can get other_win"))?;
+                        .ok_or("Error in pin_win_move_hander: can get other_win".to_string())?;
                     let other_pos = other_win.window().position();
                     let other_size = other_win.window().size();
                     let other_bottom = other_pos.y + other_size.height as i32;
