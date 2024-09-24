@@ -104,6 +104,16 @@ impl Searcher {
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Init);
 
+        { // add result
+            let search_win_clone = search_win.as_weak();
+            let searcher_msg_sender_clone = searcher_msg_sender.clone();
+            search_win.on_add_result(move || {
+                if let Some(search_win_clone) = search_win_clone.upgrade() {
+                    let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string()));
+                }
+            });
+        }
+
         { // add key event hander
             let search_win_clone = search_win.as_weak();
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
