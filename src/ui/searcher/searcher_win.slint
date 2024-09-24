@@ -34,6 +34,7 @@ export component SearchWindow inherits BaseWindow {
     callback item_click(PointerEvent, int);
     callback open_with_admin(int);
     callback open_file_dir(int);
+    callback add_result();
     pure callback lose_focus_trick(bool) -> bool;
 
     title: @tr("小云搜索");
@@ -69,6 +70,14 @@ export component SearchWindow inherits BaseWindow {
                     result-list := ListView {
                         padding: 0;
                         height: (search_result.length > 7 ? 7 : search_result.length) * 60px;
+
+                        scrolled => {
+                            if ((self.height - self.viewport-y) / 60px) == search_result.length &&
+                                Math.mod(search_result.length, 20) == 0
+                            {
+                                root.add_result();
+                            }
+                        }
 
                         for data in root.search_result: Rectangle {
                             height: 60px;
