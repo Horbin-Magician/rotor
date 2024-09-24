@@ -56,7 +56,7 @@ export component SettingWindow inherits BaseWindow {
             }
         }
 
-        Rectangle {
+        main_rec := Rectangle {
             height: (root.height) - 4px;
             width: (root.width) - 4px;
 
@@ -127,9 +127,11 @@ export component SettingWindow inherits BaseWindow {
     }
 
     if (update_state > 0) : Rectangle {
-        height: root.height;
-        width: root.width;
+        height: main_rec.height;
+        width: main_rec.width;
         background: Palette.background.with_alpha(0.5);
+        border-radius: 5px;
+        clip: true;
 
         in-out property <int> update_state <=> root.update_state;
         in-out property <string> current_version <=> root.current_version;
