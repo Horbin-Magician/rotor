@@ -219,9 +219,10 @@ impl PinWin {
                         pin_window.invoke_close();
 
                         std::thread::spawn(move || {
-                            let app_config = AppConfig::global().lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            let save_path = app_config.get_save_path();
+                            let save_path = AppConfig::global()
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .get_save_path();
                             let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
                             let params = DialogParams {
                                 title: "Select an image to save",

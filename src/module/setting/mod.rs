@@ -7,7 +7,8 @@ use slint::ComponentHandle;
 use windows::Win32::UI::WindowsAndMessaging;
 
 use crate::core::application::{AppMessage, app_config::AppConfig};
-use crate::util::{log_util, net_util};
+use crate::util::net_util::Updater;
+use crate::util::log_util;
 use crate::ui::SettingWindow;
 use crate::module::{Module, ModuleMessage};
 
@@ -86,18 +87,20 @@ impl Setting {
         { // code for setting change
             { // power boot
                 setting_win.on_power_boot_changed(move |power_boot| {
-                    if let Ok(mut app_config) = AppConfig::global().lock() {
-                        app_config.set_power_boot(power_boot)
-                            .unwrap_or_else(|e| log_util::log_error(format!("Failed to set power boot: {:?}", e)));
-                    }
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_power_boot(power_boot)
+                        .unwrap_or_else(|e| log_util::log_error(format!("Failed to set power boot: {:?}", e)));
                 });
             }
 
             {// theme
                 setting_win.on_theme_changed(move |theme| {
-                    if let Ok(mut app_config) = AppConfig::global().lock() {
-                        app_config.set_theme(theme as u8);
-                    }
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_theme(theme as u8);
                 });
             }
 
@@ -132,9 +135,10 @@ impl Setting {
                         else if id == "pinwin_hide" { setting_win.set_shortcut_pinwin_hide(shortcut_str.clone().into());}
                     }
 
-                    if let Ok(mut app_config) = AppConfig::global().lock() {
-                        app_config.set_shortcut(id.to_string(), shortcut_str);
-                    }
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_shortcut(id.to_string(), shortcut_str);
                 });
             }
         }
@@ -177,17 +181,20 @@ impl Setting {
 
                 let setting_win_clone = setting_win_clone.clone();
                 std::thread::spawn(move || {
-                    if let Ok(mut updater) = net_util::Updater::global().lock() {
-                        let latest_version = updater.get_latest_version().unwrap_or("unknown".to_string());
-                        let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
-    
-                        setting_win_clone.upgrade_in_event_loop(move |setting_window| {
-                            setting_window.set_current_version(current_version.into());
-                            setting_window.set_latest_version(latest_version.into());
-                            setting_window.set_update_state(1);
-                            setting_window.set_block(false);
-                        }).unwrap_or_else(|e| log_util::log_error(format!("Failed to check update: {:?}", e)));
-                    }
+                    let latest_version = 
+                        Updater::global()
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .get_latest_version().unwrap_or("unknown".to_string());
+
+                    let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
+
+                    setting_win_clone.upgrade_in_event_loop(move |setting_window| {
+                        setting_window.set_current_version(current_version.into());
+                        setting_window.set_latest_version(latest_version.into());
+                        setting_window.set_update_state(1);
+                        setting_window.set_block(false);
+                    }).unwrap_or_else(|e| log_util::log_error(format!("Failed to check update: {:?}", e)));
                 });
             });
 
@@ -202,16 +209,17 @@ impl Setting {
                 let msg_sender = msg_sender.clone();
                 let setting_win_clone = setting_win_clone.clone();
                 std::thread::spawn(move || {
-                    if let Ok(updater) = net_util::Updater::global().lock() {
-                        match updater.update_software() {
-                            Ok(_) => { let _ = msg_sender.send(AppMessage::Quit); },
-                            Err(e) => {
-                                log_util::log_error(format!("Failed to update software: {:?}", e));
-                                setting_win_clone.upgrade_in_event_loop(move |setting_window| {
-                                    setting_window.set_block(false);
-                                    setting_window.set_update_state(2);
-                                }).unwrap_or_else(|e| log_util::log_error(format!("Set setting_window back from updating: {:?}", e)));
-                            }
+                    let updater = Updater::global().lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+                    match updater.update_software() {
+                        Ok(_) => { let _ = msg_sender.send(AppMessage::Quit); },
+                        Err(e) => {
+                            log_util::log_error(format!("Failed to update software: {:?}", e));
+                            setting_win_clone.upgrade_in_event_loop(move |setting_window| {
+                                setting_window.set_block(false);
+                                setting_window.set_update_state(2);
+                            }).unwrap_or_else(|e| log_util::log_error(format!("Set setting_window back from updating: {:?}", e)));
                         }
                     }
                 });
