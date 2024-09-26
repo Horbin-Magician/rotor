@@ -256,9 +256,10 @@ impl FileData {
             self.volume_packs.push(VolumePack { volume: volume.clone(), stop_sender });
 
             thread::spawn(move || {
-                if let Ok(mut volume) = volume.lock() {
-                    volume.build_index();
-                }
+                volume
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .build_index();
             })
         }).collect::<Vec<_>>();
 
@@ -275,9 +276,10 @@ impl FileData {
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {
-                if let Ok(mut volume) = volume.lock() {
-                    volume.update_index();
-                }
+                volume
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .update_index();
             })
         }).collect::<Vec<_>>();
 
@@ -295,9 +297,10 @@ impl FileData {
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
             let volume = volume.clone();
             thread::spawn(move || {
-                if let Ok(mut volume) = volume.lock() {
-                    volume.release_index();
-                }
+                volume
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .release_index();
             })
         }).collect::<Vec<_>>();
 

@@ -71,10 +71,11 @@ impl Application {
             if let Some(hotkey) = hotkey {
                 let hotkey_manager_rc_clone = self._hotkey_manager_rc.clone();
                 slint::invoke_from_event_loop(move || {
-                    if let Ok(hotkey_manager) = hotkey_manager_rc_clone.lock() {
-                        hotkey_manager.register(hotkey)
-                            .unwrap_or_else(|e| log_util::log_error(format!("Error in register hotkey: {:?}", e)));
-                    }
+                    hotkey_manager_rc_clone
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .register(hotkey)
+                        .unwrap_or_else(|e| log_util::log_error(format!("Error in register hotkey: {:?}", e)));
                 }).unwrap_or_else(|e| log_util::log_error(format!("Error in invoke_from_event_loop: {:?}", e)));
                 module_ports.insert(hotkey.id(), runner.clone());
             }
@@ -99,13 +100,12 @@ impl Application {
         }
 
         fn handle_quit(is_running: Arc<Mutex<bool>>) {
-            if let Ok(mut is_running) = is_running.lock() {
-                *is_running = false;
-                if let Err(e) = slint::quit_event_loop() {
-                    log_util::log_error(format!("Failed to quit event loop: {:?}", e));
-                }
-            } else {
-                log_util::log_error("Failed to lock is_running mutex".to_string());
+            *is_running
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                = false;
+            if let Err(e) = slint::quit_event_loop() {
+                log_util::log_error(format!("Failed to quit event loop: {:?}", e));
             }
         }
 
@@ -130,23 +130,21 @@ impl Application {
                 
                 let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
                 slint::invoke_from_event_loop(move || {
-                    if let Ok(hotkey_manager) = hotkey_manager_rc_clone.lock() {
-                        hotkey_manager.unregister(hotkey)
-                            .unwrap_or_else(|e| log_util::log_error(format!("Error in unregister hotkey: {:?}", e)));
-                    } else {
-                        log_util::log_error("Failed to lock hotkey manager".to_string());
-                    }
+                    hotkey_manager_rc_clone
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .unregister(hotkey)
+                    .unwrap_or_else(|e| log_util::log_error(format!("Error in unregister hotkey: {:?}", e)));
                 }).unwrap_or_else(|e| log_util::log_error(format!("Error in invoke_from_event_loop: {:?}", e)));
 
                 let hotkey = value.parse::<HotKey>()?;
                 let hotkey_manager_rc_clone = hotkey_manager_rc.clone();
                 slint::invoke_from_event_loop(move || {
-                    if let Ok(hotkey_manager) = hotkey_manager_rc_clone.lock() {
-                        hotkey_manager.register(hotkey)
-                            .unwrap_or_else(|e| log_util::log_error(format!("Error in register hotkey: {:?}", e)));
-                    } else {
-                        log_util::log_error("Failed to lock hotkey manager".to_string());
-                    }
+                    hotkey_manager_rc_clone
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .register(hotkey)
+                    .unwrap_or_else(|e| log_util::log_error(format!("Error in register hotkey: {:?}", e)));
                 }).unwrap_or_else(|e| log_util::log_error(format!("Error in invoke_from_event_loop: {:?}", e)));
                 
                 module_profiles.insert(key, (Some(hotkey), runner));
@@ -202,8 +200,8 @@ impl Application {
     }
 
     pub fn is_running(&self) -> bool {
-        if let Ok(is_running) = self._is_running.lock() {
-            *is_running
-        } else { false }
+        *self._is_running
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

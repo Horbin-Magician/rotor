@@ -73,9 +73,10 @@ impl Module for Searcher{
     }
 
     fn get_hotkey(&mut self) -> Option<HotKey> {
-        if let Ok(app_config) = AppConfig::global().lock() {
-            app_config.get_hotkey_from_str("search")
-        }else{ None }
+        AppConfig::global()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get_hotkey_from_str("search")
     }
 
     fn clean(&self) {

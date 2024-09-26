@@ -65,18 +65,23 @@ impl Module for ScreenShotter {
     }
 
     fn get_hotkey(&mut self) -> Option<HotKey> {
-        let app_config = AppConfig::global().lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        app_config.get_hotkey_from_str("screenshot")
+        AppConfig::global()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get_hotkey_from_str("screenshot")
     }
 
     fn clean(&self) {
-        *self._max_pin_win_id.lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
-        self._pin_windows.lock()
+        *self._max_pin_win_id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            = 0;
+        self._pin_windows
+            .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
-        self._pin_wins.lock()
+        self._pin_wins
+            .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
