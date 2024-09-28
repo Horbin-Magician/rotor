@@ -191,6 +191,12 @@ impl Application {
                 }
             }
         });
+
+        while self.is_running() {
+            slint::run_event_loop()
+                .unwrap_or_else(|e| log_util::log_error(format!("slint run_event_loop error: {:?}", e)));
+            self.clean();
+        }
     }
     
     pub fn clean(&mut self) {
