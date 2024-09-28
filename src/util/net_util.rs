@@ -11,13 +11,13 @@ use std::os::windows::process::CommandExt;
 
 use crate::util::file_util;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct VersionInfo {
     pub tag_name: String,
     pub assets: Vec<Asset>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Asset {
     pub name: String,
     pub browser_download_url: String,
