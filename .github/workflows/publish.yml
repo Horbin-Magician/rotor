@@ -36,6 +36,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: "rotor-$LATEST_TAG.zip"
+          files: rotor-$LATEST_TAG.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
