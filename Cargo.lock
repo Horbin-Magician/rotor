@@ -4479,7 +4479,6 @@ dependencies = [
  "i-slint-backend-winit",
  "image 0.25.2",
  "is-root",
- "muda",
  "raw-window-handle",
  "reqwest",
  "serde",

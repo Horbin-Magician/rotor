@@ -16,7 +16,6 @@ slint-build = "1.8.0"
 slint = { version = "1.8.0", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia-opengl"]}
 i-slint-backend-winit = "1.8.0"
 raw-window-handle = "0.6.2"
-muda = "0.14.1"
 tray-icon = "0.17.0"
 winreg = "0.52.0"
 is-root = "0.1.3"
