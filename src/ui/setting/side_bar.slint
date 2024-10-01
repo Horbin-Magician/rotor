@@ -11,22 +11,19 @@ component SideBarItem inherits Rectangle {
     touch := TouchArea {
         state := Rectangle {
             border-radius: 5px;
-            animate background { duration: 150ms; }
-
             label := Text {
                 vertical-alignment: center;
                 horizontal-alignment: center;
-                // font-size: 14px;
             }
         }
     }
 
     states [
         selected when root.selected : {
-            state.background: dodgerblue;
+            state.background: rgb(44,166,224);
         }
         hover when touch.has-hover : {
-            state.background: dimgrey;
+            state.background: rgba(44,166,224,0.5);
         }
     ]
 }
