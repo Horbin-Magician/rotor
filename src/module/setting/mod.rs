@@ -8,7 +8,7 @@ use windows::Win32::UI::WindowsAndMessaging;
 
 use crate::core::application::{AppMessage, app_config::AppConfig};
 use crate::util::net_util::Updater;
-use crate::util::log_util;
+use crate::util::{file_util, log_util};
 use crate::ui::SettingWindow;
 use crate::module::{Module, ModuleMessage};
 
@@ -223,6 +223,13 @@ impl Setting {
                         }
                     }
                 });
+            });
+        }
+
+        { // logo
+            setting_win.on_click_logo(move || {
+                file_util::open_file("https://github.com/Horbin-Magician/rotor".to_string())
+                    .unwrap_or_else(|e| log_util::log_error(format!("Failed to open link: {:?}", e)));
             });
         }
 
