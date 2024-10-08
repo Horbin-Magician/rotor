@@ -27,7 +27,8 @@ export component PinWindow inherits BaseWindow {
 
     in property <length> img_x;
     in property <length> img_y;
-    in-out property <int> zoom_factor: 100; // neet to be divided by one hundred
+    in-out property <int> zoom_factor: 100;     // neet to be divided by one hundred
+    in-out property <int> zoom_delta: 2; // neet to be divided by one hundred
     in-out property <length> img_width;
     in-out property <length> img_height;
 
@@ -151,9 +152,9 @@ export component PinWindow inherits BaseWindow {
 
                 scroll-event(event) => {
                     if (event.delta-y > 0) {
-                        if (root.zoom_factor < 500) { root.zoom_factor = root.zoom_factor + 1; }
+                        if (root.zoom_factor < 500) { root.zoom_factor = root.zoom_factor + zoom_delta; }
                     } else if (event.delta-y < 0) {
-                        if (root.zoom_factor > 10) { root.zoom_factor = root.zoom_factor - 1; }
+                        if (root.zoom_factor > 10) { root.zoom_factor = root.zoom_factor - zoom_delta; }
                     }
                     root.show_zoom = true;
                     show_zoom_timer.running = true;

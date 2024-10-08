@@ -6,7 +6,9 @@ export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_close;
     in property <string> shortcut_pinwin_copy;
     in property <string> shortcut_pinwin_hide;
+    in property <string> zoom_delta;
 
+    callback zoom_delta_changed(string);
     callback shortcut_changed(string, KeyEvent);
 
     GroupBox {
@@ -174,6 +176,33 @@ export component ScreenShotterSettingPage inherits Page {
                             border-color: Palette.alternate-background;
                         }
                     ]
+                }
+            }
+        }
+    }
+
+    GroupBox {
+        title: @tr("贴图");
+        VerticalLayout {
+            padding-left: 20px;
+            padding-right: 50px;
+            spacing: 5px;
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: @tr("缩放灵敏度 (%)");
+                    height: 30px;
+                    width: 100px;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    height: 30px;
+                    width: 150px;
+                    input-type: decimal;
+                    text: zoom_delta;
+                    edited() => {
+                        zoom_delta_changed(self.text);
+                    }
                 }
             }
         }
