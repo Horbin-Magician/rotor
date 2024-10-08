@@ -30,12 +30,12 @@ jobs:
         run: cargo build --release
 
       - name: Compress
-        run: Compress-Archive -Path assets, target\release\rotor.exe -DestinationPath rotor-$LATEST_TAG.zip
+        run: Compress-Archive -Path assets, target\release\rotor.exe -DestinationPath rotor-${{ env.LATEST_TAG }}.zip
 
       - name: release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: rotor-$LATEST_TAG.zip
+          files: rotor-${{ env.LATEST_TAG }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
