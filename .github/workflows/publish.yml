@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  LATEST_TAG: unknown
+
 jobs:
   build:
     name: build and release app
@@ -24,7 +27,7 @@ jobs:
         run: |
           $latestTag = git describe --tags $(git rev-list --tags --max-count=1)
           echo "Latest tag is $latestTag"
-          echo "LATEST_TAG=$latestTag" >> $GITHUB_ENV
+          $Env:LATEST_TAG = $latestTag
           
       - name: Build
         run: cargo build --release
