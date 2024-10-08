@@ -49,6 +49,12 @@ impl PinWin {
         pin_window.set_img_height(rect.height / scale_factor);
         pin_window.set_scale_factor(scale_factor);
         
+        let zoom_delta = AppConfig::global()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get_zoom_delta();
+        pin_window.set_zoom_delta(zoom_delta.into());
+
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
             let message_sender_clone = message_sender.clone();

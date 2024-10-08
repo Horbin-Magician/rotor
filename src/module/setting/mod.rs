@@ -83,6 +83,8 @@ impl Setting {
         setting_win.set_shortcut_pinwin_close(app_config.get_shortcut("pinwin_close").unwrap_or(&"unkown".to_string()).into());
         setting_win.set_shortcut_pinwin_copy(app_config.get_shortcut("pinwin_copy").unwrap_or(&"unkown".to_string()).into());
         setting_win.set_shortcut_pinwin_hide(app_config.get_shortcut("pinwin_hide").unwrap_or(&"unkown".to_string()).into());
+        
+        setting_win.set_zoom_delta(app_config.get_zoom_delta().to_string().into());
 
         { // code for setting change
             { // power boot
@@ -101,6 +103,21 @@ impl Setting {
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .set_theme(theme as u8);
+                });
+            }
+
+            { // screenshot
+                let setting_win_clone = setting_win.as_weak();
+                setting_win.on_zoom_delta_changed(move |zoom_delta| {
+                    let zoom_delta_int = zoom_delta.parse::<u8>().unwrap_or(2);
+                    if let Some(setting_win) = setting_win_clone.upgrade() {
+                        setting_win.set_zoom_delta(zoom_delta_int.to_string().into());
+                    }
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_zoom_delta(zoom_delta_int)
+                        .unwrap_or_else(|e| log_util::log_error(format!("Failed to set zoom delta: {:?}", e)));
                 });
             }
 

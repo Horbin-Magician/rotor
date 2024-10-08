@@ -22,10 +22,13 @@ pub struct Config {
     save_path: String,
     #[serde(default = "default_shortcuts")]
     shortcuts: HashMap<String, String>,
+    #[serde(default = "default_zoom_delta")]
+    zoom_delta: u8,
 }
 
 fn default_false() -> bool { false }
 fn default_u8() -> u8 { 0 }
+fn default_zoom_delta() -> u8 { 2 }
 fn default_string() -> String { String::new() }
 fn default_shortcuts() -> HashMap<String, String> { 
     let mut shortcuts = HashMap::new();
@@ -141,6 +144,16 @@ impl AppConfig {
             }
         }
         None
+    }
+
+    pub fn set_zoom_delta(&mut self, delta: u8) -> Result<(), Box<dyn Error>> {
+        self.config.zoom_delta = delta;
+        self.save()?;
+        Ok(())
+    }
+
+    pub fn get_zoom_delta(&self) -> u8 {
+        self.config.zoom_delta
     }
 }
 

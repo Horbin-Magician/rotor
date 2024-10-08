@@ -31,6 +31,7 @@ export component SettingWindow inherits BaseWindow {
     callback update();
     callback shortcut_changed(string, KeyEvent);
     callback click_logo <=> side_bar.click_logo;
+    callback zoom_delta_changed(string);
 
     in property <string> version;
 
@@ -40,6 +41,7 @@ export component SettingWindow inherits BaseWindow {
     in property <string> shortcut_pinwin_close;
     in property <string> shortcut_pinwin_copy;
     in property <string> shortcut_pinwin_hide;
+    in property <string> zoom_delta;
     
     in-out property <int> update_state: 0;
     in-out property <string> current_version;
@@ -109,7 +111,9 @@ export component SettingWindow inherits BaseWindow {
                                     shortcut_pinwin_close: root.shortcut_pinwin_close;
                                     shortcut_pinwin_copy: root.shortcut_pinwin_copy;
                                     shortcut_pinwin_hide: root.shortcut_pinwin_hide;
+                                    zoom_delta: root.zoom_delta;
                                     shortcut_changed(shortcut, event) => { root.shortcut_changed(shortcut, event); }
+                                    zoom_delta_changed(zoom_delta) => { root.zoom_delta_changed(zoom_delta); }
                                 }
                         }
                     }
