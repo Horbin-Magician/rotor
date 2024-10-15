@@ -10,7 +10,6 @@ export component MaskWindow inherits BaseWindow {
     forward-focus: focus_scope;
     title: "截图窗口";
     
-    property <Rect> select_rect;
     property <Point> mouse_down_pos;
     property <Point> mouse_move_pos;
 
@@ -18,6 +17,7 @@ export component MaskWindow inherits BaseWindow {
     in property <bool> color_type_Dec: true;
     in property <string> color_str: "RGB:(???,???,???)";
     
+    in-out property <Rect> select_rect;
     in-out property <bool> mouse_left_press;
     in-out property <float> scale_factor: 0;
     in-out property <int> offset_x;
@@ -26,9 +26,9 @@ export component MaskWindow inherits BaseWindow {
     callback shot();
     callback key_released(KeyEvent);
     callback new_pin_win(Rect);
-    pure callback refresh_rgb_trick(float, float, bool) -> bool;
-
-    always-on-top: refresh_rgb_trick(touch_area.mouse-x / 1px, touch_area.mouse-y / 1px, color_type_Dec);
+    callback mouse_move(float, float, bool, bool);
+    
+    always-on-top: true;
 
     bac-img := Image {
         height: 100%;
@@ -48,6 +48,7 @@ export component MaskWindow inherits BaseWindow {
                 mouse-cursor: crosshair;
 
                 pointer-event(event) => {
+                    root.mouse_move(self.mouse-x / 1px, self.mouse-y / 1px, root.color_type_Dec, mouse_left_press);
                     if(event.button == PointerEventButton.left) {
                         if(event.kind == PointerEventKind.down) {
                             root.mouse_left_press = true;
