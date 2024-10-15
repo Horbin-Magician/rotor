@@ -31,6 +31,7 @@ zip = "2.2.0"
 xcap = "0.0.13"
 fxhash = "0.2.1"
 crossbeam = "0.8.4"
+imageproc = "0.25.0"
 
 [dependencies.windows]
 version = "0.58.0"

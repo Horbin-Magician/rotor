@@ -10,7 +10,7 @@ use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
 use windows::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
 
-use crate::util::{log_util, sys_util};
+use crate::util::{img_util, log_util, sys_util};
 use crate::core::application::app_config::AppConfig;
 use crate::ui::{MaskWindow, PinWindow, ToolbarWindow};
 use super::{Module, ModuleMessage};
@@ -39,6 +39,7 @@ pub struct ScreenShotter {
     _max_pin_win_id: Arc<Mutex<u32>>,
     _pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>,
     _pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
+    _bac_rects: Arc<Mutex<Vec<(u32, u32, u32, u32)>>>,
 }
 
 impl Module for ScreenShotter {
@@ -106,9 +107,12 @@ impl ScreenShotter{
             SharedPixelBuffer::<Rgba8Pixel>::new(1, 1)
         ));
 
+        let bac_rects = Arc::new(Mutex::new(Vec::new()));
+
         { // code for shot
             let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
             let mask_win_clone = mask_win.as_weak();
+            let bac_rects_clone = bac_rects.clone();
             mask_win.on_shot(move || {
                 // get screens and info
                 let mut point = POINT{x: 0, y: 0};
@@ -118,19 +122,21 @@ impl ScreenShotter{
                 }
                 
                 if let Ok(monitor) = Monitor::from_point(point.x, point.y) {
-                    let physical_width = monitor.width();
-                    let physical_height = monitor.height();
-                    let monitor_img = monitor.capture_image().unwrap_or_default();
-                    let scale_factor = sys_util::get_scale_factor(monitor.id());
-    
                     if let Some(mask_win) = mask_win_clone.upgrade() {
+                        let monitor_img: image::ImageBuffer<Rgba<u8>, Vec<u8>> = monitor.capture_image().unwrap_or_default();
+                        let scale_factor = sys_util::get_scale_factor(monitor.id());
+                        
+                        if let Ok(mut bac_rect_guard) = bac_rects_clone.lock() {
+                            *bac_rect_guard = img_util::detect_rect(&monitor_img);
+                        }
+
                         // refresh img
                         let mut bac_buffer = bac_buffer_rc_clone.lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
                         *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
                             &monitor_img,
-                            physical_width,
-                            physical_height,
+                            monitor_img.width(),
+                            monitor_img.height(),
                         );
                         mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
     
@@ -160,7 +166,43 @@ impl ScreenShotter{
         { // refresh rgb code str
             let mask_win_clone = mask_win.as_weak();
             let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
-            mask_win.on_refresh_rgb_trick(move |mouse_x, mouse_y, color_type_dec| {
+            let bac_rects_clone = bac_rects.clone();
+            mask_win.on_mouse_move(move |mouse_x, mouse_y, color_type_dec, mouse_left_press| {
+                // TODO fress rect!!
+                // TODO 1. get windows rect
+                // TODO 2. get smallest rect that contains the mouse point
+                // TODO 3. set the rect to the mask_win
+                if mouse_left_press == false { 
+                    let scale_factor = mask_win_clone.upgrade().unwrap().window().scale_factor();
+                    let mouse_x_phs = (mouse_x * scale_factor) as u32;
+                    let mouse_y_phs = (mouse_y * scale_factor) as u32;
+                    let bac_rects = bac_rects_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let mut if_set = false;
+                    for (x, y, width , height) in bac_rects.iter() {
+                        if *x <= mouse_x_phs && mouse_x_phs <= *x + width && *y <= mouse_y_phs && mouse_y_phs <= *y + height {
+                            if let Some(mask_win) = mask_win_clone.upgrade() {
+                                mask_win.set_select_rect(
+                                    crate::ui::Rect{
+                                        x: *x as f32,
+                                        y: *y as f32,
+                                        width: *width as f32,
+                                        height: *height as f32
+                                    }
+                                );
+                                if_set = true;
+                                break;
+                            }
+                        }
+                    }
+                    if if_set == false {
+                        if let Some(mask_win) = mask_win_clone.upgrade() {
+                            mask_win.set_select_rect(
+                                crate::ui::Rect{ x: -1.0, y: -1.0, width: 0.0, height: 0.0 }
+                            );
+                        }
+                    }
+                }
+
                 if let Some(mask_win) = mask_win_clone.upgrade() {
                     let scale_factor = mask_win.window().scale_factor();
 
@@ -180,7 +222,6 @@ impl ScreenShotter{
                     if color_type_dec { mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
                     } else { mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into()); }
                 }
-                true
             });
         }
 
@@ -335,6 +376,7 @@ impl ScreenShotter{
             _max_pin_win_id: max_pin_win_id,
             _pin_windows: pin_windows,
             _pin_wins: pin_wins,
+            _bac_rects: bac_rects,
         })
     }
 
