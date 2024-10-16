@@ -1,4 +1,4 @@
-import { GroupBox, LineEdit, Palette } from "std-widgets.slint";
+import { GroupBox, LineEdit, Palette, Slider } from "std-widgets.slint";
 import { Page } from "page.slint";
 
 export component ScreenShotterSettingPage inherits Page {
@@ -190,18 +190,22 @@ export component ScreenShotterSettingPage inherits Page {
             HorizontalLayout {
                 alignment: space-between;
                 Text {
-                    text: @tr("缩放灵敏度 (%)");
+                    text: @tr("缩放灵敏度");
                     height: 30px;
                     width: 100px;
                     vertical-alignment: center;
                 }
-                LineEdit {
+                zoom_slider := Slider {
                     height: 30px;
-                    width: 150px;
-                    input-type: decimal;
-                    text: zoom_delta;
-                    edited() => {
-                        zoom_delta_changed(self.text);
+                    width: 100px;
+                    minimum: 1;
+                    maximum: 10;
+                    value: zoom_delta.to-float();
+                    changed => {
+                        self.value = self.value.round();
+                    }
+                    released => {
+                        zoom_delta_changed(self.value);
                     }
                 }
             }
