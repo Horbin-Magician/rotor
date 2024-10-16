@@ -126,9 +126,9 @@ impl ScreenShotter{
                         let monitor_img: image::ImageBuffer<Rgba<u8>, Vec<u8>> = monitor.capture_image().unwrap_or_default();
                         let scale_factor = sys_util::get_scale_factor(monitor.id());
                         
-                        if let Ok(mut bac_rect_guard) = bac_rects_clone.lock() {
-                            *bac_rect_guard = img_util::detect_rect(&monitor_img);
-                        }
+                        // if let Ok(mut bac_rect_guard) = bac_rects_clone.lock() {
+                        //     *bac_rect_guard = img_util::detect_rect(&monitor_img);
+                        // }
 
                         // refresh img
                         let mut bac_buffer = bac_buffer_rc_clone.lock()
