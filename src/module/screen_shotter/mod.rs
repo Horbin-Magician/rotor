@@ -168,10 +168,7 @@ impl ScreenShotter{
             let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
             let bac_rects_clone = bac_rects.clone();
             mask_win.on_mouse_move(move |mouse_x, mouse_y, color_type_dec, mouse_left_press| {
-                // TODO fress rect!!
-                // TODO 1. get windows rect
-                // TODO 2. get smallest rect that contains the mouse point
-                // TODO 3. set the rect to the mask_win
+                // TODO get windows rect
                 if mouse_left_press == false { 
                     let scale_factor = mask_win_clone.upgrade().unwrap().window().scale_factor();
                     let mouse_x_phs = (mouse_x * scale_factor) as u32;
