@@ -10,8 +10,8 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let scale_factor: u8 = 2;
     let small_original = resize(
         original_img,
-        original_img.width() / 2,
-        original_img.height() / 2,
+        original_img.width() / scale_factor as u32,
+        original_img.height() / scale_factor as u32,
         image::imageops::FilterType::Nearest,
     );
 
