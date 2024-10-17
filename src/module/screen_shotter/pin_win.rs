@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::error::Error;
 use wfd::DialogParams;
-use image;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
@@ -9,7 +8,7 @@ use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel, Compon
 use i_slint_backend_winit::WinitWindowAccessor;
 use chrono;
 
-use crate::util::{log_util, sys_util};
+use crate::util::{log_util, sys_util, img_util};
 use crate::core::application::app_config::AppConfig;
 use crate::ui::{PinWindow, Rect, Direction, PinState};
 use super::ShotterMessage;
@@ -219,7 +218,7 @@ impl PinWin {
                         let img_height = pin_window.get_img_height() * scale_factor;
                         let img_width = pin_window.get_img_width() * scale_factor;
                         
-                        let mut img = PinWin::shared_pixel_buffer_to_dynamic_image(&buffer);
+                        let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
                         img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                         
                         pin_window.invoke_close();
@@ -262,7 +261,7 @@ impl PinWin {
                         let img_height = pin_window.get_img_height() * scale_factor;
                         let img_width = pin_window.get_img_width() * scale_factor;
     
-                        let mut img = PinWin::shared_pixel_buffer_to_dynamic_image(&buffer);
+                        let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
                         img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                         
                         pin_window.invoke_close();
@@ -359,13 +358,5 @@ impl PinWin {
             _id: id,
             pin_window,
         })
-    }
-
-    fn shared_pixel_buffer_to_dynamic_image(buffer: &SharedPixelBuffer<Rgba8Pixel>) -> image::DynamicImage {
-        image::DynamicImage::ImageRgba8(
-            image::RgbaImage::from_vec(
-                buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
-            ).unwrap_or_default()
-        )
     }
 }

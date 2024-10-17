@@ -110,9 +110,8 @@ impl ScreenShotter{
         let bac_rects = Arc::new(Mutex::new(Vec::new()));
 
         { // code for shot
-            let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
+            let bac_buffer_rc_clone = bac_buffer_rc.clone();
             let mask_win_clone = mask_win.as_weak();
-            let bac_rects_clone = bac_rects.clone();
             mask_win.on_shot(move || {
                 // get screens and info
                 let mut point = POINT{x: 0, y: 0};
@@ -126,10 +125,6 @@ impl ScreenShotter{
                         let monitor_img: image::ImageBuffer<Rgba<u8>, Vec<u8>> = monitor.capture_image().unwrap_or_default();
                         let scale_factor = sys_util::get_scale_factor(monitor.id());
                         
-                        // if let Ok(mut bac_rect_guard) = bac_rects_clone.lock() {
-                        //     *bac_rect_guard = img_util::detect_rect(&monitor_img);
-                        // }
-
                         // refresh img
                         let mut bac_buffer = bac_buffer_rc_clone.lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -139,6 +134,7 @@ impl ScreenShotter{
                             monitor_img.height(),
                         );
                         mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
+                        mask_win.set_detected(false);
     
                         // refresh window
                         let pre_scale_factor = mask_win.get_scale_factor();
@@ -167,57 +163,60 @@ impl ScreenShotter{
             let mask_win_clone = mask_win.as_weak();
             let bac_buffer_rc_clone = Arc::clone(&bac_buffer_rc);
             let bac_rects_clone = bac_rects.clone();
-            mask_win.on_mouse_move(move |mouse_x, mouse_y, color_type_dec, mouse_left_press| {
-                // TODO get windows rect
-                if mouse_left_press == false { 
-                    let scale_factor = mask_win_clone.upgrade().unwrap().window().scale_factor();
-                    let mouse_x_phs = (mouse_x * scale_factor) as u32;
-                    let mouse_y_phs = (mouse_y * scale_factor) as u32;
+            mask_win.on_mouse_move(move |mouse_x, mouse_y, color_type_dec, auto_detect| {
+                let mask_win = mask_win_clone.upgrade().unwrap();
+                let scale_factor = mask_win.window().scale_factor();
+                let bac_buffer = bac_buffer_rc_clone.lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let width = bac_buffer.width();
+                let height = bac_buffer.height();
+                let img = img_util::shared_pixel_buffer_to_dynamic_image(&bac_buffer);
+                
+                let mouse_x_phs = ((mouse_x * scale_factor) as u32).clamp(0, width-1);
+                let mouse_y_phs = ((mouse_y * scale_factor) as u32).clamp(0, height-1);
+                let pixel: Rgba<u8> = img.get_pixel(mouse_x_phs, mouse_y_phs);
+                let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
+                if color_type_dec { mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
+                } else { mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into()); }
+
+                // auto detect rect
+                if auto_detect {
+                    let detected = mask_win.get_detected();
+                    if detected == false {
+                        if let Ok(mut bac_rect_guard) = bac_rects_clone.lock() {
+                            *bac_rect_guard = img_util::detect_rect(&img.to_rgba8());
+                        }
+                        mask_win.set_detected(true);
+                    }
                     let bac_rects = bac_rects_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                     let mut if_set = false;
                     for (x, y, width , height) in bac_rects.iter() {
                         if *x <= mouse_x_phs && mouse_x_phs <= *x + width && *y <= mouse_y_phs && mouse_y_phs <= *y + height {
-                            if let Some(mask_win) = mask_win_clone.upgrade() {
-                                mask_win.set_select_rect(
-                                    crate::ui::Rect{
-                                        x: *x as f32,
-                                        y: *y as f32,
-                                        width: *width as f32,
-                                        height: *height as f32
-                                    }
-                                );
-                                if_set = true;
-                                break;
-                            }
+                            mask_win.set_select_rect(
+                                crate::ui::Rect {
+                                    x: *x as f32 + 1.0,
+                                    y: *y as f32 + 1.0,
+                                    width: *width as f32 - 1.0,
+                                    height: *height as f32 - 1.0
+                                }
+                            );
+                            if_set = true;
+                            break;
                         }
                     }
                     if if_set == false {
-                        if let Some(mask_win) = mask_win_clone.upgrade() {
-                            mask_win.set_select_rect(
-                                crate::ui::Rect{ x: -1.0, y: -1.0, width: 0.0, height: 0.0 }
-                            );
-                        }
+                        mask_win.set_select_rect(
+                            crate::ui::Rect{ x: -1.0, y: -1.0, width: 0.0, height: 0.0 }
+                        );
                     }
-                }
-
-                if let Some(mask_win) = mask_win_clone.upgrade() {
-                    let scale_factor = mask_win.window().scale_factor();
-
-                    let bac_buffer = bac_buffer_rc_clone.lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                    let width = bac_buffer.width();
-                    let height = bac_buffer.height();
-                    let img: image::DynamicImage = image::DynamicImage::ImageRgba8(
-                        image::RgbaImage::from_vec(width, height, bac_buffer.as_bytes().to_vec())
-                            .unwrap_or_default()
-                    );
-                    
-                    let point_x = ((mouse_x * scale_factor) as u32).clamp(0, width-1);
-                    let point_y = ((mouse_y * scale_factor) as u32).clamp(0, height-1);
-                    let pixel: Rgba<u8> = img.get_pixel(point_x, point_y);
-                    let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
-                    if color_type_dec { mask_win.set_color_str(format!("RGB:({},{},{})", r, g, b).into());
-                    } else { mask_win.set_color_str(format!("#{:02X}{:02X}{:02X}", r, g, b).into()); }
+                    // POINT pt;
+                    // ::GetCursorPos(&pt); // 获得当前鼠标位置
+                    // ::EnableWindow((HWND)winId(), FALSE);
+                    // HWND hwnd = ::ChildWindowFromPointEx(::GetDesktopWindow(), pt, CWP_SKIPDISABLED | CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
+                    // RECT temp_window;
+                    // ::DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &temp_window, sizeof(temp_window));
+                    // m_windowRect.setRect(temp_window.left,temp_window.top, temp_window.right - temp_window.left, temp_window.bottom - temp_window.top);
+                    // ::EnableWindow((HWND)winId(), TRUE);
                 }
             });
         }
