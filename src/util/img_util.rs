@@ -1,5 +1,6 @@
 use image::{self, imageops::resize, DynamicImage, RgbaImage};
 use imageproc::{contours, edges};
+use slint::{Rgba8Pixel, SharedPixelBuffer};
 
 // use image::Rgb;
 // use imageproc::rect::Rect;
@@ -67,4 +68,12 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     // plot_img.save("./test.png").unwrap(); // just for debug
 
     return res_rects;
+}
+
+pub fn shared_pixel_buffer_to_dynamic_image(buffer: &SharedPixelBuffer<Rgba8Pixel>) -> image::DynamicImage {
+    image::DynamicImage::ImageRgba8(
+        image::RgbaImage::from_vec(
+            buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
+        ).unwrap_or_default()
+    )
 }
