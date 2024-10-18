@@ -8,7 +8,7 @@ use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
-use windows::Win32::{UI::WindowsAndMessaging::GetCursorPos, Foundation::POINT};
+use windows::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
 
 use crate::util::{img_util, log_util, sys_util};
 use crate::core::application::app_config::AppConfig;
@@ -189,8 +189,14 @@ impl ScreenShotter{
                         mask_win.set_detected(true);
                     }
                     let bac_rects = bac_rects_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    sys_util::enable_window(mask_win.window(), false);
+                    let (window_x, window_y, window_width, window_height) = sys_util::get_point_window_rect(mouse_x_phs as i32, mouse_y_phs as i32);
+                    let window_area = (window_width * window_height) as u32;
+                    sys_util::enable_window(mask_win.window(), true);
+
                     let mut if_set = false;
                     for (x, y, width , height) in bac_rects.iter() {
+                        if width * height > window_area { break; }
                         if *x <= mouse_x_phs && mouse_x_phs <= *x + width && *y <= mouse_y_phs && mouse_y_phs <= *y + height {
                             mask_win.set_select_rect(
                                 crate::ui::Rect {
@@ -206,17 +212,9 @@ impl ScreenShotter{
                     }
                     if if_set == false {
                         mask_win.set_select_rect(
-                            crate::ui::Rect{ x: -1.0, y: -1.0, width: 0.0, height: 0.0 }
+                            crate::ui::Rect{ x: window_x as f32, y: window_y as f32, width: window_width as f32, height: window_height as f32 }
                         );
                     }
-                    // POINT pt;
-                    // ::GetCursorPos(&pt); // 获得当前鼠标位置
-                    // ::EnableWindow((HWND)winId(), FALSE);
-                    // HWND hwnd = ::ChildWindowFromPointEx(::GetDesktopWindow(), pt, CWP_SKIPDISABLED | CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
-                    // RECT temp_window;
-                    // ::DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &temp_window, sizeof(temp_window));
-                    // m_windowRect.setRect(temp_window.left,temp_window.top, temp_window.right - temp_window.left, temp_window.bottom - temp_window.top);
-                    // ::EnableWindow((HWND)winId(), TRUE);
                 }
             });
         }

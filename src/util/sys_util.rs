@@ -5,9 +5,19 @@ use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindow
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 use windows::Win32::{Graphics::Gdi::HMONITOR, UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}};
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+
+use windows::Win32::{
+    Foundation::{HWND, POINT, RECT},
+    Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
+    UI::WindowsAndMessaging::{
+        ChildWindowFromPointEx, GetDesktopWindow,
+        CWP_SKIPDISABLED, CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT,
+    },
+};
+
 use is_root::is_root;
 use winreg::enums::*;
 use winreg::RegKey;
@@ -46,6 +56,33 @@ pub fn set_power_boot(if_power_boot: bool) -> Result<(), Box<dyn Error>> {
     }
     
     Ok(())
+}
+
+pub fn enable_window(window: &slint::Window, enable: bool) {
+    window.with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
+        if let Ok(handle) = winit_win.window_handle(){
+            if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
+                unsafe {
+                    let _ = EnableWindow(HWND(win32_handle.hwnd.get() as *mut _), enable);
+                }
+            }
+        }
+    });
+}
+
+// get point(x, y) return the window rect(x, y, width, height)
+pub fn get_point_window_rect(x: i32, y: i32) -> (i32, i32, i32, i32) {
+    let point: POINT = POINT{x, y};
+    let mut temp_window = RECT::default();
+    unsafe {
+        let hwnd: HWND = ChildWindowFromPointEx(
+            GetDesktopWindow(),
+            point,
+            CWP_SKIPDISABLED | CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT
+        );
+        let _ = DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &mut temp_window as *mut _ as *mut _, std::mem::size_of::<RECT>() as u32);
+    }
+    return (temp_window.left, temp_window.top, temp_window.right - temp_window.left, temp_window.bottom - temp_window.top);
 }
 
 pub fn forbid_window_animation(window: &slint::Window) {
