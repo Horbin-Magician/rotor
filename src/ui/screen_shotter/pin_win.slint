@@ -24,6 +24,7 @@ export component PinWindow inherits BaseWindow {
     in property <image> bac_image;
     in property <length> win_border_width: 1px;
     in property <float> scale_factor;
+    in property <float> true_scale_factor;
 
     in property <length> img_x;
     in property <length> img_y;
@@ -58,6 +59,7 @@ export component PinWindow inherits BaseWindow {
     callback copy();
     callback trigger_draw();
     callback draw_path(string);
+    callback update_record();
 
     width <=> win_width;
     height <=> win_height;
@@ -106,9 +108,9 @@ export component PinWindow inherits BaseWindow {
                                 root.img_width = root.img_width + root.delta_img_width;
                                 root.delta_img_height = 0px;
                                 root.delta_img_width = 0px;
+                                root.update_record();
                             } else if root.state == PinState.DrawFree {
                                 draw_path(root.drawing_path);
-                                debug(root.drawing_path);
                                 root.drawing_path = "";
                             }
                         }
