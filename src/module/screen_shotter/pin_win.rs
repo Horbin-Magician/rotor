@@ -32,27 +32,31 @@ impl PinWin {
         let pin_window = PinWindow::new()?;
         sys_util::forbid_window_animation(pin_window.window());
 
-        let border_width = pin_window.get_win_border_width();
-        let scale_factor = pin_window.window().scale_factor();
-        pin_window.window().set_position(slint::LogicalPosition::new((rect.x + offset_x as f32) / scale_factor - border_width, (rect.y + offset_y as f32) / scale_factor - border_width));
-        
-        let img = 
-            (*img_rc).lock()
+        { // set bash properties
+            let border_width = pin_window.get_win_border_width();
+            let scale_factor = pin_window.window().scale_factor();
+
+            pin_window.set_scale_factor(scale_factor);
+            
+            pin_window.window().set_position(slint::LogicalPosition::new((rect.x + offset_x as f32) / scale_factor - border_width, (rect.y + offset_y as f32) / scale_factor - border_width));
+            
+            let img = 
+                (*img_rc).lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            pin_window.set_bac_image(slint::Image::from_rgba8(img));
+            
+            pin_window.set_img_x(rect.x / scale_factor);
+            pin_window.set_img_y(rect.y / scale_factor);
+            pin_window.set_img_width(rect.width / scale_factor);
+            pin_window.set_img_height(rect.height / scale_factor);
+            
+            let zoom_delta = AppConfig::global()
+            .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        pin_window.set_bac_image(slint::Image::from_rgba8(img));
-        
-        pin_window.set_img_x(rect.x / scale_factor);
-        pin_window.set_img_y(rect.y / scale_factor);
-        pin_window.set_img_width(rect.width / scale_factor);
-        pin_window.set_img_height(rect.height / scale_factor);
-        pin_window.set_scale_factor(scale_factor);
-        
-        let zoom_delta = AppConfig::global()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .get_zoom_delta();
-        pin_window.set_zoom_delta(zoom_delta.into());
+            .get_zoom_delta();
+            pin_window.set_zoom_delta(zoom_delta.into());
+        }
 
         { // code for window move
             let pin_window_clone = pin_window.as_weak();
@@ -346,11 +350,21 @@ impl PinWin {
             });
         }
 
+        { // code for update record
+            let message_sender_clone = message_sender.clone();
+            pin_window.on_update_record(move || {
+                let _ = message_sender_clone.send(ShotterMessage::UpdateRecord(id));
+            });
+        }
+
         let _ = pin_window.show();
         
-        // trick: fix the bug of error scale_factor
-        if scale_factor != true_scale_factor {
-            pin_window.set_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
+        // TODO: try to use other way
+        { // trick: fix the bug of error scale_factor
+            let scale_factor = pin_window.window().scale_factor();
+            if scale_factor != true_scale_factor {
+                pin_window.set_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
+            }
         }
 
         Ok(PinWin {

@@ -65,7 +65,6 @@ export component MaskWindow inherits BaseWindow {
                             root.mouse_move_pos.y = clamp(touch_area.mouse-y, 0, root.height);
                         } else if (event.kind == PointerEventKind.up) {
                             root.new_pin_win(root.select_rect);
-                            debug(root.select_rect);
                             root.mouse_left_press = false;
                             root.select-rect.x = -1px;
                             root.select-rect.y = -1px;
