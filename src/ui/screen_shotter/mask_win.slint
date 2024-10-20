@@ -120,7 +120,7 @@ export component MaskWindow inherits BaseWindow {
 
     amplifier := Rectangle {
         width: 120px;
-        height:154px; // 90px + 58px + 2px * 3
+        height:176px; // 90px + 78px + 2px * 4
         x: ((touch-area.mouse-x) + self.width > root.width) ? 
             min(touch-area.mouse-x, root.width) - self.width : max(touch-area.mouse-x, 0);
         y: ((touch-area.mouse-y) + 25px + self.height > root.height) ? 
@@ -167,13 +167,13 @@ export component MaskWindow inherits BaseWindow {
 
             Text {
                 horizontal-alignment: center;
-                text: @tr("Z键切换 C键复制");
+                text: @tr("Z切换 C复制");
                 color: white;
             } // draw tips
 
             Text {
                 horizontal-alignment: center;
-                text: @tr("按住Ctrl键智能选区");
+                text: @tr("按住Ctrl智能选区");
                 color: white;
             } // auto detect tips
         }
