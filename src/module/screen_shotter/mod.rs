@@ -141,6 +141,7 @@ impl ScreenShotter{
                         );
                         mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
                         mask_win.set_detected(false);
+                        mask_win.set_select_rect( crate::ui::Rect{ x: -1.0, y: -1.0, width: 0.0, height: 0.0 });
     
                         // refresh window
                         let pre_scale_factor = mask_win.get_scale_factor();
