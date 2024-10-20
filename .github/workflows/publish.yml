@@ -27,7 +27,7 @@ jobs:
         run: |
           $latestTag = git describe --tags $(git rev-list --tags --max-count=1)
           echo "Latest tag is $latestTag"
-          $Env:LATEST_TAG = $latestTag
+          echo "LATEST_TAG=$latestTag" >> $env:GITHUB_ENV
           
       - name: Build
         run: cargo build --release
