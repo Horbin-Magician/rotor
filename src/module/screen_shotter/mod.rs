@@ -424,18 +424,27 @@ impl ScreenShotter{
     }
 
     fn restore_pin_wins(&self) -> Result<(), Box<dyn Error>> {
-        let record = ShotterRecord::global().lock()
+        let mut record = ShotterRecord::global().lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let shotters = record.get_shotters();
 
         let mut max_id = *self.max_pin_win_id.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+        let mut invalid_shotter_ids = Vec::new();
         for (id, shotter) in shotters {
             let id = id.parse::<u32>()?;
             if (id+1) > max_id { max_id = id+1; }
 
-            let img_buffer = ShotterRecord::load_record_img(id)?; // TODO: delete when load error
+            let img_buffer;
+            if let Ok(img) = ShotterRecord::load_record_img(id) {
+                img_buffer = img;
+            } else {
+                invalid_shotter_ids.push(id);
+                log_util::log_error(format!("Error in restore_pin_wins: can not load img, id: {}", id));
+                continue;
+            }
+
             let message_sender_clone = self.message_sender.clone();
             let rect = Rect{x: shotter.rect.0, y: shotter.rect.1, width: shotter.rect.2, height: shotter.rect.3};
 
@@ -482,6 +491,11 @@ impl ScreenShotter{
             self.pin_wins.lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .insert(id, pin_win);
+        }
+
+        for id in invalid_shotter_ids {
+            ShotterRecord::del_record_img(id)?;
+            record.del_shotter(id)?;
         }
 
         *self.max_pin_win_id.lock()

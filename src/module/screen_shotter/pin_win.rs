@@ -359,11 +359,11 @@ impl PinWin {
 
         let _ = pin_window.show();
         
-        // TODO: try to use other way
         { // trick: fix the bug of error scale_factor
             let scale_factor = pin_window.window().scale_factor();
+            println!("scale_factor: {}; true_scale_factor: {}", scale_factor, true_scale_factor);
             if scale_factor != true_scale_factor {
-                pin_window.set_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
+                pin_window.set_extra_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
             }
         }
 
