@@ -1,4 +1,4 @@
-<p align="center"><a href="https://github.com/Horbin-Magician/rotor-rs" target="_blank" rel="noopener noreferrer"><img width="100" src="./src/ui/assets/logo.png" alt="Rotor logo"></a></p>
+<p align="center"><a href="https://github.com/Horbin-Magician/rotor-rs" target="_blank" rel="noopener noreferrer"><img width="100" src="../src/ui/assets/logo.png" alt="Rotor logo"></a></p>
 
 <p align="center">
 <a href="README.md">English</a>
