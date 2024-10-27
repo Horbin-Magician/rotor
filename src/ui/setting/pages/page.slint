@@ -1,4 +1,4 @@
-import { VerticalBox, ScrollView } from "std-widgets.slint";
+import { VerticalBox, ScrollView, Palette } from "std-widgets.slint";
 
 export component Page inherits ScrollView {
     VerticalBox{
@@ -7,4 +7,38 @@ export component Page inherits ScrollView {
         padding-left: 30px;
         @children
     }
+}
+
+export component ShortcutEdit inherits Rectangle {
+    in-out property <string> shortcut_text;
+    callback shortcut_changed(KeyEvent);
+
+    border-radius: 5px;
+    width: 150px;
+    border-width: 1px;
+    property <bool> active: false;
+    FocusScope {
+        Text {
+            text: shortcut_text;
+            vertical-alignment: center;
+        }
+        
+        focus-changed-event() => {
+            parent.active = self.has-focus;
+        }
+
+        key-released(event) => {
+            shortcut_changed(event);
+            accept
+        }
+    }
+
+    states [
+        active when active: {
+            border-color: Palette.accent-background;
+        }
+        inactive when !active: {
+            border-color: Palette.alternate-background;
+        }
+    ]
 }

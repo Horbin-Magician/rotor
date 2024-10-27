@@ -1,5 +1,5 @@
 import { GroupBox, LineEdit, Palette, Slider } from "std-widgets.slint";
-import { Page } from "page.slint";
+import { Page, ShortcutEdit } from "page.slint";
 
 export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_save;
@@ -24,37 +24,15 @@ export component ScreenShotterSettingPage inherits Page {
                     height: 30px;
                     vertical-alignment: center;
                 }
-                Rectangle {
-                    border-radius: 5px;
-                    width: 150px;
-                    border-width: 1px;
-                    property <bool> active: false;
-                    FocusScope {
-                        Text {
-                            text: root.shortcut_pinwin_close;
-                            vertical-alignment: center;
-                        }
-                        
-                        focus-changed-event() => {
-                            parent.active = self.has-focus;
-                        }
 
-                        key-released(event) => {
-                            shortcut_changed("pinwin_close", event);
-                            accept
-                        }
+                ShortcutEdit {
+                    shortcut_text: shortcut_pinwin_close;
+                    shortcut_changed(event) => {
+                        shortcut_changed("pinwin_close", event);
                     }
-
-                    states [
-                        active when active: {
-                            border-color: Palette.accent-background;
-                        }
-                        inactive when !active: {
-                            border-color: Palette.alternate-background;
-                        }
-                    ]
                 }
             }
+
             HorizontalLayout {
                 alignment: space-between;
                 Text {
@@ -63,39 +41,15 @@ export component ScreenShotterSettingPage inherits Page {
                     width: 100px;
                     vertical-alignment: center;
                 }
-                Rectangle {
-                    border-radius: 5px;
-                    width: 150px;
-                    border-width: 1px;
 
-                    property <bool> active: false;
-
-                    FocusScope {
-                        Text {
-                            text: root.shortcut_pinwin_copy;
-                            vertical-alignment: center;
-                        }
-                        
-                        focus-changed-event() => {
-                            parent.active = self.has-focus;
-                        }
-
-                        key-released(event) => {
-                            shortcut_changed("pinwin_copy", event);
-                            accept
-                        }
+                ShortcutEdit {
+                    shortcut_text: shortcut_pinwin_copy;
+                    shortcut_changed(event) => {
+                        shortcut_changed("pinwin_copy", event);
                     }
-
-                    states [
-                        active when active: {
-                            border-color: Palette.accent-background;
-                        }
-                        inactive when !active: {
-                            border-color: Palette.alternate-background;
-                        }
-                    ]
                 }
             }
+
             HorizontalLayout {
                 alignment: space-between;
                 Text {
@@ -104,39 +58,15 @@ export component ScreenShotterSettingPage inherits Page {
                     width: 100px;
                     vertical-alignment: center;
                 }
-                Rectangle {
-                    border-radius: 5px;
-                    width: 150px;
-                    border-width: 1px;
 
-                    property <bool> active: false;
-
-                    FocusScope {
-                        Text {
-                            text: root.shortcut_pinwin_save;
-                            vertical-alignment: center;
-                        }
-                        
-                        focus-changed-event() => {
-                            parent.active = self.has-focus;
-                        }
-
-                        key-released(event) => {
-                            shortcut_changed("pinwin_save", event);
-                            accept
-                        }
+                ShortcutEdit {
+                    shortcut_text: shortcut_pinwin_save;
+                    shortcut_changed(event) => {
+                        shortcut_changed("pinwin_save", event);
                     }
-
-                    states [
-                        active when active: {
-                            border-color: Palette.accent-background;
-                        }
-                        inactive when !active: {
-                            border-color: Palette.alternate-background;
-                        }
-                    ]
                 }
             }
+
             HorizontalLayout {
                 alignment: space-between;
                 Text {
@@ -145,37 +75,12 @@ export component ScreenShotterSettingPage inherits Page {
                     width: 100px;
                     vertical-alignment: center;
                 }
-                Rectangle {
-                    border-radius: 5px;
-                    width: 150px;
-                    border-width: 1px;
 
-                    property <bool> active: false;
-
-                    FocusScope {
-                        Text {
-                            text: root.shortcut_pinwin_hide;
-                            vertical-alignment: center;
-                        }
-                        
-                        focus-changed-event() => {
-                            parent.active = self.has-focus;
-                        }
-
-                        key-released(event) => {
-                            shortcut_changed("pinwin_hide", event);
-                            accept
-                        }
+                ShortcutEdit {
+                    shortcut_text: shortcut_pinwin_hide;
+                    shortcut_changed(event) => {
+                        shortcut_changed("pinwin_hide", event);
                     }
-
-                    states [
-                        active when active: {
-                            border-color: Palette.accent-background;
-                        }
-                        inactive when !active: {
-                            border-color: Palette.alternate-background;
-                        }
-                    ]
                 }
             }
         }
