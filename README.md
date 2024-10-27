@@ -32,7 +32,7 @@ Now, Rotor include a **global file search** module, a **screenshot** module.
 4. A menu is displayed when the mouse hovers over the result item. You can opening the directory where the file is located or run as admin.
 
 <video width="640" height="360" controls>
-  <source src="doc\search_demo.mp4" type="video/mp4">
+  <source src="./doc/search_demo.mp4" type="video/mp4">
   Your browser does not support the video tag.
 </video>
 
@@ -43,7 +43,7 @@ Now, Rotor include a **global file search** module, a **screenshot** module.
 3. By default, the captured image is fixed to the screen, and press `ESC` to close it, `s` to save it, `Enter` to copy it, `h` to minimize it.
 
 <video width="640" height="360" controls>
-  <source src="doc\screenshot_demo.mp4" type="video/mp4">
+  <source src="。/doc/screenshot_demo.mp4" type="video/mp4">
   Your browser does not support the video tag.
 </video>
 
