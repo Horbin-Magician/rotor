@@ -1,5 +1,5 @@
 import { Button, ComboBox, Switch, GroupBox, LineEdit, Palette } from "std-widgets.slint";
-import { Page } from "page.slint";
+import { Page, ShortcutEdit } from "page.slint";
 
 export component BaseSettingPage inherits Page {
     in-out property <bool> power_boot;
@@ -98,37 +98,12 @@ export component BaseSettingPage inherits Page {
                     height: 30px;
                     vertical-alignment: center;
                 }
-                Rectangle {
-                    border-radius: 5px;
-                    width: 150px;
-                    border-width: 1px;
 
-                    property <bool> active: false;
-
-                    FocusScope {
-                        Text {
-                            text: root.shortcut_search;
-                            vertical-alignment: center;
-                        }
-                        
-                        focus-changed-event() => {
-                            parent.active = self.has-focus;
-                        }
-
-                        key-released(event) => {
-                            shortcut_changed("search", event);
-                            accept
-                        }
+                ShortcutEdit {
+                    shortcut_text: root.shortcut_search;
+                    shortcut_changed(event) => {
+                        shortcut_changed("search", event);
                     }
-
-                    states [
-                        active when active: {
-                            border-color: Palette.accent-background;
-                        }
-                        inactive when !active: {
-                            border-color: Palette.alternate-background;
-                        }
-                    ]
                 }
             }
 
@@ -139,37 +114,12 @@ export component BaseSettingPage inherits Page {
                     height: 30px;
                     vertical-alignment: center;
                 }
-                Rectangle {
-                    border-radius: 5px;
-                    width: 150px;
-                    border-width: 1px;
 
-                    property <bool> active: false;
-
-                    FocusScope {
-                        Text {
-                            text: root.shortcut_screenshot;
-                            vertical-alignment: center;
-                        }
-                        
-                        focus-changed-event() => {
-                            parent.active = self.has-focus;
-                        }
-
-                        key-released(event) => {
-                            shortcut_changed("screenshot", event);
-                            accept
-                        }
+                ShortcutEdit {
+                    shortcut_text: root.shortcut_screenshot;
+                    shortcut_changed(event) => {
+                        shortcut_changed("screenshot", event);
                     }
-
-                    states [
-                        active when active: {
-                            border-color: Palette.accent-background;
-                        }
-                        inactive when !active: {
-                            border-color: Palette.alternate-background;
-                        }
-                    ]
                 }
             }
         }
