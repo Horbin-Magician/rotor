@@ -3,7 +3,7 @@
 <p align="center">
 <span>English</span>
 <span> | </span>
-<a href="README_CN.md">中文</a>
+<a href="doc\README_CN.md">中文</a>
 </p>
 
 <p align="center"><span>A fast, low occupancy and free toolbox for Windows.</span></p>
@@ -31,11 +31,21 @@ Now, Rotor include a **global file search** module, a **screenshot** module.
 3. `Up` and `down` keys to select the result, `Enter` key to open the file. 
 4. A menu is displayed when the mouse hovers over the result item. You can opening the directory where the file is located or run as admin.
 
+<video width="640" height="360" controls>
+  <source src="doc\search_demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 ## Screenshot
 
 1. Shortcut key `Shift+C` prints screen.
 2. Then by holding down the `left mouse button` drag to select the area you want to take a screenshot, release to complete;
 3. By default, the captured image is fixed to the screen, and press `ESC` to close it, `s` to save it, `Enter` to copy it, `h` to minimize it.
+
+<video width="640" height="360" controls>
+  <source src="doc\screenshot_demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 # Contribution
 
