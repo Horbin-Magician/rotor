@@ -193,6 +193,13 @@ impl PinWin {
                     }
                     let _ = message_sender_clone.send(ShotterMessage::Close(id));
                 });
+
+                let message_sender_clone = message_sender.clone();
+                pin_window.window().on_close_requested(move || {
+                    let _ = message_sender_clone.send(ShotterMessage::HideToolbar(true));
+                    let _ = message_sender_clone.send(ShotterMessage::Close(id));
+                    slint::CloseRequestResponse::HideWindow
+                });
     
                 let pin_window_clone = pin_window.as_weak();
                 let message_sender_clone = message_sender.clone();

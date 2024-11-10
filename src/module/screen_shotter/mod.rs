@@ -267,22 +267,6 @@ impl ScreenShotter{
                     ) {
                         let pin_window_clone = pin_win.pin_window.as_weak();
                         
-                        let pin_wins_clone_clone = pin_wins_clone.clone();
-                        let pin_windows_clone_clone = pin_windows_clone.clone();
-                        let id = *max_pin_win_id;
-                        if let Some(pin_window) = pin_window_clone.upgrade() {
-                            pin_window.window().on_close_requested(move || {
-                                // this is necessary for systemed close
-                                pin_wins_clone_clone.lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                    .remove(&id);
-                                pin_windows_clone_clone.lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                    .remove(&id);
-                                slint::CloseRequestResponse::HideWindow
-                            });
-                        }
-
                         ShotterRecord::save_record_img(*max_pin_win_id, bac_buffer_rc_clone.clone());
                         Self::update_pin_win_record(*max_pin_win_id, &pin_win.pin_window);
 
@@ -472,19 +456,6 @@ impl ScreenShotter{
                 img_buffer, rect, offset_x, offset_y, scale_factor, id, message_sender_clone
             )?;
             pin_win.pin_window.set_zoom_factor(shotter.zoom_factor);
-
-            let pin_wins_clone = self.pin_wins.clone();
-            let pin_windows_clone = self.pin_windows.clone();
-            pin_win.pin_window.window().on_close_requested(move || {
-                // this is necessary for systemed close
-                pin_wins_clone.lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .remove(&id);
-                pin_windows_clone.lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .remove(&id);
-                slint::CloseRequestResponse::HideWindow
-            });
 
             self.pin_windows.lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
