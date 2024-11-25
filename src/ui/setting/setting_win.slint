@@ -1,4 +1,4 @@
-import { CheckBox, StandardListView, Palette, Button, ProgressIndicator } from "std-widgets.slint";
+import { CheckBox, StandardListView, Palette, Button, ProgressIndicator, GroupBox } from "std-widgets.slint";
 
 import { BaseWindow } from "../frame/base_win.slint";
 import { BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "./pages/pages.slint";
@@ -46,6 +46,7 @@ export component SettingWindow inherits BaseWindow {
     in-out property <int> update_state: 0;
     in-out property <string> current_version;
     in-out property <string> latest_version;
+    in-out property <string> update_info;
     in-out property <bool> power_boot;
     in-out property <int> theme;
 
@@ -145,7 +146,7 @@ export component SettingWindow inherits BaseWindow {
         TouchArea {
             clicked() => { update_state = 0; }
             Rectangle {
-                height: 150px;
+                height: 200px;
                 width: 200px;
                 background: Palette.background;
                 border-width: 1px;
@@ -177,16 +178,23 @@ export component SettingWindow inherits BaseWindow {
                     alignment: center;
                     spacing: 8px;
                     padding-top: 10px;
+                    padding-left: 10px;
+                    padding-right: 10px;
                     Text {
                         horizontal-alignment: center;
                         vertical-alignment: center;
-                        text: @tr("当前版本: {}", current_version);
+                        text: @tr("最新版本：{}", latest_version);
                     }
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("最新版本: {}", latest_version);
+
+                    GroupBox {
+                        title: @tr("更新内容");
+                        Text {
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            text: @tr("{}", update_info);
+                        }
                     }
+
                     Text {
                         horizontal-alignment: center;
                         vertical-alignment: center;
