@@ -14,6 +14,7 @@ use crate::util::file_util;
 #[derive(Deserialize, Debug)]
 pub struct VersionInfo {
     pub tag_name: String,
+    pub body: String,
     pub assets: Vec<Asset>,
 }
 
@@ -57,6 +58,10 @@ impl Updater {
             Ok(version)
         }
         else { Err(format!("Failed to get latest version, status: {status}").into()) }
+    }
+
+    pub fn get_update_info(&self) -> Option<String> {
+        self.version_info.as_ref().map(|info| info.body.clone())
     }
 
     pub fn update_software(&self) -> Result<(), Box<dyn Error>> {
