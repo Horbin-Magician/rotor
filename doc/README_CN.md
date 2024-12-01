@@ -32,7 +32,7 @@
 4. 当鼠标悬停在结果项上时，将显示菜单。您可以打开文件所在的目录或以管理员身份运行该文件。
 
 <div align=center>
-<img src="./doc/search_demo.png" width="521" height="500"> 
+<img src="./search_demo.png" width="521" height="500"> 
 </div>
 
 ## 截图
@@ -42,7 +42,7 @@
 3. 默认情况下，捕获的图像将被固定在屏幕上，按 `ESC` 关闭它，按 `s` 保存它，按回车键 `Enter` 复制它，按 `h` 最小化它。
 
 <div align=center>
-<img src="./doc/screenshot_demo.png" width="671" height="528"> 
+<img src="./screenshot_demo.png" width="671" height="528"> 
 </div>
 
 # 贡献
