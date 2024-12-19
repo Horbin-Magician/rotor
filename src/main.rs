@@ -13,7 +13,7 @@ use crate::util::file_util;
 use crate::core::application::Application;
 
 fn main() {
-    let renderer_name = "winit-skia-software".to_string();
+    let renderer_name = "skia-software".to_string();
     let selector = BackendSelector::new().renderer_name(renderer_name.clone());
     if let Err(err) = selector.select() {
         eprintln!("Error selecting backend with {renderer_name} support: {err}");
