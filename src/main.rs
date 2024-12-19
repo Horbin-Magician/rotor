@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use slint::BackendSelector;
+
 mod core;
 mod ui;
 mod module;
@@ -11,6 +13,12 @@ use crate::util::file_util;
 use crate::core::application::Application;
 
 fn main() {
+    let renderer_name = "winit-skia-software".to_string();
+    let selector = BackendSelector::new().renderer_name(renderer_name.clone());
+    if let Err(err) = selector.select() {
+        eprintln!("Error selecting backend with {renderer_name} support: {err}");
+    }
+
     // init before event loop
     if sys_util::run_as_admin()
         .unwrap_or_else( |e| {

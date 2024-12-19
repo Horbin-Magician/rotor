@@ -13,7 +13,7 @@ embed-resource = "2.4.3"
 slint-build = "1.9.0"
 
 [dependencies]
-slint = { version = "1.9.0", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia-opengl"]}
+slint = { version = "1.9.0", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia"]}
 i-slint-backend-winit = "1.9.0"
 raw-window-handle = "0.6.2"
 tray-icon = "0.17.0"
