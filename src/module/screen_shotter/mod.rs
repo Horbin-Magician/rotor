@@ -150,11 +150,10 @@ impl ScreenShotter{
                         mask_win.set_offset_y(monitor.y());
                         mask_win.set_scale_factor(scale_factor);
     
-                        // +1 to fix the bug and set_fullscreen does not work well TODO: fix this bug
                         let mut scale = 1.0;
                         if pre_scale_factor != 0.0 && pre_scale_factor > scale_factor { scale = pre_scale_factor / scale_factor; } // to fix scale problem
                         let window_width = ((monitor.width() as f32) * scale) as u32;
-                        let window_height = ((monitor.height() as f32) * scale) as u32 + 1;
+                        let window_height = ((monitor.height() as f32) * scale) as u32;
                         mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
     
                         let _ = mask_win.show();
