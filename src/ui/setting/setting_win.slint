@@ -27,6 +27,7 @@ export component SettingWindow inherits BaseWindow {
 
     callback power_boot_changed(bool);
     callback theme_changed(int);
+    callback language_changed(int);
     callback check_update();
     callback update();
     callback shortcut_changed(string, KeyEvent);
@@ -48,6 +49,7 @@ export component SettingWindow inherits BaseWindow {
     in-out property <string> latest_version;
     in-out property <string> update_info;
     in-out property <bool> power_boot;
+    in-out property <int> language;
     in-out property <int> theme;
 
     in-out property <bool> block;
@@ -95,10 +97,12 @@ export component SettingWindow inherits BaseWindow {
                                 BaseSettingPage {
                                     version: version;
                                     power_boot <=> root.power_boot;
+                                    language <=> root.language;
                                     theme <=> root.theme;
                                     shortcut_search: root.shortcut_search;
                                     shortcut_screenshot: root.shortcut_screenshot;
 
+                                    language_changed(language) => { root.language_changed(language); }
                                     theme_changed(theme) => { root.theme_changed(theme); }
                                     power_boot_changed(power_boot) => { root.power_boot_changed(power_boot); }
                                     shortcut_changed(shortcut, event) => { root.shortcut_changed(shortcut, event); }

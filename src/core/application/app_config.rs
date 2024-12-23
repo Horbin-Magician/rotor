@@ -5,6 +5,7 @@ use std::{collections::HashMap, fs};
 use std::sync::{LazyLock, Mutex};
 use serde::{Serialize, Deserialize};
 use global_hotkey::hotkey::HotKey;
+use slint::select_bundled_translation;
 
 use crate::util::{file_util, log_util};
 use crate::util::sys_util;
@@ -87,6 +88,23 @@ impl AppConfig {
 
     pub fn get_power_boot(&self) -> bool {
         self.config.power_boot
+    }
+
+    pub fn set_language(&mut self, language: u8) {
+        self.config.language = language;
+        if language == 0 {
+            select_bundled_translation("").unwrap_or_else(|e| println!("select_bundled_translation error: {:?}", e));
+        } else if language == 1 {
+            select_bundled_translation("").unwrap_or_else(|e| println!("select_bundled_translation error: {:?}", e));
+        } else if language == 2 {
+            select_bundled_translation("en").unwrap_or_else(|e| println!("select_bundled_translation error: {:?}", e));
+        }
+        self.save()
+            .unwrap_or_else(|err| log_util::log_error(format!("AppConfig save error: {:?}", err)));
+    }
+
+    pub fn get_language(&self) -> u8 {
+        self.config.language
     }
 
     pub fn set_theme(&mut self, theme: u8) {
