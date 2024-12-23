@@ -76,6 +76,7 @@ impl Setting {
 
         // TODO Batch setting
         setting_win.set_power_boot(app_config.get_power_boot());
+        setting_win.set_language(app_config.get_language() as i32);
         setting_win.set_theme(app_config.get_theme() as i32);
         setting_win.set_shortcut_search(app_config.get_shortcut("search").unwrap_or(&"unkown".to_string()).into());
         setting_win.set_shortcut_screenshot(app_config.get_shortcut("screenshot").unwrap_or(&"unkown".to_string()).into());
@@ -94,6 +95,15 @@ impl Setting {
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .set_power_boot(power_boot)
                         .unwrap_or_else(|e| log_util::log_error(format!("Failed to set power boot: {:?}", e)));
+                });
+            }
+
+            {// language
+                setting_win.on_language_changed(move |language| {
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_language(language as u8);
                 });
             }
 
