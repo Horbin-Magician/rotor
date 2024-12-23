@@ -91,7 +91,7 @@ msgstr "Theme"
 #: src/ui/setting/pages/base_page.slint:49
 msgctxt "BaseSettingPage"
 msgid "跟随系统"
-msgstr "Adapt to system"
+msgstr "Auto"
 
 #: src/ui/setting/pages/base_page.slint:49
 msgctxt "BaseSettingPage"

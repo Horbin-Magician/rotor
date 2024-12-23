@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use crossbeam::channel::{unbounded, Receiver, RecvError, Sender};
 use global_hotkey::hotkey::HotKey;
 use slint;
+use slint::select_bundled_translation;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::util::log_util;
@@ -52,6 +53,8 @@ impl Application {
             let hotkey = module.get_hotkey();
             _module_profiles.insert(module.flag().to_string(), (hotkey, module.run()));
         }
+
+        // select_bundled_translation("en").unwrap_or_else(|e| println!("select_bundled_translation error: {:?}", e));
 
         Ok(Application {
             _is_running: Arc::new(Mutex::new(true)),
