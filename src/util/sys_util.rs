@@ -8,6 +8,7 @@ use windows::core::PCWSTR;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+use windows::Win32::Globalization::GetUserDefaultLocaleName;
 
 use windows::Win32::{
     Foundation::{HWND, POINT, RECT},
@@ -56,6 +57,22 @@ pub fn set_power_boot(if_power_boot: bool) -> Result<(), Box<dyn Error>> {
     }
     
     Ok(())
+}
+
+pub fn get_user_default_locale_name() -> String {
+    const LOCALE_NAME_MAX_LENGTH: usize = 85;
+    let mut buffer = vec![0u16; LOCALE_NAME_MAX_LENGTH];
+    let length = unsafe {
+        GetUserDefaultLocaleName(&mut buffer)
+    };
+
+    let locale_name = if length > 0 {
+        String::from_utf16_lossy(&buffer[..(length as usize - 1)])
+    } else {
+        String::new()
+    };
+
+    return locale_name;
 }
 
 pub fn enable_window(window: &slint::Window, enable: bool) {
