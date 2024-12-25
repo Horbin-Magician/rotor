@@ -32,7 +32,7 @@ export component BaseSettingPage inherits Page {
                 ComboBox {
                     width: 150px;
                     height: 30px;
-                    model: ["跟随系统", "简体中文", "English"];
+                    model: [@tr("跟随系统"), "简体中文", "English"];
                     current-index <=> root.language;
                     selected(string) => {
                         root.language_changed(self.current-index);

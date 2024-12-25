@@ -114,22 +114,6 @@ export component ScreenShotterSettingPage inherits Page {
                     }
                 }
             }
-
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("默认存储路径");
-                    height: 30px;
-                    width: 100px;
-                    vertical-alignment: center;
-                }
-                LineEdit {
-                    height: 30px;
-                    width: 150px;
-                    enabled: false;
-                    text: @tr("与上次路径一致");
-                }
-            }
         }
     }
 }
