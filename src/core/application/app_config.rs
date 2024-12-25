@@ -60,6 +60,8 @@ impl AppConfig {
             Err(e) => panic!("[ERROR] AppConfig read config: {:?}", e),
         };
 
+        AppConfig::select_language(config.language).unwrap_or_else(|e| println!("select_language error: {:?}", e));
+
         AppConfig {
             config,
             search_win: None,
@@ -90,15 +92,22 @@ impl AppConfig {
         self.config.power_boot
     }
 
+    pub fn select_language(language: u8) -> Result<(), Box<dyn Error>> {
+        if language == 0 {
+            let locale_name =  sys_util::get_user_default_locale_name();
+            let short_name = if &locale_name[..2] == "zh" {""} else {&locale_name[..2]};
+            select_bundled_translation(short_name)?;
+        } else if language == 1 {
+            select_bundled_translation("")?;
+        } else if language == 2 {
+            select_bundled_translation("en")?;
+        }
+        Ok(())
+    }
+
     pub fn set_language(&mut self, language: u8) {
         self.config.language = language;
-        if language == 0 {
-            select_bundled_translation("").unwrap_or_else(|e| println!("select_bundled_translation error: {:?}", e));
-        } else if language == 1 {
-            select_bundled_translation("").unwrap_or_else(|e| println!("select_bundled_translation error: {:?}", e));
-        } else if language == 2 {
-            select_bundled_translation("en").unwrap_or_else(|e| println!("select_bundled_translation error: {:?}", e));
-        }
+        AppConfig::select_language(language).unwrap_or_else(|e| println!("select_language error: {:?}", e));
         self.save()
             .unwrap_or_else(|err| log_util::log_error(format!("AppConfig save error: {:?}", err)));
     }
