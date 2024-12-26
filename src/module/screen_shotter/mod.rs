@@ -3,9 +3,9 @@ mod toolbar;
 mod shotter_record;
 
 use arboard::Clipboard;
-use image::{self, GenericImageView, Rgba};
+use image::{self, DynamicImage, GenericImageView, Rgba};
 use std::{collections::HashMap, error::Error, sync::{mpsc::{self, Sender}, Arc, Mutex}};
-use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
+use slint::{ComponentHandle, Rgb8Pixel, SharedPixelBuffer, Weak};
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
@@ -44,7 +44,7 @@ pub struct ScreenShotter {
     pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>,
     pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
     _bac_rects: Arc<Mutex<Vec<(u32, u32, u32, u32)>>>,
-    _bac_buffer_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
+    _bac_buffer_rc: Arc<Mutex<SharedPixelBuffer<Rgb8Pixel>>>,
     message_sender: Sender<ShotterMessage>,
 }
 
@@ -110,7 +110,7 @@ impl ScreenShotter{
         let toolbar = Toolbar::new(message_sender.clone())?;
 
         let bac_buffer_rc = Arc::new(Mutex::new(
-            SharedPixelBuffer::<Rgba8Pixel>::new(1, 1)
+            SharedPixelBuffer::<Rgb8Pixel>::new(1, 1)
         ));
 
         let bac_rects = Arc::new(Mutex::new(Vec::new()));
@@ -128,22 +128,22 @@ impl ScreenShotter{
                 
                 if let Ok(monitor) = Monitor::from_point(point.x, point.y) {
                     if let Some(mask_win) = mask_win_clone.upgrade() {
-                        let monitor_img: image::ImageBuffer<Rgba<u8>, Vec<u8>> = monitor.capture_image().unwrap_or_default();
-                        let scale_factor = sys_util::get_scale_factor(monitor.id());
-                        
                         // refresh img
+                        let monitor_img = monitor.capture_image().unwrap_or_default();
+                        let rgb_img = DynamicImage::ImageRgba8(monitor_img).to_rgb8();
                         let mut bac_buffer = bac_buffer_rc_clone.lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        *bac_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-                            &monitor_img,
-                            monitor_img.width(),
-                            monitor_img.height(),
+                        *bac_buffer = SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(
+                            &rgb_img,
+                            rgb_img.width(),
+                            rgb_img.height(),
                         );
-                        mask_win.set_bac_image(slint::Image::from_rgba8((*bac_buffer).clone()));
+                        mask_win.set_bac_image(slint::Image::from_rgb8(bac_buffer.clone()));
                         mask_win.set_detected(false);
                         mask_win.set_select_rect( crate::ui::Rect{ x: -1.0, y: -1.0, width: 0.0, height: 0.0 });
     
                         // refresh window
+                        let scale_factor = sys_util::get_scale_factor(monitor.id());
                         let pre_scale_factor = mask_win.get_scale_factor();
                         mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
                         mask_win.set_offset_x(monitor.x());

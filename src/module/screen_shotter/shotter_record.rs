@@ -1,4 +1,4 @@
-use slint::{Rgba8Pixel, SharedPixelBuffer};
+use slint::{Rgb8Pixel, SharedPixelBuffer};
 use toml;
 use std::error::Error;
 use std::{collections::HashMap, fs};
@@ -78,7 +78,7 @@ impl ShotterRecord {
         &self.record.shotters
     }
 
-    pub fn save_record_img(id: u32, img_buffer:Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>) {
+    pub fn save_record_img(id: u32, img_buffer:Arc<Mutex<SharedPixelBuffer<Rgb8Pixel>>>) {
         let img_buffer = img_buffer.lock().unwrap();
         let img = img_util::shared_pixel_buffer_to_dynamic_image(&img_buffer);
         std::thread::spawn(move || {
@@ -94,11 +94,11 @@ impl ShotterRecord {
         Ok(())
     }
 
-    pub fn load_record_img(id: u32) -> Result<Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, Box<dyn Error>> {
+    pub fn load_record_img(id: u32) -> Result<Arc<Mutex<SharedPixelBuffer<Rgb8Pixel>>>, Box<dyn Error>> {
         let img_path = file_util::get_userdata_path().join("shotter").join(format!("{}.png", id));
         let img = image::open(img_path)?;
         let rgba8_img = img.to_rgba8();
-        let img_buffer= SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
+        let img_buffer= SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(
             &rgba8_img,
             rgba8_img.width(),
             rgba8_img.height(),
