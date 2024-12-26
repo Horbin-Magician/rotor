@@ -1,6 +1,6 @@
 use image::{self, imageops::resize, DynamicImage, RgbaImage};
 use imageproc::{contours, edges};
-use slint::{Rgb8Pixel, SharedPixelBuffer};
+use slint::{Rgba8Pixel, SharedPixelBuffer};
 
 
 // return all rect in the image, (x, y, width, height)
@@ -66,7 +66,7 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     return res_rects;
 }
 
-pub fn shared_pixel_buffer_to_dynamic_image(buffer: &SharedPixelBuffer<Rgb8Pixel>) -> image::DynamicImage {
+pub fn shared_pixel_buffer_to_dynamic_image(buffer: &SharedPixelBuffer<Rgba8Pixel>) -> image::DynamicImage {
     image::DynamicImage::ImageRgb8(
         image::RgbImage::from_vec(
             buffer.width(), buffer.height(), buffer.as_bytes().to_vec()

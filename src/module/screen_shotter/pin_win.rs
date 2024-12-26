@@ -4,7 +4,7 @@ use wfd::DialogParams;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
-use slint::{Model, Rgb8Pixel, SharedPixelBuffer, SharedString, VecModel, ComponentHandle};
+use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel, ComponentHandle};
 use i_slint_backend_winit::WinitWindowAccessor;
 use chrono;
 
@@ -14,14 +14,14 @@ use crate::ui::{PinWindow, Rect, Direction, PinState};
 use super::ShotterMessage;
 
 pub struct PinWin {
-    _img_rc: Arc<Mutex<SharedPixelBuffer<Rgb8Pixel>>>,
+    _img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
     _id: u32,
     pub pin_window: PinWindow,
 }
 
 impl PinWin {
     pub fn new(
-        img_rc: Arc<Mutex<SharedPixelBuffer<Rgb8Pixel>>>,
+        img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
         rect: Rect,
         offset_x: i32,
         offset_y: i32,
@@ -44,7 +44,7 @@ impl PinWin {
                 (*img_rc).lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
-            pin_window.set_bac_image(slint::Image::from_rgb8(img));
+            pin_window.set_bac_image(slint::Image::from_rgba8(img));
             
             pin_window.set_img_x(rect.x / scale_factor);
             pin_window.set_img_y(rect.y / scale_factor);
