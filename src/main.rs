@@ -15,17 +15,16 @@ use crate::core::application::Application;
 fn main() {
     let renderer_name = "skia-software".to_string();
     let selector = BackendSelector::new().renderer_name(renderer_name.clone());
-    if let Err(err) = selector.select() {
-        eprintln!("Error selecting backend with {renderer_name} support: {err}");
-    }
+    selector.select()
+        .unwrap_or_else(|e| log_util::log_error(format!("Error selecting backend: {:?}", e)));
 
     // init before event loop
     if sys_util::run_as_admin()
         .unwrap_or_else( |e| {
             log_util::log_error(format!("run_as_admin error: {:?}", e));
             true
-        }
-    ) {return;}
+        })
+    { return; }
     
     // del tmp and .fd files
     file_util::del_useless_files()
