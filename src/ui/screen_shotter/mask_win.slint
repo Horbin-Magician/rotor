@@ -34,8 +34,9 @@ export component MaskWindow inherits BaseWindow {
     bac-img := Image {
         height: 100%;
         width: 100%;
-
+        image-rendering: pixelated;
         source: bac_image;
+        
         Rectangle {
             background: black.with_alpha(0.5);
             focus_scope := FocusScope {
