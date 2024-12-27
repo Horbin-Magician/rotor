@@ -67,8 +67,8 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
 }
 
 pub fn shared_pixel_buffer_to_dynamic_image(buffer: &SharedPixelBuffer<Rgba8Pixel>) -> image::DynamicImage {
-    image::DynamicImage::ImageRgb8(
-        image::RgbImage::from_vec(
+    image::DynamicImage::ImageRgba8(
+        image::RgbaImage::from_vec(
             buffer.width(), buffer.height(), buffer.as_bytes().to_vec()
         ).unwrap_or_default()
     )
