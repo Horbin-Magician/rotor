@@ -163,7 +163,8 @@ impl PinWin {
                             let height = pin_window.get_win_height();
                             let left_bottom_x = position.x + (width * scale_factor) as i32;
                             let left_bottom_y = position.y + (height * scale_factor) as i32;
-                            let _ = message_sender_clone.send(ShotterMessage::ShowToolbar(left_bottom_x, left_bottom_y, id, pin_window.as_weak()));
+                            let state = pin_window.get_state();
+                            let _ = message_sender_clone.send(ShotterMessage::ShowToolbar(left_bottom_x, left_bottom_y, id, state, pin_window.as_weak()));
                         } else if !pin_window.window().is_visible() || pin_window.window().is_minimized() {
                             let _ = message_sender_clone.send(ShotterMessage::HideToolbar(true));
                         } else {

@@ -14,6 +14,7 @@ use windows::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
 use crate::util::{img_util, log_util, sys_util};
 use crate::core::application::app_config::AppConfig;
 use crate::ui::{MaskWindow, PinWindow, ToolbarWindow, Rect};
+use crate::ui::PinState;
 use super::{Module, ModuleMessage};
 use pin_win::PinWin;
 use toolbar::Toolbar;
@@ -31,7 +32,7 @@ pub enum PinOperation {
 pub enum ShotterMessage {
     Move(u32),
     Close(u32),
-    ShowToolbar(i32, i32, u32, Weak<PinWindow>),
+    ShowToolbar(i32, i32, u32, PinState, Weak<PinWindow>),
     HideToolbar(bool),
     OperatePin(u32, PinOperation),
     UpdateRecord(u32),
@@ -312,9 +313,14 @@ impl ScreenShotter{
                                 .del_shotter(id)
                                 .unwrap_or_else(|e| log_util::log_error(format!("Error in del_shotter: {:?}", e)));
                         },
-                        ShotterMessage::ShowToolbar(x, y, id, pin_window) => {
+                        ShotterMessage::ShowToolbar(x, y, id, pin_state, pin_window) => {
                             toolbar_window_clone.upgrade_in_event_loop(move |win| {
                                 win.invoke_show_pos(x, y, id as i32);
+                                if pin_state == PinState::DrawFree {
+                                    win.set_active_name("绘制".into());
+                                } else {
+                                    win.set_active_name("".into());
+                                }
                             }).unwrap_or_else(|e| log_util::log_error(format!("Error in change toolbar pos: {:?}", e)));
                             // focus the pin window
                             pin_window.upgrade_in_event_loop(move |win| {

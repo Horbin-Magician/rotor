@@ -74,8 +74,7 @@ export component ToolbarWindow inherits BaseWindow {
     in-out property <bool> pin_focused: false;
     in-out property <bool> toolbar_focused: focus_scope.has-focus;
     in-out property <int> id: -1;
-
-    property <string> active_name: ""; // TODO 获取不同pinwin的状态信息
+    in-out property <string> active_name: ""; // TODO 获取不同pinwin的状态信息
 
     callback show_pos(int, int, int);
     callback try_hide(bool);
