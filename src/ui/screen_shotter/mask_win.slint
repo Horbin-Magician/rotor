@@ -154,8 +154,8 @@ export component MaskWindow inherits BaseWindow {
                 text: touch_area.pressed ?
                     @tr(
                         "宽{}×高{}",
-                        round(root.select_rect.width / 1px * root.scale-factor),
-                        round(root.select_rect.height / 1px * root.scale-factor)
+                        round(root.select_rect.width / 1px),
+                        round(root.select_rect.height / 1px)
                     ) : @tr("左键划选区域");
                 color: white;
             } // draw width and height
