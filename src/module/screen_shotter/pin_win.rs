@@ -21,7 +21,7 @@ pub struct PinWin {
 
 impl PinWin {
     pub fn new(
-        img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
+        img: SharedPixelBuffer<Rgba8Pixel>,
         rect: Rect,
         offset_x: i32,
         offset_y: i32,
@@ -32,6 +32,8 @@ impl PinWin {
         let pin_window = PinWindow::new()?;
         sys_util::forbid_window_animation(pin_window.window());
 
+        let img_rc = Arc::new(Mutex::new(img.clone()));
+
         { // set bash properties
             let border_width = pin_window.get_win_border_width();
             let scale_factor = pin_window.window().scale_factor();
@@ -40,12 +42,7 @@ impl PinWin {
             
             pin_window.window().set_position(slint::LogicalPosition::new((rect.x + offset_x as f32) / scale_factor - border_width, (rect.y + offset_y as f32) / scale_factor - border_width));
             
-            let img = 
-                (*img_rc).lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .clone();
             pin_window.set_bac_image(slint::Image::from_rgba8(img));
-            
             pin_window.set_img_x(rect.x / scale_factor);
             pin_window.set_img_y(rect.y / scale_factor);
             pin_window.set_img_width(rect.width / scale_factor);
@@ -217,10 +214,6 @@ impl PinWin {
                 // save
                 let pin_window_clone = pin_window.as_weak();
                 let img_rc_clone = img_rc.clone();
-                let buffer = 
-                    (*img_rc_clone.lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner()))
-                    .clone();
                 pin_window.on_save(move || {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
                         let scale_factor = pin_window.get_scale_factor();
@@ -229,6 +222,10 @@ impl PinWin {
                         let img_height = pin_window.get_img_height() * scale_factor;
                         let img_width = pin_window.get_img_width() * scale_factor;
                         
+                        let buffer = 
+                            (*img_rc_clone.lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner()))
+                            .clone();
                         let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
                         img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                         
@@ -260,10 +257,6 @@ impl PinWin {
                 //copy
                 let pin_window_clone = pin_window.as_weak();
                 let img_rc_clone = img_rc.clone();
-                let buffer = 
-                    (*img_rc_clone.lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner()))
-                    .clone();
                 pin_window.on_copy(move || {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
                         let scale_factor = pin_window.get_scale_factor();
@@ -271,7 +264,11 @@ impl PinWin {
                         let img_y = pin_window.get_img_y() * scale_factor;
                         let img_height = pin_window.get_img_height() * scale_factor;
                         let img_width = pin_window.get_img_width() * scale_factor;
-    
+                        
+                        let buffer = 
+                            (*img_rc_clone.lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner()))
+                            .clone();
                         let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
                         img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
                         
