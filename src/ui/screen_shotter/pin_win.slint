@@ -173,8 +173,8 @@ export component PinWindow inherits BaseWindow {
 
         for path in root.pathes:
             Path {
-                viewbox-width: root.width / 1px;
-                viewbox-height: root.height / 1px;
+                viewbox-width: root.width / zoom_factor * 100 / 1px;
+                viewbox-height: root.height / zoom_factor * 100 / 1px;
                 clip: true;
                 commands: path;
                 stroke: red;
@@ -182,8 +182,8 @@ export component PinWindow inherits BaseWindow {
             }
         
         Path {
-            viewbox-width: root.width / 1px;
-            viewbox-height: root.height / 1px;
+            viewbox-width: root.width / zoom_factor * 100 / 1px;
+            viewbox-height: root.height / zoom_factor * 100 / 1px;
             clip: true;
             commands: drawing_path;
             stroke: red;
