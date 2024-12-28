@@ -257,9 +257,13 @@ impl ScreenShotter{
                     let mut max_pin_win_id = max_pin_win_id_clone.lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                     let message_sender_clone = message_sender_clone.clone();
+                    
+                    let img = (*bac_buffer_rc_clone).lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .clone();
 
                     if let Ok(pin_win) = PinWin::new(
-                        bac_buffer_rc_clone.clone(), rect,
+                        img, rect,
                         mask_win.get_offset_x(), mask_win.get_offset_y(), mask_win.get_scale_factor(),
                         *max_pin_win_id, message_sender_clone
                     ) {

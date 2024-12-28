@@ -94,7 +94,7 @@ impl ShotterRecord {
         Ok(())
     }
 
-    pub fn load_record_img(id: u32) -> Result<Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>, Box<dyn Error>> {
+    pub fn load_record_img(id: u32) -> Result<SharedPixelBuffer<Rgba8Pixel>, Box<dyn Error>> {
         let img_path = file_util::get_userdata_path().join("shotter").join(format!("{}.png", id));
         let img = image::open(img_path)?;
         let rgba8_img = img.to_rgba8();
@@ -103,7 +103,7 @@ impl ShotterRecord {
             rgba8_img.width(),
             rgba8_img.height(),
         );
-        Ok(Arc::new(Mutex::new(img_buffer)))
+        Ok(img_buffer)
     }
 }
 
