@@ -166,7 +166,7 @@ impl Searcher {
         { // add focus change hander
             let search_win_clone = search_win.as_weak();
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
-            search_win.on_lose_focus_trick(move |has_focus| {
+            search_win.on_focus_change(move |has_focus| {
                 if let Some(search_win) = search_win_clone.upgrade() {
                     if !has_focus { 
                         if search_win.get_query() != "" {
@@ -177,7 +177,6 @@ impl Searcher {
                         let _ = searcher_msg_sender_clone.send(SearcherMessage::Release);
                     }
                 }
-                true
             });
         }
         
@@ -191,18 +190,14 @@ impl Searcher {
         }
 
         { // add item click hander
-            let search_win_clone = search_win.as_weak();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_item_click(move |event, id| {
                 if event.kind == slint::private_unstable_api::re_exports::PointerEventKind::Up {
-                    if let Some(search_win) = search_win_clone.upgrade() {
-                        if event.button == slint::platform::PointerEventButton::Left {
-                            let data = search_result_model_clone.row_data(id as usize);
-                            if let Some(f) = data {
-                                file_util::open_file((f.path + &f.filename).to_string())
-                                    .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
-                                let _ = search_win.hide();
-                            }
+                    if event.button == slint::platform::PointerEventButton::Left {
+                        let data = search_result_model_clone.row_data(id as usize);
+                        if let Some(f) = data {
+                            file_util::open_file((f.path + &f.filename).to_string())
+                                .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
                         }
                     }
                 }
@@ -210,30 +205,22 @@ impl Searcher {
         }
 
         { // on open with admin
-            let search_win_clone = search_win.as_weak();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_open_with_admin(move |id| {
-                if let Some(search_win) = search_win_clone.upgrade() {
-                    let data = search_result_model_clone.row_data(id as usize);
-                    if let Some(f) = data {
-                        file_util::open_file_admin((f.path + &f.filename).to_string());
-                        let _ = search_win.hide();
-                    }
+                let data = search_result_model_clone.row_data(id as usize);
+                if let Some(f) = data {
+                    file_util::open_file_admin((f.path + &f.filename).to_string());
                 }
             });
         }
 
         { // on open file dir
-            let search_win_clone = search_win.as_weak();
             let search_result_model_clone = search_result_model.clone();
             search_win.on_open_file_dir(move |id| {
-                if let Some(search_win) = search_win_clone.upgrade() {
-                    let data = search_result_model_clone.row_data(id as usize);
-                    if let Some(f) = data {
-                        file_util::open_file((f.path[..(f.path.len()-1)]).to_string())
-                            .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
-                        let _ = search_win.hide();
-                    }
+                let data = search_result_model_clone.row_data(id as usize);
+                if let Some(f) = data {
+                    file_util::open_file((f.path[..(f.path.len()-1)]).to_string())
+                        .unwrap_or_else(|e| log_util::log_error(format!("open_file error: {:?}", e)));
                 }
             });
         }

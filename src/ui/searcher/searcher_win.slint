@@ -35,13 +35,13 @@ export component SearchWindow inherits BaseWindow {
     callback open_with_admin(int);
     callback open_file_dir(int);
     callback add_result();
-    pure callback lose_focus_trick(bool) -> bool;
+    callback focus_change(bool);
 
     title: @tr("小云搜索");
     forward-focus: input;
     default-font-size: 18px;
     width: ui_width;
-    always-on-top: lose_focus_trick(input.has-focus);
+    always-on-top: true;
 
     VerticalBox {
         padding: 0px;
@@ -55,6 +55,7 @@ export component SearchWindow inherits BaseWindow {
                 padding: 0;
                 spacing: 0;
                 input := LineEdit {
+                    changed has-focus => { root.focus_change(self.has-focus); }
                     height: 60px;
                     placeholder-text: @tr("请输入需要搜索的内容");
                     edited(str) => {
