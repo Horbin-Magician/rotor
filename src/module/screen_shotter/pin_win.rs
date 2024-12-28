@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::error::Error;
 use wfd::DialogParams;
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
 use slint::{Model, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel, ComponentHandle};
@@ -14,7 +13,6 @@ use crate::ui::{PinWindow, Rect, Direction, PinState};
 use super::ShotterMessage;
 
 pub struct PinWin {
-    _img_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
     _id: u32,
     pub pin_window: PinWindow,
 }
@@ -31,8 +29,6 @@ impl PinWin {
     ) -> Result<PinWin, Box<dyn Error>> {
         let pin_window = PinWindow::new()?;
         sys_util::forbid_window_animation(pin_window.window());
-
-        let img_rc = Arc::new(Mutex::new(img.clone()));
 
         { // set bash properties
             let border_width = pin_window.get_win_border_width();
@@ -213,78 +209,72 @@ impl PinWin {
             { // for save and copy
                 // save
                 let pin_window_clone = pin_window.as_weak();
-                let img_rc_clone = img_rc.clone();
                 pin_window.on_save(move || {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
                         let scale_factor = pin_window.get_scale_factor();
-                        let img_x = pin_window.get_img_x() * scale_factor;
-                        let img_y = pin_window.get_img_y() * scale_factor;
-                        let img_height = pin_window.get_img_height() * scale_factor;
-                        let img_width = pin_window.get_img_width() * scale_factor;
-                        
-                        let buffer = 
-                            (*img_rc_clone.lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner()))
-                            .clone();
-                        let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
-                        img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
+                        let border_width = (pin_window.get_win_border_width() * scale_factor).ceil() as u32;
+
+                        match pin_window.window().take_snapshot() {
+                            Ok(buffer) => {
+                                let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
+                                img = img.crop(border_width, border_width, img.width() - 2 * border_width, img.height() - 2 * border_width);
+        
+                                std::thread::spawn(move || {
+                                    let save_path = AppConfig::global()
+                                        .lock()
+                                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                        .get_save_path();
+                                    let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
+                                    let params = DialogParams {
+                                        title: "Select an image to save",
+                                        file_types: vec![("PNG Files", "*.png")],
+                                        default_extension: "png",
+                                        file_name: &file_name,
+                                        default_folder: &save_path,
+                                        ..Default::default()
+                                    };
+                                    let dialog_result = wfd::save_dialog(params);
+                                    if let Ok(file_path_result) = dialog_result {
+                                        img.save(file_path_result.selected_file_path)
+                                            .unwrap_or_else(|e| log_util::log_error(format!("Failed to save image: {}", e)));
+                                    }
+                                });
+                            },
+                            Err(e) => log_util::log_error(format!("Failed to take snapshot: {}", e)),
+                        }
                         
                         pin_window.invoke_close();
-
-                        std::thread::spawn(move || {
-                            let save_path = AppConfig::global()
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                .get_save_path();
-                            let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
-                            let params = DialogParams {
-                                title: "Select an image to save",
-                                file_types: vec![("PNG Files", "*.png")],
-                                default_extension: "png",
-                                file_name: &file_name,
-                                default_folder: &save_path,
-                                ..Default::default()
-                            };
-                            let dialog_result = wfd::save_dialog(params);
-                            if let Ok(file_path_result) = dialog_result {
-                                img.save(file_path_result.selected_file_path)
-                                    .unwrap_or_else(|e| log_util::log_error(format!("Failed to save image: {}", e)));
-                            }
-                        });
                     }
                 });
 
                 //copy
                 let pin_window_clone = pin_window.as_weak();
-                let img_rc_clone = img_rc.clone();
                 pin_window.on_copy(move || {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
                         let scale_factor = pin_window.get_scale_factor();
-                        let img_x = pin_window.get_img_x() * scale_factor;
-                        let img_y = pin_window.get_img_y() * scale_factor;
-                        let img_height = pin_window.get_img_height() * scale_factor;
-                        let img_width = pin_window.get_img_width() * scale_factor;
-                        
-                        let buffer = 
-                            (*img_rc_clone.lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner()))
-                            .clone();
-                        let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
-                        img = img.crop(img_x as u32, img_y as u32, img_width as u32, img_height as u32);
-                        
+                        let border_width = (pin_window.get_win_border_width() * scale_factor).ceil() as u32;
+
+                        match pin_window.window().take_snapshot() {
+                            Ok(buffer) => {
+                                let mut img = img_util::shared_pixel_buffer_to_dynamic_image(&buffer);
+                                img = img.crop(border_width, border_width, img.width() - 2 * border_width, img.height() - 2 * border_width);
+            
+                                std::thread::spawn(move || {
+                                    let img_data = ImageData {
+                                        width: img.width() as usize,
+                                        height: img.height() as usize,
+                                        bytes: Cow::from(img.to_rgba8().to_vec())
+                                    };
+                                    if let Ok(mut clipboard) = Clipboard::new() {
+                                        clipboard.set_image(img_data)
+                                            .unwrap_or_else(|e| log_util::log_error(format!("Failed to copy image to clipboard: {}", e)));
+                                    }
+                                });
+                            },
+                            Err(e) => log_util::log_error(format!("Failed to take snapshot: {}", e)),
+                        }
+
                         pin_window.invoke_close();
-    
-                        std::thread::spawn(move || {
-                            let img_data = ImageData {
-                                width: img.width() as usize,
-                                height: img.height() as usize,
-                                bytes: Cow::from(img.to_rgba8().to_vec())
-                            };
-                            if let Ok(mut clipboard) = Clipboard::new() {
-                                clipboard.set_image(img_data)
-                                    .unwrap_or_else(|e| log_util::log_error(format!("Failed to copy image to clipboard: {}", e)));
-                            }
-                        });
                     }
                 });
             }
@@ -371,7 +361,6 @@ impl PinWin {
         }
 
         Ok(PinWin {
-            _img_rc: img_rc,
             _id: id,
             pin_window,
         })
