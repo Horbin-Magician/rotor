@@ -168,42 +168,38 @@ msgctxt "SettingWindow"
 msgid "截图"
 msgstr "Screenshot"
 
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "当前已是最新版本"
 msgstr "This is the latest version"
 
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "确定"
 msgstr "Ok"
 
-msgctxt "SettingWindow"
-msgid "最新版本: {}"
+msgctxt "UpdateWindow"
+msgid "最新版本：{}"
 msgstr "Latest version: {}"
 
-msgctxt "SettingWindow"
-msgid "更新内容"
-msgstr "Update list"
-
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "是否更新至最新版本？"
 msgstr "Are you updated to the latest version?"
 
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "是"
 msgstr "Yes"
 
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "否"
 msgstr "No"
 
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "获取版本信息失败"
 msgstr "Failed to obtain version information"
 
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "请检查网络环境"
 msgstr "Check the network environment"
 
-msgctxt "SettingWindow"
+msgctxt "UpdateWindow"
 msgid "更新失败"
 msgstr "Update failed"

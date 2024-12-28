@@ -5,6 +5,149 @@ import { BaseSettingPage, ScreenShotterSettingPage, SearchSettingPage } from "./
 import { SideBar } from "./side_bar.slint";
 import { TitleBar } from "./title_bar.slint";
 
+component UpdateWindow {
+    in-out property <int> update_state;
+    in property <length> full_height;
+    in property <length> full_width;
+    in property <string> current_version;
+    in property <string> latest_version;
+
+    callback update();
+
+    if (update_state > 0) : Rectangle {
+        height: full_height;
+        width: full_width;
+        background: Palette.background.with_alpha(0.5);
+        border-radius: 5px;
+        clip: true;
+
+        TouchArea {
+            clicked() => { update_state = 0; }
+            Rectangle {
+                height: 150px;
+                width: 200px;
+                background: Palette.background;
+                border-width: 1px;
+                border-radius: 5px;
+                border-color: Palette.alternate-background;
+                clip: true;
+                
+                if (update_state == 1 && current_version == latest_version) : VerticalLayout {
+                    alignment: center;
+                    spacing: 5px;
+                    Text {
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        text: @tr("当前已是最新版本");
+                    }
+                    HorizontalLayout {
+                        padding-top: 10px;
+                        alignment: center;
+                        Button {
+                            height: 30px;
+                            width: 60px;
+                            text: @tr("确定");
+                            clicked() => { root.update_state = 0; }
+                        }
+                    }
+                }
+
+                if (update_state == 1 && current_version != latest_version && latest_version != "unknown"): VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    padding-top: 10px;
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    Text {
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        text: @tr("最新版本：{}", latest_version);
+                    }
+
+                    Text {
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        text: @tr("是否更新至最新版本？");
+                    }
+
+                    HorizontalLayout {
+                        padding-top: 10px;
+                        alignment: center;
+                        spacing: 10px;
+                        Button {
+                            height: 28px;
+                            width: 60px;
+                            text: @tr("是");
+                            clicked() => { root.update(); }
+                        }
+                        Button {
+                            height: 28px;
+                            width: 60px;
+                            text: @tr("否");
+                            clicked() => { root.update_state = 0; }
+                        }
+                    }
+                }
+
+                if (update_state == 1 && latest_version == "unknown"): VerticalLayout {
+                    alignment: center;
+                    spacing: 5px;
+                    Text {
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        text: @tr("获取版本信息失败");
+                    }
+
+                    Text {
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        text: @tr("请检查网络环境");
+                    }
+
+                    HorizontalLayout {
+                        padding-top: 10px;
+                        alignment: center;
+                        spacing: 10px;
+                        Button {
+                            height: 28px;
+                            width: 60px;
+                            text: @tr("确定");
+                            clicked() => { root.update_state = 0; }
+                        }
+                    }
+                }
+
+                if (update_state == 2): VerticalLayout {
+                    alignment: center;
+                    spacing: 5px;
+                    Text {
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        text: @tr("更新失败");
+                    }
+                    Text {
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        text: @tr("请检查网络环境");
+                    }
+
+                    HorizontalLayout {
+                        padding-top: 10px;
+                        alignment: center;
+                        spacing: 10px;
+                        Button {
+                            height: 28px;
+                            width: 60px;
+                            text: @tr("确定");
+                            clicked() => { root.update_state = 0; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component SettingWindow inherits BaseWindow {
     width: 500px;
     height: 400px;
@@ -136,149 +279,12 @@ export component SettingWindow inherits BaseWindow {
         }
     }
 
-    if (update_state > 0) : Rectangle {
-        height: main_rec.height;
-        width: main_rec.width;
-        background: Palette.background.with_alpha(0.5);
-        border-radius: 5px;
-        clip: true;
-
-        in-out property <int> update_state <=> root.update_state;
-        in-out property <string> current_version <=> root.current_version;
-        in-out property <string> latest_version <=> root.latest_version;
-        
-        TouchArea {
-            clicked() => { update_state = 0; }
-            Rectangle {
-                height: 200px;
-                width: 200px;
-                background: Palette.background;
-                border-width: 1px;
-                border-radius: 5px;
-                border-color: Palette.alternate-background;
-                clip: true;
-                
-                if (update_state == 1 && current_version == latest_version) : VerticalLayout {
-                    alignment: center;
-                    spacing: 5px;
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("当前已是最新版本");
-                    }
-                    HorizontalLayout {
-                        padding-top: 10px;
-                        alignment: center;
-                        Button {
-                            height: 30px;
-                            width: 60px;
-                            text: @tr("确定");
-                            clicked() => { root.update_state = 0; }
-                        }
-                    }
-                }
-
-                if (update_state == 1 && current_version != latest_version && latest_version != "unknown"): VerticalLayout {
-                    alignment: center;
-                    spacing: 8px;
-                    padding-top: 10px;
-                    padding-left: 10px;
-                    padding-right: 10px;
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("最新版本：{}", latest_version);
-                    }
-
-                    GroupBox {
-                        title: @tr("更新内容");
-                        Text {
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            text: @tr("{}", update_info);
-                        }
-                    }
-
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("是否更新至最新版本？");
-                    }
-
-                    HorizontalLayout {
-                        padding-top: 10px;
-                        alignment: center;
-                        spacing: 10px;
-                        Button {
-                            height: 28px;
-                            width: 60px;
-                            text: @tr("是");
-                            clicked() => { root.update(); }
-                        }
-                        Button {
-                            height: 28px;
-                            width: 60px;
-                            text: @tr("否");
-                            clicked() => { root.update_state = 0; }
-                        }
-                    }
-                }
-
-                if (update_state == 1 && latest_version == "unknown"): VerticalLayout {
-                    alignment: center;
-                    spacing: 5px;
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("获取版本信息失败");
-                    }
-
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("请检查网络环境");
-                    }
-
-                    HorizontalLayout {
-                        padding-top: 10px;
-                        alignment: center;
-                        spacing: 10px;
-                        Button {
-                            height: 28px;
-                            width: 60px;
-                            text: @tr("确定");
-                            clicked() => { root.update_state = 0; }
-                        }
-                    }
-                }
-
-                if (update_state == 2): VerticalLayout {
-                    alignment: center;
-                    spacing: 5px;
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("更新失败");
-                    }
-                    Text {
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        text: @tr("请检查网络环境");
-                    }
-
-                    HorizontalLayout {
-                        padding-top: 10px;
-                        alignment: center;
-                        spacing: 10px;
-                        Button {
-                            height: 28px;
-                            width: 60px;
-                            text: @tr("确定");
-                            clicked() => { root.update_state = 0; }
-                        }
-                    }
-                }
-            }
-        }
+    UpdateWindow {
+        update_state <=> root.update_state;
+        full_height: root.height;
+        full_width: root.width;
+        current_version <=> root.current_version;
+        latest_version <=> root.latest_version;
+        update() => { root.update(); }
     }
 }
