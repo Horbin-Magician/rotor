@@ -211,16 +211,12 @@ impl Setting {
                     let mut updater = Updater::global().lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                     let latest_version = updater.get_latest_version().unwrap_or("unknown".to_string());
-                    let update_info = updater.get_update_info();
 
                     let current_version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
 
                     setting_win_clone.upgrade_in_event_loop(move |setting_window| {
                         setting_window.set_current_version(current_version.into());
                         setting_window.set_latest_version(latest_version.into());
-                        if let Some(update_info) = update_info {
-                            setting_window.set_update_info(update_info.into());
-                        }
                         setting_window.set_update_state(1);
                         setting_window.set_block(false);
                     }).unwrap_or_else(|e| log_util::log_error(format!("Failed to check update: {:?}", e)));

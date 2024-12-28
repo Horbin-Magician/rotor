@@ -14,7 +14,6 @@ use crate::util::file_util;
 #[derive(Deserialize, Debug)]
 pub struct VersionInfo {
     pub tag_name: String,
-    pub body: String,
     pub assets: Vec<Asset>,
 }
 
@@ -60,10 +59,6 @@ impl Updater {
         else { Err(format!("Failed to get latest version, status: {status}").into()) }
     }
 
-    pub fn get_update_info(&self) -> Option<String> {
-        self.version_info.as_ref().map(|info| info.body.clone())
-    }
-
     pub fn update_software(&self) -> Result<(), Box<dyn Error>> {
         if let Some(version_info) = &self.version_info { 
             let version = &version_info.tag_name;
@@ -74,7 +69,7 @@ impl Updater {
             let file_response = reqwest::blocking::Client::new()
                 .get(format!("https://mirror.ghproxy.com/{}", download_url)).send()
                 .or_else( |_| {
-                    reqwest::blocking::Client::new().get(format!("https://ghp.ci/{}", download_url)).send()
+                    reqwest::blocking::Client::new().get(format!("https://ghgo.xyz/{}", download_url)).send()
                 })
                 .or_else( |_| {
                     reqwest::blocking::Client::new().get(download_url).send()
