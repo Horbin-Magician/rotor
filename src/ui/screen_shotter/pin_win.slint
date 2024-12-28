@@ -87,9 +87,9 @@ export component PinWindow inherits BaseWindow {
                         root.win_move(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y, mouse_direction);
                     } else if root.state == PinState.DrawFree { // draw line
                         if root.drawing_path == "" {
-                            root.drawing_path = @tr("M {} {}", self.mouse-x / 1px, self.mouse-y / 1px);
+                            root.drawing_path = @tr("M {} {}", self.mouse-x / zoom_factor * 100 / 1px, self.mouse-y / zoom_factor * 100 / 1px);
                         } else {
-                            root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / 1px, self.mouse-y / 1px);
+                            root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / zoom_factor * 100 / 1px, self.mouse-y / zoom_factor * 100 / 1px);
                         }
                     }
                 }
