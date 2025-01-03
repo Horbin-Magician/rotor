@@ -1,4 +1,4 @@
-import { Button, VerticalBox, LineEdit, ListView , HorizontalBox, Palette} from "std-widgets.slint";
+import { Button, LineEdit, ListView, Palette} from "std-widgets.slint";
 
 import { BaseWindow } from "../frame/base_win.slint";
 
@@ -7,6 +7,133 @@ struct SearchResult_slint {
     icon: image,
     filename: string,
     path: string,
+}
+
+component ToolButton inherits TouchArea {
+    width: 50px;
+    mouse-cursor: pointer;
+
+    in property <int> id;
+    in property <image> icon;
+    callback open_with_admin(int);
+
+    clicked => { open_with_admin(id); }
+    admin_btn_rc := Rectangle {
+        admin_btn_img := Image {
+            height: 20px;
+            width: 20px;
+            colorize: Palette.foreground;
+            source: icon;
+        }
+    }
+    states [ 
+        hover when self.has-hover: {
+            admin_btn_img.colorize: cyan;
+        }
+    ]
+}
+
+component FileListItem inherits Rectangle {
+    height: 60px;
+    border-radius: 5px;
+    
+    in property <SearchResult_slint> data;
+    in property <int> active_id;
+    callback item_click(PointerEvent, int);
+    callback open_with_admin(int);
+    callback open_file_dir(int);
+
+    search_result_item_touch := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            item_click(event, data.id);
+        }
+
+        HorizontalLayout {
+            item_content := HorizontalLayout {
+                padding-top: 5px;
+                padding-bottom: 5px;
+                Rectangle {
+                    width: 2px;
+                    active_bar := Rectangle {
+                        x: 0px;
+                        width: 2px;
+                        border-radius: 1px;
+                        height: 30px;
+                        background: Palette.accent-background;
+                    }
+                }
+                Rectangle {
+                    width: 50px;
+                    Image {
+                        height: 32px;
+                        source: data.icon;
+                    }
+                }
+                VerticalLayout {
+                    Text {
+                        height: 20px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        text: data.filename;
+                        font-size: 16px;
+                    }
+                    Text {
+                        height: 30px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        text: data.path;
+                        color: grey;
+                        font-size: 16px;
+                    }
+                }
+                animate width { 
+                    duration: 0.2s;
+                    easing: ease-in-out;
+                }
+            }
+
+            item_menu := Rectangle {
+                width: 100px;
+                HorizontalLayout {
+                    ToolButton {
+                        id: data.id;
+                        icon: @image-url("../assets/icon/admin.svg");
+                        open_with_admin(id) => { open_with_admin(id); }
+                    }
+
+                    ToolButton {
+                        id: data.id;
+                        icon: @image-url("../assets/icon/file.svg");
+                        open_with_admin(id) => { open_with_admin(id); }
+                    }
+                }
+            }
+        }
+    }
+
+    states [
+        active when root.active_id == data.id && !search_result_item_touch.has-hover: {
+            background: Palette.alternate-background;
+            active_bar.x: 0px;
+            item_content.width: self.width;
+        }
+        inactive when root.active_id != data.id && !search_result_item_touch.has-hover : {
+            background: transparent;
+            active_bar.x: -2px;
+            item_content.width: self.width;
+        }
+        active_hover when root.active_id == data.id && search_result_item_touch.has-hover: {
+            background: Palette.alternate-background;
+            active_bar.x: 0px;
+            item_content.width: (self.width) - item_menu.width;
+        }
+        hover when search_result_item_touch.has-hover: {
+            background: Palette.alternate-background;
+            active_bar.x: -2px;
+            item_content.width: (self.width) - item_menu.width;
+        }
+    ]
 }
 
 export component SearchWindow inherits BaseWindow {
@@ -43,17 +170,14 @@ export component SearchWindow inherits BaseWindow {
     width: ui_width;
     always-on-top: true;
 
-    VerticalBox {
-        padding: 0px;
+    VerticalLayout {
         Rectangle {
             border-radius: 5px;
             border-color: Palette.alternate-background;
             border-width: 1px;
             background: Palette.background;
 
-            VerticalBox {
-                padding: 0;
-                spacing: 0;
+            VerticalLayout {
                 input := LineEdit {
                     changed has-focus => { root.focus_change(self.has-focus); }
                     height: 60px;
@@ -67,139 +191,22 @@ export component SearchWindow inherits BaseWindow {
                         reject
                     }
                 }
+
                 result-list := ListView {
                     padding: 0;
                     height: (search_result.length > 7 ? 7 : search_result.length) * 60px;
-
                     scrolled => {
                         if ((self.height - self.viewport-y) / 60px) == search_result.length &&
                             Math.mod(search_result.length, 20) == 0
-                        {
-                            root.add_result();
-                        }
+                        { root.add_result(); }
                     }
 
-                    for data in root.search_result: Rectangle {
-                        height: 60px;
-                        border-radius: 5px;
-
-                        search_result_item_touch := TouchArea {
-                            mouse-cursor: pointer;
-                            pointer-event(event) => {
-                                root.item-click(event, data.id);
-                            }
-
-                            HorizontalLayout {
-                                item_content := HorizontalBox {
-                                    width: 100%;
-                                    padding-right: 0px;
-                                    padding-left: 0px;
-                                    Rectangle {
-                                        width: 2px;
-                                        active_bar := Rectangle {
-                                            x: 0px;
-                                            width: 2px;
-                                            border-radius: 1px;
-                                            height: 30px;
-                                            background: Palette.accent-background;
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 30px;
-                                        Image {
-                                            height: 32px;
-                                            source: data.icon;
-                                        }
-                                    }
-                                    VerticalBox {
-                                        padding: 0;
-                                        Text {
-                                            height: 20px;
-                                            overflow: elide;
-                                            text: data.filename;
-                                            font-size: 16px;
-                                        }
-                                        Text {
-                                            height: 40px;
-                                            overflow: elide;
-                                            text: data.path;
-                                            color: grey;
-                                            font-size: 16px;
-                                        }
-                                    }
-                                    animate width { 
-                                        duration: 0.2s;
-                                        easing: ease-in-out;
-                                    }
-                                }
-
-                                item_menu := Rectangle {
-                                    width: 100px;
-                                    HorizontalLayout {
-                                        TouchArea {
-                                            width: 50px;
-                                            mouse-cursor: pointer;
-                                            clicked => { root.open_with_admin(data.id); }
-                                            admin_btn_rc := Rectangle {
-                                                admin_btn_img := Image {
-                                                    height: 20px;
-                                                    width: 20px;
-                                                    colorize: Palette.foreground;
-                                                    source: @image-url("../assets/icon/admin.svg");
-                                                }
-                                            }
-                                            states [ 
-                                                hover when self.has-hover: {
-                                                    admin_btn_img.colorize: cyan;
-                                                }
-                                            ]
-                                        }
-                                        
-                                        TouchArea {
-                                            width: 50px;
-                                            mouse-cursor: pointer;
-                                            clicked => { root.open_file_dir(data.id); }
-                                            file_btn_rc := Rectangle {
-                                                file_btn_img := Image {
-                                                    height: 20px;
-                                                    width: 20px;
-                                                    colorize: Palette.foreground;
-                                                    source: @image-url("../assets/icon/file.svg");
-                                                }
-                                            }
-                                            states [ 
-                                                hover when self.has-hover: {
-                                                    file_btn_img.colorize: cyan;
-                                                }
-                                            ]
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        states [
-                            active when root.active_id == data.id && !search_result_item_touch.has-hover: {
-                                background: Palette.alternate-background;
-                                active_bar.x: 0px;
-                                item_content.width: self.width;
-                            }
-                            inactive when root.active_id != data.id && !search_result_item_touch.has-hover : {
-                                background: transparent;
-                                active_bar.x: -2px;
-                                item_content.width: self.width;
-                            }
-                            active_hover when root.active_id == data.id && search_result_item_touch.has-hover: {
-                                background: Palette.alternate-background;
-                                active_bar.x: 0px;
-                                item_content.width: (self.width) - item_menu.width;
-                            }
-                            hover when search_result_item_touch.has-hover: {
-                                background: Palette.alternate-background;
-                                active_bar.x: -2px;
-                                item_content.width: (self.width) - item_menu.width;
-                            }
-                        ]
+                    for data in root.search_result: FileListItem {
+                        data: data;
+                        active_id: root.active_id;
+                        item_click(event, id) => { root.item_click(event, id); }
+                        open_with_admin(id) => { root.open_with_admin(id); }
+                        open_file_dir(id) => { root.open_file_dir(id); }
                     }
                 }
             }
