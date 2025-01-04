@@ -140,7 +140,7 @@ impl ScreenShotter{
                         );
                         mask_win.set_bac_image(slint::Image::from_rgba8(bac_buffer.clone()));
                         mask_win.set_detected(false);
-                        mask_win.set_select_rect( crate::ui::Rect{ x: -1.0, y: -1.0, width: 0.0, height: 0.0 });
+                        mask_win.set_select_rect( crate::ui::Rect{ x: -1, y: -1, width: 0, height: 0 });
     
                         // refresh window
                         let scale_factor = sys_util::get_scale_factor(monitor.id());
@@ -206,10 +206,10 @@ impl ScreenShotter{
                         if *x <= mouse_x_phs && mouse_x_phs <= *x + width && *y <= mouse_y_phs && mouse_y_phs <= *y + height {
                             mask_win.set_select_rect(
                                 crate::ui::Rect {
-                                    x: *x as f32 + 1.0,
-                                    y: *y as f32 + 1.0,
-                                    width: *width as f32 - 1.0,
-                                    height: *height as f32 - 1.0
+                                    x: *x as i32 + 1,
+                                    y: *y as i32 + 1,
+                                    width: *width as i32 - 1,
+                                    height: *height as i32 - 1
                                 }
                             );
                             if_set = true;
@@ -218,7 +218,7 @@ impl ScreenShotter{
                     }
                     if if_set == false {
                         mask_win.set_select_rect(
-                            crate::ui::Rect{ x: window_x as f32, y: window_y as f32, width: window_width as f32, height: window_height as f32 }
+                            crate::ui::Rect{ x: window_x, y: window_y, width: window_width, height: window_height }
                         );
                     }
                 }
@@ -253,7 +253,7 @@ impl ScreenShotter{
             let message_sender_clone = message_sender.clone();
             let bac_buffer_rc_clone = bac_buffer_rc.clone();
             mask_win.on_new_pin_win(move |rect| {
-                if (rect.width * rect.height) < 1. { return; } // ignore too small rect
+                if (rect.width * rect.height) < 1 { return; } // ignore too small rect
                 if let Some(mask_win) = mask_win_clone.upgrade() {
                     let mut max_pin_win_id = max_pin_win_id_clone.lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -265,7 +265,7 @@ impl ScreenShotter{
 
                     if let Ok(pin_win) = PinWin::new(
                         img, rect,
-                        mask_win.get_offset_x(), mask_win.get_offset_y(), mask_win.get_scale_factor(),
+                        mask_win.get_offset_x(), mask_win.get_offset_y(),
                         *max_pin_win_id, message_sender_clone
                     ) {
                         let pin_window_clone = pin_win.pin_window.as_weak();
@@ -401,11 +401,10 @@ impl ScreenShotter{
     
     fn update_pin_win_record(id:u32, pin_win: &PinWindow) {
         let position = pin_win.window().position();
-        let scale_factor = pin_win.get_scale_factor();
-        let rect_x = pin_win.get_img_x() * scale_factor;
-        let rect_y = pin_win.get_img_y() * scale_factor;
-        let rect_width = pin_win.get_img_width() * scale_factor;
-        let rect_height = pin_win.get_img_height() * scale_factor;
+        let rect_x = pin_win.get_img_x();
+        let rect_y = pin_win.get_img_y();
+        let rect_width = pin_win.get_img_width();
+        let rect_height = pin_win.get_img_height();
         ShotterRecord::global().lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .update_shotter(id, shotter_record::ShotterConfig{
@@ -443,17 +442,14 @@ impl ScreenShotter{
 
             let mut pos_x = 0;
             let mut pos_y = 0;
-            let mut scale_factor = 1.0;
-            if let Ok(m) = Monitor::from_point(shotter.pos_x, shotter.pos_y) {
+            if let Ok(_) = Monitor::from_point(shotter.pos_x, shotter.pos_y) {
                 pos_x = shotter.pos_x;
                 pos_y = shotter.pos_y;
-                scale_factor = sys_util::get_scale_factor(m.id());
             } else {
                 for m in Monitor::all().unwrap() {
                     if m.is_primary() { 
                         pos_x = m.x();
                         pos_y = m.y();
-                        scale_factor = sys_util::get_scale_factor(m.id());
                     }
                 }
             }
@@ -461,7 +457,7 @@ impl ScreenShotter{
             let offset_x = pos_x - rect.x as i32;
             let offset_y = pos_y - rect.y as i32;
             let pin_win = PinWin::new(
-                img_buffer, rect, offset_x, offset_y, scale_factor, id, message_sender_clone
+                img_buffer, rect, offset_x, offset_y, id, message_sender_clone
             )?;
             pin_win.pin_window.set_zoom_factor(shotter.zoom_factor);
 
