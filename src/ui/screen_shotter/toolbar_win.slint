@@ -14,7 +14,7 @@ struct Tool_slint {
     type: ToolType,
 }
 
-component ToolBtn inherits Rectangle { // TODO merge with TitleBtn
+component ToolBtn inherits Rectangle { // TODO merge with TitleBtn as SimpleBtn
     in property<image> icon <=> image.source;
     in property<color> hover_color: Palette.accent-background;
     in property <bool> active: false;
@@ -62,11 +62,12 @@ export component ToolbarWindow inherits BaseWindow {
     always-on-top: focus_trick(pin_focused, toolbar_focused);
 
     in-out property <[Tool_slint]> tools: [
-        { id: 4, icon: @image-url("../assets/icon/draw.svg"), name: @tr("绘制"), type: ToolType.Trigger },
-        { id: 0, icon: @image-url("../assets/icon/min.svg"), name: @tr("最小化"), type: ToolType.Clicker },
-        { id: 3, icon: @image-url("../assets/icon/save.svg"), name: @tr("保存"), type: ToolType.Clicker },
-        { id: 2, icon: @image-url("../assets/icon/close.svg"), name: @tr("关闭"), type: ToolType.Clicker },
-        { id: 1, icon: @image-url("../assets/icon/right.svg"), name: @tr("复制"), type: ToolType.Clicker },
+        { id: 4, icon: @image-url("../assets/icon/draw.svg"), name: @tr("绘制"), type: ToolType.Trigger, division: false },
+        { id: 5, icon: @image-url("../assets/icon/return.svg"), name: @tr("回退"), type: ToolType.Trigger, division: true },
+        { id: 0, icon: @image-url("../assets/icon/min.svg"), name: @tr("最小化"), type: ToolType.Clicker, division: false },
+        { id: 3, icon: @image-url("../assets/icon/file.svg"), name: @tr("保存"), type: ToolType.Clicker, division: false },
+        { id: 2, icon: @image-url("../assets/icon/close.svg"), name: @tr("关闭"), type: ToolType.Clicker, division: false },
+        { id: 1, icon: @image-url("../assets/icon/right.svg"), name: @tr("复制"), type: ToolType.Clicker, division: false },
     ];
     
     in-out property <int> win_width: tools.length * (self.height / 1px);
