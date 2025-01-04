@@ -1,10 +1,10 @@
 import { BaseWindow } from "../frame/base_win.slint";
 
 struct Rect {
-    x: length,
-    y: length,
-    width: length,
-    height: length,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
 }
 export component MaskWindow inherits BaseWindow {
     forward-focus: focus_scope;
@@ -67,39 +67,38 @@ export component MaskWindow inherits BaseWindow {
                         } else if (event.kind == PointerEventKind.up) {
                             root.new_pin_win(root.select_rect);
                             root.mouse_left_press = false;
-                            root.select-rect.x = -1px;
-                            root.select-rect.y = -1px;
-                            root.select-rect.width = 0px;
-                            root.select-rect.height = 0px;
+                            root.select-rect.x = -1;
+                            root.select-rect.y = -1;
+                            root.select-rect.width = 0;
+                            root.select-rect.height = 0;
                         }
                     } else if !mouse_left_press && !event.modifiers.control {
-                        root.select-rect.x = -1px;
-                        root.select-rect.y = -1px;
-                        root.select-rect.width = 0px;
-                        root.select-rect.height = 0px;
+                        root.select-rect.x = -1;
+                        root.select-rect.y = -1;
+                        root.select-rect.width = 0;
+                        root.select-rect.height = 0;
                     }
                 }
                 moved() => {
                     if(mouse_left_press == true) {
-                        root.mouse_move_pos.x = clamp(touch_area.mouse-x, 0, (root.width)-1px);
-                        root.mouse_move_pos.y = clamp(touch_area.mouse-y, 0, (root.height)-1px);
-
-                        root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor) * 1px;
-                        root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor) * 1px;
-                        root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor) * 1px;
-                        root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor) * 1px;
+                        root.mouse_move_pos.x = clamp(touch_area.mouse-x, 0, (root.width));
+                        root.mouse_move_pos.y = clamp(touch_area.mouse-y, 0, (root.height));
+                        root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor);
+                        root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor);
+                        root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor);
+                        root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor);
                     }
                 }
             }
 
             select_border := Rectangle {
                 border-color: rgb(0, 175, 255);
-                border-width: 1px;
+                border-width: 1phx;
 
-                x: root.select-rect.x / (root.scale_factor) - self.border-width;
-                y: root.select-rect.y / (root.scale_factor) - self.border-width;
-                width: root.select-rect.width / root.scale_factor + self.border-width * 2;
-                height: root.select-rect.height / root.scale_factor + self.border-width * 2;
+                x: root.select-rect.x * 1phx - self.border-width;
+                y: root.select-rect.y* 1phx - self.border-width;
+                width: root.select-rect.width * 1phx + self.border-width * 2;
+                height: root.select-rect.height * 1phx + self.border-width * 2;
 
                 select_win := Image {
                     source: bac_image;
@@ -107,13 +106,13 @@ export component MaskWindow inherits BaseWindow {
 
                     x: select_border.border-width;
                     y: select_border.border-width;
-                    width: root.select-rect.width / root.scale_factor;
-                    height: root.select-rect.height / root.scale_factor;
+                    width: root.select-rect.width * 1phx;
+                    height: root.select-rect.height * 1phx;
                     
-                    source-clip-x: root.select-rect.x / 1px;
-                    source-clip-y: root.select-rect.y / 1px;
-                    source-clip-width: root.select-rect.width / 1px;
-                    source-clip-height: root.select-rect.height / 1px;
+                    source-clip-x: root.select-rect.x;
+                    source-clip-y: root.select-rect.y;
+                    source-clip-width: root.select-rect.width;
+                    source-clip-height: root.select-rect.height;
                 }
             }
         }
@@ -154,8 +153,7 @@ export component MaskWindow inherits BaseWindow {
                 text: touch_area.pressed ?
                     @tr(
                         "宽{}×高{}",
-                        round(root.select_rect.width / 1px),
-                        round(root.select_rect.height / 1px)
+                        root.select_rect.width, root.select_rect.height
                     ) : @tr("左键划选区域");
                 color: white;
             } // draw width and height

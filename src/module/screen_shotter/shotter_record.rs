@@ -13,7 +13,7 @@ use crate::util::{file_util, img_util, log_util};
 pub struct ShotterConfig {
     pub pos_x: i32,
     pub pos_y: i32,
-    pub rect: (f32, f32, f32, f32),
+    pub rect: (i32, i32, i32, i32),
     pub zoom_factor: i32,
 }
 

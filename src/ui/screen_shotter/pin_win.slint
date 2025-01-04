@@ -22,23 +22,25 @@ export component PinWindow inherits BaseWindow {
     property <bool> show_zoom: false;
 
     in property <image> bac_image;
-    in property <length> win_border_width: 1px;
+    in property <int> win_border_width: 1;
     in property <float> scale_factor;
     in property <float> true_scale_factor;
 
-    in property <length> img_x;
-    in property <length> img_y;
+    in property <int> img_x;
+    in property <int> img_y;
+    in-out property <int> img_width;
+    in-out property <int> img_height;
     in-out property <int> zoom_factor: 100;     // neet to be divided by one hundred
-    in-out property <int> extra_zoom_factor: 100;
     in-out property <int> zoom_delta: 2; // neet to be divided by one hundred
-    in-out property <length> img_width;
-    in-out property <length> img_height;
 
-    in-out property <length> delta_img_width: 0px;
-    in-out property <length> delta_img_height: 0px;
+    in-out property <int> delta_img_width: 0;
+    in-out property <int> delta_img_height: 0;
 
-    in-out property <length> win_width: ((img_width + delta_img_width) * zoom_factor / 100 * extra_zoom_factor / 100) + win_border_width * 2;
-    in-out property <length> win_height: ((img_height + delta_img_height) * zoom_factor / 100 * extra_zoom_factor / 100) + win_border_width * 2;
+    in-out property <length> win_width: (((img_width + delta_img_width) * zoom_factor / 100) + win_border_width * 2) * 1phx;
+    in-out property <length> win_height: (((img_height + delta_img_height) * zoom_factor / 100) + win_border_width * 2) * 1phx;
+
+    width <=> win_width;
+    height <=> win_height;
 
     in-out property <bool> is_stick_x: false;
     in-out property <bool> is_stick_y: false;
@@ -62,23 +64,20 @@ export component PinWindow inherits BaseWindow {
     callback draw_path(string);
     callback update_record();
 
-    width <=> win_width;
-    height <=> win_height;
-
     image_border := Rectangle {
         border-color: rgb(0, 175, 255);
-        border-width: win_border_width;
+        border-width: win_border_width * 1phx;
         pin_image := Image {
             source: bac_image;
-            x: win_border_width;
-            y: win_border_width;
-            width: root.width - win_border_width * 2;
-            height: root.height - win_border_width * 2;
+            x: win_border_width * 1phx;
+            y: win_border_width * 1phx;
+            width: root.width - win_border_width * 2phx;
+            height: root.height - win_border_width * 2phx;
 
-            source-clip-x: img_x / 1px  * root.scale_factor;
-            source-clip-y: img_y / 1px  * root.scale_factor;
-            source-clip-width: (img_width + delta_img_width) / 1px  * root.scale_factor;
-            source-clip-height: (img_height + delta_img_height) / 1px  * root.scale_factor;
+            source-clip-x: img_x;
+            source-clip-y: img_y;
+            source-clip-width: (img_width + delta_img_width);
+            source-clip-height: (img_height + delta_img_height);
 
             move_touch_area := TouchArea {
                 mouse-cursor: mouse_type;
@@ -105,8 +104,8 @@ export component PinWindow inherits BaseWindow {
                                 root.state = PinState.Normal;
                                 root.img_height = root.img_height + root.delta_img_height;
                                 root.img_width = root.img_width + root.delta_img_width;
-                                root.delta_img_height = 0px;
-                                root.delta_img_width = 0px;
+                                root.delta_img_height = 0;
+                                root.delta_img_width = 0;
                                 root.update_record();
                             } else if root.state == PinState.DrawFree {
                                 draw_path(root.drawing_path);

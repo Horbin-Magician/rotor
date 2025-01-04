@@ -23,7 +23,6 @@ impl PinWin {
         rect: Rect,
         offset_x: i32,
         offset_y: i32,
-        true_scale_factor: f32,
         id: u32,
         message_sender: Sender<ShotterMessage>,
     ) -> Result<PinWin, Box<dyn Error>> {
@@ -32,17 +31,15 @@ impl PinWin {
 
         { // set bash properties
             let border_width = pin_window.get_win_border_width();
-            let scale_factor = pin_window.window().scale_factor();
-
-            pin_window.set_scale_factor(scale_factor);
-            
-            pin_window.window().set_position(slint::LogicalPosition::new((rect.x + offset_x as f32) / scale_factor - border_width, (rect.y + offset_y as f32) / scale_factor - border_width));
+            // let scale_factor = pin_window.window().scale_factor();
+            // pin_window.set_scale_factor(scale_factor);
+            pin_window.window().set_position(slint::PhysicalPosition::new(rect.x + offset_x - border_width, rect.y + offset_y - border_width));
             
             pin_window.set_bac_image(slint::Image::from_rgba8(img));
-            pin_window.set_img_x(rect.x / scale_factor);
-            pin_window.set_img_y(rect.y / scale_factor);
-            pin_window.set_img_width(rect.width / scale_factor);
-            pin_window.set_img_height(rect.height / scale_factor);
+            pin_window.set_img_x(rect.x);
+            pin_window.set_img_y(rect.y);
+            pin_window.set_img_width(rect.width);
+            pin_window.set_img_height(rect.height);
             
             let zoom_delta = AppConfig::global()
             .lock()
@@ -62,10 +59,11 @@ impl PinWin {
                     let mut img_width = pin_window_clone.get_img_width();
                     let mut img_height = pin_window_clone.get_img_height();
                     let zoom_factor = pin_window_clone.get_zoom_factor() as f32 / 100.;
+                    let scale_factor = pin_window_clone.window().scale_factor();
                     
                     let limit_px = 5.;
-                    let img_width_px = img_width * zoom_factor;
-                    let img_height_px = img_height * zoom_factor;
+                    let img_width_px = (img_width as f32 * zoom_factor).ceil();
+                    let img_height_px = (img_height as f32 * zoom_factor).ceil();
                     match mouse_direction {
                         Direction::Center => {
                             let is_stick_x = pin_window_clone.get_is_stick_x();
@@ -82,57 +80,57 @@ impl PinWin {
                         },
                         Direction::Upper => {
                             if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
-                            img_y += delta_y / zoom_factor;
-                            img_height -= delta_y / zoom_factor;
+                            img_y += (delta_y / zoom_factor * scale_factor) as i32;
+                            img_height -= (delta_y / zoom_factor * scale_factor) as i32;
                             delta_x = 0.;
                         },
                         Direction::Lower => {
                             if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
-                            pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
+                            pin_window_clone.set_delta_img_height((delta_y / zoom_factor * scale_factor) as i32);
                             delta_x = 0.;
                             delta_y = 0.;
                         },
                         Direction::Left => {
                             if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
-                            img_x += delta_x / zoom_factor;
-                            img_width -= delta_x / zoom_factor;
+                            img_x += (delta_x / zoom_factor * scale_factor) as i32;
+                            img_width -= (delta_x / zoom_factor * scale_factor) as i32;
                             delta_y = 0.;
                         },
                         Direction::Right => {
                             if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
-                            pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
+                            pin_window_clone.set_delta_img_width((delta_x / zoom_factor * scale_factor) as i32);
                             delta_x = 0.;
                             delta_y = 0.;
                         },
                         Direction::LeftUpper => {
                             if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
                             if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
-                            img_x += delta_x / zoom_factor;
-                            img_y += delta_y / zoom_factor;
-                            img_width -= delta_x / zoom_factor;
-                            img_height -= delta_y / zoom_factor;
+                            img_x += (delta_x / zoom_factor * scale_factor) as i32;
+                            img_y += (delta_y / zoom_factor * scale_factor) as i32;
+                            img_width -= (delta_x / zoom_factor * scale_factor) as i32;
+                            img_height -= (delta_y / zoom_factor * scale_factor) as i32;
                         },
                         Direction::LeftLower => {
                             if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
                             if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
-                            img_x += delta_x / zoom_factor;
-                            img_width -= delta_x / zoom_factor;
-                            pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
+                            img_x += (delta_x / zoom_factor * scale_factor) as i32;
+                            img_width -= (delta_x / zoom_factor * scale_factor) as i32;
+                            pin_window_clone.set_delta_img_height((delta_y / zoom_factor * scale_factor) as i32);
                             delta_y = 0.;
                         },
                         Direction::RightUpper => {
                             if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
                             if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
-                            img_y += delta_y / zoom_factor;
-                            pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
-                            img_height -= delta_y / zoom_factor;
+                            img_y += (delta_y / zoom_factor * scale_factor) as i32;
+                            pin_window_clone.set_delta_img_width((delta_x / zoom_factor * scale_factor) as i32);
+                            img_height -= (delta_y / zoom_factor * scale_factor) as i32;
                             delta_x = 0.;
                         },
                         Direction::RightLower => {
                             if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
                             if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
-                            pin_window_clone.set_delta_img_width(delta_x / zoom_factor);
-                            pin_window_clone.set_delta_img_height(delta_y / zoom_factor);
+                            pin_window_clone.set_delta_img_width((delta_x / zoom_factor * scale_factor) as i32);
+                            pin_window_clone.set_delta_img_height((delta_y / zoom_factor * scale_factor) as i32);
                             delta_x = 0.;
                             delta_y = 0.;
                         },
@@ -212,8 +210,7 @@ impl PinWin {
                 let pin_window_clone = pin_window.as_weak();
                 pin_window.on_save(move || {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
-                        let scale_factor = pin_window.get_scale_factor();
-                        let border_width = (pin_window.get_win_border_width() * scale_factor).ceil() as u32;
+                        let border_width = pin_window.get_win_border_width() as u32;
 
                         match pin_window.window().take_snapshot() {
                             Ok(buffer) => {
@@ -252,8 +249,7 @@ impl PinWin {
                 let pin_window_clone = pin_window.as_weak();
                 pin_window.on_copy(move || {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
-                        let scale_factor = pin_window.get_scale_factor();
-                        let border_width = (pin_window.get_win_border_width() * scale_factor).ceil() as u32;
+                        let border_width = pin_window.get_win_border_width() as u32;
 
                         match pin_window.window().take_snapshot() {
                             Ok(buffer) => {
@@ -354,13 +350,6 @@ impl PinWin {
 
         let _ = pin_window.show();
         
-        { // trick: fix the bug of error scale_factor
-            let scale_factor = pin_window.window().scale_factor();
-            if scale_factor != true_scale_factor {
-                pin_window.set_extra_zoom_factor(((scale_factor / true_scale_factor) * 100.) as i32);
-            }
-        }
-
         Ok(PinWin {
             _id: id,
             pin_window,
