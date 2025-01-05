@@ -20,9 +20,9 @@ export component MaskWindow inherits BaseWindow {
     in-out property <bool> detected: false;
     in-out property <Rect> select_rect;
     in-out property <bool> mouse_left_press;
-    in-out property <float> scale_factor: 0;
-    in-out property <int> offset_x;
-    in-out property <int> offset_y;
+
+    width: bac_image.width * 1phx;
+    height: bac_image.height * 1phx;
     
     callback shot();
     callback key_released(KeyEvent);
@@ -81,12 +81,12 @@ export component MaskWindow inherits BaseWindow {
                 }
                 moved() => {
                     if(mouse_left_press == true) {
-                        root.mouse_move_pos.x = clamp(touch_area.mouse-x, 0, (root.width));
-                        root.mouse_move_pos.y = clamp(touch_area.mouse-y, 0, (root.height));
-                        root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1px  * root.scale_factor);
-                        root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1px  * root.scale_factor);
-                        root.select-rect.width = ceil(abs(( (root.mouse_move_pos.x) - root.mouse_down_pos.x) / 1px)  * root.scale_factor);
-                        root.select-rect.height = ceil(abs(( (root.mouse_move_pos.y) - root.mouse_down_pos.y) / 1px)  * root.scale_factor);
+                        root.mouse_move_pos.x = clamp(touch_area.mouse-x, 0, root.width);
+                        root.mouse_move_pos.y = clamp(touch_area.mouse-y, 0, root.height);
+                        root.select-rect.x = ceil(min(root.mouse_down_pos.x, root.mouse_move_pos.x) / 1phx);
+                        root.select-rect.y = ceil(min(root.mouse_down_pos.y, root.mouse_move_pos.y) / 1phx);
+                        root.select-rect.width = ceil(abs(( root.mouse_move_pos.x - root.mouse_down_pos.x) / 1phx));
+                        root.select-rect.height = ceil(abs(( root.mouse_move_pos.y - root.mouse_down_pos.y) / 1phx));
                     }
                 }
             }
@@ -141,10 +141,10 @@ export component MaskWindow inherits BaseWindow {
                     height: (parent.height) - 2px;
                     source: bac_image;
                     image-fit: fill;
-                    source-clip-x: (touch-area.mouse-x / 1px - self.width / 8px) * root.scale_factor;
-                    source-clip-y: (touch-area.mouse-y / 1px - self.height / 8px) * root.scale_factor;
-                    source-clip-width: (self.width / 4px) * root.scale_factor;
-                    source-clip-height: (self.height / 4px) * root.scale_factor;
+                    source-clip-x: touch-area.mouse-x / 1phx - self.width / 8phx;
+                    source-clip-y: touch-area.mouse-y / 1phx - self.height / 8phx;
+                    source-clip-width: self.width / 4phx;
+                    source-clip-height: self.height / 4phx;
                 }
             }
 
