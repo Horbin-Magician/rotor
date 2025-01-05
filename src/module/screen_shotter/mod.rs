@@ -143,19 +143,8 @@ impl ScreenShotter{
                         mask_win.set_select_rect( crate::ui::Rect{ x: -1, y: -1, width: 0, height: 0 });
     
                         // refresh window
-                        let scale_factor = sys_util::get_scale_factor(monitor.id());
-                        let pre_scale_factor = mask_win.get_scale_factor();
                         mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
-                        mask_win.set_offset_x(monitor.x());
-                        mask_win.set_offset_y(monitor.y());
-                        mask_win.set_scale_factor(scale_factor);
-    
-                        let mut scale = 1.0;
-                        if pre_scale_factor != 0.0 && pre_scale_factor > scale_factor { scale = pre_scale_factor / scale_factor; } // to fix scale problem
-                        let window_width = ((monitor.width() as f32) * scale) as u32;
-                        let window_height = ((monitor.height() as f32) * scale) as u32;
-                        mask_win.window().set_size(slint::PhysicalSize::new( window_width, window_height));
-    
+                        
                         let _ = mask_win.show();
                         mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                             winit_win.focus_window();
@@ -262,10 +251,11 @@ impl ScreenShotter{
                     let img = (*bac_buffer_rc_clone).lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .clone();
-
+                    
+                    let position =  mask_win.window().position();
                     if let Ok(pin_win) = PinWin::new(
                         img, rect,
-                        mask_win.get_offset_x(), mask_win.get_offset_y(),
+                        position.x, position.y,
                         *max_pin_win_id, message_sender_clone
                     ) {
                         let pin_window_clone = pin_win.pin_window.as_weak();
