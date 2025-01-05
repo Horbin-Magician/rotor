@@ -12,6 +12,7 @@ struct Tool_slint {
     icon: image,
     name: string,
     type: ToolType,
+    division: bool,
 }
 
 component ToolBtn inherits Rectangle { // TODO merge with TitleBtn as SimpleBtn
@@ -70,7 +71,6 @@ export component ToolbarWindow inherits BaseWindow {
         { id: 1, icon: @image-url("../assets/icon/right.svg"), name: @tr("复制"), type: ToolType.Clicker, division: false },
     ];
     
-    in-out property <int> win_width: tools.length * (self.height / 1px);
     in-out property <int> tool_len: tools.length;
     in-out property <bool> pin_focused: false;
     in-out property <bool> toolbar_focused: focus_scope.has-focus;
@@ -90,16 +90,27 @@ export component ToolbarWindow inherits BaseWindow {
                 spacing: 0;
                 padding: 0;
     
-                for tool in root.tools: ToolBtn{
-                    width: root.height;
-                    height: root.height;
-                    icon: tool.icon;
-                    active: root.active_name == tool.name;
-                    clicked => { 
-                        if tool.type == ToolType.Trigger {
-                            root.active_name = root.active_name == tool.name ? "" : tool.name;
+                for tool in root.tools: Rectangle {
+                    HorizontalLayout {
+                        ToolBtn{
+                            width: root.height;
+                            height: root.height;
+                            icon: tool.icon;
+                            active: root.active_name == tool.name;
+                            clicked => { 
+                                if tool.type == ToolType.Trigger {
+                                    root.active_name = root.active_name == tool.name ? "" : tool.name;
+                                }
+                                root.click(root.id, tool.id); 
+                            }
                         }
-                        root.click(root.id, tool.id); 
+                        if tool.division: HorizontalLayout {
+                            padding: 3px;
+                            Rectangle {
+                                width: 2px;
+                                background: Palette.border;
+                            }
+                        }
                     }
                 }
             }

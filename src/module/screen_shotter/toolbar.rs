@@ -29,13 +29,12 @@ impl Toolbar {
             toolbar_window.on_show_pos(move |x, y, id| {
                 if let Some(toolbar_window) = toolbar_window_clone.upgrade() {
                     // trick: fix the bug of error scale_factor
-                    let unit_scale = (30. * toolbar_window.window().scale_factor()) as u32;
-                    let tool_len = toolbar_window.get_tool_len();
-                    let win_width = tool_len as u32 * unit_scale;
-                    let win_height = unit_scale;
-                    toolbar_window.window().set_size(slint::PhysicalSize::new( win_width, win_height));
+                    let tool_len = toolbar_window.get_tool_len() as f32;
+                    let win_width = tool_len * 30. + 8.;
+                    let win_height = 30.;
+                    toolbar_window.window().set_size(slint::LogicalSize::new( win_width, win_height));
 
-                    let x_pos = x - win_width as i32;
+                    let x_pos = x - (win_width * toolbar_window.window().scale_factor()) as i32;
                     let y_pos = y;
                     toolbar_window.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos + 2)));
                     toolbar_window.set_pin_focused(true);
@@ -106,8 +105,7 @@ impl Toolbar {
             let toolbar_window_clone = toolbar_window.as_weak();
             toolbar_window.on_win_move(move |x, y| {
                 if let Some(toolbar_window) = toolbar_window_clone.upgrade() {
-                    let scale_factor = toolbar_window.window().scale_factor();
-                    let win_width = toolbar_window.get_win_width() as f32 * scale_factor;
+                    let win_width = toolbar_window.window().size().width;
                     let x_pos = x - win_width as i32;
                     let y_pos = y;
                     toolbar_window.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos + 2)));
