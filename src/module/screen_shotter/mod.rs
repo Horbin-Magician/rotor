@@ -27,6 +27,7 @@ pub enum PinOperation {
     Save(),
     Copy(),
     TriggerDraw(),
+    ReturnDraw(),
 }
 
 pub enum ShotterMessage {
@@ -354,6 +355,11 @@ impl ScreenShotter{
                                         pin_window.upgrade_in_event_loop(move |win| {
                                             win.invoke_trigger_draw();
                                         }).unwrap_or_else(|e| log_util::log_error(format!("Error in TriggerDraw: {:?}", e)));
+                                    },
+                                    PinOperation::ReturnDraw() => {
+                                        pin_window.upgrade_in_event_loop(move |win| {
+                                            win.invoke_return_draw();
+                                        }).unwrap_or_else(|e| log_util::log_error(format!("Error in ReturnDraw: {:?}", e)));
                                     },
                                 }
                             }

@@ -64,6 +64,8 @@ impl Toolbar {
                     let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::Save()));
                 } else if active_num == 4 {
                     let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::TriggerDraw()));
+                } else if active_num == 5 {
+                    let _ = message_sender_clone.send(ShotterMessage::OperatePin(id as u32, PinOperation::ReturnDraw()));
                 }
             });
         }

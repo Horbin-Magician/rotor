@@ -53,14 +53,15 @@ export component PinWindow inherits BaseWindow {
     property <Direction> mouse_direction;
     property <length> extend_scope: 8px;
 
-    callback win_move(length, length, Direction);
-    callback key_release(KeyEvent);
-
     callback close();
     callback hide();
     callback save();
     callback copy();
     callback trigger_draw();
+    callback return_draw();
+
+    callback win_move(length, length, Direction);
+    callback key_release(KeyEvent);
     callback draw_path(string);
     callback update_record();
 
