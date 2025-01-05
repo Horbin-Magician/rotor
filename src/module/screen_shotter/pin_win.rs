@@ -290,6 +290,18 @@ impl PinWin {
                 });
 
                 let pin_window_clone = pin_window.as_weak();
+                pin_window.on_return_draw(move || {
+                    if let Some(pin_window) = pin_window_clone.upgrade() {
+                        let pathes_rc = pin_window.get_pathes();
+                        if let Some(pathes) = pathes_rc.as_any().downcast_ref::<VecModel<SharedString>>() {
+                            if pathes.row_count() > 0 {
+                                pathes.remove(pathes.row_count() - 1);
+                            }
+                        }
+                    }
+                });
+
+                let pin_window_clone = pin_window.as_weak();
                 pin_window.on_draw_path(move |path| {
                     if let Some(pin_window) = pin_window_clone.upgrade() {
                         let pathes_rc = pin_window.get_pathes();
