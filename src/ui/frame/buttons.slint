@@ -1,22 +1,34 @@
 import { Palette } from "std-widgets.slint";
 
+export enum ButtonType {
+    Icon,
+    Text,
+}
+
 export component SimpleBtn inherits Rectangle {
-    width: 40px;
-    height: 40px;
     background: transparent;
     animate background { duration: 150ms; }
 
-    in property<image> icon <=> image.source;
-    in property<color> hover_color: Palette.accent-background;
+    in property <image> icon;
+    in property<string> text;
+    in property <ButtonType> type: ButtonType.Icon;
+    in property <color> hover_color: Palette.accent-background;
+    in property <color> active_color: Palette.accent-background;
     in property <bool> active: false;
     
     callback clicked <=> touch.clicked;
 
     touch := TouchArea {
-        image := Image {
+        if type == ButtonType.Icon: Image {
+            source: icon;
             height: 16px;
             width: 16px;
             colorize: Palette.foreground;
+        }
+        if type == ButtonType.Text: Text {
+            text: text;
+            vertical-alignment: center;
+            horizontal-alignment: center;
         }
     }
 
@@ -28,7 +40,7 @@ export component SimpleBtn inherits Rectangle {
             root.background: hover_color;
         }
         active when self.active:{
-            root.background: hover_color;
+            root.background: active_color;
         }
     ]
 }

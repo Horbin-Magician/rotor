@@ -1,32 +1,5 @@
 import { Palette } from "std-widgets.slint";
-
-component SideBarItem inherits Rectangle {
-    height: 26px;
-
-    in property<bool> selected;
-    in-out property<string> text <=> label.text;
-
-    callback clicked <=> touch.clicked;
-
-    touch := TouchArea {
-        state := Rectangle {
-            border-radius: 5px;
-            label := Text {
-                vertical-alignment: center;
-                horizontal-alignment: center;
-            }
-        }
-    }
-
-    states [
-        selected when root.selected : {
-            state.background: rgb(44,166,224);
-        }
-        hover when touch.has-hover : {
-            state.background: rgba(44,166,224,0.5);
-        }
-    ]
-}
+import { SimpleBtn, ButtonType } from "../frame/buttons.slint";
 
 export component SideBar inherits Rectangle {
     width: 120px;
@@ -42,25 +15,29 @@ export component SideBar inherits Rectangle {
         padding-top: 10px;
 
         Rectangle {
-            width: 120px;
             logo_touch := TouchArea {
                 width: 50px;
-                mouse-cursor: help;
+                mouse-cursor: pointer;
                 Image {
                     source: @image-url("../assets/icon/logo.svg");
                     height: 50px;
                 }
             }
         }
-
+        
         VerticalLayout {
             padding: 4px;
             spacing: 4px;
             alignment: start;
 
-            for item[index] in root.model : SideBarItem {
+            for item[index] in root.model : SimpleBtn {
+                height: 26px;
+                border-radius: 5px;
                 text: item;
-                selected: index == root.current-item;
+                active: index == root.current-item;
+                type: ButtonType.Text;
+                hover_color: rgba(44,166,224,0.5);
+                active_color: rgb(44,166,224);
                 clicked => { 
                     root.current-item = index;
                 }
