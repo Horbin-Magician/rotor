@@ -1,6 +1,7 @@
 import { Button, Palette} from "std-widgets.slint";
 
-import { BaseWindow } from "../frame/base_win.slint";
+import { BaseWindow } from "../frame/windows.slint";
+import { SimpleBtn } from "../frame/buttons.slint";
 
 enum ToolType {
     Trigger,
@@ -13,37 +14,6 @@ struct Tool_slint {
     name: string,
     type: ToolType,
     division: bool,
-}
-
-component ToolBtn inherits Rectangle { // TODO merge with TitleBtn as SimpleBtn
-    in property<image> icon <=> image.source;
-    in property<color> hover_color: Palette.accent-background;
-    in property <bool> active: false;
-    callback clicked <=> touch.clicked;
-
-    width: 30px;
-    background: transparent;
-    animate background { duration: 150ms; }
-
-    touch := TouchArea {
-        image := Image {
-            height: 18px;
-            width: 18px;
-            colorize: Palette.foreground;
-        }
-    }
-
-    states [
-        pressed when touch.pressed:{
-            root.background: hover_color.darker(0.5);
-        }
-        active when self.active:{
-            root.background: hover_color;
-        }
-        hover when touch.has-hover:{
-            root.background: hover_color;
-        }
-    ]
 }
 
 export component ToolbarWindow inherits BaseWindow {
@@ -92,7 +62,7 @@ export component ToolbarWindow inherits BaseWindow {
     
                 for tool in root.tools: Rectangle {
                     HorizontalLayout {
-                        ToolBtn{
+                        SimpleBtn{
                             width: root.height;
                             height: root.height;
                             icon: tool.icon;

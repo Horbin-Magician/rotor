@@ -1,0 +1,34 @@
+import { Palette } from "std-widgets.slint";
+
+export component SimpleBtn inherits Rectangle {
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    animate background { duration: 150ms; }
+
+    in property<image> icon <=> image.source;
+    in property<color> hover_color: Palette.accent-background;
+    in property <bool> active: false;
+    
+    callback clicked <=> touch.clicked;
+
+    touch := TouchArea {
+        image := Image {
+            height: 16px;
+            width: 16px;
+            colorize: Palette.foreground;
+        }
+    }
+
+    states [
+        pressed when touch.pressed : {
+            root.background: hover_color.darker(0.5);
+        }
+        hover when touch.has-hover : {
+            root.background: hover_color;
+        }
+        active when self.active:{
+            root.background: hover_color;
+        }
+    ]
+}
