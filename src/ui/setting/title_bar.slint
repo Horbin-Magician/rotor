@@ -1,32 +1,6 @@
 import { Palette } from "std-widgets.slint";
 
-component TitleBtn inherits Rectangle {
-    width: 40px;
-    background: transparent;
-    animate background { duration: 150ms; }
-
-    in property<image> img <=> image.source;
-    in property<color> hover_color;
-    
-    callback clicked <=> touch.clicked;
-
-    touch := TouchArea {
-        image := Image {
-            height: 14px;
-            width: 14px;
-            colorize: Palette.foreground;
-        }
-    }
-
-    states [
-        pressed when touch.pressed : {
-            root.background: hover_color.darker(0.5);
-        }
-        hover when touch.has-hover : {
-            root.background: hover_color;
-        }
-    ]
-}
+import { SimpleBtn } from "../frame/buttons.slint";
 
 export component TitleBar inherits Rectangle {
     height: 40px;
@@ -41,13 +15,12 @@ export component TitleBar inherits Rectangle {
 
         Rectangle {}
 
-        min_btn := TitleBtn {
-            img: @image-url("../assets/icon/min.svg");
-            hover_color: Palette.selection-background;
+        min_btn := SimpleBtn {
+            icon: @image-url("../assets/icon/min.svg");
         }
 
-        close_btn := TitleBtn {
-            img: @image-url("../assets/icon/close.svg");
+        close_btn := SimpleBtn {
+            icon: @image-url("../assets/icon/close.svg");
             hover_color: red;
         }
     }
