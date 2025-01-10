@@ -31,8 +31,6 @@ impl PinWin {
 
         { // set bash properties
             let border_width = pin_window.get_win_border_width();
-            // let scale_factor = pin_window.window().scale_factor();
-            // pin_window.set_scale_factor(scale_factor);
             pin_window.window().set_position(slint::PhysicalPosition::new(rect.x + offset_x - border_width, rect.y + offset_y - border_width));
             
             pin_window.set_bac_image(slint::Image::from_rgba8(img));
@@ -285,6 +283,7 @@ impl PinWin {
                             pin_window.set_state(PinState::Normal);
                         } else {
                             pin_window.set_state(PinState::DrawFree);
+                            pin_window.set_scale_factor(pin_window.window().scale_factor());
                         }
                     }
                 });
