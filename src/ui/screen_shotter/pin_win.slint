@@ -1,5 +1,4 @@
 import { Button, Palette } from "std-widgets.slint";
-
 import { BaseWindow } from "../frame/windows.slint";
 
 enum Direction {
@@ -8,49 +7,40 @@ enum Direction {
     Center,
 }
 
-enum PinState {
-    Normal, Move, DrawFree,
-}
+enum PinState { Normal, Move, DrawFree }
 
 export component PinWindow inherits BaseWindow {
     title: @tr("小云视窗");
     forward-focus: key-focus;
+    width: win_width;
+    height: win_height;
     
     pure callback focus_trick(bool) -> bool;
     always-on-top: focus_trick(key-focus.has-focus);
 
+    property <MouseCursor> mouse_type: MouseCursor.move;
+    property <Direction> mouse_direction;
+    property <length> extend_scope: 8px;
     property <bool> show_zoom: false;
-
     in property <image> bac_image;
     in property <int> win_border_width: 1;
     in property <float> scale_factor;
-
+    in property <float> true_scale_factor;
     in property <int> img_x;
     in property <int> img_y;
     in-out property <int> img_width;
     in-out property <int> img_height;
     in-out property <int> zoom_factor: 100;     // neet to be divided by one hundred
     in-out property <int> zoom_delta: 2; // neet to be divided by one hundred
-
     in-out property <int> delta_img_width: 0;
     in-out property <int> delta_img_height: 0;
-
     in-out property <length> win_width: (((img_width + delta_img_width) * zoom_factor / 100) + win_border_width * 2) * 1phx;
     in-out property <length> win_height: (((img_height + delta_img_height) * zoom_factor / 100) + win_border_width * 2) * 1phx;
-
-    width <=> win_width;
-    height <=> win_height;
-
     in-out property <bool> is_stick_x: false;
     in-out property <bool> is_stick_y: false;
-
     in-out property <PinState> state: PinState.Normal;
     in-out property <[string]> pathes: [];
     in-out property <string> drawing_path: "";
-    
-    property <MouseCursor> mouse_type: MouseCursor.move;
-    property <Direction> mouse_direction;
-    property <length> extend_scope: 8px;
 
     callback close();
     callback hide();
@@ -58,7 +48,6 @@ export component PinWindow inherits BaseWindow {
     callback copy();
     callback trigger_draw();
     callback return_draw();
-
     callback win_move(length, length, Direction);
     callback key_release(KeyEvent);
     callback draw_path(string);
@@ -171,14 +160,14 @@ export component PinWindow inherits BaseWindow {
             }
         }
 
-        for path in root.pathes:
-            Path {
-                viewbox-width: root.width / zoom_factor * 100 / 1phx;
-                viewbox-height: root.height / zoom_factor * 100 / 1phx;
-                commands: path;
-                stroke: red;
-                stroke-width: 3phx;
-            }
+        for path in root.pathes: Path {
+            viewbox-width: root.width / zoom_factor * 100 / 1px;
+            viewbox-height: root.height / zoom_factor * 100 / 1px;
+            clip: true;
+            commands: path;
+            stroke: red;
+            stroke-width: 2px;
+        }
         
         Path {
             viewbox-width: root.width / zoom_factor * 100 / 1phx;

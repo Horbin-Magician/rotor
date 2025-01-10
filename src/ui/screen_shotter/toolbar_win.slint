@@ -1,11 +1,11 @@
 import { Button, Palette} from "std-widgets.slint";
-
 import { BaseWindow } from "../frame/windows.slint";
 import { SimpleBtn } from "../frame/buttons.slint";
 
 enum ToolType {
     Trigger,
     Clicker,
+    Division,
 }
 
 struct Tool_slint {
@@ -13,11 +13,13 @@ struct Tool_slint {
     icon: image,
     name: string,
     type: ToolType,
-    division: bool,
 }
 
 export component ToolbarWindow inherits BaseWindow {
     forward-focus: focus_scope;
+
+    pure callback focus_trick(bool, bool) -> bool;
+    always-on-top: focus_trick(pin_focused, toolbar_focused);
 
     public function change_theme(theme: int) { 
         if theme == 0 {
@@ -29,19 +31,18 @@ export component ToolbarWindow inherits BaseWindow {
         }
     }
 
-    pure callback focus_trick(bool, bool) -> bool;
-    always-on-top: focus_trick(pin_focused, toolbar_focused);
-
     in-out property <[Tool_slint]> tools: [
-        { id: 4, icon: @image-url("../assets/icon/draw.svg"), name: @tr("绘制"), type: ToolType.Trigger, division: false },
-        { id: 5, icon: @image-url("../assets/icon/return.svg"), name: @tr("回退"), type: ToolType.Clicker, division: true },
-        { id: 0, icon: @image-url("../assets/icon/min.svg"), name: @tr("最小化"), type: ToolType.Clicker, division: false },
-        { id: 3, icon: @image-url("../assets/icon/file.svg"), name: @tr("保存"), type: ToolType.Clicker, division: false },
-        { id: 2, icon: @image-url("../assets/icon/close.svg"), name: @tr("关闭"), type: ToolType.Clicker, division: false },
-        { id: 1, icon: @image-url("../assets/icon/right.svg"), name: @tr("复制"), type: ToolType.Clicker, division: false },
+        { id: 4, icon: @image-url("../assets/icon/draw.svg"), name: @tr("绘制"), type: ToolType.Trigger },
+        { id: 5, icon: @image-url("../assets/icon/return.svg"), name: @tr("回退"), type: ToolType.Clicker },
+        { type: ToolType.Division },
+        { id: 0, icon: @image-url("../assets/icon/min.svg"), name: @tr("最小化"), type: ToolType.Clicker },
+        { id: 3, icon: @image-url("../assets/icon/file.svg"), name: @tr("保存"), type: ToolType.Clicker },
+        { id: 2, icon: @image-url("../assets/icon/close.svg"), name: @tr("关闭"), type: ToolType.Clicker },
+        { id: 1, icon: @image-url("../assets/icon/right.svg"), name: @tr("复制"), type: ToolType.Clicker },
     ];
     
-    in-out property <int> tool_len: tools.length;
+    out property <int> divi_len: 1;
+    out property <int> tool_len: tools.length - divi_len;
     in-out property <bool> pin_focused: false;
     in-out property <bool> toolbar_focused: focus_scope.has-focus;
     in-out property <int> id: -1;
@@ -59,27 +60,24 @@ export component ToolbarWindow inherits BaseWindow {
             HorizontalLayout {
                 spacing: 0;
                 padding: 0;
-    
-                for tool in root.tools: Rectangle {
-                    HorizontalLayout {
-                        SimpleBtn{
-                            width: root.height;
-                            height: root.height;
-                            icon: tool.icon;
-                            active: root.active_name == tool.name;
-                            clicked => { 
-                                if tool.type == ToolType.Trigger {
-                                    root.active_name = root.active_name == tool.name ? "" : tool.name;
-                                }
-                                root.click(root.id, tool.id); 
+                for tool in root.tools: HorizontalLayout {
+                    if tool.type != ToolType.Division: SimpleBtn {
+                        width: root.height;
+                        height: root.height;
+                        icon: tool.icon;
+                        active: root.active_name == tool.name;
+                        clicked => { 
+                            if tool.type == ToolType.Trigger {
+                                root.active_name = root.active_name == tool.name ? "" : tool.name;
                             }
+                            root.click(root.id, tool.id); 
                         }
-                        if tool.division: HorizontalLayout {
-                            padding: 3px;
-                            Rectangle {
-                                width: 2px;
-                                background: Palette.border;
-                            }
+                    }
+                    if tool.type == ToolType.Division: HorizontalLayout {
+                        padding: 3px;
+                        Rectangle {
+                            width: 2px;
+                            background: Palette.border;
                         }
                     }
                 }
