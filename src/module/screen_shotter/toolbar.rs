@@ -93,11 +93,19 @@ impl Toolbar {
             toolbar_window.on_focus_trick(
                 move |pin_focused, toolbar_focused| {
                     if pin_focused || toolbar_focused { return true; }
-                    if let Some(toolbar_window) = toolbar_window_clone.upgrade() {
-                        toolbar_window.set_id(-1);
-                        toolbar_window.hide()
-                            .unwrap_or_else(|e| log_util::log_error(format!("toolbar_window hide error: {:?}", e)));
-                    }
+                    let toolbar_window_clone = toolbar_window_clone.clone();
+                    std::thread::spawn(move || { // a trick to avoid pin_focused do not change in time
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        toolbar_window_clone.upgrade_in_event_loop(
+                            move |toolbar_window| {
+                                if toolbar_window.get_pin_focused() == true { return; }
+                                toolbar_window.set_id(-1);
+                                toolbar_window.hide()
+                                    .unwrap_or_else(|e| log_util::log_error(format!("toolbar_window hide error: {:?}", e)));
+                            }
+                        )
+                    });
+
                     true
                 }
             );
