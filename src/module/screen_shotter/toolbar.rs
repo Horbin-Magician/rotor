@@ -30,7 +30,8 @@ impl Toolbar {
                 if let Some(toolbar_window) = toolbar_window_clone.upgrade() {
                     // trick: fix the bug of error scale_factor
                     let tool_len = toolbar_window.get_tool_len() as f32;
-                    let win_width = tool_len * 30. + 8.;
+                    let divi_len = toolbar_window.get_divi_len() as f32;
+                    let win_width = tool_len * 30. + divi_len * 8.;
                     let win_height = 30.;
                     toolbar_window.window().set_size(slint::LogicalSize::new( win_width, win_height));
 
