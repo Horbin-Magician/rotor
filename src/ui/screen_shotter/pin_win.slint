@@ -24,7 +24,6 @@ export component PinWindow inherits BaseWindow {
     in property <image> bac_image;
     in property <int> win_border_width: 1;
     in property <float> scale_factor;
-    in property <float> true_scale_factor;
 
     in property <int> img_x;
     in property <int> img_y;
@@ -87,9 +86,9 @@ export component PinWindow inherits BaseWindow {
                         root.win_move(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y, mouse_direction);
                     } else if root.state == PinState.DrawFree { // draw line
                         if root.drawing_path == "" {
-                            root.drawing_path = @tr("M {} {}", self.mouse-x / zoom_factor * 100 / 1px, self.mouse-y / zoom_factor * 100 / 1px);
+                            root.drawing_path = @tr("M {} {}", self.mouse-x / zoom_factor * 100 / 1px * scale_factor, self.mouse-y / zoom_factor * 100 / 1px * scale_factor);
                         } else {
-                            root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / zoom_factor * 100 / 1px, self.mouse-y / zoom_factor * 100 / 1px);
+                            root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / zoom_factor * 100 / 1px * scale_factor, self.mouse-y / zoom_factor * 100 / 1px * scale_factor);
                         }
                     }
                 }
@@ -174,21 +173,19 @@ export component PinWindow inherits BaseWindow {
 
         for path in root.pathes:
             Path {
-                viewbox-width: root.width / zoom_factor * 100 / 1px;
-                viewbox-height: root.height / zoom_factor * 100 / 1px;
-                clip: true;
+                viewbox-width: root.width / zoom_factor * 100 / 1phx;
+                viewbox-height: root.height / zoom_factor * 100 / 1phx;
                 commands: path;
                 stroke: red;
-                stroke-width: 2px;
+                stroke-width: 3phx;
             }
         
         Path {
-            viewbox-width: root.width / zoom_factor * 100 / 1px;
-            viewbox-height: root.height / zoom_factor * 100 / 1px;
-            clip: true;
+            viewbox-width: root.width / zoom_factor * 100 / 1phx;
+            viewbox-height: root.height / zoom_factor * 100 / 1phx;
             commands: drawing_path;
             stroke: red;
-            stroke-width: 2px;
+            stroke-width: 3phx;
         }
 
         show_zoom_timer := Timer {
