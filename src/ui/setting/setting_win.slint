@@ -181,15 +181,15 @@ export component SettingWindow inherits BaseWindow {
     in property <string> shortcut_pinwin_copy;
     in property <string> shortcut_pinwin_hide;
     in property <string> zoom_delta;
+    in property <bool> power_boot;
+    in property <int> language;
+    in property <int> theme;
+    in property <bool> block;
+    in property <float> progress: -1.0;
     
     in-out property <int> update_state: 0;
     in-out property <string> current_version;
     in-out property <string> latest_version;
-    in-out property <bool> power_boot;
-    in-out property <int> language;
-    in-out property <int> theme;
-    in-out property <bool> block;
-    in-out property <float> progress: -1.0;
 
     touch := TouchArea {
         pointer-event(event) => {

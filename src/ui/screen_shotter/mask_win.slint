@@ -6,30 +6,32 @@ struct Rect {
     width: int,
     height: int,
 }
+
+component TipText inherits Text {
+    horizontal-alignment: center;
+    color: white;
+}
+
 export component MaskWindow inherits BaseWindow {
-    forward-focus: focus_scope;
     title: "截图窗口";
+    forward-focus: focus_scope;
+    always-on-top: true;
+    width: bac_image.width * 1phx;
+    height: bac_image.height * 1phx;
     
     property <Point> mouse_down_pos;
     property <Point> mouse_move_pos;
-
     in property <image> bac_image;
     in property <bool> color_type_Dec: true;
     in property <string> color_str: "RGB:(???,???,???)";
-    
     in-out property <bool> detected: false;
     in-out property <Rect> select_rect;
     in-out property <bool> mouse_left_press;
 
-    width: bac_image.width * 1phx;
-    height: bac_image.height * 1phx;
-    
     callback shot();
     callback key_released(KeyEvent);
     callback new_pin_win(Rect);
     callback mouse_move(float, float, bool, bool);
-    
-    always-on-top: true;
 
     bac-img := Image {
         height: 100%;
@@ -50,7 +52,6 @@ export component MaskWindow inherits BaseWindow {
 
             touch_area := TouchArea {
                 mouse-cursor: crosshair;
-
                 pointer-event(event) => {
                     root.mouse_move(
                         self.mouse-x / 1px, self.mouse-y / 1px,
@@ -94,21 +95,17 @@ export component MaskWindow inherits BaseWindow {
             select_border := Rectangle {
                 border-color: rgb(0, 175, 255);
                 border-width: 1phx;
-
                 x: root.select-rect.x * 1phx - self.border-width;
                 y: root.select-rect.y* 1phx - self.border-width;
                 width: root.select-rect.width * 1phx + self.border-width * 2;
                 height: root.select-rect.height * 1phx + self.border-width * 2;
-
                 select_win := Image {
                     source: bac_image;
                     image-fit: fill;
-
                     x: select_border.border-width;
                     y: select_border.border-width;
                     width: root.select-rect.width * 1phx;
                     height: root.select-rect.height * 1phx;
-                    
                     source-clip-x: root.select-rect.x;
                     source-clip-y: root.select-rect.y;
                     source-clip-width: root.select-rect.width;
@@ -126,7 +123,6 @@ export component MaskWindow inherits BaseWindow {
         y: ((touch-area.mouse-y) + 25px + self.height > root.height) ? 
             min((touch-area.mouse-y) - 25px, root.height) - self.height : max(touch-area.mouse-y + 25px, 0);
         background: black.with_alpha(0.6);
-
         VerticalLayout {
             alignment: start;
             spacing: 2px;
@@ -135,7 +131,6 @@ export component MaskWindow inherits BaseWindow {
                 height: 90px;
                 border-width: 1px;
                 border-color: white;
-                
                 Image {
                     width: (parent.width) - 2px;
                     height: (parent.height) - 2px;
@@ -147,38 +142,14 @@ export component MaskWindow inherits BaseWindow {
                     source-clip-height: self.height / 4phx;
                 }
             }
-
-            Text {
-                horizontal-alignment: center;
-                text: touch_area.pressed ?
-                    @tr(
-                        "宽{}×高{}",
-                        root.select_rect.width, root.select_rect.height
-                    ) : @tr("左键划选区域");
-                color: white;
-            } // draw width and height
-
-            Text {
-                horizontal-alignment: center;
-                text: color_str;
-                color: white;
-            } // draw RGB color code
-
-            Text {
-                horizontal-alignment: center;
-                text: @tr("Z切换 C复制");
-                color: white;
-            } // draw tips
-
-            Text {
-                horizontal-alignment: center;
-                text: @tr("按住Ctrl智能选区");
-                color: white;
-            } // auto detect tips
+            TipText { text: touch_area.pressed ? @tr("宽{}×高{}", select_rect.width, select_rect.height) : @tr("左键划选区域"); }
+            TipText { text: color_str; }
+            TipText { text: @tr("Z切换 C复制"); }
+            TipText { text: @tr("按住Ctrl智能选区"); }
         }
 
         // draw cross curve
-        Path {
+        Path { // draw vertical lines
             x: 0;
             y: 0;
             width: 100%;
@@ -186,9 +157,8 @@ export component MaskWindow inherits BaseWindow {
             commands: "M 60 0 v 90";
             stroke: rgba(0, 180, 255, 0.7);
             stroke-width: 2px;
-        } // draw vertical lines
-
-        Path {
+        }
+        Path { // draw horizontal lines
             x: 0;
             y: 0;
             width: 100%;
@@ -196,6 +166,6 @@ export component MaskWindow inherits BaseWindow {
             commands: "M 0 45 L 120 45";
             stroke: rgba(0, 180, 255, 0.7);
             stroke-width: 2px;
-        } // draw horizontal lines
+        }
     }
 }
