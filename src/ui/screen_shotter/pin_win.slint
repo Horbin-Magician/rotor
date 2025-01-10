@@ -27,6 +27,8 @@ export component PinWindow inherits BaseWindow {
     in property <float> scale_factor;
     in property <int> img_x;
     in property <int> img_y;
+    in property <int> path_offset_x: 0;
+    in property <int> path_offset_y: 0;
     in-out property <int> img_width;
     in-out property <int> img_height;
     in-out property <int> zoom_factor: 100;     // neet to be divided by one hundred
@@ -74,9 +76,9 @@ export component PinWindow inherits BaseWindow {
                         root.win_move(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y, mouse_direction);
                     } else if root.state == PinState.DrawFree { // draw line
                         if root.drawing_path == "" {
-                            root.drawing_path = @tr("M {} {}", self.mouse-x / zoom_factor * 100 / 1px * scale_factor, self.mouse-y / zoom_factor * 100 / 1px * scale_factor);
+                            root.drawing_path = @tr("M {} {}", self.mouse-x / zoom_factor * 100 / 1px * scale_factor + path_offset_x, self.mouse-y / zoom_factor * 100 / 1px * scale_factor + path_offset_y);
                         } else {
-                            root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / zoom_factor * 100 / 1px * scale_factor, self.mouse-y / zoom_factor * 100 / 1px * scale_factor);
+                            root.drawing_path = @tr("{} L {} {}", root.drawing_path, self.mouse-x / zoom_factor * 100 / 1px * scale_factor + path_offset_x, self.mouse-y / zoom_factor * 100 / 1px * scale_factor + path_offset_y);
                         }
                     }
                 }
@@ -161,6 +163,8 @@ export component PinWindow inherits BaseWindow {
 
         for path in root.pathes:
             Path {
+                viewbox-x: path_offset_x;
+                viewbox-y: path_offset_y;
                 viewbox-width: root.width / zoom_factor * 100 / 1phx;
                 viewbox-height: root.height / zoom_factor * 100 / 1phx;
                 commands: path;
@@ -169,6 +173,8 @@ export component PinWindow inherits BaseWindow {
             }
         
         Path {
+            viewbox-x: path_offset_x;
+            viewbox-y: path_offset_y;
             viewbox-width: root.width / zoom_factor * 100 / 1phx;
             viewbox-height: root.height / zoom_factor * 100 / 1phx;
             commands: drawing_path;

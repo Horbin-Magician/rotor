@@ -141,6 +141,10 @@ impl PinWin {
                     pin_window_clone.set_img_width(img_width);
                     pin_window_clone.set_img_height(img_height);
                     pin_window_clone.window().set_position(slint::LogicalPosition::new(change_pos_x, change_pos_y));
+                    if mouse_direction != Direction::Center {
+                        pin_window_clone.set_path_offset_x(pin_window_clone.get_path_offset_x() + (delta_x / zoom_factor * scale_factor) as i32);
+                        pin_window_clone.set_path_offset_y(pin_window_clone.get_path_offset_y() + (delta_y / zoom_factor * scale_factor) as i32);
+                    }
                     let _ = message_sender_clone.send(ShotterMessage::Move(id));
                 }
             });
