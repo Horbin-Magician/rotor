@@ -1,5 +1,5 @@
 import { GroupBox, LineEdit, Palette, Slider } from "std-widgets.slint";
-import { Page, ShortcutEdit } from "page.slint";
+import { Page, ShortcutEdit, SettingNode, SettingGroup } from "page.slint";
 
 export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_save;
@@ -11,108 +11,61 @@ export component ScreenShotterSettingPage inherits Page {
     callback zoom_delta_changed(string);
     callback shortcut_changed(string, KeyEvent);
 
-    GroupBox {
+    SettingGroup {
         title: @tr("快捷键");
-        VerticalLayout {
-            padding-left: 20px;
-            padding-right: 50px;
-            spacing: 5px;
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("关闭贴图");
-                    height: 30px;
-                    vertical-alignment: center;
-                }
-
-                ShortcutEdit {
-                    shortcut_text: shortcut_pinwin_close;
-                    shortcut_changed(event) => {
-                        shortcut_changed("pinwin_close", event);
-                    }
+        SettingNode {
+            key: @tr("关闭贴图");
+            ShortcutEdit {
+                shortcut_text: shortcut_pinwin_close;
+                shortcut_changed(event) => {
+                    shortcut_changed("pinwin_close", event);
                 }
             }
+        }
 
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("复制贴图");
-                    height: 30px;
-                    width: 100px;
-                    vertical-alignment: center;
-                }
-
-                ShortcutEdit {
-                    shortcut_text: shortcut_pinwin_copy;
-                    shortcut_changed(event) => {
-                        shortcut_changed("pinwin_copy", event);
-                    }
+        SettingNode {
+            key: @tr("复制贴图");
+            ShortcutEdit {
+                shortcut_text: shortcut_pinwin_copy;
+                shortcut_changed(event) => {
+                    shortcut_changed("pinwin_copy", event);
                 }
             }
+        }
 
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("保存贴图");
-                    height: 30px;
-                    width: 100px;
-                    vertical-alignment: center;
-                }
-
-                ShortcutEdit {
-                    shortcut_text: shortcut_pinwin_save;
-                    shortcut_changed(event) => {
-                        shortcut_changed("pinwin_save", event);
-                    }
+        SettingNode {
+            key: @tr("保存贴图");
+            ShortcutEdit {
+                shortcut_text: shortcut_pinwin_save;
+                shortcut_changed(event) => {
+                    shortcut_changed("pinwin_save", event);
                 }
             }
+        }
 
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("隐藏贴图");
-                    height: 30px;
-                    width: 100px;
-                    vertical-alignment: center;
-                }
-
-                ShortcutEdit {
-                    shortcut_text: shortcut_pinwin_hide;
-                    shortcut_changed(event) => {
-                        shortcut_changed("pinwin_hide", event);
-                    }
+        SettingNode {
+            key: @tr("隐藏贴图");
+            ShortcutEdit {
+                shortcut_text: shortcut_pinwin_hide;
+                shortcut_changed(event) => {
+                    shortcut_changed("pinwin_hide", event);
                 }
             }
         }
     }
 
-    GroupBox {
+    SettingGroup {
         title: @tr("贴图");
-        VerticalLayout {
-            padding-left: 20px;
-            padding-right: 50px;
-            spacing: 5px;
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("缩放灵敏度");
-                    height: 30px;
-                    width: 100px;
-                    vertical-alignment: center;
-                }
-                zoom_slider := Slider {
-                    height: 30px;
-                    width: 150px;
-                    minimum: 1;
-                    maximum: 10;
-                    value: zoom_delta.to-float();
-                    changed => {
-                        self.value = self.value.round();
-                    }
-                    released => {
-                        zoom_delta_changed(self.value);
-                    }
-                }
+        SettingNode {
+            key: @tr("缩放灵敏度");
+            Slider {
+                width: 150px;
+                minimum: 1;
+                maximum: 10;
+                step: 1;
+                value: zoom_delta.to-float();
+                changed => { self.value = self.value.round(); }
+                released => { zoom_delta_changed(self.value); }
             }
         }
     }

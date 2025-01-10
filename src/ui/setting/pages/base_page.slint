@@ -1,14 +1,13 @@
 import { Button, ComboBox, Switch, GroupBox, LineEdit, Palette } from "std-widgets.slint";
-import { Page, ShortcutEdit } from "page.slint";
+import { Page, ShortcutEdit, SettingNode, SettingGroup } from "page.slint";
 
 export component BaseSettingPage inherits Page {
-    in-out property <bool> power_boot;
-    in-out property <int> language;
-    in-out property <int> theme;
-    in property <string> version: "unknown";
-
+    in property <bool> power_boot;
+    in property <int> language;
+    in property <int> theme;
     in property <string> shortcut_search;
     in property <string> shortcut_screenshot;
+    in property <string> version: "unknown";
 
     callback language_changed(int);
     callback theme_changed(int);
@@ -16,114 +15,72 @@ export component BaseSettingPage inherits Page {
     callback shortcut_changed(string, KeyEvent);
     callback check_update();
 
-    GroupBox {
+    SettingGroup {
         title: @tr("通用");
-        VerticalLayout {
-            padding-left: 20px;
-            padding-right: 50px;
-            spacing: 5px;
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("语言");
-                    height: 30px;
-                    vertical-alignment: center;
-                }
-                ComboBox {
-                    width: 150px;
-                    height: 30px;
-                    model: [@tr("跟随系统"), "简体中文", "English"];
-                    current-index <=> root.language;
-                    selected(string) => {
-                        root.language_changed(self.current-index);
-                    }
+        SettingNode {
+            key: @tr("语言");
+            ComboBox {
+                width: 150px;
+                height: 30px;
+                model: [@tr("跟随系统"), "简体中文", "English"];
+                current-index: root.language;
+                selected(string) => {
+                    root.language_changed(self.current-index);
                 }
             }
+        }
 
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("主题");
-                    height: 30px;
-                    vertical-alignment: center;
-                }
-                theme_box := ComboBox {
-                    width: 150px;
-                    height: 30px;
-                    model: [@tr("跟随系统"), @tr("暗色"), @tr("亮色")];
-                    current-index <=> root.theme;
-                    selected(string) => {
-                        root.theme_changed(self.current-index);
-                    }
+        SettingNode {
+            key: @tr("主题");
+            theme_box := ComboBox {
+                width: 150px;
+                height: 30px;
+                model: [@tr("跟随系统"), @tr("暗色"), @tr("亮色")];
+                current-index: root.theme;
+                selected(string) => {
+                    root.theme_changed(self.current-index);
                 }
             }
+        }
 
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("开机自启");
-                    height: 30px;
-                    vertical-alignment: center;
-                }
-                Switch { 
-                    height: 30px;
-                    checked <=> root.power_boot;
-                    toggled => {
-                        root.power_boot_changed(self.checked);
-                    }
+        SettingNode {
+            key: @tr("开机自启");
+            Switch { 
+                height: 30px;
+                checked: root.power_boot;
+                toggled => {
+                    root.power_boot_changed(self.checked);
                 }
             }
+        }
 
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("当前版本：{}", version);
-                    height: 30px;
-                    vertical-alignment: center;
-                }
-                check_update_btn := Button {
-                    text: @tr("检查更新");
-                    clicked => {root.check_update();}
-                }
+        SettingNode {
+            key: @tr("当前版本：{}", version);
+            check_update_btn := Button {
+                text: @tr("检查更新");
+                clicked => {root.check_update();}
             }
         }
     }
 
-    GroupBox {
+    SettingGroup {
         title: @tr("全局快捷键");
-        VerticalLayout {
-            padding-left: 20px;
-            padding-right: 50px;
-            spacing: 5px;
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("开始搜索");
-                    height: 30px;
-                    vertical-alignment: center;
-                }
-
-                ShortcutEdit {
-                    shortcut_text: root.shortcut_search;
-                    shortcut_changed(event) => {
-                        shortcut_changed("search", event);
-                    }
+        SettingNode {
+            key: @tr("开始搜索");
+            ShortcutEdit {
+                shortcut_text: root.shortcut_search;
+                shortcut_changed(event) => {
+                    shortcut_changed("search", event);
                 }
             }
+        }
 
-            HorizontalLayout {
-                alignment: space-between;
-                Text {
-                    text: @tr("开始截图");
-                    height: 30px;
-                    vertical-alignment: center;
-                }
-
-                ShortcutEdit {
-                    shortcut_text: root.shortcut_screenshot;
-                    shortcut_changed(event) => {
-                        shortcut_changed("screenshot", event);
-                    }
+        SettingNode {
+            key: @tr("开始截图");
+            ShortcutEdit {
+                shortcut_text: root.shortcut_screenshot;
+                shortcut_changed(event) => {
+                    shortcut_changed("screenshot", event);
                 }
             }
         }
