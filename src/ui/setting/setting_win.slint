@@ -265,11 +265,11 @@ export component SettingWindow inherits BaseWindow {
     }
 
     UpdateWindow {
-        update_state: root.update_state;
-        full_height: root.height;
-        full_width: root.width;
-        current_version: root.current_version;
-        latest_version: root.latest_version;
+        update_state <=> root.update_state;
+        full_height <=> root.height;
+        full_width <=> root.width;
+        current_version <=> root.current_version;
+        latest_version <=> root.latest_version;
         update() => { root.update(); }
     }
 }
