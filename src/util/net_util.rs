@@ -65,11 +65,10 @@ impl Updater {
             let asset = &version_info.assets[0];
             let download_url = &asset.browser_download_url;
             let zip_name = &asset.name;
-        
             let file_response = reqwest::blocking::Client::new()
                 .get(format!("https://mirror.ghproxy.com/{}", download_url)).send()
                 .or_else( |_| {
-                    reqwest::blocking::Client::new().get(format!("https://ghgo.xyz/{}", download_url)).send()
+                    reqwest::blocking::Client::new().get(format!("https://ghfast.top/{}", download_url)).send()
                 })
                 .or_else( |_| {
                     reqwest::blocking::Client::new().get(download_url).send()
