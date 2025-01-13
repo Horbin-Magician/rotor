@@ -13,11 +13,8 @@ component ToolButton inherits TouchArea {
     width: 50px;
     mouse-cursor: pointer;
 
-    in property <int> id;
     in property <image> icon;
-    callback open_with_admin(int);
 
-    clicked => { open_with_admin(id); }
     admin_btn_rc := Rectangle {
         admin_btn_img := Image {
             height: 20px;
@@ -97,15 +94,13 @@ component FileListItem inherits Rectangle {
                 width: 100px;
                 HorizontalLayout {
                     ToolButton {
-                        id: data.id;
                         icon: @image-url("../assets/icon/admin.svg");
-                        open_with_admin(id) => { open_with_admin(id); }
+                        clicked() => { open_with_admin(data.id); }
                     }
 
                     ToolButton {
-                        id: data.id;
                         icon: @image-url("../assets/icon/file.svg");
-                        open_with_admin(id) => { open_with_admin(id); }
+                        clicked() => { open_file_dir(data.id); }
                     }
                 }
             }
