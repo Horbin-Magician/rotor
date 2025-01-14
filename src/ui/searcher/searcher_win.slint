@@ -2,11 +2,19 @@ import { Button, LineEdit, ListView, Palette} from "std-widgets.slint";
 
 import { BaseWindow } from "../frame/windows.slint";
 
+enum SearchResultType {
+    File,
+    Application,
+    Folder,
+    System,
+}
+
 struct SearchResult_slint {
     id: int,
     icon: image,
     filename: string,
     path: string,
+    result_type: SearchResultType,
 }
 
 component ToolButton inherits TouchArea {
@@ -36,14 +44,14 @@ component FileListItem inherits Rectangle {
     
     in property <SearchResult_slint> data;
     in property <int> active_id;
-    callback item_click(PointerEvent, int);
-    callback open_with_admin(int);
-    callback open_file_dir(int);
+    callback item_click(PointerEvent);
+    callback open_with_admin();
+    callback open_file_dir();
 
     search_result_item_touch := TouchArea {
         mouse-cursor: pointer;
         pointer-event(event) => {
-            item_click(event, data.id);
+            item_click(event);
         }
 
         HorizontalLayout {
@@ -68,12 +76,28 @@ component FileListItem inherits Rectangle {
                     }
                 }
                 VerticalLayout {
-                    Text {
-                        height: 20px;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        text: data.filename;
-                        font-size: 16px;
+                    HorizontalLayout {
+                        alignment: start;
+                        Text {
+                            height: 20px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            text: data.filename;
+                            font-size: 16px;
+                        }
+                        Rectangle { width: 5px; } // for space
+                        if data.result_type == SearchResultType.File: Rectangle {
+                            height: 20px;
+                            width: 40px;
+                            background: Palette.border;
+                            border-radius: 10px;
+                            Text {
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                                text: @tr("文件");
+                                font-size: 12px;
+                            }
+                        }
                     }
                     Text {
                         height: 30px;
@@ -92,15 +116,15 @@ component FileListItem inherits Rectangle {
 
             item_menu := Rectangle {
                 width: 100px;
-                HorizontalLayout {
+                if data.result_type == SearchResultType.File: HorizontalLayout{
                     ToolButton {
                         icon: @image-url("../assets/icon/admin.svg");
-                        clicked() => { open_with_admin(data.id); }
+                        clicked() => { open_with_admin(); }
                     }
-
+                
                     ToolButton {
                         icon: @image-url("../assets/icon/file.svg");
-                        clicked() => { open_file_dir(data.id); }
+                        clicked() => { open_file_dir(); }
                     }
                 }
             }
@@ -199,9 +223,9 @@ export component SearchWindow inherits BaseWindow {
                     for data in root.search_result: FileListItem {
                         data: data;
                         active_id: root.active_id;
-                        item_click(event, id) => { root.item_click(event, id); }
-                        open_with_admin(id) => { root.open_with_admin(id); }
-                        open_file_dir(id) => { root.open_file_dir(id); }
+                        item_click(event) => { root.item_click(event, data.id); }
+                        open_with_admin() => { root.open_with_admin(data.id); }
+                        open_file_dir() => { root.open_file_dir(data.id); }
                     }
                 }
             }

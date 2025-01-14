@@ -64,6 +64,10 @@ msgctxt "SearchWindow"
 msgid "请输入需要搜索的内容"
 msgstr "Please enter what you want to search"
 
+msgctxt "FileListItem"
+msgid "文件"
+msgstr "File"
+
 msgctxt "BaseSettingPage"
 msgid "通用"
 msgstr "General"
