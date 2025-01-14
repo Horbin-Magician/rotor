@@ -7,7 +7,7 @@ use windows::Win32::Foundation;
 use slint::{Model, VecModel};
 
 use crate::util::{file_util, log_util};
-use crate::ui::SearchResult_slint;
+use crate::ui::{SearchResult_slint, SearchResultType};
 use super::{SearchWindow, SearcherMessage};
 use super::volume::{Volume, SearchResultItem};
 
@@ -167,6 +167,7 @@ impl FileData {
                         icon,
                         filename: slint::SharedString::from(item.file_name.clone()),
                         path: slint::SharedString::from(item.path.clone()),
+                        result_type: SearchResultType::File,
                     }
                 );
             }
