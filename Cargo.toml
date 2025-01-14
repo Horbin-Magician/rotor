@@ -10,11 +10,11 @@ build = "build.rs"
 
 [build-dependencies]
 embed-resource = "2.4.3"
-slint-build = "1.9.1"
+slint-build = "1.9.2"
 
 [dependencies]
-slint = { version = "1.9.1", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia"]}
-i-slint-backend-winit = "1.9.1"
+slint = { version = "1.9.2", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia"]}
+i-slint-backend-winit = "1.9.2"
 raw-window-handle = "0.6.2"
 tray-icon = "0.17.0"
 winreg = "0.52.0"
