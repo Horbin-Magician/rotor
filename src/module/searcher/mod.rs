@@ -105,12 +105,28 @@ impl Searcher {
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Init);
 
-        { // add result
+        { // add query change hander
+            let searcher_msg_sender_clone = searcher_msg_sender.clone();
+            let search_result_model_clone = search_result_model.clone();
+            search_win.on_query_change(move |query| {
+                if query.is_empty() { search_result_model_clone.set_vec(vec![]); }
+                let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(query.to_string()));
+            });
+        }
+
+        { // add focus change hander
             let search_win_clone = search_win.as_weak();
             let searcher_msg_sender_clone = searcher_msg_sender.clone();
-            search_win.on_add_result(move || {
-                if let Some(search_win_clone) = search_win_clone.upgrade() {
-                    let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(search_win_clone.get_query().to_string()));
+            search_win.on_focus_change(move |has_focus| {
+                if let Some(search_win) = search_win_clone.upgrade() {
+                    if !has_focus { 
+                        if search_win.get_query() != "" {
+                            search_win.set_query(slint::SharedString::from(""));
+                            search_win.invoke_query_change(slint::SharedString::from(""));
+                        }
+                        let _ = search_win.hide();
+                        let _ = searcher_msg_sender_clone.send(SearcherMessage::Release);
+                    }
                 }
             });
         }
@@ -160,32 +176,6 @@ impl Searcher {
                     },
                     None => { log_util::log_error("Failed to upgrade search_win in key event hander".to_string()); }
                 }
-            });
-        }
-
-        { // add focus change hander
-            let search_win_clone = search_win.as_weak();
-            let searcher_msg_sender_clone = searcher_msg_sender.clone();
-            search_win.on_focus_change(move |has_focus| {
-                if let Some(search_win) = search_win_clone.upgrade() {
-                    if !has_focus { 
-                        if search_win.get_query() != "" {
-                            search_win.set_query(slint::SharedString::from(""));
-                            search_win.invoke_query_change(slint::SharedString::from(""));
-                        }
-                        let _ = search_win.hide();
-                        let _ = searcher_msg_sender_clone.send(SearcherMessage::Release);
-                    }
-                }
-            });
-        }
-        
-        { // add query change hander
-            let searcher_msg_sender_clone = searcher_msg_sender.clone();
-            let search_result_model_clone = search_result_model.clone();
-            search_win.on_query_change(move |query| {
-                if query.is_empty() { search_result_model_clone.set_vec(vec![]); }
-                let _ = searcher_msg_sender_clone.send(SearcherMessage::Find(query.to_string()));
             });
         }
 
