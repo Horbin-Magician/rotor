@@ -201,10 +201,7 @@ export component SearchWindow inherits BaseWindow {
                     changed has-focus => { root.focus_change(self.has-focus); }
                     height: 60px;
                     placeholder-text: @tr("请输入需要搜索的内容");
-                    edited(str) => {
-                        root.query_change(str);
-                    }
-
+                    edited(str) => { root.query_change(str); }
                     key-pressed(event) => {
                         root.key_pressed(event);
                         reject
@@ -215,9 +212,9 @@ export component SearchWindow inherits BaseWindow {
                     padding: 0;
                     height: (search_result.length > 7 ? 7 : search_result.length) * 60px;
                     scrolled => {
-                        if ((self.height - self.viewport-y) / 60px) == search_result.length &&
-                            Math.mod(search_result.length, 20) == 0
-                        { root.add_result(); }
+                        if ((self.height - self.viewport-y) / 60px) == search_result.length
+                            && Math.mod(search_result.length, 20) == 0
+                        { root.query_change(root.query); }
                     }
 
                     for data in root.search_result: FileListItem {
