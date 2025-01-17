@@ -318,7 +318,7 @@ impl PinWin {
 
         { // code for key press
             let pin_window_clone = pin_window.as_weak();
-            pin_window.on_key_release(move |shortcut| {
+            pin_window.on_key_pressed(move |shortcut| {
                 //TODO: handle F1-F12
                 let mut text = shortcut.text.to_string();
                 if text == "\u{1b}" { text = "Esc".into(); } // escape
@@ -326,7 +326,7 @@ impl PinWin {
                 else if text == "\n" { text = "Enter".into(); } // enter
                 else if text.as_str() > "\u{1f}" && text.as_str() < "\u{7f}" { text = text.to_uppercase(); } // char
                 else { return; } // exclude other control string
-                
+
                 let mut shortcut_str = String::new();
                 if shortcut.modifiers.control { shortcut_str += "Ctrl+"; }
                 if shortcut.modifiers.shift { shortcut_str += "Shift+"; }
