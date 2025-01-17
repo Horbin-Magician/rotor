@@ -51,7 +51,7 @@ export component PinWindow inherits BaseWindow {
     callback trigger_draw();
     callback return_draw();
     callback win_move(length, length, Direction);
-    callback key_release(KeyEvent);
+    callback key_pressed(KeyEvent);
     callback draw_path(string);
     callback update_record();
 
@@ -154,8 +154,8 @@ export component PinWindow inherits BaseWindow {
                 }
 
                 key_focus := FocusScope {
-                    key-released(event) => {
-                        key_release(event);
+                    key-pressed(event) => {
+                        key_pressed(event);
                         accept;
                     }
                 }
