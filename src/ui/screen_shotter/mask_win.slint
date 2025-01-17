@@ -43,9 +43,7 @@ export component MaskWindow inherits BaseWindow {
             background: black.with_alpha(0.5);
             focus_scope := FocusScope {
                 key-released(event) => {
-                    if event.modifiers.shift == false {
-                        root.key_released(event);
-                    }
+                    root.key_released(event);
                     accept
                 }
             }
