@@ -1,5 +1,11 @@
-import { GroupBox, LineEdit, Palette, Slider } from "std-widgets.slint";
+import { GroupBox, LineEdit, Palette, Slider, ComboBox, Button, StandardListView } from "std-widgets.slint";
 import { Page, ShortcutEdit, SettingNode, SettingGroup } from "page.slint";
+import { SimpleBtn, ButtonType } from "../../frame/buttons.slint";
+
+struct Workplace_slint {
+    id: int,
+    name: string,
+}
 
 export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_save;
@@ -7,6 +13,7 @@ export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_copy;
     in property <string> shortcut_pinwin_hide;
     in property <string> zoom_delta;
+    in property <[Workplace_slint]> workplaces;
 
     callback zoom_delta_changed(string);
     callback shortcut_changed(string, KeyEvent);
@@ -66,6 +73,90 @@ export component ScreenShotterSettingPage inherits Page {
                 value: zoom_delta.to-float();
                 changed => { self.value = self.value.round(); }
                 released => { zoom_delta_changed(self.value); }
+            }
+        }
+        SettingNode {
+            key: @tr("工作区");
+            Rectangle {
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: Palette.alternate-background;
+                clip: true;
+                HorizontalLayout {
+                    width: 150px;
+                    height: 30px;
+                    Text {
+                        width: 100px;
+                        text: @tr("默认工作区");
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                    SimpleBtn {
+                        width: 50px;
+                        icon: @image-url("../../assets/icon/switch.svg");
+                        clicked => {
+                            workplace_popup.show();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    workplace_popup := PopupWindow {
+        width: 200px;
+        height: 200px;
+        x: (root.width - self.width) * 0.5;
+        y: (root.height - self.height) * 0.5;
+        close-policy: close-on-click-outside;
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: Palette.background;
+            border-radius: 5px;
+            border-width: 1px;
+            border-color: Palette.alternate-background;
+        }
+
+        VerticalLayout {
+            StandardListView {
+                model: [{ text: "默认工作区" }, { text: "工作区1" }, { text: "工作区2" }];
+                // for data in [
+                //     { text: "默认工作区"},
+                //     { text: "工作区1"},
+                //     { text: "工作区2"},
+                //     { text: "工作区3"},
+                // ] : Rectangle {
+                //     height: 30px;
+                //     width: parent.width;
+                //     Text {
+                //         text: data.text;
+                //     }
+                // }
+            }
+            HorizontalLayout {
+                SimpleBtn {
+                    border-width: 1px;
+                    border-color: Palette.alternate-background;
+                    type: ButtonType.Text;
+                    text: @tr("新增");
+                    height: 30px;
+                    clicked => {
+                        // TODO
+                    }
+                }
+                SimpleBtn {
+                    border-width: 1px;
+                    border-color: Palette.alternate-background;
+                    type: ButtonType.Text;
+                    text: @tr("删除");
+                    hover_color: red;
+                    height: 30px;
+                    clicked => {
+                        // TODO
+                    }
+                }
             }
         }
     }

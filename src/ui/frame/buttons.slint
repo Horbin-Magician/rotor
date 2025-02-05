@@ -6,17 +6,17 @@ export enum ButtonType {
 }
 
 export component SimpleBtn inherits Rectangle {
-    background: transparent;
-    animate background { duration: 150ms; }
-
     in property <image> icon;
     in property<string> text;
     in property <ButtonType> type: ButtonType.Icon;
     in property <color> hover_color: Palette.accent-background;
     in property <color> active_color: Palette.accent-background;
     in property <bool> active: false;
-    
+
     callback clicked <=> touch.clicked;
+
+    background: transparent;
+    animate background { duration: 150ms; }
 
     touch := TouchArea {
         if type == ButtonType.Icon: Image {
