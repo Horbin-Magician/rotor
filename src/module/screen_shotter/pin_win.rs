@@ -34,8 +34,8 @@ impl PinWin {
             pin_window.window().set_position(slint::PhysicalPosition::new(rect.x + offset_x - border_width, rect.y + offset_y - border_width));
             
             pin_window.set_bac_image(slint::Image::from_rgba8(img));
-            pin_window.set_img_x(rect.x);
-            pin_window.set_img_y(rect.y);
+            pin_window.set_img_x(rect.x as f32);
+            pin_window.set_img_y(rect.y as f32);
             pin_window.set_img_width(rect.width);
             pin_window.set_img_height(rect.height);
             
@@ -54,8 +54,10 @@ impl PinWin {
                     let now_pos = pin_window_clone.window().position().to_logical(pin_window_clone.window().scale_factor());
                     let mut img_x = pin_window_clone.get_img_x();
                     let mut img_y = pin_window_clone.get_img_y();
-                    let mut img_width = pin_window_clone.get_img_width();
-                    let mut img_height = pin_window_clone.get_img_height();
+                    let img_width = pin_window_clone.get_img_width();
+                    let img_height = pin_window_clone.get_img_height();
+                    let delta_img_width = pin_window_clone.get_delta_img_width();
+                    let delta_img_height = pin_window_clone.get_delta_img_height();
                     let zoom_factor = pin_window_clone.get_zoom_factor() as f32 / 100.;
                     let scale_factor = pin_window_clone.window().scale_factor();
                     
@@ -78,57 +80,59 @@ impl PinWin {
                         },
                         Direction::Upper => {
                             if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
-                            img_y += (delta_y / zoom_factor * scale_factor) as i32;
-                            img_height -= (delta_y / zoom_factor * scale_factor) as i32;
+                            img_y += delta_y / zoom_factor * scale_factor;
+                            pin_window_clone.set_delta_img_height(delta_img_height - delta_y / zoom_factor * scale_factor);
                             delta_x = 0.;
                         },
                         Direction::Lower => {
                             if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
-                            pin_window_clone.set_delta_img_height((delta_y / zoom_factor * scale_factor) as i32);
+                            pin_window_clone.set_delta_img_height(delta_y / zoom_factor * scale_factor);
                             delta_x = 0.;
                             delta_y = 0.;
                         },
                         Direction::Left => {
                             if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
-                            img_x += (delta_x / zoom_factor * scale_factor) as i32;
-                            img_width -= (delta_x / zoom_factor * scale_factor) as i32;
+                            img_x += delta_x / zoom_factor * scale_factor;
+                            pin_window_clone.set_delta_img_width(delta_img_width - delta_x / zoom_factor * scale_factor);
+                            println!("delta_x: {}", delta_x);
                             delta_y = 0.;
                         },
                         Direction::Right => {
                             if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
-                            pin_window_clone.set_delta_img_width((delta_x / zoom_factor * scale_factor) as i32);
+                            println!("delta_x: {}", delta_x);
+                            pin_window_clone.set_delta_img_width(delta_x / zoom_factor * scale_factor);
                             delta_x = 0.;
                             delta_y = 0.;
                         },
                         Direction::LeftUpper => {
                             if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
                             if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
-                            img_x += (delta_x / zoom_factor * scale_factor) as i32;
-                            img_y += (delta_y / zoom_factor * scale_factor) as i32;
-                            img_width -= (delta_x / zoom_factor * scale_factor) as i32;
-                            img_height -= (delta_y / zoom_factor * scale_factor) as i32;
+                            img_x += delta_x / zoom_factor * scale_factor;
+                            img_y += delta_y / zoom_factor * scale_factor;
+                            pin_window_clone.set_delta_img_height(delta_img_height - delta_y / zoom_factor * scale_factor);
+                            pin_window_clone.set_delta_img_width(delta_img_width - delta_x / zoom_factor * scale_factor);
                         },
                         Direction::LeftLower => {
                             if (img_width_px - delta_x) < limit_px { delta_x = img_width_px - limit_px; }
                             if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
-                            img_x += (delta_x / zoom_factor * scale_factor) as i32;
-                            img_width -= (delta_x / zoom_factor * scale_factor) as i32;
-                            pin_window_clone.set_delta_img_height((delta_y / zoom_factor * scale_factor) as i32);
+                            img_x += delta_x / zoom_factor * scale_factor;
+                            pin_window_clone.set_delta_img_width(delta_img_width - delta_x / zoom_factor * scale_factor);
+                            pin_window_clone.set_delta_img_height(delta_y / zoom_factor * scale_factor);
                             delta_y = 0.;
                         },
                         Direction::RightUpper => {
                             if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
                             if (img_height_px - delta_y) < limit_px { delta_y = img_height_px - limit_px; }
-                            img_y += (delta_y / zoom_factor * scale_factor) as i32;
-                            pin_window_clone.set_delta_img_width((delta_x / zoom_factor * scale_factor) as i32);
-                            img_height -= (delta_y / zoom_factor * scale_factor) as i32;
+                            img_y += delta_y / zoom_factor * scale_factor;
+                            pin_window_clone.set_delta_img_width(delta_x / zoom_factor * scale_factor);
+                            pin_window_clone.set_delta_img_height(delta_img_height - delta_y / zoom_factor * scale_factor);
                             delta_x = 0.;
                         },
                         Direction::RightLower => {
                             if (img_width_px + delta_x) < limit_px { delta_x = limit_px - img_width_px; }
                             if (img_height_px + delta_y) < limit_px { delta_y = limit_px - img_height_px; }
-                            pin_window_clone.set_delta_img_width((delta_x / zoom_factor * scale_factor) as i32);
-                            pin_window_clone.set_delta_img_height((delta_y / zoom_factor * scale_factor) as i32);
+                            pin_window_clone.set_delta_img_width(delta_x / zoom_factor * scale_factor);
+                            pin_window_clone.set_delta_img_height(delta_y / zoom_factor * scale_factor);
                             delta_x = 0.;
                             delta_y = 0.;
                         },
@@ -138,8 +142,6 @@ impl PinWin {
                     let change_pos_y = now_pos.y + delta_y;
                     pin_window_clone.set_img_x(img_x);
                     pin_window_clone.set_img_y(img_y);
-                    pin_window_clone.set_img_width(img_width);
-                    pin_window_clone.set_img_height(img_height);
                     pin_window_clone.window().set_position(slint::LogicalPosition::new(change_pos_x, change_pos_y));
                     if mouse_direction != Direction::Center {
                         pin_window_clone.set_path_offset_x(pin_window_clone.get_path_offset_x() + (delta_x / zoom_factor * scale_factor) as i32);

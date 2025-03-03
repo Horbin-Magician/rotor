@@ -406,7 +406,7 @@ impl ScreenShotter{
             .update_shotter(id, shotter_record::ShotterConfig{
                 pos_x: position.x,
                 pos_y: position.y,
-                rect: (rect_x, rect_y, rect_width, rect_height),
+                rect: (rect_x as i32, rect_y as i32, rect_width, rect_height),
                 zoom_factor: pin_win.get_zoom_factor(),
             }).unwrap_or_else(|e| log_util::log_error(format!("Error in update_shotter: {:?}", e)));
     }

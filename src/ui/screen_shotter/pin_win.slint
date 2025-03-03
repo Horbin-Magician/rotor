@@ -25,17 +25,16 @@ export component PinWindow inherits BaseWindow {
     in property <image> bac_image;
     in property <int> win_border_width: 1;
     in property <float> scale_factor;
-    in property <float> true_scale_factor;
-    in property <int> img_x;
-    in property <int> img_y;
+    in property <float> img_x;
+    in property <float> img_y;
     in property <int> path_offset_x: 0;
     in property <int> path_offset_y: 0;
     in-out property <int> img_width;
     in-out property <int> img_height;
     in-out property <int> zoom_factor: 100;     // neet to be divided by one hundred
     in-out property <int> zoom_delta: 2; // neet to be divided by one hundred
-    in-out property <int> delta_img_width: 0;
-    in-out property <int> delta_img_height: 0;
+    in-out property <float> delta_img_width: 0;
+    in-out property <float> delta_img_height: 0;
     in-out property <length> win_width: (((img_width + delta_img_width) * zoom_factor / 100) + win_border_width * 2) * 1phx;
     in-out property <length> win_height: (((img_height + delta_img_height) * zoom_factor / 100) + win_border_width * 2) * 1phx;
     in-out property <bool> is_stick_x: false;
