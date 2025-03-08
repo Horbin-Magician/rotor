@@ -161,13 +161,22 @@ impl FileData {
                 let icon = 
                     file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
                         .unwrap_or_default();
+
+                let mut result_type = SearchResultType::File;
+                let mut showname = slint::SharedString::from(item.file_name.clone());
+                if let Some(stripped) = item.file_name.strip_suffix(".lnk") {
+                    result_type = SearchResultType::Application;
+                    showname = slint::SharedString::from(stripped);
+                }
+
                 result_list.push(
                     SearchResult_slint { 
                         id: id as i32,
                         icon,
+                        showname,
                         filename: slint::SharedString::from(item.file_name.clone()),
                         path: slint::SharedString::from(item.path.clone()),
-                        result_type: SearchResultType::File,
+                        result_type,
                     }
                 );
             }
