@@ -14,7 +14,7 @@ export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_hide;
     in property <string> zoom_delta;
     in property <int> current_workspace;
-    // in property <[Workplace_slint]> workspaces;
+    in-out property <[StandardListViewItem]> workspaces: [{text: "工作区1" }, { text: "工作区2" }, { text: "工作区3" }, { text: "工作区4" }, { text: "工作区5" }];
 
     callback zoom_delta_changed(string);
     callback shortcut_changed(string, KeyEvent);
@@ -89,7 +89,7 @@ export component ScreenShotterSettingPage inherits Page {
                     height: 30px;
                     Text {
                         width: 100px;
-                        text: @tr("默认工作区");
+                        text: root.workspaces[root.current_workspace].text;
                         vertical-alignment: center;
                         horizontal-alignment: center;
                     }
@@ -124,7 +124,7 @@ export component ScreenShotterSettingPage inherits Page {
         VerticalLayout {
             StandardListView {
                 current-item: root.current_workspace;
-                model: [{text: "工作区1" }, { text: "工作区2" }, { text: "工作区3" }, { text: "工作区4" }, { text: "工作区5" }];
+                model: root.workspaces;
                 current-item-changed(index) => {
                     root.workspace_changed(index);
                 }
