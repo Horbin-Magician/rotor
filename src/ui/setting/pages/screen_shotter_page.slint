@@ -2,10 +2,10 @@ import { GroupBox, LineEdit, Palette, Slider, ComboBox, Button, StandardListView
 import { Page, ShortcutEdit, SettingNode, SettingGroup } from "page.slint";
 import { SimpleBtn, ButtonType } from "../../frame/buttons.slint";
 
-struct Workplace_slint {
-    id: int,
-    name: string,
-}
+// struct Workspaces_slint {
+//     id: int,
+//     name: string,
+// }
 
 export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_save;
@@ -13,10 +13,12 @@ export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_copy;
     in property <string> shortcut_pinwin_hide;
     in property <string> zoom_delta;
-    in property <[Workplace_slint]> workplaces;
+    in property <int> current_workspace;
+    // in property <[Workplace_slint]> workspaces;
 
     callback zoom_delta_changed(string);
     callback shortcut_changed(string, KeyEvent);
+    callback workspace_changed(int);
 
     SettingGroup {
         title: @tr("快捷键");
@@ -116,48 +118,42 @@ export component ScreenShotterSettingPage inherits Page {
             background: Palette.background;
             border-radius: 5px;
             border-width: 1px;
-            border-color: Palette.alternate-background;
+            border-color: Palette.accent-background;
         }
 
         VerticalLayout {
             StandardListView {
-                model: [{ text: "默认工作区" }, { text: "工作区1" }, { text: "工作区2" }];
-                // for data in [
-                //     { text: "默认工作区"},
-                //     { text: "工作区1"},
-                //     { text: "工作区2"},
-                //     { text: "工作区3"},
-                // ] : Rectangle {
-                //     height: 30px;
-                //     width: parent.width;
-                //     Text {
-                //         text: data.text;
-                //     }
-                // }
-            }
-            HorizontalLayout {
-                SimpleBtn {
-                    border-width: 1px;
-                    border-color: Palette.alternate-background;
-                    type: ButtonType.Text;
-                    text: @tr("新增");
-                    height: 30px;
-                    clicked => {
-                        // TODO
-                    }
-                }
-                SimpleBtn {
-                    border-width: 1px;
-                    border-color: Palette.alternate-background;
-                    type: ButtonType.Text;
-                    text: @tr("删除");
-                    hover_color: red;
-                    height: 30px;
-                    clicked => {
-                        // TODO
-                    }
+                current-item: root.current_workspace;
+                model: [{text: "工作区1" }, { text: "工作区2" }, { text: "工作区3" }, { text: "工作区4" }, { text: "工作区5" }];
+                current-item-changed(index) => {
+                    root.workspace_changed(index);
                 }
             }
+            // HorizontalLayout {
+            //     padding: 5px;
+            //     spacing: 5px;
+            //     SimpleBtn {
+            //         border-width: 1px;
+            //         border-color: Palette.alternate-background;
+            //         type: ButtonType.Text;
+            //         text: @tr("新增");
+            //         height: 30px;
+            //         clicked => {
+            //             // TODO
+            //         }
+            //     }
+            //     SimpleBtn {
+            //         border-width: 1px;
+            //         border-color: Palette.alternate-background;
+            //         type: ButtonType.Text;
+            //         text: @tr("删除");
+            //         hover_color: red;
+            //         height: 30px;
+            //         clicked => {
+            //             // TODO
+            //         }
+            //     }
+            // }
         }
     }
 }
