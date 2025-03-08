@@ -37,6 +37,7 @@ pub enum ShotterMessage {
     HideToolbar(bool),
     OperatePin(u32, PinOperation),
     UpdateRecord(u32),
+    RestorePinWins,
 }
 
 pub struct ScreenShotter {
@@ -47,7 +48,6 @@ pub struct ScreenShotter {
     pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
     _bac_rects: Arc<Mutex<Vec<(u32, u32, u32, u32)>>>,
     _bac_buffer_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
-    message_sender: Sender<ShotterMessage>,
 }
 
 impl Module for ScreenShotter {
@@ -108,6 +108,13 @@ impl ScreenShotter{
         let pin_wins: Arc<Mutex<HashMap<u32, PinWin>>> =  Arc::new(Mutex::new(HashMap::new()));
         let pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>> =  Arc::new(Mutex::new(HashMap::new()));
         let (message_sender, message_reciever) = mpsc::channel::<ShotterMessage>();
+
+        // set message_sender to AppConfig
+        let mut app_config = AppConfig::global()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        app_config.set_shotter_msg_sender(message_sender.clone());
+        drop(app_config);
 
         let toolbar = Toolbar::new(message_sender.clone())?;
 
@@ -278,10 +285,26 @@ impl ScreenShotter{
             });
         }
 
+        { // code for new pin_win
+            let pin_windows_clone = pin_windows.clone();
+            let pin_wins_clone = pin_wins.clone();
+            let max_pin_win_id_clone = max_pin_win_id.clone();
+            let message_sender_clone = message_sender.clone();
+            mask_win.on_restore_pin_wins(move || {
+                ScreenShotter::restore_pin_wins(
+                    max_pin_win_id_clone.clone(),
+                    message_sender_clone.clone(),
+                    pin_windows_clone.clone(),
+                    pin_wins_clone.clone()
+                ).unwrap_or_else(|e| log_util::log_error(format!("Error in restore_pin_wins: {:?}", e)));
+            });
+        }
+
         // event listen
         let pin_windows_clone = pin_windows.clone();
         // let pin_wins_clone = pin_wins.clone();
         let toolbar_window_clone: slint::Weak<ToolbarWindow> = toolbar.get_window();
+        let mask_win_clone = mask_win.as_weak();
         std::thread::spawn(move || {
             loop {
                 if let Ok(message) = message_reciever.recv() {
@@ -297,8 +320,6 @@ impl ScreenShotter{
                             //     .unwrap_or_else(|poisoned| poisoned.into_inner())
                             //     .remove(&id); // TODO: clear pin_wins
                             
-                            ShotterRecord::del_record_img(id)
-                                .unwrap_or_else(|e| log_util::log_error(format!("Error in del_record_img: {:?}", e)));
                             ShotterRecord::global().lock()
                                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                                 .del_shotter(id)
@@ -373,12 +394,20 @@ impl ScreenShotter{
                                 }).unwrap_or_else(|e| log_util::log_error(format!("Error in update pin_win record: {:?}", e)));
                             }
                         },
+                        ShotterMessage::RestorePinWins => {
+                            mask_win_clone.upgrade_in_event_loop(move |win| {
+                                win.invoke_restore_pin_wins();
+                            }).unwrap_or_else(|e| log_util::log_error(format!("Error in RestorePinWins: {:?}", e)));
+                        }, 
                     }
                 }
             }
         });
         
-        let screen_shotter = ScreenShotter{
+        message_sender.send(ShotterMessage::RestorePinWins)
+            .unwrap_or_else(|e| log_util::log_error(format!("Error in send RestorePinWins: {:?}", e)));
+
+        Ok(ScreenShotter{
             _mask_win: mask_win,
             _toolbar: toolbar,
             max_pin_win_id,
@@ -386,13 +415,7 @@ impl ScreenShotter{
             pin_wins,
             _bac_rects: bac_rects,
             _bac_buffer_rc: bac_buffer_rc,
-            message_sender,
-        };
-        screen_shotter
-            .restore_pin_wins()
-            .unwrap_or_else(|e| log_util::log_error(format!("Error in restore_pin_wins: {:?}", e)));
-
-        Ok(screen_shotter)
+        })
     }
     
     fn update_pin_win_record(id:u32, pin_win: &PinWindow) {
@@ -411,66 +434,86 @@ impl ScreenShotter{
             }).unwrap_or_else(|e| log_util::log_error(format!("Error in update_shotter: {:?}", e)));
     }
 
-    fn restore_pin_wins(&self) -> Result<(), Box<dyn Error>> {
+    fn restore_pin_wins(
+        max_pin_win_id: Arc<Mutex<u32>>,
+        message_sender: Sender<ShotterMessage>,
+        pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>,
+        pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
+    ) -> Result<(), Box<dyn Error>> {
+        // clear all pin win
+        {
+            let mut pin_windows = pin_windows.lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            for (_, pin_win) in pin_windows.iter() {
+                if let Some(pin_win) = pin_win.upgrade() {
+                    pin_win.window().hide().unwrap();
+                }
+            }
+            pin_windows.clear();
+            pin_wins.lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clear();
+        }
+        let mut max_id = 0;
+
         let mut record = ShotterRecord::global().lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let shotters = record.get_shotters();
 
-        let mut max_id = *self.max_pin_win_id.lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
         let mut invalid_shotter_ids = Vec::new();
-        for (id, shotter) in shotters {
-            let id = id.parse::<u32>()?;
-            if (id+1) > max_id { max_id = id+1; }
 
-            let img_buffer;
-            if let Ok(img) = ShotterRecord::load_record_img(id) {
-                img_buffer = img;
-            } else {
-                invalid_shotter_ids.push(id);
-                log_util::log_error(format!("Error in restore_pin_wins: can not load img, id: {}", id));
-                continue;
-            }
-
-            let message_sender_clone = self.message_sender.clone();
-            let rect = Rect{x: shotter.rect.0, y: shotter.rect.1, width: shotter.rect.2, height: shotter.rect.3};
-
-            let mut pos_x = 0;
-            let mut pos_y = 0;
-            if let Ok(_) = Monitor::from_point(shotter.pos_x, shotter.pos_y) {
-                pos_x = shotter.pos_x;
-                pos_y = shotter.pos_y;
-            } else {
-                for m in Monitor::all().unwrap() {
-                    if m.is_primary() { 
-                        pos_x = m.x();
-                        pos_y = m.y();
+        if let Some(shotters) = shotters {
+            for (id, shotter) in shotters {
+                let id = id.parse::<u32>()?;
+                if (id+1) > max_id { max_id = id + 1; }
+    
+                let img_buffer;
+                if let Ok(img) = ShotterRecord::load_record_img(id) {
+                    img_buffer = img;
+                } else {
+                    invalid_shotter_ids.push(id);
+                    log_util::log_error(format!("Error in restore_pin_wins: can not load img, id: {}", id));
+                    continue;
+                }
+    
+                let message_sender_clone = message_sender.clone();
+                let rect = Rect{x: shotter.rect.0, y: shotter.rect.1, width: shotter.rect.2, height: shotter.rect.3};
+    
+                let mut pos_x = 0;
+                let mut pos_y = 0;
+                if let Ok(_) = Monitor::from_point(shotter.pos_x, shotter.pos_y) {
+                    pos_x = shotter.pos_x;
+                    pos_y = shotter.pos_y;
+                } else {
+                    for m in Monitor::all().unwrap() {
+                        if m.is_primary() { 
+                            pos_x = m.x();
+                            pos_y = m.y();
+                        }
                     }
                 }
+                
+                let offset_x = pos_x - rect.x as i32;
+                let offset_y = pos_y - rect.y as i32;
+                let pin_win = PinWin::new(
+                    img_buffer, rect, offset_x, offset_y, id, message_sender_clone
+                )?;
+                pin_win.pin_window.set_zoom_factor(shotter.zoom_factor);
+    
+                pin_windows.lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(id, pin_win.pin_window.as_weak());
+                pin_wins.lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(id, pin_win);
             }
-            
-            let offset_x = pos_x - rect.x as i32;
-            let offset_y = pos_y - rect.y as i32;
-            let pin_win = PinWin::new(
-                img_buffer, rect, offset_x, offset_y, id, message_sender_clone
-            )?;
-            pin_win.pin_window.set_zoom_factor(shotter.zoom_factor);
-
-            self.pin_windows.lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(id, pin_win.pin_window.as_weak());
-            self.pin_wins.lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(id, pin_win);
         }
 
         for id in invalid_shotter_ids {
-            ShotterRecord::del_record_img(id)?;
             record.del_shotter(id)?;
         }
 
-        *self.max_pin_win_id.lock()
+        *max_pin_win_id.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = max_id;
         
         Ok(())
@@ -548,5 +591,4 @@ impl ScreenShotter{
                 .unwrap_or_else(|e| { log_util::log_error(format!("Error in pin_win_move_hander: {:?}", e)); });
         }).unwrap_or_else(|e| { log_util::log_error(format!("Error in pin_win_move_hander: {:?}", e)); });
     }
-
 }

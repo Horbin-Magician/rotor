@@ -32,6 +32,7 @@ export component MaskWindow inherits BaseWindow {
     callback key_released(KeyEvent);
     callback new_pin_win(Rect);
     callback mouse_move(float, float, bool, bool);
+    callback restore_pin_wins();
 
     bac-img := Image {
         height: 100%;
