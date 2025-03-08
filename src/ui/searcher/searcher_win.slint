@@ -12,6 +12,7 @@ enum SearchResultType {
 struct SearchResult_slint {
     id: int,
     icon: image,
+    showname: string,
     filename: string,
     path: string,
     result_type: SearchResultType,
@@ -58,6 +59,7 @@ component FileListItem inherits Rectangle {
             item_content := HorizontalLayout {
                 padding-top: 5px;
                 padding-bottom: 5px;
+                padding-right: 5px;
                 Rectangle {
                     width: 2px;
                     active_bar := Rectangle {
@@ -82,7 +84,7 @@ component FileListItem inherits Rectangle {
                             height: 20px;
                             vertical-alignment: center;
                             overflow: elide;
-                            text: data.filename;
+                            text: data.showname;
                             font-size: 16px;
                         }
                         Rectangle { width: 5px; } // for space
@@ -95,6 +97,18 @@ component FileListItem inherits Rectangle {
                                 vertical-alignment: center;
                                 horizontal-alignment: center;
                                 text: @tr("文件");
+                                font-size: 12px;
+                            }
+                        }
+                        if data.result_type == SearchResultType.Application: Rectangle {
+                            height: 20px;
+                            width: 40px;
+                            background: Palette.border;
+                            border-radius: 10px;
+                            Text {
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                                text: @tr("应用");
                                 font-size: 12px;
                             }
                         }
