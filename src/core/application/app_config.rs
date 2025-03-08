@@ -1,6 +1,7 @@
 use slint::Weak;
 use toml;
 use std::error::Error;
+use std::sync::mpsc::Sender;
 use std::{collections::HashMap, fs};
 use std::sync::{LazyLock, Mutex};
 use serde::{Serialize, Deserialize};
@@ -10,6 +11,7 @@ use slint::select_bundled_translation;
 use crate::util::{file_util, log_util};
 use crate::util::sys_util;
 use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
+use crate::module::screen_shotter::ShotterMessage;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
@@ -46,6 +48,7 @@ fn default_shortcuts() -> HashMap<String, String> {
 
 pub struct AppConfig {
     config: Config,
+    shotter_msg_sender: Option<Sender<ShotterMessage>>,
     pub search_win: Option<Weak<SearchWindow>>,
     pub setting_win: Option<Weak<SettingWindow>>,
     pub toolbar_win: Option<Weak<ToolbarWindow>>,
@@ -66,6 +69,7 @@ impl AppConfig {
 
         AppConfig {
             config,
+            shotter_msg_sender: None,
             search_win: None,
             setting_win: None,
             toolbar_win: None,
@@ -81,6 +85,10 @@ impl AppConfig {
 
     pub fn global() -> &'static Mutex<AppConfig> {
         &INSTANCE
+    }
+
+    pub fn set_shotter_msg_sender(&mut self, sender: Sender<ShotterMessage>) {
+        self.shotter_msg_sender = Some(sender);
     }
 
     pub fn set_power_boot(&mut self, power_boot: bool) -> Result<(), Box<dyn Error>> {
@@ -187,6 +195,9 @@ impl AppConfig {
 
     pub fn set_current_workspace(&mut self, id: u8) -> Result<(), Box<dyn Error>> {
         self.config.current_workspace = id;
+        if let Some(sender) = &self.shotter_msg_sender {
+            let _ = sender.send(ShotterMessage::RestorePinWins);
+        }
         self.save()?;
         Ok(())
     }
