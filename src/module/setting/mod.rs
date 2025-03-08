@@ -84,7 +84,8 @@ impl Setting {
         setting_win.set_shortcut_pinwin_close(app_config.get_shortcut("pinwin_close").unwrap_or(&"unkown".to_string()).into());
         setting_win.set_shortcut_pinwin_copy(app_config.get_shortcut("pinwin_copy").unwrap_or(&"unkown".to_string()).into());
         setting_win.set_shortcut_pinwin_hide(app_config.get_shortcut("pinwin_hide").unwrap_or(&"unkown".to_string()).into());
-        
+        setting_win.set_current_workspace(app_config.get_current_workspace().into());
+
         setting_win.set_zoom_delta(app_config.get_zoom_delta().to_string().into());
 
         { // code for setting change
@@ -128,6 +129,18 @@ impl Setting {
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .set_zoom_delta(zoom_delta_int)
                         .unwrap_or_else(|e| log_util::log_error(format!("Failed to set zoom delta: {:?}", e)));
+                });
+
+                let setting_win_clone = setting_win.as_weak();
+                setting_win.on_workspace_changed(move |workspace| {
+                    if let Some(setting_win) = setting_win_clone.upgrade() {
+                        setting_win.set_current_workspace(workspace);
+                    }
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_current_workspace(workspace as u8)
+                        .unwrap_or_else(|e| log_util::log_error(format!("Failed to set workspace: {:?}", e)));
                 });
             }
 

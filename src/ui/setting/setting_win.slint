@@ -172,6 +172,7 @@ export component SettingWindow inherits BaseWindow {
     callback shortcut_changed(string, KeyEvent);
     callback click_logo <=> side_bar.click_logo;
     callback zoom_delta_changed(string);
+    callback workspace_changed(int);
 
     in property <string> version;
     in property <string> shortcut_search;
@@ -184,6 +185,7 @@ export component SettingWindow inherits BaseWindow {
     in property <bool> power_boot;
     in property <int> language;
     in property <int> theme;
+    in property <int> current_workspace;
     in property <bool> block;
     in property <float> progress: -1.0;
     
@@ -247,8 +249,10 @@ export component SettingWindow inherits BaseWindow {
                                     shortcut_pinwin_copy <=> root.shortcut_pinwin_copy;
                                     shortcut_pinwin_hide <=> root.shortcut_pinwin_hide;
                                     zoom_delta <=> root.zoom_delta;
+                                    current_workspace <=> root.current_workspace;
                                     shortcut_changed(shortcut, event) => { root.shortcut_changed(shortcut, event); }
                                     zoom_delta_changed(zoom_delta) => { root.zoom_delta_changed(zoom_delta); }
+                                    workspace_changed(workspace) => { root.workspace_changed(workspace); }
                                 }
                         }
                     }

@@ -25,6 +25,8 @@ pub struct Config {
     shortcuts: HashMap<String, String>,
     #[serde(default = "default_zoom_delta")]
     zoom_delta: u8,
+    #[serde(default = "default_u8")]
+    current_workspace: u8,
 }
 
 fn default_false() -> bool { false }
@@ -181,6 +183,16 @@ impl AppConfig {
 
     pub fn get_zoom_delta(&self) -> u8 {
         self.config.zoom_delta
+    }
+
+    pub fn set_current_workspace(&mut self, id: u8) -> Result<(), Box<dyn Error>> {
+        self.config.current_workspace = id;
+        self.save()?;
+        Ok(())
+    }
+
+    pub fn get_current_workspace(&self) -> u8 {
+        self.config.current_workspace
     }
 }
 
