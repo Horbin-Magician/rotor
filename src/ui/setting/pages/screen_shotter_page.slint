@@ -1,4 +1,4 @@
-import { GroupBox, LineEdit, Palette, Slider, ComboBox, Button, StandardListView } from "std-widgets.slint";
+import { GroupBox, LineEdit, Palette, Slider, ComboBox, Button, StandardListView, Switch } from "std-widgets.slint";
 import { Page, ShortcutEdit, SettingNode, SettingGroup } from "page.slint";
 import { SimpleBtn, ButtonType } from "../../frame/buttons.slint";
 
@@ -103,6 +103,43 @@ export component ScreenShotterSettingPage inherits Page {
                 }
             }
         }
+        // SettingNode {
+        //     key: @tr("默认保存位置");
+        //     Rectangle {
+        //         border-radius: 5px;
+        //         border-width: 1px;
+        //         border-color: Palette.alternate-background;
+        //         clip: true;
+        //         HorizontalLayout {
+        //             width: 150px;
+        //             height: 30px;
+        //             Text {
+        //                 width: 100px;
+        //                 text: "";
+        //                 vertical-alignment: center;
+        //                 horizontal-alignment: center;
+        //             }
+        //             SimpleBtn {
+        //                 width: 50px;
+        //                 icon: @image-url("../../assets/icon/file.svg");
+        //                 clicked => {
+        //                     // workplace_popup.show();
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        // SettingNode {
+        //     key: @tr("是否每次询问保存位置");
+        //     Switch { 
+        //         height: 30px;
+        //         checked: false;
+        //         enabled: false;
+        //         toggled => {
+        //             // root.power_boot_changed(self.checked);
+        //         }
+        //     }
+        // }
     }
 
     workplace_popup := PopupWindow {
