@@ -66,15 +66,13 @@ impl Updater {
             let download_url = &asset.browser_download_url;
             let zip_name = &asset.name;
             let file_response = reqwest::blocking::Client::new()
-                .get(format!("https://ghfast.top/{}", download_url)).send()
+                .get(download_url).send()
                 .or_else( |_| {
-                    reqwest::blocking::Client::new().get(format!("https://ui.ghproxy.cc/{}", download_url)).send()
+                    reqwest::blocking::Client::new().get(format!("https://ghfast.top/{}", download_url)).send()
                 })
                 .or_else( |_| {
-                    reqwest::blocking::Client::new().get(download_url).send()
+                    reqwest::blocking::Client::new().get(format!("https://ui.ghproxy.cc/{}", download_url)).send()
                 })?;
-            
-            println!("download_url: {}", file_response.url());
         
             if file_response.status().is_success() {
                 let exe_path = env::current_exe()?;
