@@ -4627,7 +4627,7 @@ dependencies = [
 
 [[package]]
 name = "rotor"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "arboard",
  "chrono",
