@@ -232,6 +232,7 @@ export component SettingWindow inherits BaseWindow {
 
                     VerticalLayout {
                         title_bar := TitleBar {}
+                        padding-bottom: 10px;
                         Rectangle {
                             if(side_bar.current-item == 0): 
                                 BaseSettingPage {
