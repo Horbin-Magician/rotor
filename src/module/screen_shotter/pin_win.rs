@@ -222,23 +222,39 @@ impl PinWin {
                                 img = img.crop(border_width, border_width, img.width() - 2 * border_width, img.height() - 2 * border_width);
         
                                 std::thread::spawn(move || {
-                                    let save_path = AppConfig::global()
+                                    let mut app_config = AppConfig::global()
                                         .lock()
-                                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                        .get_save_path();
+                                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                    let save_path = app_config.get_save_path();
+                                    let if_auto_change = app_config.get_if_auto_change_save_path();
+                                    let if_ask_path = app_config.get_if_ask_save_path();
+                                    
                                     let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
-                                    let params = DialogParams {
-                                        title: "Select an image to save",
-                                        file_types: vec![("PNG Files", "*.png")],
-                                        default_extension: "png",
-                                        file_name: &file_name,
-                                        default_folder: &save_path,
-                                        ..Default::default()
-                                    };
-                                    let dialog_result = wfd::save_dialog(params);
-                                    if let Ok(file_path_result) = dialog_result {
-                                        img.save(file_path_result.selected_file_path)
-                                            .unwrap_or_else(|e| log_util::log_error(format!("Failed to save image: {}", e)));
+                                    if if_ask_path {
+                                        let params = DialogParams {
+                                            title: "Select an image to save",
+                                            file_types: vec![("PNG Files", "*.png")],
+                                            default_extension: "png",
+                                            file_name: &file_name,
+                                            folder: &save_path,
+                                            ..Default::default()
+                                        };
+                                        let dialog_result = wfd::save_dialog(params);
+                                        if let Ok(file_path_result) = dialog_result {
+                                            if if_auto_change {
+                                                if let Some(path) = file_path_result.selected_file_path.parent() {
+                                                    if path.is_dir() {
+                                                        app_config.set_save_path(path.to_string_lossy().to_string())
+                                                            .unwrap_or_else(|e| log_util::log_error(format!("Failed to change save path: {}", e)));
+                                                    }
+                                                }
+                                            }
+                                            img.save(file_path_result.selected_file_path)
+                                                .unwrap_or_else(|e| log_util::log_error(format!("Failed to save image: {}", e)));
+                                        }
+                                    } else {
+                                        img.save(format!("{}/{}", save_path, file_name))
+                                                .unwrap_or_else(|e| log_util::log_error(format!("Failed to save image: {}", e)));
                                     }
                                 });
                             },

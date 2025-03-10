@@ -173,6 +173,9 @@ export component SettingWindow inherits BaseWindow {
     callback click_logo <=> side_bar.click_logo;
     callback zoom_delta_changed(string);
     callback workspace_changed(int);
+    callback change_save_path();
+    callback if_auto_change_save_path_changed(bool);
+    callback if_ask_save_path_changed(bool);
 
     in property <string> version;
     in property <string> shortcut_search;
@@ -192,6 +195,10 @@ export component SettingWindow inherits BaseWindow {
     in-out property <int> update_state: 0;
     in-out property <string> current_version;
     in-out property <string> latest_version;
+
+    in property <string> save_path;
+    in-out property <bool> if_auto_change_save_path;
+    in-out property <bool> if_ask_save_path;
 
     touch := TouchArea {
         pointer-event(event) => {
@@ -250,9 +257,15 @@ export component SettingWindow inherits BaseWindow {
                                     shortcut_pinwin_hide <=> root.shortcut_pinwin_hide;
                                     zoom_delta <=> root.zoom_delta;
                                     current_workspace <=> root.current_workspace;
+                                    save_path <=> root.save_path;
+                                    if_auto_change_save_path <=> root.if_auto_change_save_path;
+                                    if_ask_save_path <=> root.if_ask_save_path;
                                     shortcut_changed(shortcut, event) => { root.shortcut_changed(shortcut, event); }
                                     zoom_delta_changed(zoom_delta) => { root.zoom_delta_changed(zoom_delta); }
                                     workspace_changed(workspace) => { root.workspace_changed(workspace); }
+                                    change_save_path() => { root.change_save_path(); }
+                                    if_auto_change_save_path_changed(v) => { root.if_auto_change_save_path_changed(v); }
+                                    if_ask_save_path_changed(v) => { root.if_ask_save_path_changed(v); }
                                 }
                         }
                     }
