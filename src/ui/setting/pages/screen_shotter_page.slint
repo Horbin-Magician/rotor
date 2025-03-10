@@ -14,11 +14,18 @@ export component ScreenShotterSettingPage inherits Page {
     in property <string> shortcut_pinwin_hide;
     in property <string> zoom_delta;
     in property <int> current_workspace;
+    in property <string> save_path;
+    in-out property <bool> if_ask_save_path;
+    in-out property <bool> if_auto_change_save_path;
     in-out property <[StandardListViewItem]> workspaces: [{text: "工作区1" }, { text: "工作区2" }, { text: "工作区3" }, { text: "工作区4" }, { text: "工作区5" }];
 
     callback zoom_delta_changed(string);
     callback shortcut_changed(string, KeyEvent);
     callback workspace_changed(int);
+
+    callback change_save_path();
+    callback if_ask_save_path_changed(bool);
+    callback if_auto_change_save_path_changed(bool);
 
     SettingGroup {
         title: @tr("快捷键");
@@ -88,13 +95,13 @@ export component ScreenShotterSettingPage inherits Page {
                     width: 150px;
                     height: 30px;
                     Text {
-                        width: 100px;
+                        width: 110px;
                         text: root.workspaces[root.current_workspace].text;
                         vertical-alignment: center;
                         horizontal-alignment: center;
                     }
                     SimpleBtn {
-                        width: 50px;
+                        width: 40px;
                         icon: @image-url("../../assets/icon/switch.svg");
                         clicked => {
                             workplace_popup.show();
@@ -103,43 +110,54 @@ export component ScreenShotterSettingPage inherits Page {
                 }
             }
         }
-        // SettingNode {
-        //     key: @tr("默认保存位置");
-        //     Rectangle {
-        //         border-radius: 5px;
-        //         border-width: 1px;
-        //         border-color: Palette.alternate-background;
-        //         clip: true;
-        //         HorizontalLayout {
-        //             width: 150px;
-        //             height: 30px;
-        //             Text {
-        //                 width: 100px;
-        //                 text: "";
-        //                 vertical-alignment: center;
-        //                 horizontal-alignment: center;
-        //             }
-        //             SimpleBtn {
-        //                 width: 50px;
-        //                 icon: @image-url("../../assets/icon/file.svg");
-        //                 clicked => {
-        //                     // workplace_popup.show();
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        // SettingNode {
-        //     key: @tr("是否每次询问保存位置");
-        //     Switch { 
-        //         height: 30px;
-        //         checked: false;
-        //         enabled: false;
-        //         toggled => {
-        //             // root.power_boot_changed(self.checked);
-        //         }
-        //     }
-        // }
+        SettingNode {
+            key: @tr("默认保存位置");
+            Rectangle {
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: Palette.alternate-background;
+                clip: true;
+                HorizontalLayout {
+                    width: 150px;
+                    height: 30px;
+                    padding-left: 5px;
+                    Text {
+                        width: 105px;
+                        text: save_path;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    SimpleBtn {
+                        width: 40px;
+                        icon: @image-url("../../assets/icon/file.svg");
+                        clicked => {
+                            root.change_save_path();
+                        }
+                    }
+                }
+            }
+        }
+        SettingNode {
+            key: @tr("自动修改为上次保存的目录");
+            Switch { 
+                height: 30px;
+                checked: if_auto_change_save_path;
+                toggled => {
+                    root.if_auto_change_save_path_changed(self.checked);
+                }
+            }
+        }
+        SettingNode {
+            key: @tr("是否每次询问保存位置");
+            Switch { 
+                height: 30px;
+                checked: if_ask_save_path;
+                enabled: save_path != "";
+                toggled => {
+                    root.if_ask_save_path_changed(self.checked);
+                }
+            }
+        }
     }
 
     workplace_popup := PopupWindow {

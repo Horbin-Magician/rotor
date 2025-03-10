@@ -4,6 +4,7 @@ use crossbeam;
 use global_hotkey::hotkey::HotKey;
 use i_slint_backend_winit::WinitWindowAccessor;
 use slint::ComponentHandle;
+use wfd::DialogParams;
 use windows::Win32::UI::WindowsAndMessaging;
 
 use crate::core::application::{AppMessage, app_config::AppConfig};
@@ -85,6 +86,9 @@ impl Setting {
         setting_win.set_shortcut_pinwin_copy(app_config.get_shortcut("pinwin_copy").unwrap_or(&"unkown".to_string()).into());
         setting_win.set_shortcut_pinwin_hide(app_config.get_shortcut("pinwin_hide").unwrap_or(&"unkown".to_string()).into());
         setting_win.set_current_workspace(app_config.get_current_workspace().into());
+        setting_win.set_save_path(app_config.get_save_path().into());
+        setting_win.set_if_auto_change_save_path(app_config.get_if_auto_change_save_path());
+        setting_win.set_if_ask_save_path(app_config.get_if_ask_save_path());
 
         setting_win.set_zoom_delta(app_config.get_zoom_delta().to_string().into());
 
@@ -141,6 +145,39 @@ impl Setting {
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .set_current_workspace(workspace as u8)
                         .unwrap_or_else(|e| log_util::log_error(format!("Failed to set workspace: {:?}", e)));
+                });
+
+                setting_win.on_change_save_path(move || {
+                    let params = DialogParams {
+                        title: "Select a path to save",
+                        options: wfd::FOS_PICKFOLDERS,
+                        ..Default::default()
+                    };
+                    let dialog_result = wfd::open_dialog(params);
+                    if let Ok(file_path_result) = dialog_result {
+                        let path = file_path_result.selected_file_path.to_string_lossy().to_string();
+                        AppConfig::global()
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .set_save_path(path.clone())
+                            .unwrap_or_else(|e| log_util::log_error(format!("Failed to set save_path: {:?}", e)));
+                    }
+                });
+
+                setting_win.on_if_auto_change_save_path_changed(move |if_auto_change_save_path| {
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_if_auto_change_save_path(if_auto_change_save_path)
+                        .unwrap_or_else(|e| log_util::log_error(format!("Failed to set if_auto_change_save_path: {:?}", e)));
+                });
+
+                setting_win.on_if_ask_save_path_changed(move |if_ask_save_path| {
+                    AppConfig::global()
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .set_if_ask_save_path(if_ask_save_path)
+                        .unwrap_or_else(|e| log_util::log_error(format!("Failed to set if_ask_save_path: {:?}", e)));
                 });
             }
 

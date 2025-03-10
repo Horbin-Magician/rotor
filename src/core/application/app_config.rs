@@ -23,6 +23,10 @@ pub struct Config {
     theme: u8,
     #[serde(default = "default_string")]
     save_path: String,
+    #[serde(default = "default_true")]
+    if_auto_change_save_path: bool,
+    #[serde(default = "default_true")]
+    if_ask_save_path: bool,
     #[serde(default = "default_shortcuts")]
     shortcuts: HashMap<String, String>,
     #[serde(default = "default_zoom_delta")]
@@ -31,6 +35,7 @@ pub struct Config {
     current_workspace: u8,
 }
 
+fn default_true() -> bool { true }
 fn default_false() -> bool { false }
 fn default_u8() -> u8 { 0 }
 fn default_zoom_delta() -> u8 { 2 }
@@ -154,13 +159,40 @@ impl AppConfig {
         self.config.theme
     }
 
-    // pub fn set_save_path(&mut self, path: String) {
-    //     self.save_path = path;
-    //     self.save();
-    // }
+    pub fn set_save_path(&mut self, path: String) -> Result<(), Box<dyn Error>> {
+        if let Some(setting_win) = &self.setting_win {
+            let path_clone = path.clone();
+            setting_win.upgrade_in_event_loop(|setting_win| {
+                setting_win.set_save_path(path_clone.into());
+            }).unwrap_or_else(|err| log_util::log_error(format!("setting_win set_save_path error: {:?}", err)));
+        }
+        self.config.save_path = path;
+        self.save()?;
+        Ok(())
+    }
 
     pub fn get_save_path(&self) -> String {
         self.config.save_path.clone()
+    }
+
+    pub fn set_if_auto_change_save_path(&mut self, if_auto_change_save_path: bool) -> Result<(), Box<dyn Error>> {
+        self.config.if_auto_change_save_path = if_auto_change_save_path;
+        self.save()?;
+        Ok(())
+    }
+
+    pub fn get_if_auto_change_save_path(&self) -> bool {
+        self.config.if_auto_change_save_path
+    }
+
+    pub fn set_if_ask_save_path(&mut self, if_ask_save_path: bool) -> Result<(), Box<dyn Error>> {
+        self.config.if_ask_save_path = if_ask_save_path;
+        self.save()?;
+        Ok(())
+    }
+
+    pub fn get_if_ask_save_path(&self) -> bool {
+        self.config.if_ask_save_path
     }
 
     pub fn set_shortcut(&mut self, key: String, value: String) {
