@@ -130,17 +130,18 @@ component FileListItem inherits Rectangle {
 
             item_menu := Rectangle {
                 width: 100px;
-                if data.result_type == SearchResultType.File: HorizontalLayout{
-                    ToolButton {
-                        icon: @image-url("../assets/icon/admin.svg");
-                        clicked() => { open_with_admin(); }
+                if data.result_type == SearchResultType.File || data.result_type == SearchResultType.Application:
+                    HorizontalLayout{
+                        ToolButton {
+                            icon: @image-url("../assets/icon/admin.svg");
+                            clicked() => { open_with_admin(); }
+                        }
+                    
+                        ToolButton {
+                            icon: @image-url("../assets/icon/file.svg");
+                            clicked() => { open_file_dir(); }
+                        }
                     }
-                
-                    ToolButton {
-                        icon: @image-url("../assets/icon/file.svg");
-                        clicked() => { open_file_dir(); }
-                    }
-                }
             }
         }
     }
