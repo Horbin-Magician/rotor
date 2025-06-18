@@ -1,16 +1,22 @@
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use slint::Weak;
 use toml;
 use std::error::Error;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use std::sync::mpsc::Sender;
 use std::{collections::HashMap, fs};
 use std::sync::{LazyLock, Mutex};
 use serde::{Serialize, Deserialize};
 use global_hotkey::hotkey::HotKey;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use slint::select_bundled_translation;
 
 use crate::util::{file_util, log_util};
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::util::sys_util;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::module::screen_shotter::ShotterMessage;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -53,9 +59,13 @@ fn default_shortcuts() -> HashMap<String, String> {
 
 pub struct AppConfig {
     config: Config,
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     shotter_msg_sender: Option<Sender<ShotterMessage>>,
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub search_win: Option<Weak<SearchWindow>>,
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub setting_win: Option<Weak<SettingWindow>>,
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub toolbar_win: Option<Weak<ToolbarWindow>>,
 }
 
@@ -70,13 +80,18 @@ impl AppConfig {
             Err(e) => panic!("[ERROR] AppConfig read config: {:?}", e),
         };
 
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         AppConfig::select_language(config.language).unwrap_or_else(|e| println!("select_language error: {:?}", e));
 
         AppConfig {
             config,
+            #[cfg(target_os = "windows")] // TODO: enable for macOS
             shotter_msg_sender: None,
+            #[cfg(target_os = "windows")] // TODO: enable for macOS
             search_win: None,
+            #[cfg(target_os = "windows")] // TODO: enable for macOS
             setting_win: None,
+            #[cfg(target_os = "windows")] // TODO: enable for macOS
             toolbar_win: None,
         }
     }
@@ -92,10 +107,12 @@ impl AppConfig {
         &INSTANCE
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn set_shotter_msg_sender(&mut self, sender: Sender<ShotterMessage>) {
         self.shotter_msg_sender = Some(sender);
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn set_power_boot(&mut self, power_boot: bool) -> Result<(), Box<dyn Error>> {
         self.config.power_boot = power_boot;
         sys_util::set_power_boot(power_boot)?;
@@ -103,10 +120,12 @@ impl AppConfig {
         Ok(())
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn get_power_boot(&self) -> bool {
         self.config.power_boot
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn select_language(language: u8) -> Result<(), Box<dyn Error>> {
         if language == 0 {
             let locale_name =  sys_util::get_user_default_locale_name();
@@ -120,6 +139,7 @@ impl AppConfig {
         Ok(())
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn set_language(&mut self, language: u8) {
         self.config.language = language;
         AppConfig::select_language(language).unwrap_or_else(|e| println!("select_language error: {:?}", e));
@@ -131,6 +151,7 @@ impl AppConfig {
         self.config.language
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn set_theme(&mut self, theme: u8) {
         if let Some(search_win) = &self.search_win {
             if let Some(search_win) = search_win.upgrade() {
@@ -159,6 +180,7 @@ impl AppConfig {
         self.config.theme
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn set_save_path(&mut self, path: String) -> Result<(), Box<dyn Error>> {
         if let Some(setting_win) = &self.setting_win {
             let path_clone = path.clone();
@@ -225,6 +247,7 @@ impl AppConfig {
         self.config.zoom_delta
     }
 
+    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn set_current_workspace(&mut self, id: u8) -> Result<(), Box<dyn Error>> {
         self.config.current_workspace = id;
         if let Some(sender) = &self.shotter_msg_sender {

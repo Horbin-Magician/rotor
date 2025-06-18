@@ -4,23 +4,45 @@ use std::{
 use std::io::{self, Write};
 use chrono::Local;
 
-use windows::core::PCWSTR;
-use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK};
-use windows::Win32::Foundation::HWND;
-
 use crate::util::file_util;
 
-
-fn wide_null(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
+#[cfg(target_os = "windows")]
+mod win_imports {
+    pub use windows::core::PCWSTR;
+    pub use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK};
+    pub use windows::Win32::Foundation::HWND;
 }
+#[cfg(target_os = "windows")]
+use win_imports::*;
 
+#[cfg(target_os = "macos")]
+use std::process::Command;
+
+
+#[cfg(target_os = "windows")]
 fn log_error_with_message_box(content: &str) {
+    fn wide_null(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
     let title = wide_null("Error");
     let content = wide_null(content);
     unsafe {
         MessageBoxW(HWND(std::ptr::null_mut()), PCWSTR(content.as_ptr()), PCWSTR(title.as_ptr()), MB_OK);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn log_error_with_message_box(content: &str) {
+    // Use osascript to display a native macOS alert dialog
+    let script = format!(
+        "osascript -e 'display alert \"Error\" message \"{}\" buttons \"OK\" default button \"OK\"'",
+        content.replace("\"", "\\\"")
+    );
+    
+    let _ = Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .output();
 }
 
 fn write_log(message: &String) -> std::io::Result<()> {

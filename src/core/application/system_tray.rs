@@ -1,5 +1,6 @@
 use std::error::Error;
 use crossbeam::channel::Sender;
+use image::ImageReader;
 use tray_icon::{
     menu::{Menu, MenuEvent},
     TrayIconBuilder, menu::MenuItem, Icon, TrayIconEvent, TrayIcon
@@ -20,11 +21,16 @@ impl SystemTray {
         tray_menu.append(&menuitem_setting)?;
         tray_menu.append(&menuitem_quit)?;
         
+        let icon = ImageReader::open("assets/logo.ico")?
+            .decode()?
+            .to_rgba8();
+        let (width, height) = icon.dimensions();
+
         let _tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
             .with_menu_on_left_click(false)
             .with_tooltip("小云管家") // TODO wait to translate
-            .with_icon(Icon::from_path("assets/logo.ico", Some((128, 128)))?)
+            .with_icon(Icon::from_rgba(icon.into_raw(), width, height)?)
             .build()?;
 
         let _setting_id = menuitem_setting.id().clone();

@@ -3,11 +3,13 @@
 use slint::BackendSelector;
 
 mod core;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 mod ui;
 mod module;
 mod util;
 
 use crate::util::log_util;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::util::sys_util;
 use crate::util::file_util;
 use crate::core::application::Application;
@@ -18,6 +20,7 @@ fn main() {
     selector.select()
         .unwrap_or_else(|e| log_util::log_error(format!("Error selecting backend: {:?}", e)));
 
+    #[cfg(target_os = "windows")]
     // init before event loop
     if sys_util::run_as_admin()
         .unwrap_or_else( |e| {

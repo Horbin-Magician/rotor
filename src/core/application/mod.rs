@@ -10,6 +10,8 @@ use slint;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::util::log_util;
+use crate::module::{Module, ModuleMessage}; // TO DEL: enable for macOS
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::module::{setting::Setting, screen_shotter::ScreenShotter, searcher::Searcher, Module, ModuleMessage};
 use system_tray::SystemTray;
 
@@ -37,12 +39,15 @@ impl Application {
         let _system_tray = SystemTray::new(_msg_sender.clone())?;
 
         let mut _modules: Vec<Box<dyn Module>> = Vec::new();
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         if let Ok(searcher) = Searcher::new() {
             _modules.push(Box::new(searcher));
         }
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         if let Ok(screen_shotter) = ScreenShotter::new() {
             _modules.push(Box::new(screen_shotter));
         }
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         if let Ok(setting) = Setting::new(_msg_sender.clone()) {
             _modules.push(Box::new(setting));
         }

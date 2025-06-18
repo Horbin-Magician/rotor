@@ -1,5 +1,8 @@
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 pub mod setting;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 pub mod searcher;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 pub mod screen_shotter;
 
 use std::sync::mpsc::Sender;

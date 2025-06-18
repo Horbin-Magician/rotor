@@ -5,12 +5,17 @@ use std::{ptr, mem, fs, io, env};
 
 use slint::{SharedPixelBuffer, Rgba8Pixel};
 
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HWND, BOOL};
-use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, ShellExecuteW};
-use windows::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
-use windows::Win32::Graphics::Gdi::{self, DeleteObject, GetBitmapBits, BITMAP, BITMAPINFOHEADER, HBITMAP, HGDIOBJ};
+#[cfg(target_os = "windows")]
+mod win_imports {
+    pub use windows::core::PCWSTR;
+    pub use windows::Win32::Foundation::{HWND, BOOL};
+    pub use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+    pub use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, ShellExecuteW};
+    pub use windows::Win32::UI::WindowsAndMessaging::{ICONINFO, GetIconInfo, DestroyIcon, HICON, SW_SHOWNORMAL};
+    pub use windows::Win32::Graphics::Gdi::{self, DeleteObject, GetBitmapBits, BITMAP, BITMAPINFOHEADER, HBITMAP, HGDIOBJ};
+}
+#[cfg(target_os = "windows")]
+use win_imports::*;
 
 use crate::util::log_util;
 
@@ -56,6 +61,7 @@ pub fn del_useless_files() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
 pub fn open_file(file_full_name: String) -> Result<(), Box<dyn Error>> {
     Command::new("explorer.exe")
         .arg(file_full_name)
@@ -63,6 +69,7 @@ pub fn open_file(file_full_name: String) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
 pub fn open_file_admin(file_full_name: String) {
     let file_path: Vec<u16> = file_full_name.as_str().encode_utf16().chain(std::iter::once(0)).collect();
     let runas_str: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
@@ -78,6 +85,7 @@ pub fn open_file_admin(file_full_name: String) {
     };
 }
 
+#[cfg(target_os = "windows")]
 pub fn get_icon(path: &str) -> Option<slint::Image> {
     #[repr(C)]
     struct Iconheader {
@@ -257,6 +265,7 @@ pub fn get_icon(path: &str) -> Option<slint::Image> {
     let pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(im.as_bytes(), im.width(), im.height());
     Some(slint::Image::from_rgba8(pixel_buffer))
 }
+
 
 pub fn unzip(zip_path: &std::path::PathBuf , out_root_path: &std::path::PathBuf ) -> Result<(), Box<dyn Error>> {
     let file = fs::File::open(zip_path)?;
