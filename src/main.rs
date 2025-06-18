@@ -3,16 +3,15 @@
 use slint::BackendSelector;
 
 mod core;
-#[cfg(target_os = "windows")] // TODO: enable for macOS
 mod ui;
 mod module;
 mod util;
 
 use crate::util::log_util;
-#[cfg(target_os = "windows")] // TODO: enable for macOS
-use crate::util::sys_util;
 use crate::util::file_util;
 use crate::core::application::Application;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
+use crate::util::sys_util;
 
 fn main() {
     let renderer_name = "skia-software".to_string();
