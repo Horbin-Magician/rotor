@@ -41,16 +41,18 @@ impl Module for Searcher{
                         search_win_clone.upgrade_in_event_loop(move |win| {
                             // Set window center
                             if let Ok(monitors) = Monitor::all() {
-                                if let Some(primary_monitor) = monitors.iter().find(|m| m.is_primary()) {
-                                    let physical_width = primary_monitor.width() as f32;
-                                    let physical_height = primary_monitor.height() as f32;
-                                    let x = primary_monitor.x();
-                                    let y = primary_monitor.y();
+                                if let Some(primary_monitor) = monitors.iter().find(|m| m.is_primary().ok() == Some(true)) {
+                                    let physical_width = primary_monitor.width().unwrap_or_default();
+                                    let physical_height = primary_monitor.height().unwrap_or_default();
+                                    let x = primary_monitor.x().unwrap_or_default();
+                                    let y = primary_monitor.y().unwrap_or_default();
                                     let width = win.get_ui_width();
                                     
-                                    let scale_factor = sys_util::get_scale_factor(primary_monitor.id());
-                                    let x_pos = x + ((physical_width - width * scale_factor) * 0.5) as i32;
-                                    let y_pos = y + (physical_height * 0.3) as i32;
+                                    let primary_monitor_id = primary_monitor.id().unwrap_or_default();
+                                    let scale_factor = sys_util::get_scale_factor(primary_monitor_id);
+
+                                    let x_pos = x + ((physical_width as f32 - width * scale_factor) * 0.5) as i32;
+                                    let y_pos = y + (physical_height as f32 * 0.3) as i32;
                                     win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
                                 }
                             }
