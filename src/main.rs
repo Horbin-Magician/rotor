@@ -14,7 +14,10 @@ use crate::core::application::Application;
 use crate::util::sys_util;
 
 fn main() {
+    #[cfg(target_os = "macos")]
     let renderer_name = "skia".to_string();
+    #[cfg(target_os = "windows")]
+    let renderer_name = "skia-software".to_string();
     let selector = BackendSelector::new().renderer_name(renderer_name.clone());
     selector.select().unwrap_or_else(|e| log_util::log_error(format!("Error selecting backend: {:?}", e)));
 
