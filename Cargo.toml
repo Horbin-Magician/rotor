@@ -16,7 +16,7 @@ slint-build = "1.9.2"
 slint = { version = "1.9.2", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia"]}
 i-slint-backend-winit = "1.9.2"
 raw-window-handle = "0.6.2"
-tray-icon = "0.17.0"
+tray-icon = "0.20.1"
 chrono = "0.4.38"
 global-hotkey = "0.4.1"
 image = "0.25.2"

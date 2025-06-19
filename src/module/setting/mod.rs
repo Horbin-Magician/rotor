@@ -4,10 +4,13 @@ use crossbeam;
 use global_hotkey::hotkey::HotKey;
 use i_slint_backend_winit::WinitWindowAccessor;
 use slint::ComponentHandle;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use wfd::DialogParams;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use windows::Win32::UI::WindowsAndMessaging;
 
 use crate::core::application::{AppMessage, app_config::AppConfig};
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::util::net_util::Updater;
 use crate::util::{file_util, log_util};
 use crate::ui::SettingWindow;
@@ -62,20 +65,27 @@ impl Setting {
 
         let width: f32 = 500.;
         let height: f32 = 400.;
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         let x_screen: f32;
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         let y_screen: f32;
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         unsafe{
             x_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CXSCREEN) as f32;
             y_screen = WindowsAndMessaging::GetSystemMetrics(WindowsAndMessaging::SM_CYSCREEN) as f32;
         }
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         let x_pos = ((x_screen - width * setting_win.window().scale_factor()) * 0.5) as i32;
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         let y_pos = ((y_screen - height * setting_win.window().scale_factor()) * 0.4) as i32;
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         setting_win.window().set_position(slint::WindowPosition::Physical(slint::PhysicalPosition::new(x_pos, y_pos)));
 
         let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
         setting_win.set_version(version.into());
 
         // TODO Batch setting
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         setting_win.set_power_boot(app_config.get_power_boot());
         setting_win.set_language(app_config.get_language() as i32);
         setting_win.set_theme(app_config.get_theme() as i32);
@@ -94,6 +104,7 @@ impl Setting {
 
         { // code for setting change
             { // power boot
+                #[cfg(target_os = "windows")] // TODO: enable for macOS
                 setting_win.on_power_boot_changed(move |power_boot| {
                     AppConfig::global()
                         .lock()
@@ -104,6 +115,7 @@ impl Setting {
             }
 
             {// language
+                #[cfg(target_os = "windows")] // TODO: enable for macOS
                 setting_win.on_language_changed(move |language| {
                     AppConfig::global()
                         .lock()
@@ -113,6 +125,7 @@ impl Setting {
             }
 
             {// theme
+                #[cfg(target_os = "windows")] // TODO: enable for macOS
                 setting_win.on_theme_changed(move |theme| {
                     AppConfig::global()
                         .lock()
@@ -136,6 +149,7 @@ impl Setting {
                 });
 
                 let setting_win_clone = setting_win.as_weak();
+                #[cfg(target_os = "windows")] // TODO: enable for macOS
                 setting_win.on_workspace_changed(move |workspace| {
                     if let Some(setting_win) = setting_win_clone.upgrade() {
                         setting_win.set_current_workspace(workspace);
@@ -147,6 +161,7 @@ impl Setting {
                         .unwrap_or_else(|e| log_util::log_error(format!("Failed to set workspace: {:?}", e)));
                 });
 
+                #[cfg(target_os = "windows")] // TODO: enable for macOS
                 setting_win.on_change_save_path(move || {
                     let params = DialogParams {
                         title: "Select a path to save",
@@ -249,6 +264,7 @@ impl Setting {
             });
         }
 
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         { // update
             let setting_win_clone = setting_win.as_weak();
             setting_win.on_check_update(move || {
@@ -301,6 +317,7 @@ impl Setting {
             });
         }
 
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         { // logo
             setting_win.on_click_logo(move || {
                 file_util::open_file("https://github.com/Horbin-Magician/rotor".to_string())

@@ -1,8 +1,6 @@
-#[cfg(target_os = "windows")] // TODO: enable for macOS
 use slint::Weak;
 use toml;
 use std::error::Error;
-#[cfg(target_os = "windows")] // TODO: enable for macOS
 use std::sync::mpsc::Sender;
 use std::{collections::HashMap, fs};
 use std::sync::{LazyLock, Mutex};
@@ -14,6 +12,7 @@ use slint::select_bundled_translation;
 use crate::util::{file_util, log_util};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::util::sys_util;
+use crate::ui::{SettingWindow};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
@@ -63,7 +62,6 @@ pub struct AppConfig {
     shotter_msg_sender: Option<Sender<ShotterMessage>>,
     #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub search_win: Option<Weak<SearchWindow>>,
-    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub setting_win: Option<Weak<SettingWindow>>,
     #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub toolbar_win: Option<Weak<ToolbarWindow>>,
@@ -89,7 +87,6 @@ impl AppConfig {
             shotter_msg_sender: None,
             #[cfg(target_os = "windows")] // TODO: enable for macOS
             search_win: None,
-            #[cfg(target_os = "windows")] // TODO: enable for macOS
             setting_win: None,
             #[cfg(target_os = "windows")] // TODO: enable for macOS
             toolbar_win: None,
