@@ -10,11 +10,11 @@ build = "build.rs"
 
 [build-dependencies]
 embed-resource = "2.4.3"
-slint-build = "1.9.2"
+slint-build = "1.12.0"
 
 [dependencies]
-slint = { version = "1.9.2", default-features = false, features = ["compat-1-2", "std", "accessibility", "backend-winit", "renderer-skia"]}
-i-slint-backend-winit = "1.9.2"
+slint = "1.12.0"
+i-slint-backend-winit = "1.12.0"
 raw-window-handle = "0.6.2"
 tray-icon = "0.20.1"
 chrono = "0.4.38"
@@ -25,7 +25,7 @@ serde = "1.0.210"
 toml = "0.8.19"
 reqwest = { version = "0.12.7", features = ["blocking", "json"] }
 zip = "2.2.0"
-xcap = "0.0.13"
+xcap = "0.6.1"
 fxhash = "0.2.1"
 crossbeam = "0.8.4"
 imageproc = "0.25.0"

@@ -151,7 +151,7 @@ impl ScreenShotter{
                         mask_win.set_select_rect( crate::ui::Rect{ x: -1, y: -1, width: 0, height: 0 });
     
                         // refresh window
-                        mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x(), monitor.y()));
+                        mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x().unwrap_or_default(), monitor.y().unwrap_or_default()));
                         
                         let _ = mask_win.show();
                         mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
@@ -486,9 +486,9 @@ impl ScreenShotter{
                     pos_y = shotter.pos_y;
                 } else {
                     for m in Monitor::all().unwrap() {
-                        if m.is_primary() { 
-                            pos_x = m.x();
-                            pos_y = m.y();
+                        if m.is_primary().unwrap_or_else(|_|false) { 
+                            pos_x = m.x().unwrap_or_default();
+                            pos_y = m.y().unwrap_or_default();
                         }
                     }
                 }
