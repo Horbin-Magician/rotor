@@ -63,8 +63,8 @@ impl Setting {
         setting_win.invoke_change_theme(app_config.get_theme() as i32);
         app_config.setting_win = Some(setting_win.as_weak());
 
-        let width: f32 = 500.;
-        let height: f32 = 400.;
+        // let width: f32 = 500.;
+        // let height: f32 = 400.;
         #[cfg(target_os = "windows")] // TODO: enable for macOS
         let x_screen: f32;
         #[cfg(target_os = "windows")] // TODO: enable for macOS
