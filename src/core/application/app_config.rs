@@ -12,6 +12,7 @@ use slint::select_bundled_translation;
 use crate::util::{file_util, log_util};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::util::sys_util;
+#[cfg(target_os = "macos")] // TODO: enable for macOS
 use crate::ui::{SettingWindow};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
