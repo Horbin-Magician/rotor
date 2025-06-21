@@ -8,10 +8,10 @@ use std::{collections::HashMap, error::Error, sync::{mpsc::{self, Sender}, Arc, 
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
+#[cfg(target_os = "macos")]
+use i_slint_backend_winit::{winit::platform::macos::WindowExtMacOS, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
-#[cfg(target_os = "windows")] // TODO: enable for macOS
-use windows::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
 
 use crate::util::{img_util, log_util, sys_util};
 use crate::core::application::app_config::AppConfig;
@@ -22,6 +22,7 @@ use pin_win::PinWin;
 use toolbar::Toolbar;
 use shotter_record::ShotterRecord;
 
+use i_slint_backend_winit::winit::window::Window;
 
 pub enum PinOperation {
     Close(),
@@ -133,7 +134,7 @@ impl ScreenShotter{
             let mask_win_clone = mask_win.as_weak();
             mask_win.on_shot(move || {
                 // get screens and info
-                let mut point = sys_util::get_cursor_pos();
+                let point = sys_util::get_cursor_pos();
                 if let Ok(monitor) = Monitor::from_point(point.0, point.1) {
                     if let Some(mask_win) = mask_win_clone.upgrade() {
                         // refresh img
@@ -150,12 +151,13 @@ impl ScreenShotter{
                         mask_win.set_select_rect( crate::ui::Rect{ x: -1, y: -1, width: 0, height: 0 });
     
                         // refresh window
-                        mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x().unwrap_or_default(), monitor.y().unwrap_or_default()));
-                        
                         let _ = mask_win.show();
                         #[cfg(target_os = "windows")] // TODO: enable for macOS
+                        mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x().unwrap_or_default(), monitor.y().unwrap_or_default()));
                         mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                             winit_win.focus_window();
+                            #[cfg(target_os = "macos")]
+                            winit_win.set_simple_fullscreen(true);
                         });
                     }
                 }
