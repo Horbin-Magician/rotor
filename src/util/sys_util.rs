@@ -2,8 +2,8 @@ use device_query::{DeviceQuery, DeviceState, MouseState};
 
 #[cfg(target_os = "windows")]
 mod win_imports {
-    use i_slint_backend_winit::WinitWindowAccessor;
-    use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    pub use i_slint_backend_winit::WinitWindowAccessor;
+    pub use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     pub use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
     pub use windows::Win32::{Graphics::Gdi::HMONITOR, UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}};
     pub use windows::core::PCWSTR;
