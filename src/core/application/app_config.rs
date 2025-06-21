@@ -12,10 +12,9 @@ use slint::select_bundled_translation;
 use crate::util::{file_util, log_util};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
 use crate::util::sys_util;
-use crate::ui::{SettingWindow};
+use crate::ui::{SettingWindow, ToolbarWindow};
 #[cfg(target_os = "windows")] // TODO: enable for macOS
-use crate::ui::{SearchWindow, SettingWindow, ToolbarWindow};
-#[cfg(target_os = "windows")] // TODO: enable for macOS
+use crate::ui::{SearchWindow};
 use crate::module::screen_shotter::ShotterMessage;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -58,12 +57,10 @@ fn default_shortcuts() -> HashMap<String, String> {
 
 pub struct AppConfig {
     config: Config,
-    #[cfg(target_os = "windows")] // TODO: enable for macOS
     shotter_msg_sender: Option<Sender<ShotterMessage>>,
     #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub search_win: Option<Weak<SearchWindow>>,
     pub setting_win: Option<Weak<SettingWindow>>,
-    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub toolbar_win: Option<Weak<ToolbarWindow>>,
 }
 
@@ -83,12 +80,10 @@ impl AppConfig {
 
         AppConfig {
             config,
-            #[cfg(target_os = "windows")] // TODO: enable for macOS
             shotter_msg_sender: None,
             #[cfg(target_os = "windows")] // TODO: enable for macOS
             search_win: None,
             setting_win: None,
-            #[cfg(target_os = "windows")] // TODO: enable for macOS
             toolbar_win: None,
         }
     }
@@ -104,7 +99,6 @@ impl AppConfig {
         &INSTANCE
     }
 
-    #[cfg(target_os = "windows")] // TODO: enable for macOS
     pub fn set_shotter_msg_sender(&mut self, sender: Sender<ShotterMessage>) {
         self.shotter_msg_sender = Some(sender);
     }

@@ -6,9 +6,11 @@ use arboard::Clipboard;
 use image::{self, GenericImageView, Rgba};
 use std::{collections::HashMap, error::Error, sync::{mpsc::{self, Sender}, Arc, Mutex}};
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, Weak};
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use global_hotkey::hotkey::HotKey;
 use xcap::Monitor;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use windows::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
 
 use crate::util::{img_util, log_util, sys_util};
@@ -99,7 +101,9 @@ impl Module for ScreenShotter {
 impl ScreenShotter{
     pub fn new() -> Result<ScreenShotter, Box<dyn Error>> {
         let mask_win = MaskWindow::new()?; // init MaskWindow
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         sys_util::forbid_window_animation(mask_win.window());
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
         });
@@ -129,13 +133,8 @@ impl ScreenShotter{
             let mask_win_clone = mask_win.as_weak();
             mask_win.on_shot(move || {
                 // get screens and info
-                let mut point = POINT{x: 0, y: 0};
-                unsafe {
-                    GetCursorPos(&mut point)
-                        .unwrap_or_else(|e| { log_util::log_error(format!("Error in GetCursorPos: {:?}", e)); })
-                }
-                
-                if let Ok(monitor) = Monitor::from_point(point.x, point.y) {
+                let mut point = sys_util::get_cursor_pos();
+                if let Ok(monitor) = Monitor::from_point(point.0, point.1) {
                     if let Some(mask_win) = mask_win_clone.upgrade() {
                         // refresh img
                         let monitor_img = monitor.capture_image().unwrap_or_default();
@@ -154,6 +153,7 @@ impl ScreenShotter{
                         mask_win.window().set_position(slint::PhysicalPosition::new(monitor.x().unwrap_or_default(), monitor.y().unwrap_or_default()));
                         
                         let _ = mask_win.show();
+                        #[cfg(target_os = "windows")] // TODO: enable for macOS
                         mask_win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                             winit_win.focus_window();
                         });
@@ -192,13 +192,18 @@ impl ScreenShotter{
                         mask_win.set_detected(true);
                     }
                     let bac_rects = bac_rects_clone.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    #[cfg(target_os = "windows")] // TODO: enable for macOS
                     sys_util::enable_window(mask_win.window(), false);
+                    #[cfg(target_os = "windows")] // TODO: enable for macOS
                     let (window_x, window_y, window_width, window_height) = sys_util::get_point_window_rect(mouse_x_phs as i32, mouse_y_phs as i32);
+                    #[cfg(target_os = "windows")] // TODO: enable for macOS
                     let window_area = (window_width * window_height) as u32;
+                    #[cfg(target_os = "windows")] // TODO: enable for macOS
                     sys_util::enable_window(mask_win.window(), true);
 
                     let mut if_set = false;
                     for (x, y, width , height) in bac_rects.iter() {
+                        #[cfg(target_os = "windows")] // TODO: enable for macOS
                         if width * height > window_area { break; }
                         if *x <= mouse_x_phs && mouse_x_phs <= *x + width && *y <= mouse_y_phs && mouse_y_phs <= *y + height {
                             mask_win.set_select_rect(
@@ -214,6 +219,7 @@ impl ScreenShotter{
                         }
                     }
                     if if_set == false {
+                        #[cfg(target_os = "windows")] // TODO: enable for macOS
                         mask_win.set_select_rect(
                             crate::ui::Rect{ x: window_x, y: window_y, width: window_width, height: window_height }
                         );
@@ -336,6 +342,7 @@ impl ScreenShotter{
                             }).unwrap_or_else(|e| log_util::log_error(format!("Error in change toolbar pos: {:?}", e)));
                             // focus the pin window
                             pin_window.upgrade_in_event_loop(move |win| {
+                                #[cfg(target_os = "windows")] // TODO: enable for macOS
                                 win.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
                                     winit_win.focus_window();
                                     winit_win.request_redraw(); // TODO to fix the error win size

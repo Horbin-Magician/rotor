@@ -1,5 +1,5 @@
-use std::env;
-use std::error::Error;
+use device_query::{DeviceQuery, DeviceState, MouseState};
+
 #[cfg(target_os = "windows")]
 mod win_imports {
     use i_slint_backend_winit::WinitWindowAccessor;
@@ -22,12 +22,18 @@ mod win_imports {
     pub use winreg::enums::*;
     pub use winreg::RegKey;
     pub use is_root::is_root;
+    use crate::util::log_util;
+    use std::env;
+    use std::error::Error;
 }
 #[cfg(target_os = "windows")]
 use win_imports::*;
 
-use crate::util::log_util;
 
+pub fn get_cursor_pos() -> (i32, i32) {
+    let mouse: MouseState = DeviceState::new().get_mouse();
+    mouse.coords
+}
 
 #[cfg(target_os = "windows")]
 pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {

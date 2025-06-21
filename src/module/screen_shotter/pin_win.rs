@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::error::Error;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use wfd::DialogParams;
 use std::sync::mpsc::Sender;
 use arboard::{Clipboard, ImageData};
@@ -27,6 +28,7 @@ impl PinWin {
         message_sender: Sender<ShotterMessage>,
     ) -> Result<PinWin, Box<dyn Error>> {
         let pin_window = PinWindow::new()?;
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         sys_util::forbid_window_animation(pin_window.window());
 
         { // set bash properties
@@ -230,6 +232,7 @@ impl PinWin {
                                     let if_ask_path = app_config.get_if_ask_save_path();
                                     
                                     let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
+                                    #[cfg(target_os = "windows")] // TODO: enable for macOS
                                     if if_ask_path {
                                         let params = DialogParams {
                                             title: "Select an image to save",

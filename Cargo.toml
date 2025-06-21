@@ -29,6 +29,7 @@ xcap = "0.6.1"
 fxhash = "0.2.1"
 crossbeam = "0.8.4"
 imageproc = "0.25.0"
+device_query = "3.0.1"
 
 [target.'cfg(windows)'.dependencies]
 wfd = "0.1.7"

@@ -1,9 +1,10 @@
 use std::error::Error;
 use std::sync::mpsc::Sender;
+#[cfg(target_os = "windows")] // TODO: enable for macOS
 use i_slint_backend_winit::{winit::platform::windows::WindowExtWindows, WinitWindowAccessor};
 use slint::ComponentHandle;
 
-use crate::sys_util;
+use crate::util::sys_util;
 use crate::util::log_util;
 use crate::{core::application::app_config::AppConfig, ui::ToolbarWindow};
 use super::{PinOperation, ShotterMessage};
@@ -15,7 +16,9 @@ pub struct Toolbar {
 impl Toolbar {
     pub fn new(message_sender: Sender<ShotterMessage>) -> Result<Toolbar, Box<dyn Error>> {
         let toolbar_window = ToolbarWindow::new()?;
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         sys_util::forbid_window_animation(toolbar_window.window());
+        #[cfg(target_os = "windows")] // TODO: enable for macOS
         toolbar_window.window().with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
             winit_win.set_skip_taskbar(true);
         });
