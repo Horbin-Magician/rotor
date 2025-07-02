@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": [
+    "setting",
+    "ssmask"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:allow-open-path",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/Horbin-Magician/rotor"
+        }
+      ]
+    }
+  ]
+}

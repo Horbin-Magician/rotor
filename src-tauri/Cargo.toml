@@ -1,0 +1,37 @@
+[package]
+name = "rotor"
+version = "2.0.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "rotor_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [ "protocol-asset", "tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8.23"
+chrono = "0.4.41"
+image = "0.25.6"
+imageproc = "0.25.0"
+xcap = "0.6.1"
+base64 = "0.22.1"
+tauri-plugin-clipboard-manager = "2"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+
+[target."cfg(target_os = \"windows\")".dependencies]
+windows = "0.61.3"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
