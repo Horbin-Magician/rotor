@@ -4,8 +4,8 @@ import App from "./App.vue";
 import { createRouter, createWebHistory } from 'vue-router'
 import naive from 'naive-ui'
 
-import Setting from './pages/Setting.vue'
-import SSMask from './pages/SSMask.vue'
+const Setting = () => import('./pages/Setting.vue')
+const SSMask = () => import('./pages/SSMask.vue')
 
 const routes = [
   { path: '/', component: Setting },
