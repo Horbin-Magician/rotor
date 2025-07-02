@@ -107,8 +107,9 @@
 <script setup lang="ts">
 // import type { TabsProps, SelectOption } from 'naive-ui'
 import { ref, watch } from 'vue'
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from '@tauri-apps/api/core'
+import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
 
 const languageOptions = [
   { label: '系统默认', value: 0 },
@@ -141,10 +142,11 @@ const ifAskSavePath = ref(true)
 const zoomDelta = ref(2)
 
 // Search settings
-invoke("get_all_cfg").then((config: any) => {
+invoke("get_all_cfg").then(async (config: any) => {
   language.value = Number(config["language"])
   theme.value = Number(config["theme"])
-  powerBoot.value = Boolean(config["power_boot"])
+  powerBoot.value = await isEnabled()
+  console.log(isEnabled())
   // currentVerision.value = config["current_verision"]
   shortcutScreenshot.value = config["shortcut_screenshot"]
   shortcutSearch.value = config["shortcut_search"]
@@ -179,7 +181,7 @@ function updateSetting(key: string, value: any) {
 // Watch for changes in settings and update them in the backend
 watch(language, (newValue) => updateSetting("language", newValue))
 watch(theme, (newValue) => updateSetting("theme", newValue))
-watch(powerBoot, (newValue) => updateSetting("power_boot", newValue))
+watch(powerBoot, (newValue) => { if(newValue) { enable() } else { disable() }})
 watch(shortcutScreenshot, (newValue) => updateSetting("shortcut_screenshot", newValue))
 watch(shortcutSearch, (newValue) => updateSetting("shortcut_search", newValue))
 
