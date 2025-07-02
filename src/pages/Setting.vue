@@ -12,7 +12,7 @@
           <img src="/assets/icon/logo.svg" width="60px" @click="openGitHome" draggable="false"/>
         </div>
       </template>
-      <n-tab-pane name="Base" tab="基础">
+      <n-tab-pane class="tab-pane" name="Base" tab="基础">
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <div class="settings-card">
@@ -51,7 +51,7 @@
           </div>
         </n-scrollbar>
       </n-tab-pane>
-      <n-tab-pane name="Screen shotter" tab="截图">
+      <n-tab-pane class="tab-pane" name="Screen shotter" tab="截图">
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <div class="settings-card">
@@ -98,10 +98,11 @@
           </div>
         </n-scrollbar>
       </n-tab-pane>
-      <n-tab-pane name="Search" tab="搜索">
+      <n-tab-pane class="tab-pane" name="Search" tab="搜索">
       </n-tab-pane>
     </n-tabs>
   </div>
+  <div class="drag-region"  data-tauri-drag-region></div>
 </template>
 
 <script setup lang="ts">
@@ -205,6 +206,7 @@ watch(zoomDelta, (newValue) => updateSetting("zoom_delta", newValue))
   justify-content: center;
   cursor: pointer;
   transition: filter 0.3s;
+  margin-top: 20px;
 }
 
 .logo :hover {
@@ -219,7 +221,6 @@ watch(zoomDelta, (newValue) => updateSetting("zoom_delta", newValue))
   height: 100%;
 }
 
-/* 自定义标签页高度 */
 .sidebar :deep(.n-tabs-nav .n-tabs-tab) {
   height: 36px; /* 调整这里的值来改变标签页高度 */
   width: 100px;
@@ -229,9 +230,12 @@ watch(zoomDelta, (newValue) => updateSetting("zoom_delta", newValue))
   text-align: center;
 }
 
-/* 自定义标签页高度 */
+.tab-pane {
+  margin-top: 30px;
+}
+
 .settings-container {
-  padding: 20px 20px 20px 0px;
+  padding-right: 20px;
 }
 
 .setting-item {
@@ -263,5 +267,13 @@ watch(zoomDelta, (newValue) => updateSetting("zoom_delta", newValue))
 
 .path-selector .n-input {
   flex: 1;
+}
+
+.drag-region {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 30px;
 }
 </style>

@@ -84,21 +84,19 @@ impl Application {
                         win.show().unwrap();
                         win.set_focus().unwrap();
                     } else {
-                        let win_builder =
+                        let mut win_builder =
                             WebviewWindowBuilder::new(app, "setting", WebviewUrl::default())
                                 .title("设置")
                                 .inner_size(500.0, 400.0)
                                 .resizable(false)
                                 .maximizable(false)
                                 .visible(false);
-                        // // set transparent title bar only when building for macOS
-                        // #[cfg(target_os = "macos")]
-                        // {
-                        //     use tauri::TitleBarStyle;
-                        //     let win_builder = win_builder
-                        //         .hidden_title(true)
-                        //         .title_bar_style(tauri::TitleBarStyle::Overlay);
-                        // }
+                        // set transparent title bar only when building for macOS
+                        #[cfg(target_os = "macos")]
+                        {
+                            win_builder = win_builder.hidden_title(true).title_bar_style(tauri::TitleBarStyle::Overlay);
+                        }
+                        
                         let _window = win_builder.build().unwrap();
                     }
                 }
