@@ -28,10 +28,15 @@ impl Module for ScreenShotter {
         "screenshot"
     }
 
-    fn run(&self, app: &tauri::AppHandle) {
+    fn init(&mut self, _app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
+        // do nothing now
+        Ok(())
+    }
+
+    fn run(&self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
         if let Some(win) = app.get_webview_window("ssmask") {
-            win.show().unwrap();
-            win.set_focus().unwrap();
+            win.show()?;
+            win.set_focus()?;
         } else {
             let win_builder =
                 WebviewWindowBuilder::new(app, "ssmask", WebviewUrl::App("ssmask".into()))
@@ -43,8 +48,9 @@ impl Module for ScreenShotter {
                     .visible(false)
                     .skip_taskbar(true); // TODO windows only
 
-            let _window = win_builder.build().unwrap();
+            let _window = win_builder.build()?;
         }
+        Ok(())
     }
 
     fn get_shortcut(&self) -> Option<Shortcut> {
