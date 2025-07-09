@@ -1,26 +1,13 @@
 use std::error::Error;
+use std::str::FromStr;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
 
 use crate::module::Module;
-
-// pub enum PinOperation {
-//     Close(),
-//     Hide(),
-//     Save(),
-//     Copy(),
-//     TriggerDraw(),
-//     ReturnDraw(),
-// }
+use crate::core::config::AppConfig;
 
 pub struct ScreenShotter {
-    // _mask_win: MaskWindow,
-    // _toolbar: Toolbar,
-    // max_pin_win_id: Arc<Mutex<u32>>,
-    // pin_windows: Arc<Mutex<HashMap<u32, slint::Weak<PinWindow>>>>,
-    // pin_wins: Arc<Mutex<HashMap<u32, PinWin>>>,
-    // _bac_rects: Arc<Mutex<Vec<(u32, u32, u32, u32)>>>,
-    // _bac_buffer_rc: Arc<Mutex<SharedPixelBuffer<Rgba8Pixel>>>,
+
 }
 
 impl Module for ScreenShotter {
@@ -54,8 +41,12 @@ impl Module for ScreenShotter {
     }
 
     fn get_shortcut(&self) -> Option<Shortcut> {
-        let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
-        Some(shortcut)
+        let app_config = AppConfig::global().lock().unwrap();
+        let shortcut = app_config.get(&"shortcut_screenshot".to_string());
+        if let Some(shortcut_str) = shortcut {
+            return Some(Shortcut::from_str(shortcut_str).unwrap());
+        }
+        None
     }
 }
 
