@@ -41,11 +41,11 @@
               <div class="settings-card-title">全局快捷键</div>
               <div class="setting-item">
                 <span class="setting-label">截图</span>
-                <n-input v-model:value="shortcutScreenshot" placeholder="按下快捷键" />
+                <ShortcutInput v-model:shortcut="shortcutScreenshot" />
               </div>
               <div class="setting-item">
                 <span class="setting-label">搜索</span>
-                <n-input v-model:value="shortcutSearch" placeholder="按下快捷键" />
+                <ShortcutInput v-model:shortcut="shortcutSearch" />
               </div>
             </div>
           </div>
@@ -58,19 +58,19 @@
               <div class="settings-card-title">快捷键</div>
               <div class="setting-item">
                 <span class="setting-label">关闭贴图</span>
-                <n-input v-model:value="shortcutPinwinClose" placeholder="按下快捷键" />
+                <ShortcutInput v-model:shortcut="shortcutPinwinClose"/>
               </div>
               <div class="setting-item">
                 <span class="setting-label">保存贴图</span>
-                <n-input v-model:value="shortcutPinwinSave" placeholder="按下快捷键" />
+                <ShortcutInput v-model:shortcut="shortcutPinwinSave"/>
               </div>
               <div class="setting-item">
                 <span class="setting-label">完成贴图</span>
-                <n-input v-model:value="shortcutPinwinCopy" placeholder="按下快捷键" />
+                <ShortcutInput v-model:shortcut="shortcutPinwinCopy"/>
               </div>
               <div class="setting-item">
                 <span class="setting-label">隐藏贴图</span>
-                <n-input v-model:value="shortcutPinwinHide" placeholder="按下快捷键" />
+                <ShortcutInput v-model:shortcut="shortcutPinwinHide"/>
               </div>
             </div>
             <div class="settings-card">
@@ -111,6 +111,8 @@ import { ref, watch } from 'vue'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
+
+import ShortcutInput from '../components/ShortcutInput.vue';
 
 const languageOptions = [
   { label: '系统默认', value: 0 },
