@@ -1,17 +1,15 @@
 use std::error::Error;
-use tauri_plugin_global_shortcut::Shortcut;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     Manager,
 };
 use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_global_shortcut::Shortcut;
 
 use crate::module::Module;
 
-pub struct Tray {
-
-}
+pub struct Tray {}
 
 impl Module for Tray {
     fn flag(&self) -> &str {
@@ -36,10 +34,7 @@ impl Module for Tray {
 
 impl Tray {
     pub fn new() -> Result<Tray, Box<dyn Error>> {
-
-        Ok(Tray{
-
-        })
+        Ok(Tray {})
     }
 
     fn set_system_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -71,9 +66,11 @@ impl Tray {
                         // set transparent title bar only when building for macOS
                         #[cfg(target_os = "macos")]
                         {
-                            win_builder = win_builder.hidden_title(true).title_bar_style(tauri::TitleBarStyle::Overlay);
+                            win_builder = win_builder
+                                .hidden_title(true)
+                                .title_bar_style(tauri::TitleBarStyle::Overlay);
                         }
-                        
+
                         let _window = win_builder.build().unwrap();
                     }
                 }
@@ -87,5 +84,4 @@ impl Tray {
             .build(app)?;
         Ok(())
     }
-
 }

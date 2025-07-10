@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::sync::{LazyLock, Mutex};
 use std::{collections::HashMap, fs};
-use toml;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+use toml;
 
 use crate::util::{file_util, log_util};
 
@@ -18,12 +18,30 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("if_ask_save_path".into(), "true".into()),
         ("zoom_delta".into(), "2".into()),
         ("current_workspace".into(), "0".into()),
-        ("shortcut_search".into(), Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyF).to_string()),
-        ("shortcut_screenshot".into(), Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS).to_string()),
-        ("shortcut_pinwin_save".into(), Shortcut::new(None, Code::KeyS).to_string()),
-        ("shortcut_pinwin_close".into(), Shortcut::new(None, Code::Escape).to_string()),
-        ("shortcut_pinwin_copy".into(), Shortcut::new(None, Code::Enter).to_string()),
-        ("shortcut_pinwin_hide".into(), Shortcut::new(None, Code::KeyH).to_string()),
+        (
+            "shortcut_search".into(),
+            Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyF).to_string(),
+        ),
+        (
+            "shortcut_screenshot".into(),
+            Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS).to_string(),
+        ),
+        (
+            "shortcut_pinwin_save".into(),
+            Shortcut::new(None, Code::KeyS).to_string(),
+        ),
+        (
+            "shortcut_pinwin_close".into(),
+            Shortcut::new(None, Code::Escape).to_string(),
+        ),
+        (
+            "shortcut_pinwin_copy".into(),
+            Shortcut::new(None, Code::Enter).to_string(),
+        ),
+        (
+            "shortcut_pinwin_hide".into(),
+            Shortcut::new(None, Code::KeyH).to_string(),
+        ),
     ])
 });
 

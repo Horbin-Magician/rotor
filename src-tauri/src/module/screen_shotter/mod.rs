@@ -3,12 +3,10 @@ use std::str::FromStr;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
 
-use crate::module::Module;
 use crate::core::config::AppConfig;
+use crate::module::Module;
 
-pub struct ScreenShotter {
-
-}
+pub struct ScreenShotter {}
 
 impl Module for ScreenShotter {
     fn flag(&self) -> &str {
