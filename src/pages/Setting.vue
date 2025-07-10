@@ -79,7 +79,7 @@
                 <span class="setting-label">默认保存路径</span>
                 <div class="path-selector">
                   <n-input v-model:value="savePath" placeholder="" readonly />
-                  <n-button>浏览</n-button>
+                  <n-button  @click="askSave">浏览</n-button>
                 </div>
               </div>
               <div class="setting-item">
@@ -111,6 +111,7 @@ import { ref, watch } from 'vue'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import ShortcutInput from '../components/ShortcutInput.vue';
 
@@ -197,6 +198,16 @@ watch(savePath, (newValue) => updateSetting("save_path", newValue))
 watch(ifAutoChangeSavePath, (newValue) => updateSetting("if_auto_change_save_path", newValue))
 watch(ifAskSavePath, (newValue) => updateSetting("if_ask_save_path", newValue))
 watch(zoomDelta, (newValue) => updateSetting("zoom_delta", newValue))
+
+async function askSave() {
+  const path = await open({
+    multiple: false,
+    directory: true,
+  });
+  if (typeof path === 'string') {
+    savePath.value = path
+  }
+}
 
 </script>
 

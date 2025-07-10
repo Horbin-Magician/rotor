@@ -20,14 +20,17 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
             v = shortcut.to_string();
             if tokens.len() == 2 {
                 if let Some(old_shortcut) = app_config.get(&k) {
-                    let _ = app.global_shortcut().unregister(Shortcut::from_str(old_shortcut).unwrap());
+                    let _ = app
+                        .global_shortcut()
+                        .unregister(Shortcut::from_str(old_shortcut).unwrap());
                 }
                 let _ = app.global_shortcut().register(shortcut);
             }
         }
     }
-    app_config.set(k, v)
-        .unwrap_or_else(|e| { log_util::log_error(format!("Command set_cfg error: {:?}", e));});
+    app_config.set(k, v).unwrap_or_else(|e| {
+        log_util::log_error(format!("Command set_cfg error: {:?}", e));
+    });
 }
 
 #[tauri::command]
