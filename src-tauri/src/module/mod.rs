@@ -10,7 +10,7 @@ use tauri_plugin_global_shortcut::Shortcut;
 pub trait Module {
     fn flag(&self) -> &str;
     fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>>;
-    fn run(&self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>>;
+    fn run(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>>;
     fn get_shortcut(&self) -> Option<Shortcut>;
     fn as_any(&self) -> &dyn Any;
 }

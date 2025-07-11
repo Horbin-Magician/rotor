@@ -3,16 +3,17 @@ mod pin_win;
 use std::any::Any;
 use std::error::Error;
 use std::str::FromStr;
-use std::time::Duration;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use std::collections::HashMap;
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
 
 use crate::core::config::AppConfig;
 use crate::module::Module;
 
+type Image = Vec<u8>;
 pub struct ScreenShotter {
-
+    pub masks: HashMap<String, Image>,
 }
 
 impl Module for ScreenShotter {
@@ -25,23 +26,26 @@ impl Module for ScreenShotter {
         Ok(())
     }
 
-    fn run(&self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
-        if let Some(win) = app.get_webview_window("ssmask") {
-            win.show()?;
-            win.set_focus()?;
-        } else {
-            let win_builder =
-                WebviewWindowBuilder::new(app, "ssmask", WebviewUrl::App("ssmask".into()))
-                    .always_on_top(true)
-                    .resizable(false)
-                    .decorations(false) // TODO del
-                    .fullscreen(true)   // TODO windows only
-                    // .simple_fullscreen(true)                       // TODO wait tauri update
-                    .visible(false)
-                    .skip_taskbar(true);                        // TODO windows only
+    fn run(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
+        self.masks.clear();
 
-            let _window = win_builder.build()?;
-        }
+        let monitor = Monitor::from_point(0, 0)?;
+        let label = format!("ssmask-{}", self.masks.len());
+        let monitor_img = monitor.capture_image().unwrap_or_default().to_vec();
+        self.masks.insert(label.clone(), monitor_img);
+
+        let win_builder =
+            WebviewWindowBuilder::new(app, label, WebviewUrl::App("ssmask".into()))
+                .position(monitor.x()? as f64, monitor.y()? as f64)
+                .always_on_top(true)
+                .resizable(false)
+                .decorations(false) // TODO del
+                .fullscreen(true)   // TODO windows only
+                // .simple_fullscreen(true)                       // TODO wait tauri update
+                .visible(false)
+                .skip_taskbar(true);                        // TODO windows only
+
+        let _window = win_builder.build()?;
         Ok(())
     }
 
@@ -63,17 +67,10 @@ impl ScreenShotter {
     pub fn new() -> Result<ScreenShotter, Box<dyn Error>> {
 
         Ok(ScreenShotter{
-
+            masks: HashMap::new(),
         })
     }
 
-    pub fn capture_screen(pos_x: i32, pos_y: i32) -> Vec<u8> {
-        if let Ok(monitor) = Monitor::from_point(pos_x, pos_y) {
-            let monitor_img = monitor.capture_image().unwrap_or_default();
-            return monitor_img.to_vec();
-        }
-        Vec::new()
-    }
 
     pub fn new_pin(&self) {
         println!("TODO: new pin win");

@@ -31,7 +31,6 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Konva from "konva";
-import { emit } from "@tauri-apps/api/event";
 
 const appWindow = getCurrentWindow()
 const backImg = ref()
