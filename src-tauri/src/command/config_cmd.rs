@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use tauri::AppHandle;
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::core::config::{AppConfig, Config};
 use crate::util::log_util;

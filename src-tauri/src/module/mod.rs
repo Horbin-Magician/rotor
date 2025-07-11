@@ -3,6 +3,7 @@
 pub mod screen_shotter;
 pub mod tray;
 
+use std::any::Any;
 use std::{error::Error, vec};
 use tauri_plugin_global_shortcut::Shortcut;
 
@@ -11,6 +12,7 @@ pub trait Module {
     fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>>;
     fn run(&self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>>;
     fn get_shortcut(&self) -> Option<Shortcut>;
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub fn get_all_modules() -> Vec<Box<dyn Module + Send>> {

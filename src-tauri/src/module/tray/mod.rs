@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::error::Error;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -29,6 +30,10 @@ impl Module for Tray {
 
     fn get_shortcut(&self) -> Option<Shortcut> {
         None
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

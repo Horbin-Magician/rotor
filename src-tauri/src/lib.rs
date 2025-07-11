@@ -33,6 +33,7 @@ pub fn run() {
             config_cmd::get_all_cfg,
             config_cmd::set_cfg,
             screen_shotter_cmd::capture_screen,
+            screen_shotter_cmd::new_pin,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
