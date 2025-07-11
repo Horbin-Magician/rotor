@@ -9,10 +9,10 @@ use crate::util::log_util;
 
 pub fn handle_global_hotkey_event(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if event.state() == ShortcutState::Pressed {
-        let rotor_app = INSTANCE
+        let mut rotor_app = INSTANCE
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        for module in rotor_app.modules.values() {
+        for module in rotor_app.modules.values_mut() {
             if let Some(module_shortcut) = module.get_shortcut() {
                 if module_shortcut == *shortcut {
                     module.run(app).unwrap_or_else(|e| {

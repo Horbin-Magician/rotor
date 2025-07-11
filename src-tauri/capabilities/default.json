@@ -4,7 +4,7 @@
   "description": "Capability for the main window",
   "windows": [
     "setting",
-    "ssmask"
+    "ssmask-*"
   ],
   "permissions": [
     "core:default",
