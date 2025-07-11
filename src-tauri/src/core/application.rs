@@ -4,7 +4,7 @@ use std::sync::{LazyLock, Mutex};
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
-use crate::module;
+use crate::module::{self, Module};
 use crate::util::log_util;
 
 pub fn handle_global_hotkey_event(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
@@ -55,6 +55,10 @@ impl Application {
         }
         self.app = Some(app);
         Ok(())
+    }
+
+    pub fn get_module(&self, flag: &str) -> Option<&Box<dyn Module + Send>> {
+        self.modules.get(flag)
     }
 }
 

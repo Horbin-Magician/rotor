@@ -31,6 +31,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Konva from "konva";
+import { emit } from "@tauri-apps/api/event";
 
 const appWindow = getCurrentWindow()
 const backImg = ref()
@@ -200,7 +201,7 @@ function handleMouseUp() {
     const y = Math.min(startY.value, endY.value)
     const width = Math.abs(endX.value - startX.value)
     const height = Math.abs(endY.value - startY.value)
-    console.log('Capturing selection:', { x, y, width, height })
+    invoke("new_pin", { x: x.toString(), y: y.toString(), width: width.toString(), height: height.toString() })
   } else {
     // Reset selection if it's too small
     isSelecting.value = false
