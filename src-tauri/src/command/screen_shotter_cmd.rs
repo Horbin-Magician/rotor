@@ -3,7 +3,7 @@ use crate::module::screen_shotter::ScreenShotter;
 
 #[tauri::command]
 pub fn capture_screen(webview_window: tauri::WebviewWindow) -> tauri::ipc::Response {
-    let app = Application::global().lock().unwrap();
+    let mut app = Application::global().lock().unwrap();
     let screenshot = app.get_module("screenshot");
     if let Some(s) = screenshot {
         if let Some(screenshot) = s.as_any().downcast_ref::<ScreenShotter>() {
@@ -17,13 +17,18 @@ pub fn capture_screen(webview_window: tauri::WebviewWindow) -> tauri::ipc::Respo
 }
 
 #[tauri::command]
-pub fn new_pin(x: String, y: String, width: String, height: String) {
-    println!("x:{}, y:{}, width:{}, height:{}", x, y, width, height); // TODO del
-    let app = Application::global().lock().unwrap();
+pub fn new_pin(x: String, y: String, width: String, height: String, webview_window: tauri::WebviewWindow) {
+    let mut app = Application::global().lock().unwrap();
     let screenshot = app.get_module("screenshot");
     if let Some(s) = screenshot {
-        if let Some(screenshot) = s.as_any().downcast_ref::<ScreenShotter>() {
-            screenshot.new_pin();
+        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
+            screenshot.new_pin(
+                x.parse::<f64>().unwrap(),
+                y.parse::<f64>().unwrap(),
+                width.parse::<f64>().unwrap(),
+                height.parse::<f64>().unwrap(),
+                webview_window
+            ).unwrap();
         }
     }
 }

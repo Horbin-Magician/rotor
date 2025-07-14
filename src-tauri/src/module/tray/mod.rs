@@ -23,7 +23,7 @@ impl Module for Tray {
         Ok(())
     }
 
-    fn run(&mut self, _app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
+    fn run(&mut self) -> Result<(), Box<dyn Error>> {
         // do nothing now
         Ok(())
     }
@@ -33,6 +33,10 @@ impl Module for Tray {
     }
 
     fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
