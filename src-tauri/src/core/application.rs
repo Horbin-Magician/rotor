@@ -7,7 +7,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, S
 use crate::module::{self, Module};
 use crate::util::log_util;
 
-pub fn handle_global_hotkey_event(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
+pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if event.state() == ShortcutState::Pressed {
         let mut rotor_app = INSTANCE
             .lock()
@@ -15,7 +15,7 @@ pub fn handle_global_hotkey_event(app: &AppHandle, shortcut: &Shortcut, event: S
         for module in rotor_app.modules.values_mut() {
             if let Some(module_shortcut) = module.get_shortcut() {
                 if module_shortcut == *shortcut {
-                    module.run(app).unwrap_or_else(|e| {
+                    module.run().unwrap_or_else(|e| {
                         log_util::log_error(format!("Module {} run error: {:?}", module.flag(), e))
                     });
                 }
@@ -57,8 +57,8 @@ impl Application {
         Ok(())
     }
 
-    pub fn get_module(&self, flag: &str) -> Option<&Box<dyn Module + Send>> {
-        self.modules.get(flag)
+    pub fn get_module(&mut self, flag: &str) -> Option<&mut Box<dyn Module + Send + 'static>> {
+        self.modules.get_mut(flag)
     }
 }
 
