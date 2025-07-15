@@ -10,13 +10,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, getAllWindows, PhysicalPosition, LogicalPosition, cursorPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, getAllWindows, PhysicalPosition } from '@tauri-apps/api/window';
 import Konva from "konva";
-import { event } from "@tauri-apps/api";
 
 const appWindow = getCurrentWindow()
-const snapThreshold = 15; // Reduced snap threshold to make snapping less aggressive
-const snapHysteresis = 25; // Distance required to break away from a snap (greater than snapThreshold)
+const snapThreshold = 15;
 const backImg = ref()
 const backImgRef = ref<HTMLImageElement | null>(null)
 const backImgURL = ref()
@@ -29,8 +27,6 @@ enum State {
 }
 
 let state = State.Default
-let mouse_delta_x: number = 0;
-let mouse_delta_y: number = 0;
 
 // Track snapping state to prevent jittering
 let isSnappedHorizontally = false;
@@ -97,6 +93,10 @@ function handleKeyup(event: KeyboardEvent) {
   }
 }
 
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+  return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
+}
+
 // Function to handle window movement
 async function handleWindowMove() {
   // Implement debouncing to prevent too frequent updates
@@ -117,31 +117,29 @@ async function handleWindowMove() {
   );
   
   // Track if we need to snap in either direction
-  let shouldSnapHorizontal = false;
-  let shouldSnapVertical = false;
   let snapToX = currentPosition.x;
   let snapToY = currentPosition.y;
   let minDistance_x = Infinity;
   let minDistance_y = Infinity;
-  
-  function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
-    return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
-  }
 
   // Check if we should break out of existing snaps based on hysteresis
   if (isSnappedHorizontally && lastSnapX !== null) {
     const distanceFromSnap = Math.abs(currentPosition.x - lastSnapX);
-    if (distanceFromSnap > snapHysteresis) {
+    if (distanceFromSnap > snapThreshold) {
       isSnappedHorizontally = false;
       lastSnapX = null;
+    } else {
+      snapToX = lastSnapX
     }
   }
   
   if (isSnappedVertically && lastSnapY !== null) {
     const distanceFromSnap = Math.abs(currentPosition.y - lastSnapY);
-    if (distanceFromSnap > snapHysteresis) {
+    if (distanceFromSnap > snapThreshold) {
       isSnappedVertically = false;
       lastSnapY = null;
+    } else {
+      snapToY = lastSnapY
     }
   }
   
@@ -159,7 +157,7 @@ async function handleWindowMove() {
             rangesOverlap(currentPosition.y, currentPosition.y + currentSize.height,
                         otherPosition.y, otherPosition.y + otherSize.height)) {
           if (distRightToLeft < minDistance_x) {
-            shouldSnapHorizontal = true;
+            isSnappedHorizontally = true;
             minDistance_x = distRightToLeft;
             snapToX = otherPosition.x - currentSize.width;
           }
@@ -171,7 +169,7 @@ async function handleWindowMove() {
             rangesOverlap(currentPosition.y, currentPosition.y + currentSize.height,
                         otherPosition.y, otherPosition.y + otherSize.height)) {
           if (distLeftToRight < minDistance_x) {
-            shouldSnapHorizontal = true;
+            isSnappedHorizontally = true;
             minDistance_x = distLeftToRight;
             snapToX = otherPosition.x + otherSize.width;
           }
@@ -186,7 +184,7 @@ async function handleWindowMove() {
             rangesOverlap(currentPosition.x, currentPosition.x + currentSize.width,
                         otherPosition.x, otherPosition.x + otherSize.width)) {
           if (distBottomToTop < minDistance_y) {
-            shouldSnapVertical = true;
+            isSnappedVertically = true;
             minDistance_y = distBottomToTop;
             snapToY = otherPosition.y - currentSize.height;
           }
@@ -198,7 +196,7 @@ async function handleWindowMove() {
             rangesOverlap(currentPosition.x, currentPosition.x + currentSize.width,
                         otherPosition.x, otherPosition.x + otherSize.width)) {
           if (distTopToBottom < minDistance_y) {
-            shouldSnapVertical = true;
+            isSnappedVertically = true;
             minDistance_y = distTopToBottom;
             snapToY = otherPosition.y + otherSize.height;
           }
@@ -207,27 +205,11 @@ async function handleWindowMove() {
     }
   }
 
-  // Update snapping state
-  if (shouldSnapHorizontal) {
-    isSnappedHorizontally = true;
-    lastSnapX = snapToX;
-  }
-  
-  if (shouldSnapVertical) {
-    isSnappedVertically = true;
-    lastSnapY = snapToY;
-  }
-
   // Only update position if we need to snap in at least one direction
-  if (shouldSnapHorizontal || shouldSnapVertical) {
-    // If we're only snapping in one direction, keep the current position for the other
-    const finalX = shouldSnapHorizontal ? snapToX : currentPosition.x;
-    const finalY = shouldSnapVertical ? snapToY : currentPosition.y;
-    
-    // Only update if the position has actually changed
-    if (finalX !== currentPosition.x || finalY !== currentPosition.y) {
-      await appWindow.setPosition(new PhysicalPosition(finalX, finalY));
-    }
+  if (isSnappedHorizontally || isSnappedVertically) {
+    await appWindow.setPosition(new PhysicalPosition(snapToX, snapToY));
+    lastSnapX = snapToX;
+    lastSnapY = snapToY;
   }
 }
 
