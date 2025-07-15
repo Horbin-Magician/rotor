@@ -17,19 +17,6 @@ const backImg = ref()
 const backImgRef = ref<HTMLImageElement | null>(null)
 const backImgURL = ref()
 
-// Selection state
-const isSelecting = ref(false)
-const startX = ref(0)
-const startY = ref(0)
-const endX = ref(0)
-const endY = ref(0)
-const currentX = ref(0)
-const currentY = ref(0)
-
-// Magnifier state
-const magnifierSize = 100
-const zoomFactor = 4
-
 let backImgLayer: Konva.Layer | null = null
 
 // // Load the screenshot
@@ -61,16 +48,15 @@ let backImgLayer: Konva.Layer | null = null
 
 // Mouse event handlers
 function handleMouseDown(_event: MouseEvent) {
-    const appWindow = getCurrentWindow()
     appWindow.startDragging()
 }
 
 // Mouse event handlers
 function handleMouseUp(event: MouseEvent) {
-    console.log('handleMouseUp'); // TODO del
+  console.log('handleMouseUp'); // TODO del
 }
 
-function handleKeydown(event: KeyboardEvent) {
+function handleKeyup(event: KeyboardEvent) {
   console.log('全局按下了键：', event.key); // TODO del
   if (event.key === 'Escape') {
     appWindow.close()
@@ -78,11 +64,11 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('keyup', handleKeyup);
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('keyup', handleKeyup);
 });
 
 </script>

@@ -209,7 +209,7 @@ function handleMouseUp() {
   }
 }
 
-function handleKeydown(event: KeyboardEvent) {
+function handleKeyup(event: KeyboardEvent) {
   console.log('全局按下了键：', event.key); // TODO del
   if (event.key === 'Escape') {
     appWindow.close()
@@ -217,11 +217,11 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('keyup', handleKeyup);
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('keyup', handleKeyup);
 });
 
 </script>
