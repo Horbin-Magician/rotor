@@ -37,7 +37,7 @@ pub fn run() {
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
-            let _ = app.handle().set_dock_visibility(false);
+            let _ = app.set_dock_visibility(false);
             Ok(())
         })
         .build(tauri::generate_context!())

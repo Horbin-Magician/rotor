@@ -230,6 +230,7 @@ onBeforeUnmount(() => {
 html, body {
   background-color: transparent !important;
 }
+
 .container {
   position: relative;
   height: 100vh;
