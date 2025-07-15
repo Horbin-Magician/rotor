@@ -110,6 +110,7 @@ impl ScreenShotter {
                 .always_on_top(true)
                 .resizable(false)
                 .decorations(false) 
+                .accept_first_mouse(true)
                 .visible(false);
         let _window = win_builder.build()?;
 
