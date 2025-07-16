@@ -9,17 +9,31 @@
   <div class="tips" v-if="show_tips">
     {{tips}}
   </div>
+  <div class="toolbar">
+    <div class="toolbar-item" @click="saveImage">
+      <n-icon size="20" color="#007bff">
+        <SaveAltFilled />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" @click="closeWindow">
+      <n-icon size="20" color="#007bff">
+        <CloseFilled />
+      </n-icon>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { CloseFilled, SaveAltFilled } from '@vicons/material';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Konva from "konva";
 
 enum State {
   Default,
-  Moving
+  Moving,
+  Drawing
 }
 
 const appWindow = getCurrentWindow()
@@ -95,6 +109,14 @@ function handleKeyup(event: KeyboardEvent) {
   }
 }
 
+function saveImage() {
+  // TODO: Implement save functionality
+}
+
+function closeWindow() {
+  appWindow.close();
+}
+
 async function zoomWindow(wheel_delta: number) {
   let delta = wheel_delta > 0 ? -2 : 2 // TODO use setting
   zoom_scale += delta
@@ -130,5 +152,37 @@ async function zoomWindow(wheel_delta: number) {
   padding: 2px 8px 2px 8px;
   transform: translate(-50%, -50%);
   background-color: black;
+  color: white;
+  border-radius: 4px;
+  font-size: 14px;
+  z-index: 1000;
+}
+
+.toolbar {
+  position: fixed;
+  bottom: 0px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 8px 8px 0px 0px;
+  padding: 4px;
+  gap: 4px;
+  z-index: 1000;
+}
+
+.toolbar-item {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.toolbar-item:hover {
+  background-color: rgba(255, 255, 255, 0.2);
 }
 </style>

@@ -23,6 +23,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/vue": "^2.0.0",
+    "@vicons/material": "^0.13.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "naive-ui": "^2.42.0",
     "typescript": "~5.6.2",
