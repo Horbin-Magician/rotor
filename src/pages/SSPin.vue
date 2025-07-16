@@ -9,7 +9,7 @@
   <div class="tips" v-if="show_tips">
     {{tips}}
   </div>
-  <div class="toolbar">
+  <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible }">
     <div class="toolbar-item" @click="saveImage">
       <n-icon size="20" color="#007bff">
         <SaveAltFilled />
@@ -55,6 +55,8 @@ const tips = ref("")
 const show_tips = ref(false)
 
 let zoom_scale = 100;
+const toolbarVisible = ref(true);
+let hideToolbarTimer: number | null = null;
 
 // // Load the screenshot
 // invoke("capture_screen").then(async (imgBuf: any) => {
@@ -129,6 +131,14 @@ async function zoomWindow(wheel_delta: number) {
 { // Mount something
   onMounted(async () => {
     window.addEventListener('keyup', handleKeyup);
+
+    appWindow.onFocusChanged((event) => {
+      if(event.payload) {
+        toolbarVisible.value = true;
+      } else {
+        toolbarVisible.value = false;
+      }
+    });
   });
 
   onBeforeUnmount(async () => {
@@ -169,6 +179,12 @@ async function zoomWindow(wheel_delta: number) {
   padding: 4px;
   gap: 4px;
   z-index: 1000;
+  transition: transform 0.5s ease;
+  opacity: 0.5;
+}
+
+.toolbar-hidden {
+  transform: translate(-50%, 100%);
 }
 
 .toolbar-item {
