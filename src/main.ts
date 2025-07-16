@@ -7,13 +7,11 @@ import naive from 'naive-ui'
 const Setting = () => import('./pages/Setting.vue')
 const SSMask = () => import('./pages/SSMask.vue')
 const SSPin = () => import('./pages/SSPin.vue')
-const SSToolbar = () => import('./pages/SSToolbar.vue')
 
 const routes = [
   { path: '/', component: Setting },
   { path: '/ssmask', component: SSMask },
   { path: '/sspin', component: SSPin },
-  { path: '/sstoolbar', component: SSToolbar },
 ]
 
 const router = createRouter({
