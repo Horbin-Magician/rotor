@@ -105,6 +105,7 @@ impl ScreenShotter {
 
         let win_builder =
             WebviewWindowBuilder::new(app_handle, label, WebviewUrl::App("ScreenShotter/Pin".into()))
+                .title("小云视窗")
                 .position(x, y)
                 .inner_size(width, height)
                 .always_on_top(true)
