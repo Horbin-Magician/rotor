@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, PhysicalPosition, Window } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import Konva from "konva";
 
 enum State {
@@ -68,9 +68,8 @@ let zoom_scale = 100;
 
 //   backImgURL.value = stage.toDataURL({ mimeType:"image/png" })
 // })
-  
+
 // Mouse event handlers
-let isMoving = false;
 async function handleMouseDown(_event: MouseEvent) {
   appWindow.startDragging();
   state = State.Moving
@@ -105,44 +104,9 @@ async function zoomWindow(wheel_delta: number) {
   // TODO scale window
 }
 
-let lostFocusTimeout: number | null = null;
-const toolbar_label = appWindow.label.replace('sspin', 'sstoolbar')
 { // Mount something
   onMounted(async () => {
     window.addEventListener('keyup', handleKeyup);
-
-    appWindow.listen('tauri://blur', async () => {
-      lostFocusTimeout = setTimeout(async () => { // wait focue flush
-        let toolbar = await Window.getByLabel(toolbar_label)
-        const hasToolbarFocus = await toolbar?.isFocused()
-        if (!hasToolbarFocus) toolbar?.hide()
-      }, 50);
-    });
-
-    appWindow.listen('tauri://focus', async () => {
-      if(lostFocusTimeout) clearTimeout(lostFocusTimeout);
-      let toolbar = await Window.getByLabel(toolbar_label)
-      if (!await toolbar?.isVisible()){
-        await toolbar?.show()
-        await appWindow.setFocus();
-      }
-    });
-
-    appWindow.listen('tauri://move', async (event) => {
-      let toolbar = await Window.getByLabel(toolbar_label)
-      let pos = await appWindow.outerPosition()
-      let size = await appWindow.outerSize()
-      let toolbar_size = await toolbar?.outerSize()
-      await toolbar?.setPosition(new PhysicalPosition(
-        pos.x + size.width - (toolbar_size?.width || 0),
-        pos.y + size.height
-      ))
-    });
-
-    appWindow.onCloseRequested(async () => {
-      let toolbar = await Window.getByLabel(toolbar_label)
-      await toolbar?.close()
-    })
   });
 
   onBeforeUnmount(async () => {
