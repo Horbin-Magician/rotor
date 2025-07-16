@@ -4,7 +4,7 @@ use std::any::Any;
 use std::error::Error;
 use std::str::FromStr;
 use std::collections::HashMap;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
 
@@ -93,6 +93,7 @@ impl ScreenShotter {
         };
 
         let label = format!("sspin-{}", self.max_pin_id);
+        let toolbar_label = format!("sstoolbar-{}", self.max_pin_id);
         self.max_pin_id += 1;
 
         let monitor = match webview_window.current_monitor()? {
@@ -110,9 +111,20 @@ impl ScreenShotter {
                 .always_on_top(true)
                 .resizable(false)
                 .decorations(false) 
-                .accept_first_mouse(true)
+                // .accept_first_mouse(true) // TODO: del with 
                 .visible(false);
         let _window = win_builder.build()?;
+
+        let tool_bar_builder = 
+            WebviewWindowBuilder::new(app_handle, toolbar_label, WebviewUrl::App("sstoolbar".into()))
+                .position(x+width-240.0, y+height)
+                .inner_size(240.0, 30.0)
+                .always_on_top(true)
+                .resizable(false)
+                .decorations(false) 
+                .accept_first_mouse(true)
+                .visible(false);
+        let _tool_bar = tool_bar_builder.build()?;
 
         Ok(())
     }
