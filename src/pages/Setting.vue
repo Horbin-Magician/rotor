@@ -115,6 +115,16 @@ import { open } from '@tauri-apps/plugin-dialog';
 
 import ShortcutInput from '../components/ShortcutInput.vue';
 
+import { getCurrentWindow } from '@tauri-apps/api/window'
+const appWindow = getCurrentWindow()
+appWindow.isVisible().then( (visible)=>{
+  if(visible == false) {
+    appWindow.show()
+    appWindow.setFocus()
+  }
+})
+
+
 const languageOptions = [
   { label: '系统默认', value: 0 },
   { label: '中文', value: 1 },
