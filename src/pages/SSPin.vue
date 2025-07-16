@@ -1,10 +1,14 @@
 <template>
   <main class="container" 
         @mousedown="handleMouseDown"
+        @mouseup="handleMouseUp"
         @mousemove="handleMouseMove"
-        @mouseup="handleMouseUp">
+        @wheel="handleWheel">
     <div id="stage" ref="backImgRef"></div>
   </main>
+  <div class="tips" v-if="show_tips">
+    {{tips}}
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -19,12 +23,24 @@ enum State {
 }
 
 const appWindow = getCurrentWindow()
+appWindow.isVisible().then( (visible)=>{
+  if(visible == false) {
+    appWindow.show()
+    appWindow.setFocus()
+  }
+})
 
 let state = State.Default
+
 const backImg = ref()
 const backImgRef = ref<HTMLImageElement | null>(null)
 const backImgURL = ref()
 let backImgLayer: Konva.Layer | null = null
+
+const tips = ref("")
+const show_tips = ref(false)
+
+let zoom_scale = 100;
 
 // // Load the screenshot
 // invoke("capture_screen").then(async (imgBuf: any) => {
@@ -69,10 +85,23 @@ function handleMouseMove(_event: MouseEvent) {
 
 }
 
+function handleWheel(event: WheelEvent){
+  zoomWindow(event.deltaY)
+}
+
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     appWindow.close()
   }
+}
+
+async function zoomWindow(wheel_delta: number) {
+  let delta = wheel_delta > 0 ? -2 : 2 // TODO use setting
+  zoom_scale += delta
+  zoom_scale = Math.max(5, Math.min(zoom_scale, 500))
+  tips.value = zoom_scale + "%"
+  show_tips.value = true
+  // TODO scale window
 }
 
 { // Mount something
@@ -92,5 +121,14 @@ function handleKeyup(event: KeyboardEvent) {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+}
+
+.tips {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  padding: 2px 8px 2px 8px;
+  transform: translate(-50%, -50%);
+  background-color: black;
 }
 </style>

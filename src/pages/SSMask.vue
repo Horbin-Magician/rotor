@@ -33,6 +33,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import Konva from "konva";
 
 const appWindow = getCurrentWindow()
+appWindow.isVisible().then( (visible)=>{
+  if(visible == false) {
+    appWindow.show()
+    appWindow.setFocus()
+  }
+})
+
 const backImg = ref()
 const backImgRef = ref<HTMLImageElement | null>(null)
 const backImgURL = ref()

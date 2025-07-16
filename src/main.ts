@@ -24,12 +24,3 @@ createApp(App)
   .use(naive)
   .mount("#app");
 
-// for hide initial white screen
-import { getCurrentWindow } from '@tauri-apps/api/window'
-const appWindow = getCurrentWindow()
-appWindow.isVisible().then( (visible)=>{
-  if(visible == false) {
-    appWindow.show()
-    appWindow.setFocus()
-  }
-})
