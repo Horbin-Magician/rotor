@@ -41,7 +41,7 @@ impl Module for ScreenShotter {
         self.masks.insert(label.clone(), monitor_img);
 
         let win_builder =
-            WebviewWindowBuilder::new(app_handle, label, WebviewUrl::App("ssmask".into()))
+            WebviewWindowBuilder::new(app_handle, label, WebviewUrl::App("ScreenShotter/Mask".into()))
                 .position(monitor.x()? as f64, monitor.y()? as f64)
                 .always_on_top(true)
                 .resizable(false)
@@ -104,7 +104,7 @@ impl ScreenShotter {
         let y = monitor_pos.y as f64 + offset_y;
 
         let win_builder =
-            WebviewWindowBuilder::new(app_handle, label, WebviewUrl::App("sspin".into()))
+            WebviewWindowBuilder::new(app_handle, label, WebviewUrl::App("ScreenShotter/Pin".into()))
                 .position(x, y)
                 .inner_size(width, height)
                 .always_on_top(true)
