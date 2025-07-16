@@ -10,6 +10,11 @@
     {{tips}}
   </div>
   <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible }">
+    <div class="toolbar-item" @click="minimizeWindow">
+      <n-icon size="20" color="#007bff">
+        <MinusFilled />
+      </n-icon>
+    </div>
     <div class="toolbar-item" @click="saveImage">
       <n-icon size="20" color="#007bff">
         <SaveAltFilled />
@@ -20,12 +25,17 @@
         <CloseFilled />
       </n-icon>
     </div>
+    <div class="toolbar-item">
+      <n-icon size="20" color="#007bff">
+        <ContentCopyRound />
+      </n-icon>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { CloseFilled, SaveAltFilled } from '@vicons/material';
+import { CloseFilled, SaveAltFilled, ContentCopyRound, MinusFilled } from '@vicons/material';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Konva from "konva";
@@ -109,6 +119,10 @@ function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     appWindow.close()
   }
+}
+
+function minimizeWindow() {
+  appWindow.minimize();
 }
 
 function saveImage() {
