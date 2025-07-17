@@ -34,11 +34,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount } from "vue";
 import { CloseFilled, SaveAltFilled, ContentCopyRound, MinusFilled } from '@vicons/material';
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import Konva from "konva";
+// import Konva from "konva";
 
 enum State {
   Default,
@@ -56,17 +55,16 @@ appWindow.isVisible().then( (visible)=>{
 
 let state = State.Default
 
-const backImg = ref()
+// const backImg = ref()
 const backImgRef = ref<HTMLImageElement | null>(null)
-const backImgURL = ref()
-let backImgLayer: Konva.Layer | null = null
+// const backImgURL = ref()
+// let backImgLayer: Konva.Layer | null = null
 
 const tips = ref("")
 const show_tips = ref(false)
 
 let zoom_scale = 100;
 const toolbarVisible = ref(true);
-let hideToolbarTimer: number | null = null;
 
 // // Load the screenshot
 // invoke("capture_screen").then(async (imgBuf: any) => {
@@ -97,8 +95,10 @@ let hideToolbarTimer: number | null = null;
 
 // Mouse event handlers
 async function handleMouseDown(_event: MouseEvent) {
-  appWindow.startDragging();
-  state = State.Moving
+  if (state === State.Default) {
+    appWindow.startDragging();
+    state = State.Moving
+  }
 }
 
 // Mouse event handlers
