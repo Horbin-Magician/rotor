@@ -4,8 +4,10 @@ use std::any::Any;
 use std::error::Error;
 use std::str::FromStr;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
+use tokio::sync::Mutex;
 use xcap::Monitor;
 
 use crate::core::config::AppConfig;
@@ -14,7 +16,7 @@ use crate::module::Module;
 type Image = Vec<u8>;
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
-    pub masks: HashMap<String, Image>,
+    pub masks: Arc<Mutex<HashMap<String, Image>>>,
     max_pin_id: u8,
 }
 
@@ -34,14 +36,27 @@ impl Module for ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
-        self.masks.clear();
         let monitor = Monitor::from_point(0, 0)?;
-        let label = format!("ssmask-{}", self.masks.len());
-        let monitor_img = monitor.capture_image().unwrap_or_default().to_vec();
-        self.masks.insert(label.clone(), monitor_img);
+        let label = format!("ssmask-0");
+
+        // Capture screen
+        let masks_clone = Arc::clone(&self.masks);
+        let label_clone = label.clone();
+        let monitor_clone = monitor.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Ok(monitor_img) = tokio::task::spawn_blocking(move || {
+                monitor_clone.capture_image()
+                    .map(|img| img.to_vec())
+            }).await {
+                if let Ok(img_data) = monitor_img {
+                    let mut masks = masks_clone.lock().await;
+                    masks.insert(label_clone, img_data);
+                }
+            }
+        });
 
         let win_builder =
-            WebviewWindowBuilder::new(app_handle, label, WebviewUrl::App("ScreenShotter/Mask".into()))
+            WebviewWindowBuilder::new(app_handle, &label, WebviewUrl::App("ScreenShotter/Mask".into()))
                 .position(monitor.x()? as f64, monitor.y()? as f64)
                 .always_on_top(true)
                 .resizable(false)
@@ -75,10 +90,9 @@ impl Module for ScreenShotter {
 
 impl ScreenShotter {
     pub fn new() -> Result<ScreenShotter, Box<dyn Error>> {
-
         Ok(ScreenShotter{
             app_hander: None,
-            masks: HashMap::new(),
+            masks: Arc::new(Mutex::new(HashMap::new())),
             max_pin_id: 0,
         })
     }

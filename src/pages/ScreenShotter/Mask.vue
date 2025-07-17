@@ -33,12 +33,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import Konva from "konva";
 
 const appWindow = getCurrentWindow()
-appWindow.isVisible().then( (visible)=>{
-  if(visible == false) {
-    appWindow.show()
-    appWindow.setFocus()
-  }
-})
 
 const backImg = ref()
 const backImgRef = ref<HTMLImageElement | null>(null)
@@ -61,32 +55,6 @@ const selectionWidth = ref(0)
 const selectionHeight = ref(0)
 
 let backImgLayer: Konva.Layer | null = null
-// Load the screenshot
-invoke("capture_screen").then(async (imgBuf: any) => {
-  const width = window.screen.width * window.devicePixelRatio
-  const height = window.screen.height * window.devicePixelRatio;
-  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height);
-  backImg.value = await createImageBitmap(imgData)
-
-  backImgLayer = new Konva.Layer(); // then create layer
-  const konvaImage = new Konva.Image({
-    x: 0,
-    y: 0,
-    image: backImg.value,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-  backImgLayer.add(konvaImage);
-
-  var stage = new Konva.Stage({
-    container: 'stage', // id of container <div>
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-  stage.add(backImgLayer); // add the layer to the stage
-
-  backImgURL.value = stage.toDataURL({ mimeType:"image/png" })
-})
 
 // Computed styles for selection rectangle
 const selectionStyle = computed(() => {
@@ -231,6 +199,38 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
 });
 
+// Load the screenshot
+const width = window.screen.width * window.devicePixelRatio
+const height = window.screen.height * window.devicePixelRatio;
+invoke("capture_screen").then(async (imgBuf: any) => {
+  backImgLayer = new Konva.Layer(); // then create layer
+  let stage = new Konva.Stage({
+    container: 'stage', // id of container <div>
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
+  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height);
+  backImg.value = await createImageBitmap(imgData)
+
+  const konvaImage = new Konva.Image({
+    x: 0,
+    y: 0,
+    image: backImg.value,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  backImgLayer.add(konvaImage);
+  stage.add(backImgLayer); // add the layer to the stage
+  backImgURL.value = stage.toDataURL({ mimeType:"image/png" })
+
+  appWindow.isVisible().then( (visible)=>{
+    if(visible == false) {
+      appWindow.show()
+      appWindow.setFocus()
+    }
+  })
+})
 </script>
 
 <style scoped>
