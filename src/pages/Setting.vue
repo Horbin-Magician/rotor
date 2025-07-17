@@ -9,7 +9,7 @@
     >
       <template #prefix>
         <div class= "logo">
-          <img src="/assets/icon/logo.svg" width="60px" @click="openGitHome" draggable="false"/>
+          <img src="/assets/logo.svg" width="60px" @click="openGitHome" draggable="false"/>
         </div>
       </template>
       <n-tab-pane class="tab-pane" name="Base" tab="基础">

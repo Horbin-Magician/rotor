@@ -1,5 +1,3 @@
-// mod pin_win;
-
 use std::any::Any;
 use std::error::Error;
 use std::str::FromStr;
@@ -44,15 +42,12 @@ impl Module for ScreenShotter {
         let label_clone = label.clone();
         let monitor_clone = monitor.clone();
         tauri::async_runtime::spawn(async move {
-            if let Ok(monitor_img) = tokio::task::spawn_blocking(move || {
-                monitor_clone.capture_image()
-                    .map(|img| img.to_vec())
-            }).await {
-                if let Ok(img_data) = monitor_img {
-                    let mut masks = masks_clone.lock().await;
-                    masks.insert(label_clone, img_data);
-                }
-            }
+            let mut masks = masks_clone.lock().await;
+            let _ = monitor_clone.capture_image()
+                .map(|img| img.to_vec())
+                .map(|img| {
+                    masks.insert(label_clone, img);
+                });
         });
 
         let win_builder =
