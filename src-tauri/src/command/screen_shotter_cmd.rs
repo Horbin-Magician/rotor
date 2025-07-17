@@ -14,7 +14,6 @@ pub async fn capture_screen(webview_window: tauri::WebviewWindow) -> tauri::ipc:
         let masks = masks_arc.lock().await;
         masks.get(webview_window.label()).cloned()
     } else { None };
-    
     tauri::ipc::Response::new(image.unwrap_or_default())
 }
 
