@@ -1,7 +1,7 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
@@ -43,23 +43,27 @@ impl Module for ScreenShotter {
         let monitor_clone = monitor.clone();
         tauri::async_runtime::spawn(async move {
             let mut masks = masks_clone.lock().await;
-            let _ = monitor_clone.capture_image()
+            let _ = monitor_clone
+                .capture_image()
                 .map(|img| img.to_vec())
                 .map(|img| {
                     masks.insert(label_clone, img);
                 });
         });
 
-        let win_builder =
-            WebviewWindowBuilder::new(app_handle, &label, WebviewUrl::App("ScreenShotter/Mask".into()))
-                .position(monitor.x()? as f64, monitor.y()? as f64)
-                .always_on_top(true)
-                .resizable(false)
-                .decorations(false) // TODO del
-                .fullscreen(true)   // TODO windows only
-                // .simple_fullscreen(true)                       // TODO wait tauri update
-                .visible(false)
-                .skip_taskbar(true);                        // TODO windows only
+        let win_builder = WebviewWindowBuilder::new(
+            app_handle,
+            &label,
+            WebviewUrl::App("ScreenShotter/Mask".into()),
+        )
+        .position(monitor.x()? as f64, monitor.y()? as f64)
+        .always_on_top(true)
+        .resizable(false)
+        .decorations(false) // TODO del
+        .fullscreen(true) // TODO windows only
+        // .simple_fullscreen(true)                       // TODO wait tauri update
+        .visible(false)
+        .skip_taskbar(true); // TODO windows only
         let _window = win_builder.build()?;
 
         Ok(())
@@ -85,15 +89,21 @@ impl Module for ScreenShotter {
 
 impl ScreenShotter {
     pub fn new() -> Result<ScreenShotter, Box<dyn Error>> {
-        Ok(ScreenShotter{
+        Ok(ScreenShotter {
             app_hander: None,
             masks: Arc::new(Mutex::new(HashMap::new())),
             max_pin_id: 0,
         })
     }
 
-
-    pub fn new_pin(&mut self, offset_x: f64, offset_y: f64, width: f64, height: f64, webview_window: tauri::WebviewWindow) -> Result<(), Box<dyn Error>> {
+    pub fn new_pin(
+        &mut self,
+        offset_x: f64,
+        offset_y: f64,
+        width: f64,
+        height: f64,
+        webview_window: tauri::WebviewWindow,
+    ) -> Result<(), Box<dyn Error>> {
         webview_window.close().unwrap();
 
         let app_handle = match &self.app_hander {
@@ -112,16 +122,19 @@ impl ScreenShotter {
         let x = monitor_pos.x as f64 + offset_x;
         let y = monitor_pos.y as f64 + offset_y;
 
-        let win_builder =
-            WebviewWindowBuilder::new(app_handle, label, WebviewUrl::App("ScreenShotter/Pin".into()))
-                .title("小云视窗")
-                .position(x, y)
-                .inner_size(width, height)
-                .always_on_top(true)
-                .resizable(false)
-                .decorations(false) 
-                // .accept_first_mouse(true) // TODO: del with 
-                .visible(false);
+        let win_builder = WebviewWindowBuilder::new(
+            app_handle,
+            label,
+            WebviewUrl::App("ScreenShotter/Pin".into()),
+        )
+        .title("小云视窗")
+        .position(x, y)
+        .inner_size(width, height)
+        .always_on_top(true)
+        .resizable(false)
+        .decorations(false)
+        // .accept_first_mouse(true) // TODO: del with
+        .visible(false);
         let _window = win_builder.build()?;
 
         Ok(())
