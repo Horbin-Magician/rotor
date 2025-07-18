@@ -7,6 +7,10 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use tokio::sync::Mutex;
 use xcap::Monitor;
+use tokio::net::TcpListener;
+use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::accept_async;
+use futures_util::{StreamExt, SinkExt};
 
 use crate::core::config::AppConfig;
 use crate::module::Module;
@@ -25,6 +29,12 @@ impl Module for ScreenShotter {
 
     fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
         self.app_hander = Some(app.clone());
+
+        let masks_clone = self.masks.clone();
+        tauri::async_runtime::spawn(async move {
+            ScreenShotter::run_server(masks_clone).await;
+        });
+
         Ok(())
     }
 
@@ -94,6 +104,43 @@ impl ScreenShotter {
             masks: Arc::new(Mutex::new(HashMap::new())),
             max_pin_id: 0,
         })
+    }
+
+    async fn run_server(masks: Arc<Mutex<HashMap<String, Image>>>) {
+        let listener = TcpListener::bind("localhost:9001").await.expect("Failed to bind");
+
+        println!("WebSocket server listening on ws://localhost:9001");
+
+        while let Ok((stream, _)) = listener.accept().await {
+            let masks_clone = masks.clone();
+            tokio::spawn(async move {
+                let ws_stream = accept_async(stream)
+                    .await
+                    .expect("Error during the websocket handshake occurred");
+                println!("New WebSocket connection!");
+
+                let (mut write, mut read) = ws_stream.split();
+
+                // 回显所有收到的消息
+                while let Some(msg) = read.next().await {
+                    match msg {
+                        Ok(msg) => {
+                            let label = msg.to_string();
+                            println!("get label: {}", label);
+                            let masks = masks_clone.lock().await;
+                            let image = masks.get(&label).cloned();
+                            drop(masks);
+                            println!("send img!");
+                            write.send(Message::Binary(image.unwrap_or_default().into())).await.expect("Failed to send message");
+                        }
+                        Err(e) => {
+                            println!("Error processing message: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
     }
 
     pub fn new_pin(
