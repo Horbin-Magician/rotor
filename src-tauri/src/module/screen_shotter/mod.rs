@@ -36,6 +36,9 @@ impl Module for ScreenShotter {
         let monitor = Monitor::from_point(0, 0)?;
         let label = format!("ssmask-0");
 
+        let millis = chrono::Utc::now().timestamp_millis();
+        println!("time all begin: {}", millis);
+
         // Capture screen
         let masks_clone = Arc::clone(&self.masks);
         let label_clone = label.clone();
@@ -64,6 +67,9 @@ impl Module for ScreenShotter {
         .visible(false)
         .skip_taskbar(true); // TODO windows only
         let _window = win_builder.build()?;
+
+        let millis = chrono::Utc::now().timestamp_millis();
+        println!("time end rust: {}", millis);
 
         Ok(())
     }

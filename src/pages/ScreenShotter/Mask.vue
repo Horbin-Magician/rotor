@@ -27,6 +27,9 @@
 </template>
 
 <script setup lang="ts">
+
+console.log("js begin: ", Date.now())
+
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -202,36 +205,44 @@ onBeforeUnmount(() => {
 // Load the screenshot
 const width = window.screen.width * window.devicePixelRatio
 const height = window.screen.height * window.devicePixelRatio
-invoke("capture_screen").then(async (imgBuf: any) => {
-  backImgLayer = new Konva.Layer(); // then create layer
-  let stage = new Konva.Stage({
-    container: 'stage', // id of container <div>
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
+invoke("capture_screen")
+  .then(async (imgBuf: any) => {
+    backImgLayer = new Konva.Layer(); // then create layer
+    let stage = new Konva.Stage({
+      container: 'stage', // id of container <div>
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
 
-  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height);
-  backImg.value = await createImageBitmap(imgData)
+    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height);
+    backImg.value = await createImageBitmap(imgData)
 
-  const konvaImage = new Konva.Image({
-    x: 0,
-    y: 0,
-    image: backImg.value,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-  backImgLayer.add(konvaImage);
-  stage.add(backImgLayer); // add the layer to the stage
-  backImgURL.value = stage.toDataURL({ mimeType:"image/png" })
+    console.log("time1: ", Date.now())
 
-  appWindow.isVisible().then( (visible)=>{
-    if(visible == false) {
-      appWindow.show()
-      appWindow.setFocus()
-    }
+    const konvaImage = new Konva.Image({
+      x: 0,
+      y: 0,
+      image: backImg.value,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    backImgLayer.add(konvaImage);
+    stage.add(backImgLayer); // add the layer to the stage
+    backImgURL.value = stage.toDataURL({ mimeType:"image/png" }) // TODO: Optimize
+
+    console.log("time2: ", Date.now())
+
+    appWindow.isVisible().then( (visible)=>{
+      if(visible == false) {
+        appWindow.show()
+        appWindow.setFocus()
+      }
+    })
   })
-})
-
+  .catch( err => {
+    console.error("Failed to capture_screen", err)
+    appWindow.close()
+  });
 </script>
 
 <style scoped>

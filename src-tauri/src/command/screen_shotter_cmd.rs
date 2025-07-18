@@ -3,6 +3,9 @@ use crate::module::screen_shotter::ScreenShotter;
 
 #[tauri::command]
 pub async fn capture_screen(webview_window: tauri::WebviewWindow) -> tauri::ipc::Response {
+    let millis = chrono::Utc::now().timestamp_millis();
+    println!("time get ipc request: {}", millis);
+
     let masks_arc = {
         let mut app = Application::global().lock().unwrap();
         app.get_module("screenshot")
@@ -16,6 +19,10 @@ pub async fn capture_screen(webview_window: tauri::WebviewWindow) -> tauri::ipc:
     } else {
         None
     };
+
+    let millis = chrono::Utc::now().timestamp_millis();
+    println!("time return ipc request: {}", millis);
+
     tauri::ipc::Response::new(image.unwrap_or_default())
 }
 
