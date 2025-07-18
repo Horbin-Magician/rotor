@@ -199,9 +199,55 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
 });
 
+console.time('myTask'); // 开始计时
+
 // Load the screenshot
 const width = window.screen.width * window.devicePixelRatio
-const height = window.screen.height * window.devicePixelRatio;
+const height = window.screen.height * window.devicePixelRatio
+
+// Load the screenshotv1
+// const ws = new WebSocket('ws://localhost:9001')
+// console.log("连接websocket服务器")
+
+// ws.onopen = function() {
+//   console.log("连接成功")
+//   ws.send(appWindow.label);
+// };
+
+// ws.binaryType = 'arraybuffer';
+// ws.onmessage = async function(event) {
+//   backImgLayer = new Konva.Layer(); // then create layer
+//   let stage = new Konva.Stage({
+//     container: 'stage', // id of container <div>
+//     width: window.innerWidth,
+//     height: window.innerHeight,
+//   });
+
+//   const imgData = new ImageData(new Uint8ClampedArray(event.data), width, height);
+//   backImg.value = await createImageBitmap(imgData)
+
+//   const konvaImage = new Konva.Image({
+//     x: 0,
+//     y: 0,
+//     image: backImg.value,
+//     width: window.innerWidth,
+//     height: window.innerHeight,
+//   });
+//   backImgLayer.add(konvaImage);
+//   stage.add(backImgLayer); // add the layer to the stage
+//   backImgURL.value = stage.toDataURL({ mimeType:"image/png" })
+
+//   appWindow.isVisible().then( (visible)=>{
+//     if(visible == false) {
+//       appWindow.show()
+//       appWindow.setFocus()
+//     }
+//   })
+
+//   console.timeEnd('myTask'); // 输出：myTask: 5ms（具体耗时）
+// };
+
+// Load the screenshot v2
 invoke("capture_screen").then(async (imgBuf: any) => {
   backImgLayer = new Konva.Layer(); // then create layer
   let stage = new Konva.Stage({
@@ -231,6 +277,7 @@ invoke("capture_screen").then(async (imgBuf: any) => {
     }
   })
 })
+
 </script>
 
 <style scoped>
