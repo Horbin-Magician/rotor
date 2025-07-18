@@ -25,11 +25,7 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:9001 ipc://localhost ; img-src 'self' 'unsafe-inline' asset: https://asset.localhost",
-      "assetProtocol": {
-        "enable": true,
-        "scope": ["**"]
-      }
+      "csp": "default-src 'self' 'unsafe-inline'; connect-src 'self' ipc://localhost"
     }
   }
 }
