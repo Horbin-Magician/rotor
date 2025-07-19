@@ -293,16 +293,12 @@ async function initializeScreenshot() {
   try {
     const imgBuf: any = await invoke("capture_screen")
 
-    console.log("get imgBuf: ", Date.now())
-
     // Create image data and bitmap asynchronously
     const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
     backImgBitmap.value = await createImageBitmap(imgData)
 
     // Draw the background image
     drawBackgroundImage()
-
-    console.log("Show window: ", Date.now())
 
     // Show window
     const visible = await appWindow.isVisible()
