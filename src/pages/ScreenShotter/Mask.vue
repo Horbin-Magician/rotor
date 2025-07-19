@@ -3,16 +3,15 @@
         @mousedown="handleMouseDown" 
         @mousemove="handleMouseMove" 
         @mouseup="handleMouseUp">
-    <div id="stage" ref="backImgRef"></div>
+    <canvas ref="canvasRef" id="main-canvas"></canvas>
     
     <!-- Selection rectangle -->
     <div v-if="isSelecting" class="selection-rect" :style="selectionStyle"></div>
     
     <!-- Magnifier -->
-    <div class="magnifier" v-if="backImgURL" :style="magnifierStyle">
-      <div class="magnifier-content" :style="magnifierContentStyle">
-        <div class="magnifier-crosshair"></div>
-      </div>
+    <div class="magnifier" :style="magnifierStyle">
+      <canvas ref="magnifierCanvasRef" class="magnifier-canvas" :width="magnifierSize" :height="magnifierSize"></canvas>
+      <div class="magnifier-crosshair" :style="{ width: magnifierSize + 'px', height: magnifierSize + 'px' }"></div>
       <div class="magnifier-info">
         <!-- Rect size info -->
         <div class="magnifier-info-item"> {{ selectionWidth }} × {{ selectionHeight }} </div>
@@ -33,13 +32,12 @@ console.log("js begin: ", Date.now())
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import Konva from "konva";
 
 const appWindow = getCurrentWindow()
 
-const backImg = ref()
-const backImgRef = ref<HTMLImageElement | null>(null)
-const backImgURL = ref()
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null)
+const backImgBitmap = ref<ImageBitmap | null>(null)
 
 // Selection state
 const isSelecting = ref(false)
@@ -57,14 +55,10 @@ const pixelColor = ref('#ffffff')
 const selectionWidth = ref(0)
 const selectionHeight = ref(0)
 
-let backImgLayer: Konva.Layer | null = null
-let stage: Konva.Stage | null = null
-let imageCanvas: HTMLCanvasElement | null = null
-let imageContext: CanvasRenderingContext2D | null = null
-
-// Performance optimization: throttle pixel color sampling
-let colorSampleThrottle: number | null = null
-const THROTTLE_DELAY = 16 // ~60fps
+let mainCanvas: HTMLCanvasElement | null = null
+let mainCtx: CanvasRenderingContext2D | null = null
+let magnifierCanvas: HTMLCanvasElement | null = null
+let magnifierCtx: CanvasRenderingContext2D | null = null
 
 // Computed styles for selection rectangle
 const selectionStyle = computed(() => {
@@ -81,13 +75,64 @@ const selectionStyle = computed(() => {
   }
 })
 
+// Initialize canvas
+function initializeCanvas() {
+  if (!canvasRef.value) return
+  
+  mainCanvas = canvasRef.value
+  mainCtx = mainCanvas.getContext('2d', { 
+    alpha: false,
+    desynchronized: true // Better performance for frequent updates
+  })
+  
+  if (!mainCtx) return
+  
+  // Set canvas size
+  const dpr = window.devicePixelRatio || 1
+  const width = window.innerWidth
+  const height = window.innerHeight
+  
+  mainCanvas.width = width * dpr
+  mainCanvas.height = height * dpr
+  mainCanvas.style.width = `${width}px`
+  mainCanvas.style.height = `${height}px`
+  
+  // Scale context for high DPI
+  mainCtx.scale(dpr, dpr)
+  
+  // Optimize rendering
+  mainCtx.imageSmoothingEnabled = false
+}
+
+// Initialize magnifier canvas
+function initializeMagnifierCanvas() {
+  if (!magnifierCanvasRef.value) return
+  
+  magnifierCanvas = magnifierCanvasRef.value
+  magnifierCtx = magnifierCanvas.getContext('2d', { alpha: false })
+  
+  if (!magnifierCtx) return
+  
+  magnifierCtx.imageSmoothingEnabled = false
+}
+
+// Draw background image
+function drawBackgroundImage() {
+  if (!mainCtx || !backImgBitmap.value) return
+  
+  mainCtx.clearRect(0, 0, window.innerWidth, window.innerHeight)
+  mainCtx.drawImage(
+    backImgBitmap.value,
+    0, 0,
+    window.innerWidth, window.innerHeight
+  )
+}
+
 // Computed styles for magnifier
 const magnifierStyle = computed(() => {
   const height = magnifierSize + 36
-  // Avoid obscuring the selection point
   const offset = 20
   
-  // Get viewport dimensions
   const viewportWidth = window.innerWidth
   const viewportHeight = window.innerHeight
   
@@ -104,23 +149,59 @@ const magnifierStyle = computed(() => {
   }
 })
 
-// Computed styles for magnifier content (the zoomed area)
-const magnifierContentStyle = computed(() => {
-  if (!backImgRef.value) return {}
+// Update magnifier
+function updateMagnifier(x: number, y: number) {
+  if (!magnifierCtx || !backImgBitmap.value) return
   
-  // Calculate the position to center the zoomed area on the cursor
-  const imgRect = backImgRef.value.getBoundingClientRect()
-  const x = currentX.value - imgRect.left
-  const y = currentY.value - imgRect.top
+  // Clear magnifier canvas
+  magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize)
   
-  return { // TODO fix error when mouse move to edge
-    backgroundImage: `url(${backImgURL.value})`,
-    backgroundPosition: `-${(x * zoomFactor) - (magnifierSize / 2)}px -${(y * zoomFactor) - (magnifierSize / 2)}px`,
-    backgroundSize: `${imgRect.width * zoomFactor}px ${imgRect.height * zoomFactor}px`,
-    width: `${magnifierSize}px`,
-    height: `${magnifierSize}px`
+  // Calculate source area to magnify
+  const sourceSize = magnifierSize / zoomFactor
+  const sourceX = Math.max(0, Math.min(x - sourceSize / 2, window.innerWidth - sourceSize))
+  const sourceY = Math.max(0, Math.min(y - sourceSize / 2, window.innerHeight - sourceSize))
+  
+  // Draw magnified area
+  magnifierCtx.drawImage(
+    backImgBitmap.value,
+    sourceX * (backImgBitmap.value.width / window.innerWidth),
+    sourceY * (backImgBitmap.value.height / window.innerHeight),
+    sourceSize * (backImgBitmap.value.width / window.innerWidth),
+    sourceSize * (backImgBitmap.value.height / window.innerHeight),
+    0, 0,
+    magnifierSize, magnifierSize
+  )
+}
+
+// Get pixel color at position
+function getPixelColor(x: number, y: number) {
+  if (!mainCtx) return
+
+  try {
+    const dpr = window.devicePixelRatio || 1
+    const imgX = Math.floor(x * dpr)
+    const imgY = Math.floor(y * dpr)
+    
+    // Bounds checking
+    if (imgX < 0 || imgY < 0 || imgX >= mainCanvas!.width || imgY >= mainCanvas!.height) {
+      return
+    }
+
+    const pixelData = mainCtx.getImageData(imgX, imgY, 1, 1).data
+
+    const hexColor = "#" + 
+      Array.from(pixelData).slice(0, 3)
+        .map(x => {
+          const hex = x.toString(16);
+          return hex.length === 1 ? "0" + hex : hex;
+        })
+        .join("");
+
+    pixelColor.value = hexColor
+  } catch (error) {
+    console.warn('Error sampling pixel color:', error)
   }
-})
+}
 
 // Mouse event handlers
 function handleMouseDown(event: MouseEvent) {
@@ -149,46 +230,8 @@ function handleMouseMove(event: MouseEvent) {
     selectionHeight.value = Math.abs(endY.value - startY.value)
   }
   
-  // Throttle pixel color sampling for better performance
-  if (colorSampleThrottle) {
-    clearTimeout(colorSampleThrottle)
-  }
-  colorSampleThrottle = setTimeout(() => {
-    getPixelColor(event.clientX, event.clientY)
-  }, THROTTLE_DELAY)
-}
-
-// Function to get the color of the pixel at the cursor position
-function getPixelColor(x: number, y: number) {
-  if (!imageContext || !backImgLayer) return
-
-  try {
-    // Use cached canvas context for better performance
-    const canvas = backImgLayer.getCanvas()
-    const ctx = canvas.getContext()
-
-    const imgX = Math.floor(x * window.devicePixelRatio)
-    const imgY = Math.floor(y * window.devicePixelRatio)
-    
-    // Bounds checking to prevent errors
-    if (imgX < 0 || imgY < 0 || imgX >= canvas.width || imgY >= canvas.height) {
-      return
-    }
-
-    const pixelData = ctx.getImageData(imgX, imgY, 1, 1).data
-
-    const hexColor = "#" + 
-      Array.from(pixelData).slice(0, 3)
-        .map(x => {
-          const hex = x.toString(16);
-          return hex.length === 1 ? "0" + hex : hex;
-        })
-        .join("");
-
-    pixelColor.value = hexColor
-  } catch (error) {
-    console.warn('Error sampling pixel color:', error)
-  }
+  updateMagnifier(event.clientX, event.clientY)
+  getPixelColor(event.clientX, event.clientY)
 }
 
 function handleMouseUp() {
@@ -220,20 +263,12 @@ function handleKeyup(event: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keyup', handleKeyup);
+  initializeCanvas()
+  initializeMagnifierCanvas()
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
-  
-  // Cleanup resources
-  if (colorSampleThrottle) {
-    clearTimeout(colorSampleThrottle)
-  }
-  
-  // Destroy Konva objects to free memory
-  if (stage) {
-    stage.destroy()
-  }
 });
 
 // Load the screenshot
@@ -244,40 +279,16 @@ async function initializeScreenshot() {
   try {
     const imgBuf: any = await invoke("capture_screen")
 
+    console.log("get imgBuf: ", Date.now())
+
     // Create image data and bitmap asynchronously
     const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height)
-    backImg.value = await createImageBitmap(imgData)
+    backImgBitmap.value = await createImageBitmap(imgData)
 
-    // Initialize Konva stage and layer
-    stage = new Konva.Stage({
-      container: 'stage',
-      width: window.innerWidth,
-      height: window.innerHeight,
-    })
+    // Draw the background image
+    drawBackgroundImage()
 
-    backImgLayer = new Konva.Layer()
-    
-    const konvaImage = new Konva.Image({
-      x: 0,
-      y: 0,
-      image: backImg.value,
-      width: window.innerWidth,
-      height: window.innerHeight,
-    })
-
-    backImgLayer.add(konvaImage)
-    stage.add(backImgLayer)
-    
-    // Use lower quality for magnifier to improve performance
-    backImgURL.value = stage.toDataURL({ 
-      mimeType: "image/jpeg", 
-      quality: 0.8,
-      pixelRatio: 1 // Reduce pixel ratio for magnifier
-    })
-
-    // Cache the canvas context for pixel sampling
-    imageCanvas = backImgLayer.getCanvas()._canvas
-    imageContext = imageCanvas?.getContext('2d') || null
+    console.log("Show window: ", Date.now())
 
     // Show window
     const visible = await appWindow.isVisible()
@@ -308,9 +319,12 @@ html, body {
   cursor: crosshair;
 }
 
-.back_img {
-  height: 100%;
+#main-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
+  height: 100%;
 }
 
 .selection-rect {
@@ -331,10 +345,18 @@ html, body {
   flex-direction: column;
 }
 
+/* TODO */
+.magnifier-canvas {
+  display: block;
+}
+
+
 .magnifier-crosshair {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1001;
   border-bottom: 1px solid #ffffff;
 }
 
@@ -379,13 +401,5 @@ html, body {
   height: 10px;
   margin-right: 6px;
   display: inline-block;
-}
-
-#stage {
-  position: absolute;
-  top: 0px;
-  left: 0px;
-  width: 100%;
-  height: 100%;
 }
 </style>
