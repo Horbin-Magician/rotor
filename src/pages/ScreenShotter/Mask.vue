@@ -58,6 +58,13 @@ const selectionWidth = ref(0)
 const selectionHeight = ref(0)
 
 let backImgLayer: Konva.Layer | null = null
+let stage: Konva.Stage | null = null
+let imageCanvas: HTMLCanvasElement | null = null
+let imageContext: CanvasRenderingContext2D | null = null
+
+// Performance optimization: throttle pixel color sampling
+let colorSampleThrottle: number | null = null
+const THROTTLE_DELAY = 16 // ~60fps
 
 // Computed styles for selection rectangle
 const selectionStyle = computed(() => {
@@ -142,29 +149,46 @@ function handleMouseMove(event: MouseEvent) {
     selectionHeight.value = Math.abs(endY.value - startY.value)
   }
   
-  getPixelColor(event.clientX, event.clientY) // Get color at cursor position
+  // Throttle pixel color sampling for better performance
+  if (colorSampleThrottle) {
+    clearTimeout(colorSampleThrottle)
+  }
+  colorSampleThrottle = setTimeout(() => {
+    getPixelColor(event.clientX, event.clientY)
+  }, THROTTLE_DELAY)
 }
 
 // Function to get the color of the pixel at the cursor position
 function getPixelColor(x: number, y: number) {
-  if (!backImgLayer) return
+  if (!imageContext || !backImgLayer) return
 
-  const canvas = backImgLayer.getCanvas()
-  const ctx = canvas.getContext();
+  try {
+    // Use cached canvas context for better performance
+    const canvas = backImgLayer.getCanvas()
+    const ctx = canvas.getContext()
 
-  let imgX = x * window.devicePixelRatio
-  let imgY = y * window.devicePixelRatio
-  const pixelData = ctx.getImageData(imgX, imgY, 1, 1).data
+    const imgX = Math.floor(x * window.devicePixelRatio)
+    const imgY = Math.floor(y * window.devicePixelRatio)
+    
+    // Bounds checking to prevent errors
+    if (imgX < 0 || imgY < 0 || imgX >= canvas.width || imgY >= canvas.height) {
+      return
+    }
 
-  const hexColor = "#" + 
-    Array.from(pixelData).slice(0, 3)
-      .map(x => {
-        const hex = x.toString(16);
-        return hex.length === 1 ? "0" + hex : hex;
-      })
-      .join("");
+    const pixelData = ctx.getImageData(imgX, imgY, 1, 1).data
 
-  pixelColor.value = hexColor
+    const hexColor = "#" + 
+      Array.from(pixelData).slice(0, 3)
+        .map(x => {
+          const hex = x.toString(16);
+          return hex.length === 1 ? "0" + hex : hex;
+        })
+        .join("");
+
+    pixelColor.value = hexColor
+  } catch (error) {
+    console.warn('Error sampling pixel color:', error)
+  }
 }
 
 function handleMouseUp() {
@@ -200,49 +224,75 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
+  
+  // Cleanup resources
+  if (colorSampleThrottle) {
+    clearTimeout(colorSampleThrottle)
+  }
+  
+  // Destroy Konva objects to free memory
+  if (stage) {
+    stage.destroy()
+  }
 });
 
 // Load the screenshot
 const width = window.screen.width * window.devicePixelRatio
 const height = window.screen.height * window.devicePixelRatio
-invoke("capture_screen")
-  .then(async (imgBuf: any) => {
-    backImgLayer = new Konva.Layer(); // then create layer
-    let stage = new Konva.Stage({
-      container: 'stage', // id of container <div>
-      width: window.innerWidth,
-      height: window.innerHeight,
-    });
 
-    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height);
+async function initializeScreenshot() {
+  try {
+    const imgBuf: any = await invoke("capture_screen")
+
+    // Create image data and bitmap asynchronously
+    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height)
     backImg.value = await createImageBitmap(imgData)
 
-    console.log("time1: ", Date.now())
+    // Initialize Konva stage and layer
+    stage = new Konva.Stage({
+      container: 'stage',
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })
 
+    backImgLayer = new Konva.Layer()
+    
     const konvaImage = new Konva.Image({
       x: 0,
       y: 0,
       image: backImg.value,
       width: window.innerWidth,
       height: window.innerHeight,
-    });
-    backImgLayer.add(konvaImage);
-    stage.add(backImgLayer); // add the layer to the stage
-    backImgURL.value = stage.toDataURL({ mimeType:"image/png" }) // TODO: Optimize
-
-    console.log("time2: ", Date.now())
-
-    appWindow.isVisible().then( (visible)=>{
-      if(visible == false) {
-        appWindow.show()
-        appWindow.setFocus()
-      }
     })
-  })
-  .catch( err => {
+
+    backImgLayer.add(konvaImage)
+    stage.add(backImgLayer)
+    
+    // Use lower quality for magnifier to improve performance
+    backImgURL.value = stage.toDataURL({ 
+      mimeType: "image/jpeg", 
+      quality: 0.8,
+      pixelRatio: 1 // Reduce pixel ratio for magnifier
+    })
+
+    // Cache the canvas context for pixel sampling
+    imageCanvas = backImgLayer.getCanvas()._canvas
+    imageContext = imageCanvas?.getContext('2d') || null
+
+    // Show window
+    const visible = await appWindow.isVisible()
+    if(!visible) {
+      appWindow.show()
+      appWindow.setFocus()
+    }
+  } catch (err) {
     console.error("Failed to capture_screen", err)
     appWindow.close()
-  });
+  }
+}
+
+// Initialize screenshot loading
+initializeScreenshot()
 </script>
 
 <style scoped>
