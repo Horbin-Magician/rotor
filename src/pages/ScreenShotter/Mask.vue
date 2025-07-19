@@ -39,6 +39,9 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null)
 const backImgBitmap = ref<ImageBitmap | null>(null)
 
+const bacImgWidth = window.screen.width * window.devicePixelRatio
+const bacImgHeight = window.screen.height * window.devicePixelRatio
+
 // Selection state
 const isSelecting = ref(false)
 const startX = ref(0)
@@ -129,48 +132,62 @@ function drawBackgroundImage() {
 }
 
 // Computed styles for magnifier
+const mgnfHeight = magnifierSize + 36
+const mgnfOffset = 20
+const viewportWidth = window.innerWidth
+const viewportHeight = window.innerHeight
 const magnifierStyle = computed(() => {
-  const height = magnifierSize + 36
-  const offset = 20
-  
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  
   let left = (currentX.value + magnifierSize > viewportWidth) ? 
     Math.min(currentX.value, viewportWidth) - magnifierSize : Math.max(currentX.value, 0);
-  let top  = ((currentY.value) + offset + height > viewportHeight) ? 
-    Math.min((currentY.value) - offset, viewportHeight) - height : Math.max(currentY.value + offset, 0);
+  let top  = ((currentY.value) + mgnfOffset + mgnfHeight > viewportHeight) ? 
+    Math.min((currentY.value) - mgnfOffset, viewportHeight) - mgnfHeight : Math.max(currentY.value + mgnfOffset, 0);
   
   return {
     left: `${left}px`,
     top: `${top}px`,
     width: `${magnifierSize}px`,
-    height: `${height}px`
+    height: `${mgnfHeight}px`
   }
 })
 
 // Update magnifier
+const srcSize = magnifierSize / zoomFactor
 function updateMagnifier(x: number, y: number) {
   if (!magnifierCtx || !backImgBitmap.value) return
   
   // Clear magnifier canvas
   magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize)
   
-  // Calculate source area to magnify
-  const sourceSize = magnifierSize / zoomFactor
-  const sourceX = Math.max(0, Math.min(x - sourceSize / 2, window.innerWidth - sourceSize))
-  const sourceY = Math.max(0, Math.min(y - sourceSize / 2, window.innerHeight - sourceSize))
+  // Calculate source area to magnify (centered on mouse position)
+  let srcX = x - srcSize / 2
+  let srcY = y - srcSize / 2
+
+  // Find the intersection of source area with viewport
+  const left = Math.max(srcX, 0)
+  const top = Math.max(srcY, 0)
+  const right = Math.min(srcX + srcSize, window.screen.width)
+  const bottom = Math.min(srcY + srcSize, window.screen.height)
   
-  // Draw magnified area
-  magnifierCtx.drawImage(
-    backImgBitmap.value,
-    sourceX * (backImgBitmap.value.width / window.innerWidth),
-    sourceY * (backImgBitmap.value.height / window.innerHeight),
-    sourceSize * (backImgBitmap.value.width / window.innerWidth),
-    sourceSize * (backImgBitmap.value.height / window.innerHeight),
-    0, 0,
-    magnifierSize, magnifierSize
-  )
+  // Only draw if there's a valid intersection
+  if (left < right && top < bottom) {
+    // Calculate destination coordinates in magnifier canvas
+    const destX = ( srcSize / 2 - (x - left) ) * zoomFactor
+    const destY = ( srcSize / 2 - (y - top) ) * zoomFactor
+    const destWidth = (right - left) * zoomFactor
+    const destHeight = (bottom - top) * zoomFactor
+
+    srcX = left * window.devicePixelRatio
+    srcY = top * window.devicePixelRatio
+    const srcWidth = (right - left) * window.devicePixelRatio
+    const srcHeight = (bottom - top) * window.devicePixelRatio
+
+    // Draw the intersected area
+    magnifierCtx.drawImage(
+      backImgBitmap.value,
+      srcX, srcY, srcWidth, srcHeight,
+      destX, destY, destWidth, destHeight
+    )
+  }
 }
 
 // Get pixel color at position
@@ -272,9 +289,6 @@ onBeforeUnmount(() => {
 });
 
 // Load the screenshot
-const width = window.screen.width * window.devicePixelRatio
-const height = window.screen.height * window.devicePixelRatio
-
 async function initializeScreenshot() {
   try {
     const imgBuf: any = await invoke("capture_screen")
@@ -282,7 +296,7 @@ async function initializeScreenshot() {
     console.log("get imgBuf: ", Date.now())
 
     // Create image data and bitmap asynchronously
-    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height)
+    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
     backImgBitmap.value = await createImageBitmap(imgData)
 
     // Draw the background image
