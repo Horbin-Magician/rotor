@@ -39,6 +39,9 @@ import { CloseFilled, SaveAltFilled, ContentCopyRound, MinusFilled } from '@vico
 import { getCurrentWindow } from '@tauri-apps/api/window';
 // import Konva from "konva";
 
+import { LogicalPosition } from '@tauri-apps/api/window';
+import { Menu } from '@tauri-apps/api/menu';
+
 enum State {
   Default,
   Moving,
@@ -94,8 +97,8 @@ const toolbarVisible = ref(true);
 // })
 
 // Mouse event handlers
-async function handleMouseDown(_event: MouseEvent) {
-  if (state === State.Default) {
+async function handleMouseDown(event: MouseEvent) {
+  if (event.button == 0) { // left button
     appWindow.startDragging();
     state = State.Moving
   }
@@ -152,6 +155,36 @@ async function zoomWindow(wheel_delta: number) {
       } else {
         toolbarVisible.value = false;
       }
+    });
+
+    const menu = await Menu.new({
+      items: [
+        {
+          id: 'Open',
+          text: 'open',
+          action: () => {
+            console.log('open pressed');
+          },
+        },
+        {
+          id: 'Close',
+          text: 'close',
+          action: () => {
+            console.log('close pressed');
+          },
+        },
+      ],
+    });
+
+    // If a window was not created with an explicit menu or had one set explicitly,
+    // this menu will be assigned to it.
+    menu.setAsAppMenu().then((res) => {
+      console.log('menu set success', res);
+    });
+
+    window.addEventListener('contextmenu', async (event) => {
+      event.preventDefault();
+      menu.popup(new LogicalPosition(event.clientX, event.clientY));
     });
   });
 
