@@ -27,7 +27,7 @@ pub async fn capture_screen(webview_window: tauri::WebviewWindow) -> tauri::ipc:
 }
 
 #[tauri::command]
-pub fn new_pin(
+pub async fn new_pin(
     offset_x: String,
     offset_y: String,
     width: String,
