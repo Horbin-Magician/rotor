@@ -36,11 +36,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { CloseFilled, SaveAltFilled, ContentCopyRound, MinusFilled } from '@vicons/material';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-// import Konva from "konva";
-
-import { LogicalPosition } from '@tauri-apps/api/window';
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow, LogicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
+import Konva from "konva";
 
 enum State {
   Default,
@@ -58,10 +57,9 @@ appWindow.isVisible().then( (visible)=>{
 
 let state = State.Default
 
-// const backImg = ref()
-const backImgRef = ref<HTMLImageElement | null>(null)
-// const backImgURL = ref()
-// let backImgLayer: Konva.Layer | null = null
+const backImg = ref()
+const backImgRef = ref<ImageBitmap | null>(null)
+let backImgLayer: Konva.Layer | null = null
 
 const tips = ref("")
 const show_tips = ref(false)
@@ -69,32 +67,37 @@ const show_tips = ref(false)
 let zoom_scale = 100;
 const toolbarVisible = ref(true);
 
-// // Load the screenshot
-// invoke("capture_screen").then(async (imgBuf: any) => {
-//   const width = window.screen.width * window.devicePixelRatio
-//   const height = window.screen.height * window.devicePixelRatio;
-//   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), width, height);
-//   backImg.value = await createImageBitmap(imgData)
+// Load the screenshot
+async function loadScreenShot() {
+  const pos = await appWindow.outerPosition();
+  const size = await appWindow.outerSize();
+  const imgBuf: ArrayBuffer = await invoke("get_screen_img_rect", {
+    x: pos.x.toString(),
+    y: pos.y.toString(),
+    width: size.width.toString(),
+    height: size.height.toString(),
+  });
+  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
+  backImg.value = await createImageBitmap(imgData)
+  
+  backImgLayer = new Konva.Layer(); // then create layer
+  const konvaImage = new Konva.Image({
+    x: 0,
+    y: 0,
+    image: backImg.value,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  backImgLayer.add(konvaImage);
 
-//   backImgLayer = new Konva.Layer(); // then create layer
-//   const konvaImage = new Konva.Image({
-//     x: 0,
-//     y: 0,
-//     image: backImg.value,
-//     width: window.innerWidth,
-//     height: window.innerHeight,
-//   });
-//   backImgLayer.add(konvaImage);
-
-//   var stage = new Konva.Stage({
-//     container: 'stage', // id of container <div>
-//     width: window.innerWidth,
-//     height: window.innerHeight,
-//   });
-//   stage.add(backImgLayer); // add the layer to the stage
-
-//   backImgURL.value = stage.toDataURL({ mimeType:"image/png" })
-// })
+  var stage = new Konva.Stage({
+    container: 'stage', // id of container <div>
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  stage.add(backImgLayer); // add the layer to the stage
+}
+loadScreenShot();
 
 // Mouse event handlers
 async function handleMouseDown(event: MouseEvent) {
@@ -221,13 +224,13 @@ async function zoomWindow(wheel_delta: number) {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0);
   border-radius: 8px 8px 0px 0px;
   padding: 4px;
   gap: 4px;
   z-index: 1000;
   transition: transform 0.5s ease;
-  opacity: 0.5;
+  opacity: 0.9;
 }
 
 .toolbar-hidden {
