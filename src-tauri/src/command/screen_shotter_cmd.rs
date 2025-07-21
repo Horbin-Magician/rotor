@@ -28,25 +28,32 @@ pub async fn capture_screen(webview_window: tauri::WebviewWindow) -> tauri::ipc:
 
 #[tauri::command]
 pub fn new_pin(
-    x: String,
-    y: String,
+    offset_x: String,
+    offset_y: String,
     width: String,
     height: String,
     webview_window: tauri::WebviewWindow,
 ) {
+    println!("new_pin called with offset_x: {}, offset_y: {}, width: {}, height: {}", offset_x, offset_y, width, height);
+
     let mut app = Application::global().lock().unwrap();
     let screenshot = app.get_module("screenshot");
-    if let Some(s) = screenshot {
-        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
-            screenshot
-                .new_pin(
-                    x.parse::<f64>().unwrap(),
-                    y.parse::<f64>().unwrap(),
-                    width.parse::<f64>().unwrap(),
-                    height.parse::<f64>().unwrap(),
-                    webview_window,
-                )
-                .unwrap();
+
+    if let Some(monitor) = webview_window.current_monitor().ok().flatten() {
+        let monitor_pos = monitor.position();
+        let x = monitor_pos.x as f64 + offset_x.parse::<f64>().unwrap();
+        let y = monitor_pos.y as f64 + offset_y.parse::<f64>().unwrap();
+
+        if let Some(s) = screenshot {
+            if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
+                screenshot
+                    .new_pin(x, y, width.parse::<f64>().unwrap(), height.parse::<f64>().unwrap())
+                    .unwrap();
+            }
         }
+    } else {
+        println!("Unable to get current monitor"); // TODO
     }
+
+    webview_window.close().unwrap();
 }
