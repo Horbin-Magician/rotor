@@ -253,7 +253,7 @@ function handleMouseUp() {
     const y = Math.min(startY.value, endY.value)
     const width = Math.abs(endX.value - startX.value)
     const height = Math.abs(endY.value - startY.value)
-    invoke("new_pin", { x: x.toString(), y: y.toString(), width: width.toString(), height: height.toString() })
+    invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
   } else {
     // Reset selection if it's too small
     isSelecting.value = false

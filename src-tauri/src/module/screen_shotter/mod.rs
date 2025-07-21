@@ -110,13 +110,11 @@ impl ScreenShotter {
 
     pub fn new_pin(
         &mut self,
-        offset_x: f64,
-        offset_y: f64,
+        x: f64,
+        y: f64,
         width: f64,
         height: f64,
-        webview_window: tauri::WebviewWindow,
     ) -> Result<(), Box<dyn Error>> {
-        webview_window.close().unwrap();
 
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
@@ -126,18 +124,10 @@ impl ScreenShotter {
         let label = format!("sspin-{}", self.max_pin_id);
         self.max_pin_id += 1;
 
-        let monitor = match webview_window.current_monitor()? {
-            Some(handle) => handle,
-            None => return Err("Unable to get current monitor".into()),
-        };
-        let monitor_pos = monitor.position();
-        let x = monitor_pos.x as f64 + offset_x;
-        let y = monitor_pos.y as f64 + offset_y;
-
         let win_builder = WebviewWindowBuilder::new(
             app_handle,
             label,
-            WebviewUrl::App("ScreenShotter/Pin".into()),
+            WebviewUrl::App("ScreenShotter/Mask".into()),
         )
         .title("小云视窗")
         .position(x, y)
