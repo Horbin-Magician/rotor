@@ -3,7 +3,11 @@
         @mousedown="handleMouseDown" 
         @mousemove="handleMouseMove" 
         @mouseup="handleMouseUp">
-    <canvas ref="canvasRef" id="main-canvas"></canvas>
+    <canvas ref="canvasRef" id="main-canvas"
+      :style="{ width: windowWidth + 'px', height: windowHeight + 'px' }"
+      :width="bacImgWidth"
+      :height="bacImgHeight"
+    />
     
     <!-- Selection rectangle -->
     <div v-if="isSelecting" class="selection-rect" :style="selectionStyle"></div>
@@ -39,8 +43,10 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null)
 const backImgBitmap = ref<ImageBitmap | null>(null)
 
-const bacImgWidth = window.screen.width * window.devicePixelRatio
-const bacImgHeight = window.screen.height * window.devicePixelRatio
+const windowWidth = window.screen.width
+const windowHeight = window.screen.height
+const bacImgWidth = windowWidth * window.devicePixelRatio
+const bacImgHeight = windowHeight * window.devicePixelRatio
 
 // Selection state
 const isSelecting = ref(false)
@@ -83,28 +89,13 @@ function initializeCanvas() {
   if (!canvasRef.value) return
   
   mainCanvas = canvasRef.value
-  mainCtx = mainCanvas.getContext('2d', { 
-    alpha: false,
-    desynchronized: true // Better performance for frequent updates
-  })
+  mainCtx = mainCanvas.getContext('2d', { alpha: false })
   
   if (!mainCtx) return
   
-  // Set canvas size
-  const dpr = window.devicePixelRatio || 1
-  const width = window.innerWidth
-  const height = window.innerHeight
-  
-  mainCanvas.width = width * dpr
-  mainCanvas.height = height * dpr
-  mainCanvas.style.width = `${width}px`
-  mainCanvas.style.height = `${height}px`
-  
-  // Scale context for high DPI
-  mainCtx.scale(dpr, dpr)
-  
-  // Optimize rendering
-  mainCtx.imageSmoothingEnabled = false
+  const dpr = window.devicePixelRatio
+  mainCtx.scale(dpr, dpr) // Scale context for high DPI
+  mainCtx.imageSmoothingEnabled = false // Optimize rendering
 }
 
 // Initialize magnifier canvas
@@ -123,11 +114,11 @@ function initializeMagnifierCanvas() {
 function drawBackgroundImage() {
   if (!mainCtx || !backImgBitmap.value) return
   
-  mainCtx.clearRect(0, 0, window.innerWidth, window.innerHeight)
+  mainCtx.clearRect(0, 0, window.screen.width, window.screen.height)
   mainCtx.drawImage(
     backImgBitmap.value,
     0, 0,
-    window.innerWidth, window.innerHeight
+    window.screen.width, window.screen.height
   )
 }
 
@@ -262,7 +253,7 @@ function handleMouseUp() {
     const y = Math.min(startY.value, endY.value)
     const width = Math.abs(endX.value - startX.value)
     const height = Math.abs(endY.value - startY.value)
-    invoke("new_pin", { x: x.toString(), y: y.toString(), width: width.toString(), height: height.toString() })
+    invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
   } else {
     // Reset selection if it's too small
     isSelecting.value = false
@@ -333,8 +324,6 @@ html, body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
 }
 
 .selection-rect {
@@ -354,12 +343,6 @@ html, body {
   display: flex;
   flex-direction: column;
 }
-
-/* TODO */
-.magnifier-canvas {
-  display: block;
-}
-
 
 .magnifier-crosshair {
   position: absolute;

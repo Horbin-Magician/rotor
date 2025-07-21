@@ -39,20 +39,6 @@ impl Module for ScreenShotter {
         let millis = chrono::Utc::now().timestamp_millis();
         println!("time all begin: {}", millis);
 
-        // Capture screen
-        let masks_clone = Arc::clone(&self.masks);
-        let label_clone = label.clone();
-        let monitor_clone = monitor.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut masks = masks_clone.lock().await;
-            let _ = monitor_clone
-                .capture_image()
-                .map(|img| img.to_vec())
-                .map(|img| {
-                    masks.insert(label_clone, img);
-                });
-        });
-
         let win_builder = WebviewWindowBuilder::new(
             app_handle,
             &label,
@@ -66,6 +52,27 @@ impl Module for ScreenShotter {
         // .simple_fullscreen(true)                       // TODO wait tauri update
         .visible(false)
         .skip_taskbar(true); // TODO windows only
+
+        // Capture screen
+        let masks_clone = Arc::clone(&self.masks);
+        let label_clone = label.clone();
+        tauri::async_runtime::spawn(async move {
+            let masks_clone = Arc::clone(&masks_clone);
+            let label_clone = label_clone.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Ok(monitor) = Monitor::from_point(0, 0) {
+                    if let Ok(img) = monitor.capture_image() {
+                        let img_vec = img.to_vec();
+                        // Lock must be done in async context, so use block_in_place
+                        tauri::async_runtime::block_on(async {
+                            let mut masks = masks_clone.lock().await;
+                            masks.insert(label_clone, img_vec);
+                        });
+                    }
+                }
+            });
+        });
+
         let _window = win_builder.build()?;
 
         let millis = chrono::Utc::now().timestamp_millis();
@@ -103,13 +110,11 @@ impl ScreenShotter {
 
     pub fn new_pin(
         &mut self,
-        offset_x: f64,
-        offset_y: f64,
+        x: f64,
+        y: f64,
         width: f64,
         height: f64,
-        webview_window: tauri::WebviewWindow,
     ) -> Result<(), Box<dyn Error>> {
-        webview_window.close().unwrap();
 
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
@@ -118,14 +123,6 @@ impl ScreenShotter {
 
         let label = format!("sspin-{}", self.max_pin_id);
         self.max_pin_id += 1;
-
-        let monitor = match webview_window.current_monitor()? {
-            Some(handle) => handle,
-            None => return Err("Unable to get current monitor".into()),
-        };
-        let monitor_pos = monitor.position();
-        let x = monitor_pos.x as f64 + offset_x;
-        let y = monitor_pos.y as f64 + offset_y;
 
         let win_builder = WebviewWindowBuilder::new(
             app_handle,
