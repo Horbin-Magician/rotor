@@ -14,6 +14,7 @@ type Image = Vec<u8>;
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
     pub masks: Arc<Mutex<HashMap<String, Image>>>,
+    pub pin_mask_label: String,
     max_pin_id: u8,
 }
 
@@ -103,6 +104,7 @@ impl ScreenShotter {
             app_hander: None,
             masks: Arc::new(Mutex::new(HashMap::new())),
             max_pin_id: 0,
+            pin_mask_label: String::new(),
         })
     }
 
@@ -112,6 +114,7 @@ impl ScreenShotter {
         y: f64,
         width: f64,
         height: f64,
+        label: String,
     ) -> Result<(), Box<dyn Error>> {
 
         let app_handle = match &self.app_hander {
@@ -119,6 +122,7 @@ impl ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
+        self.pin_mask_label = label;
         let label = format!("sspin-{}", self.max_pin_id);
         self.max_pin_id += 1;
 
