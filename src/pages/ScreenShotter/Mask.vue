@@ -295,7 +295,6 @@ async function initializeScreenshot() {
     const visible = await appWindow.isVisible()
     if(!visible) {
       appWindow.show()
-      appWindow.setFocus()
     }
   } catch (err) {
     console.error("Failed to capture_screen", err)
@@ -317,7 +316,6 @@ html, body {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  cursor: crosshair;
 }
 
 #main-canvas {

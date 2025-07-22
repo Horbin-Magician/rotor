@@ -10,6 +10,7 @@
   "permissions": [
     "core:default",
     "opener:allow-open-path",
+    "core:window:allow-set-size",
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-minimize",
@@ -18,6 +19,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-position",
     "core:window:allow-destroy",
+    "core:window:allow-set-cursor-icon",
     "clipboard-manager:allow-write-image",
     "autostart:allow-enable",
     "autostart:allow-disable",
