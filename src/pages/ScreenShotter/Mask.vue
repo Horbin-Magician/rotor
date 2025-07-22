@@ -54,8 +54,8 @@ const startX = ref(0)
 const startY = ref(0)
 const endX = ref(0)
 const endY = ref(0)
-const currentX = ref(0)
-const currentY = ref(0)
+const currentX = ref(-999)
+const currentY = ref(-999)
 
 // Magnifier state
 const magnifierSize = 100
@@ -129,10 +129,10 @@ const viewportWidth = window.innerWidth
 const viewportHeight = window.innerHeight
 const magnifierStyle = computed(() => {
   let left = (currentX.value + magnifierSize > viewportWidth) ? 
-    Math.min(currentX.value, viewportWidth) - magnifierSize : Math.max(currentX.value, 0);
+    Math.min(currentX.value, viewportWidth) - magnifierSize : currentX.value;
   let top  = ((currentY.value) + mgnfOffset + mgnfHeight > viewportHeight) ? 
-    Math.min((currentY.value) - mgnfOffset, viewportHeight) - mgnfHeight : Math.max(currentY.value + mgnfOffset, 0);
-  
+    Math.min((currentY.value) - mgnfOffset, viewportHeight) - mgnfHeight : (currentY.value + mgnfOffset);
+
   return {
     left: `${left}px`,
     top: `${top}px`,
