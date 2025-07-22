@@ -71,6 +71,10 @@ let zoom_scale = 100;
 const toolbarVisible = ref(true);
 let hideTipTimeout: number | null = null;
 
+// Minimum window dimensions to show toolbar
+const MIN_WIDTH_FOR_TOOLBAR = 120;
+const MIN_HEIGHT_FOR_TOOLBAR = 80;
+
 // Load the screenshot
 async function loadScreenShot() {
   const pos = await appWindow.outerPosition();
@@ -213,16 +217,32 @@ async function scaleWindow() {
   }
 }
 
+function updateToolbarVisibility() {
+  const windowWidth = window.innerWidth
+  const windowHeight = window.innerHeight
+  
+  // Hide toolbar if window is too small
+  if (windowWidth < MIN_WIDTH_FOR_TOOLBAR || windowHeight < MIN_HEIGHT_FOR_TOOLBAR) {
+    toolbarVisible.value = false
+  } else {
+    // Only show toolbar if window is focused and large enough
+    appWindow.isFocused().then((focused) => {
+      toolbarVisible.value = focused
+    })
+  }
+}
+
+function handleWindowResize() {
+  updateToolbarVisibility()
+}
+
 { // Mount something
   onMounted(async () => {
     window.addEventListener('keyup', handleKeyup);
+    window.addEventListener('resize', handleWindowResize);
 
-    appWindow.onFocusChanged((event) => {
-      if(event.payload) {
-        toolbarVisible.value = true;
-      } else {
-        toolbarVisible.value = false;
-      }
+    appWindow.onFocusChanged((_event) => {
+      updateToolbarVisibility();
     });
 
     const menu = await Menu.new({
@@ -258,6 +278,7 @@ async function scaleWindow() {
 
   onBeforeUnmount(async () => {
     window.removeEventListener('keyup', handleKeyup)
+    window.removeEventListener('resize', handleWindowResize)
   })
 }
 </script>
