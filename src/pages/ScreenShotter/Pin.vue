@@ -140,8 +140,19 @@ function closeWindow() {
   appWindow.close();
 }
 
-function saveImage() {
-  // TODO: Implement save functionality
+async function saveImage() {
+  if (!stage) return;
+  stage?.toBlob({
+    pixelRatio: pixelRatio,
+    callback(blob) {
+      if(!blob) return
+      blob.arrayBuffer().then((imgBuf)=>{
+        invoke("save_img", {imgBuf: imgBuf}).then((if_success)=>{
+          if(if_success) closeWindow()
+        })
+      })
+    }
+  })
 }
 
 async function copyImage() {
@@ -154,7 +165,7 @@ async function copyImage() {
         closeWindow()
       })
     }
-  })  
+  })
 }
 
 async function zoomWindow(wheel_delta: number) {
@@ -204,8 +215,8 @@ async function zoomWindow(wheel_delta: number) {
     });
 
     window.addEventListener('contextmenu', async (event) => {
-    event.preventDefault();
-    menu.popup(new LogicalPosition(event.clientX, event.clientY));
+      event.preventDefault();
+      menu.popup(new LogicalPosition(event.clientX, event.clientY));
     });
   });
 
