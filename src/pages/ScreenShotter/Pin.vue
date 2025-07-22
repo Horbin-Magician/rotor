@@ -5,10 +5,10 @@
         @mousemove="handleMouseMove"
         @wheel="handleWheel">
     <div id="stage" ref="backImgRef"></div>
+    <div class="tips" v-if="show_tips">
+      {{tips}}
+    </div>
   </main>
-  <div class="tips" v-if="show_tips">
-    {{tips}}
-  </div>
   <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible }">
     <div class="toolbar-item" @click="minimizeWindow">
       <n-icon size="20" color="#007bff">
@@ -37,7 +37,7 @@
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { CloseFilled, SaveAltFilled, ContentCopyRound, MinusFilled } from '@vicons/material';
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
@@ -69,6 +69,7 @@ const show_tips = ref(false)
 
 let zoom_scale = 100;
 const toolbarVisible = ref(true);
+let hideTipTimeout: number | null = null;
 
 // Load the screenshot
 async function loadScreenShot() {
@@ -123,6 +124,7 @@ function handleMouseMove(_event: MouseEvent) {
 }
 
 function handleWheel(event: WheelEvent){
+  event.preventDefault()
   zoomWindow(event.deltaY)
 }
 
@@ -172,9 +174,43 @@ async function zoomWindow(wheel_delta: number) {
   let delta = wheel_delta > 0 ? -2 : 2 // TODO use setting
   zoom_scale += delta
   zoom_scale = Math.max(5, Math.min(zoom_scale, 500))
+
   tips.value = zoom_scale + "%"
+  if (hideTipTimeout) { clearTimeout(hideTipTimeout) }
   show_tips.value = true
-  // TODO scale window
+  
+  await scaleWindow()
+
+  // Hide tips after 1 second
+  hideTipTimeout = setTimeout(() => {
+    show_tips.value = false
+  }, 1000)
+}
+
+async function scaleWindow() {
+  if (!stage || !backImg.value) return
+  
+  const originalWidth = backImg.value.width / pixelRatio
+  const originalHeight = backImg.value.height / pixelRatio
+  
+  // Calculate new size based on zoom scale
+  const newWidth = Math.round(originalWidth * zoom_scale / 100)
+  const newHeight = Math.round(originalHeight * zoom_scale / 100)
+  
+  // Resize the window
+  await appWindow.setSize(new LogicalSize(newWidth, newHeight))
+  
+  // Update stage size
+  stage.width(newWidth)
+  stage.height(newHeight)
+  
+  // Update the image in the stage
+  const konvaImage = backImgLayer?.findOne('Image') as Konva.Image
+  if (konvaImage) {
+    konvaImage.width(newWidth)
+    konvaImage.height(newHeight)
+    backImgLayer?.batchDraw()
+  }
 }
 
 { // Mount something
@@ -242,9 +278,10 @@ async function zoomWindow(wheel_delta: number) {
   transform: translate(-50%, -50%);
   background-color: black;
   color: white;
-  border-radius: 4px;
+  border-radius: 8px;
   font-size: 14px;
   z-index: 1000;
+  cursor: default;
 }
 
 .toolbar {
