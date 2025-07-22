@@ -1,3 +1,5 @@
+use tauri_plugin_dialog::DialogExt;
+
 use crate::core::application::Application;
 use crate::module::screen_shotter::ScreenShotter;
 
@@ -117,4 +119,33 @@ pub async fn new_pin(
     }
 
     webview_window.close().unwrap();
+}
+
+#[tauri::command]
+pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
+    // let mut app_config = AppConfig::global()
+    //     .lock()
+    //     .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // let save_path = app_config.get_save_path();
+    // let if_auto_change = app_config.get_if_auto_change_save_path();
+    // let if_ask_path = app_config.get_if_ask_save_path();
+    
+    let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
+
+    let file_path = app
+        .dialog()
+        .file()
+        .add_filter("PNG", &["png"])
+        .set_file_name(file_name)
+        .blocking_save_file();
+
+    if let Some(file_path) = file_path {
+        let cursor = std::io::Cursor::new(img_buf);
+        if let Ok(img) = image::load(cursor, image::ImageFormat::Png) {
+            img.save(file_path.into_path().unwrap()).unwrap();
+            return true;
+        }
+    }
+
+    false
 }
