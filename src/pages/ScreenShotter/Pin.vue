@@ -25,7 +25,7 @@
         <CloseFilled />
       </n-icon>
     </div>
-    <div class="toolbar-item">
+    <div class="toolbar-item" @click="copyImage">
       <n-icon size="20" color="#007bff">
         <ContentCopyRound />
       </n-icon>
@@ -39,6 +39,7 @@ import { CloseFilled, SaveAltFilled, ContentCopyRound, MinusFilled } from '@vico
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
+import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
 
 enum State {
@@ -60,6 +61,8 @@ let state = State.Default
 const backImg = ref()
 const backImgRef = ref<ImageBitmap | null>(null)
 let backImgLayer: Konva.Layer | null = null
+let stage: Konva.Stage | null = null
+let pixelRatio = 1
 
 const tips = ref("")
 const show_tips = ref(false)
@@ -80,6 +83,8 @@ async function loadScreenShot() {
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
   backImg.value = await createImageBitmap(imgData)
   
+  pixelRatio = size.width / window.innerWidth
+
   backImgLayer = new Konva.Layer(); // then create layer
   const konvaImage = new Konva.Image({
     x: 0,
@@ -90,7 +95,7 @@ async function loadScreenShot() {
   });
   backImgLayer.add(konvaImage);
 
-  var stage = new Konva.Stage({
+  stage = new Konva.Stage({
     container: 'stage', // id of container <div>
     width: window.innerWidth,
     height: window.innerHeight,
@@ -123,7 +128,7 @@ function handleWheel(event: WheelEvent){
 
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
-    appWindow.close()
+    closeWindow()
   }
 }
 
@@ -131,12 +136,25 @@ function minimizeWindow() {
   appWindow.minimize();
 }
 
+function closeWindow() {
+  appWindow.close();
+}
+
 function saveImage() {
   // TODO: Implement save functionality
 }
 
-function closeWindow() {
-  appWindow.close();
+async function copyImage() {
+  stage?.toBlob({
+    pixelRatio: pixelRatio,
+    callback(blob) {
+      if(!blob) return
+      blob.arrayBuffer().then((imgBuf)=>{
+        writeImage(imgBuf)
+        closeWindow()
+      })
+    }
+  })  
 }
 
 async function zoomWindow(wheel_delta: number) {
@@ -186,8 +204,8 @@ async function zoomWindow(wheel_delta: number) {
     });
 
     window.addEventListener('contextmenu', async (event) => {
-      event.preventDefault();
-      menu.popup(new LogicalPosition(event.clientX, event.clientY));
+    event.preventDefault();
+    menu.popup(new LogicalPosition(event.clientX, event.clientY));
     });
   });
 
