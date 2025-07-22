@@ -133,8 +133,19 @@ function handleWheel(event: WheelEvent){
 }
 
 function handleKeyup(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    closeWindow()
+  switch (event.key.toLowerCase()) {
+    case 'Escape'.toLowerCase():
+      closeWindow()
+      break
+    case 'Enter'.toLowerCase():
+      copyImage()
+      break
+    case 's'.toLowerCase():
+      saveImage()
+      break
+    case 'h'.toLowerCase():
+      minimizeWindow()
+      break
   }
 }
 
@@ -248,26 +259,30 @@ function handleWindowResize() {
     const menu = await Menu.new({
       items: [
         {
-          id: 'Open',
-          text: 'open',
-          action: () => {
-            console.log('open pressed');
-          },
+          id: 'minimize',
+          text: '最小化',
+          accelerator: 'h',
+          action: () => minimizeWindow(),
         },
         {
-          id: 'Close',
-          text: 'close',
-          action: () => {
-            console.log('close pressed');
-          },
+          id: 'save',
+          text: '保存图片',
+          accelerator: 's',
+          action: () => saveImage(),
+        },
+        {
+          id: 'copy',
+          text: '复制图片',
+          accelerator: 'Enter',
+          action: () => copyImage(),
+        },
+        {
+          id: 'close',
+          text: '关闭',
+          accelerator: 'ESC',
+          action: () => closeWindow(),
         },
       ],
-    });
-
-    // If a window was not created with an explicit menu or had one set explicitly,
-    // this menu will be assigned to it.
-    menu.setAsAppMenu().then((res) => {
-      console.log('menu set success', res);
     });
 
     window.addEventListener('contextmenu', async (event) => {
