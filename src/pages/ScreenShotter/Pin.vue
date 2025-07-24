@@ -9,7 +9,15 @@
       {{tips}}
     </div>
   </main>
-  <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible }">
+  
+  <!-- Normal Toolbar -->
+  <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible || state === State.Drawing }">
+    <div class="toolbar-item" @click="enterEditMode">
+      <n-icon size="20" color="#007bff">
+        <EditOutlined />
+      </n-icon>
+    </div>
+    <div class="toolbar-divider"></div>
     <div class="toolbar-item" @click="minimizeWindow">
       <n-icon size="20" color="#007bff">
         <MinusFilled />
@@ -31,11 +39,60 @@
       </n-icon>
     </div>
   </div>
+
+  <!-- Drawing Toolbar -->
+  <div class="toolbar drawing-toolbar" :class="{ 'toolbar-hidden': !toolbarVisible || state != State.Drawing }">
+    <div class="toolbar-item" @click="exitEditMode">
+      <n-icon size="20" color="#007bff">
+        <ArrowBackIosRound />
+      </n-icon>
+    </div>
+    <div class="toolbar-divider"></div>
+    <div class="toolbar-item" @click="selectPenTool" :class="{ 'active': drawState === DrawState.Pen }">
+      <n-icon size="20" color="#007bff">
+        <EditOutlined />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" @click="selectRectTool" :class="{ 'active': drawState === DrawState.Rect }">
+      <n-icon size="20" color="#007bff">
+        <CropDinRound />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" @click="selectArrowTool" :class="{ 'active': drawState === DrawState.Arrow }">
+      <n-icon size="20" color="#007bff">
+        <ArrowDownLeft20Filled />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" @click="selectTextTool" :class="{ 'active': drawState === DrawState.Text }">
+      <n-icon size="20" color="#007bff">
+        <TextT20Filled />
+      </n-icon>
+    </div>
+    <div class="toolbar-divider"></div>
+    <div class="toolbar-item" @click="undoDrawing">
+      <n-icon size="20" color="#007bff">
+        <UndoFilled />
+      </n-icon>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
-import { CloseFilled, SaveAltFilled, ContentCopyRound, MinusFilled } from '@vicons/material';
+import { 
+  CloseFilled, 
+  SaveAltFilled, 
+  ContentCopyRound, 
+  MinusFilled, 
+  EditOutlined,
+  ArrowBackIosRound,
+  CropDinRound,
+  UndoFilled,
+} from '@vicons/material';
+import { 
+  ArrowDownLeft20Filled,
+  TextT20Filled,
+} from '@vicons/fluent';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
@@ -44,8 +101,14 @@ import Konva from "konva";
 
 enum State {
   Default,
-  Moving,
   Drawing
+}
+
+enum DrawState {
+  Pen,
+  Rect,
+  Arrow,
+  Text
 }
 
 const appWindow = getCurrentWindow()
@@ -56,7 +119,8 @@ appWindow.isVisible().then( (visible)=>{
   }
 })
 
-let state = State.Default
+const state = ref(State.Default)
+const drawState = ref(DrawState.Pen)
 
 const backImg = ref()
 const backImgRef = ref<ImageBitmap | null>(null)
@@ -68,11 +132,17 @@ const tips = ref("")
 const show_tips = ref(false)
 
 let zoom_scale = 100;
-const toolbarVisible = ref(true);
+const toolbarVisible = ref(true)
 let hideTipTimeout: number | null = null;
 
+// Drawing state
+let drawingLayer: Konva.Layer | null = null;
+let currentPath: Konva.Line | null = null;
+let drawingHistory: any[] = [];
+let isDrawing = false;
+
 // Minimum window dimensions to show toolbar
-const MIN_WIDTH_FOR_TOOLBAR = 120;
+const MIN_WIDTH_FOR_TOOLBAR = 140;
 const MIN_HEIGHT_FOR_TOOLBAR = 80;
 
 // Load the screenshot
@@ -106,25 +176,38 @@ async function loadScreenShot() {
     height: window.innerHeight,
   });
   stage.add(backImgLayer); // add the layer to the stage
+  
+  // Create drawing layer
+  drawingLayer = new Konva.Layer();
+  stage.add(drawingLayer);
 }
 loadScreenShot();
 
 // Mouse event handlers
 async function handleMouseDown(event: MouseEvent) {
-  if (event.button == 0) { // left button
-    appWindow.startDragging();
-    state = State.Moving
+  if (state.value === State.Drawing) {
+    if (event.button === 0) { // left button
+      startDrawing(event);
+    }
+  } else if (state.value === State.Default) {
+    if (event.button === 0) { // left button
+      appWindow.startDragging();
+    }
   }
 }
 
 // Mouse event handlers
 function handleMouseUp(_event: MouseEvent) {
-  state = State.Default;
+  if (state.value === State.Drawing) {
+    endDrawing();
+  }
 }
 
 // Mouse event handlers
-function handleMouseMove(_event: MouseEvent) {
-
+function handleMouseMove(event: MouseEvent) {
+  if (state.value === State.Drawing && isDrawing) {
+    continueDrawing(event);
+  }
 }
 
 function handleWheel(event: WheelEvent){
@@ -247,6 +330,84 @@ function handleWindowResize() {
   updateToolbarVisibility()
 }
 
+// Edit mode functions
+function enterEditMode() {
+  state.value = State.Drawing
+  drawState.value = DrawState.Pen
+}
+
+function exitEditMode() { state.value = State.Default }
+
+// Drawing tool selection
+function selectPenTool() { drawState.value = DrawState.Pen }
+
+function selectRectTool() { drawState.value = DrawState.Rect }
+
+function selectArrowTool() { drawState.value = DrawState.Arrow }
+
+function selectTextTool() { drawState.value = DrawState.Text }
+
+// Drawing functions
+function startDrawing(_event: MouseEvent) {
+  if (!drawingLayer || !stage) return;
+  
+  isDrawing = true;
+  const pos = stage.getPointerPosition();
+  if (!pos) return;
+
+  if (drawState.value === DrawState.Pen) {
+    currentPath = new Konva.Line({ // TODO smooth and speed up
+      stroke: '#ff0000',
+      strokeWidth: 3,
+      globalCompositeOperation: 'source-over',
+      lineCap: 'round',
+      lineJoin: 'round',
+      // draggable: true,
+      points: [pos.x, pos.y, pos.x, pos.y],
+    });
+    drawingLayer.add(currentPath);
+  }
+}
+
+// TODO
+function continueDrawing(_event: MouseEvent) {
+  if (!isDrawing || !currentPath || !stage) return;
+  
+  const pos = stage.getPointerPosition();
+  if (!pos) return;
+
+  if (drawState.value === DrawState.Pen) {
+    const newPoints = currentPath.points().concat([pos.x, pos.y]);
+    currentPath.points(newPoints);
+  }
+  
+  drawingLayer?.batchDraw();
+}
+
+function endDrawing() {
+  if (!isDrawing) return;
+  isDrawing = false;
+  
+  if (currentPath) { // Save to history for undo functionality
+    drawingHistory.push(currentPath.clone());
+  }
+  currentPath = null;
+}
+
+function undoDrawing() {
+  if (!drawingLayer || drawingHistory.length === 0) return;
+  
+  drawingHistory.pop();
+  drawingLayer.destroyChildren();
+  
+  // Redraw all items from history // TODO this there any better way?
+  drawingHistory.forEach(item => {
+    drawingLayer?.add(item.clone());
+  });
+  
+  drawingLayer.batchDraw();
+}
+
 { // Mount something
   onMounted(async () => {
     window.addEventListener('keyup', handleKeyup);
@@ -326,12 +487,13 @@ function handleWindowResize() {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  align-items: center;
   background-color: rgba(0, 0, 0);
   border-radius: 8px 8px 0px 0px;
   padding: 4px;
   gap: 4px;
   z-index: 1000;
-  transition: transform 0.5s ease;
+  transition: transform 0.3s ease;
   opacity: 0.9;
 }
 
@@ -352,5 +514,15 @@ function handleWindowResize() {
 
 .toolbar-item:hover {
   background-color: rgba(255, 255, 255, 0.2);
+}
+
+.toolbar-item.active {
+  background-color: rgba(0, 123, 255, 0.3);
+}
+
+.toolbar-divider {
+  height: 20px;
+  width: 1px;
+  background-color: #002c5b;
 }
 </style>
