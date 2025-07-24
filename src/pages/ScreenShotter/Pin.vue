@@ -152,7 +152,7 @@ let hideTipTimeout: number | null = null;
 // Drawing state
 let drawingLayer: Konva.Layer | null = null;
 let currentPath: Konva.Line | null = null;
-let currentArrow: Konva.Group | null = null;
+let currentArrow: Konva.Arrow | null = null;
 let currentRect: Konva.Rect | null = null;
 let currentText: Konva.Text | null = null;
 let drawingHistory: any[] = [];
@@ -428,31 +428,15 @@ function startDrawing(event: MouseEvent) {
     });
     drawingLayer.add(currentRect);
   } else if (drawState.value === DrawState.Arrow) {
-    // Create arrow group
-    currentArrow = new Konva.Group();
-    
-    // Create arrow line
-    const arrowLine = new Konva.Line({
+    // Create arrow using Konva.Arrow
+    currentArrow = new Konva.Arrow({
       points: [pos.x, pos.y, pos.x, pos.y],
       stroke: '#ff0000',
       strokeWidth: 3,
-      lineCap: 'round',
-      lineJoin: 'round',
-    });
-    
-    // Create arrowhead (triangle)
-    const arrowHead = new Konva.Line({
-      points: [],
-      stroke: '#ff0000',
-      strokeWidth: 3,
       fill: '#ff0000',
-      closed: true,
-      lineCap: 'round',
-      lineJoin: 'round',
+      pointerLength: 15,
+      pointerWidth: 15,
     });
-    
-    currentArrow.add(arrowLine);
-    currentArrow.add(arrowHead);
     drawingLayer.add(currentArrow);
   }
 }
@@ -488,31 +472,7 @@ function continueDrawing(_event: MouseEvent) {
       currentRect.height(height);
     }
   } else if (drawState.value === DrawState.Arrow && currentArrow && startPoint) {
-    // Update arrow line
-    const arrowLine = currentArrow.findOne('Line') as Konva.Line;
-    if (arrowLine) {
-      arrowLine.points([startPoint.x, startPoint.y, pos.x, pos.y]);
-    }
-    
-    // Calculate and update arrowhead
-    const arrowHead = currentArrow.children[1] as Konva.Line;
-    if (arrowHead) {
-      const headLength = 15;
-      const headAngle = Math.PI / 6; // 30 degrees
-      
-      // Calculate arrow direction
-      const dx = pos.x - startPoint.x;
-      const dy = pos.y - startPoint.y;
-      const angle = Math.atan2(dy, dx);
-      
-      // Calculate arrowhead points
-      const x1 = pos.x - headLength * Math.cos(angle - headAngle);
-      const y1 = pos.y - headLength * Math.sin(angle - headAngle);
-      const x2 = pos.x - headLength * Math.cos(angle + headAngle);
-      const y2 = pos.y - headLength * Math.sin(angle + headAngle);
-      
-      arrowHead.points([pos.x, pos.y, x1, y1, x2, y2]);
-    }
+    currentArrow.points([startPoint.x, startPoint.y, pos.x, pos.y]); // Update arrow points
   }
   
   drawingLayer?.batchDraw();
