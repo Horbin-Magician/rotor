@@ -8,6 +8,20 @@
     <div class="tips" v-if="show_tips">
       {{tips}}
     </div>
+    
+    <!-- Text input overlay -->
+    <div v-if="showTextInput" 
+         class="text-input-overlay"
+         :style="{ left: textInputPosition.x + 'px', top: textInputPosition.y + 'px' }">
+      <input 
+        ref="textInputRef"
+        v-model="textInputValue"
+        @keyup="textKeyUp"
+        @blur="finishTextInput"
+        class="text-input"
+        autofocus
+      />
+    </div>
   </main>
   
   <!-- Normal Toolbar -->
@@ -138,8 +152,18 @@ let hideTipTimeout: number | null = null;
 // Drawing state
 let drawingLayer: Konva.Layer | null = null;
 let currentPath: Konva.Line | null = null;
+let currentArrow: Konva.Group | null = null;
+let currentRect: Konva.Rect | null = null;
+let currentText: Konva.Text | null = null;
 let drawingHistory: any[] = [];
 let isDrawing = false;
+let startPoint: { x: number; y: number } | null = null;
+
+// Text input state
+const showTextInput = ref(false);
+const textInputValue = ref('');
+const textInputPosition = ref({ x: 0, y: 0 });
+const textInputRef = ref<HTMLInputElement | null>(null);
 
 // Minimum window dimensions to show toolbar
 const MIN_WIDTH_FOR_TOOLBAR = 140;
@@ -216,19 +240,35 @@ function handleWheel(event: WheelEvent){
 }
 
 function handleKeyup(event: KeyboardEvent) {
-  switch (event.key.toLowerCase()) {
-    case 'Escape'.toLowerCase():
-      closeWindow()
-      break
-    case 'Enter'.toLowerCase():
-      copyImage()
-      break
-    case 's'.toLowerCase():
-      saveImage()
-      break
-    case 'h'.toLowerCase():
-      minimizeWindow()
-      break
+  if (state.value === State.Default) {
+    switch (event.key.toLowerCase()) {
+      case 'Escape'.toLowerCase():
+        closeWindow()
+        break
+      case 'Enter'.toLowerCase():
+        copyImage()
+        break
+      case 's'.toLowerCase():
+        saveImage()
+        break
+      case 'h'.toLowerCase():
+        minimizeWindow()
+        break
+    }
+  } else if (state.value === State.Drawing) {
+    if (event.key === 'Escape') {
+      state.value = State.Default
+    }
+  }
+}
+
+function textKeyUp(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    finishTextInput()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    cancelTextInput()
   }
 }
 
@@ -347,13 +387,23 @@ function selectArrowTool() { drawState.value = DrawState.Arrow }
 
 function selectTextTool() { drawState.value = DrawState.Text }
 
+// TODO
 // Drawing functions
-function startDrawing(_event: MouseEvent) {
+function startDrawing(event: MouseEvent) {
   if (!drawingLayer || !stage) return;
   
-  isDrawing = true;
   const pos = stage.getPointerPosition();
   if (!pos) return;
+
+  if (drawState.value === DrawState.Text) {
+    // Handle text input
+    finishTextInput()
+    startTextInput(event, pos);
+    return;
+  }
+  
+  isDrawing = true;
+  startPoint = { x: pos.x, y: pos.y };
 
   if (drawState.value === DrawState.Pen) {
     currentPath = new Konva.Line({ // TODO smooth and speed up
@@ -366,19 +416,103 @@ function startDrawing(_event: MouseEvent) {
       points: [pos.x, pos.y, pos.x, pos.y],
     });
     drawingLayer.add(currentPath);
+  } else if (drawState.value === DrawState.Rect) {
+    currentRect = new Konva.Rect({
+      x: pos.x,
+      y: pos.y,
+      width: 0,
+      height: 0,
+      stroke: '#ff0000',
+      strokeWidth: 3,
+      fill: 'transparent',
+    });
+    drawingLayer.add(currentRect);
+  } else if (drawState.value === DrawState.Arrow) {
+    // Create arrow group
+    currentArrow = new Konva.Group();
+    
+    // Create arrow line
+    const arrowLine = new Konva.Line({
+      points: [pos.x, pos.y, pos.x, pos.y],
+      stroke: '#ff0000',
+      strokeWidth: 3,
+      lineCap: 'round',
+      lineJoin: 'round',
+    });
+    
+    // Create arrowhead (triangle)
+    const arrowHead = new Konva.Line({
+      points: [],
+      stroke: '#ff0000',
+      strokeWidth: 3,
+      fill: '#ff0000',
+      closed: true,
+      lineCap: 'round',
+      lineJoin: 'round',
+    });
+    
+    currentArrow.add(arrowLine);
+    currentArrow.add(arrowHead);
+    drawingLayer.add(currentArrow);
   }
 }
 
-// TODO
 function continueDrawing(_event: MouseEvent) {
-  if (!isDrawing || !currentPath || !stage) return;
+  if (!isDrawing || !stage) return;
   
   const pos = stage.getPointerPosition();
   if (!pos) return;
 
-  if (drawState.value === DrawState.Pen) {
+  if (drawState.value === DrawState.Pen && currentPath) {
     const newPoints = currentPath.points().concat([pos.x, pos.y]);
     currentPath.points(newPoints);
+  } else if (drawState.value === DrawState.Rect && currentRect && startPoint) {
+    // Update rectangle dimensions based on current mouse position
+    const width = pos.x - startPoint.x;
+    const height = pos.y - startPoint.y;
+    
+    // Handle negative dimensions (drawing from bottom-right to top-left)
+    if (width < 0) {
+      currentRect.x(pos.x);
+      currentRect.width(Math.abs(width));
+    } else {
+      currentRect.x(startPoint.x);
+      currentRect.width(width);
+    }
+    
+    if (height < 0) {
+      currentRect.y(pos.y);
+      currentRect.height(Math.abs(height));
+    } else {
+      currentRect.y(startPoint.y);
+      currentRect.height(height);
+    }
+  } else if (drawState.value === DrawState.Arrow && currentArrow && startPoint) {
+    // Update arrow line
+    const arrowLine = currentArrow.findOne('Line') as Konva.Line;
+    if (arrowLine) {
+      arrowLine.points([startPoint.x, startPoint.y, pos.x, pos.y]);
+    }
+    
+    // Calculate and update arrowhead
+    const arrowHead = currentArrow.children[1] as Konva.Line;
+    if (arrowHead) {
+      const headLength = 15;
+      const headAngle = Math.PI / 6; // 30 degrees
+      
+      // Calculate arrow direction
+      const dx = pos.x - startPoint.x;
+      const dy = pos.y - startPoint.y;
+      const angle = Math.atan2(dy, dx);
+      
+      // Calculate arrowhead points
+      const x1 = pos.x - headLength * Math.cos(angle - headAngle);
+      const y1 = pos.y - headLength * Math.sin(angle - headAngle);
+      const x2 = pos.x - headLength * Math.cos(angle + headAngle);
+      const y2 = pos.y - headLength * Math.sin(angle + headAngle);
+      
+      arrowHead.points([pos.x, pos.y, x1, y1, x2, y2]);
+    }
   }
   
   drawingLayer?.batchDraw();
@@ -390,8 +524,19 @@ function endDrawing() {
   
   if (currentPath) { // Save to history for undo functionality
     drawingHistory.push(currentPath.clone());
+  } else if (currentArrow) {
+    drawingHistory.push(currentArrow.clone());
+  } else if (currentRect) {
+    drawingHistory.push(currentRect.clone());
+  } else if (currentText) {
+    drawingHistory.push(currentText.clone());
   }
+  
   currentPath = null;
+  currentArrow = null;
+  currentRect = null;
+  currentText = null;
+  startPoint = null;
 }
 
 function undoDrawing() {
@@ -406,6 +551,61 @@ function undoDrawing() {
   });
   
   drawingLayer.batchDraw();
+}
+
+// Text input functions
+function startTextInput(event: MouseEvent, stagePos: { x: number; y: number }) {
+  // Convert stage position to screen position for input overlay
+  const rect = (event.target as HTMLElement).getBoundingClientRect();
+  textInputPosition.value = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+  
+  // Store the stage position for text placement
+  startPoint = { x: stagePos.x, y: stagePos.y };
+  
+  // Show text input
+  showTextInput.value = true;
+  textInputValue.value = '';
+  
+  // Focus the input after Vue updates the DOM
+  setTimeout(() => {
+    textInputRef.value?.focus();
+  }, 0);
+}
+
+function finishTextInput() {
+  if (!drawingLayer || !startPoint || !textInputValue.value.trim()) {
+    cancelTextInput();
+    return;
+  }
+
+  // Create text object
+  currentText = new Konva.Text({
+    x: startPoint.x,
+    y: startPoint.y,
+    text: textInputValue.value,
+    fontSize: 16,
+    fill: '#ff0000',
+  });
+  
+  drawingLayer.add(currentText);
+  drawingLayer.batchDraw();
+  
+  // Add to history
+  drawingHistory.push(currentText.clone());
+  
+  // Clean up
+  cancelTextInput();
+  currentText = null;
+  startPoint = null;
+}
+
+function cancelTextInput() {
+  showTextInput.value = false;
+  textInputValue.value = '';
+  startPoint = null;
 }
 
 { // Mount something
@@ -524,5 +724,21 @@ function undoDrawing() {
   height: 20px;
   width: 1px;
   background-color: #002c5b;
+}
+
+.text-input-overlay {
+  position: absolute;
+  z-index: 2000;
+}
+
+.text-input {
+  padding: 4px 8px;
+  border: 1px solid #007bff;
+  border-radius: 4px;
+  background-color: transparent;
+  font-size: 16px;
+  outline: none;
+  color: white;
+  width: 100px;
 }
 </style>

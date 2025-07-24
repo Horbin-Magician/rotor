@@ -91,8 +91,6 @@ pub async fn new_pin(
     height: String,
     webview_window: tauri::WebviewWindow,
 ) {
-    println!("new_pin called with offset_x: {}, offset_y: {}, width: {}, height: {}", offset_x, offset_y, width, height);
-
     let mut app = Application::global().lock().unwrap();
     let screenshot = app.get_module("screenshot");
 
