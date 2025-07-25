@@ -24,6 +24,9 @@
           <div class="color-preview" :style="{ backgroundColor: pixelColor }"></div>
           <span>{{ pixelColor }}</span>
         </div>
+        <div class="magnifier-info-item">
+          <span>C键复制颜色值</span>
+        </div>
       </div>
     </div>
   </main>
@@ -36,6 +39,7 @@ console.log("js begin: ", Date.now())
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 
 const appWindow = getCurrentWindow()
 
@@ -123,15 +127,15 @@ function drawBackgroundImage() {
 }
 
 // Computed styles for magnifier
-const mgnfHeight = magnifierSize + 36
+const mgnfHeight = magnifierSize + 50
 const mgnfOffset = 20
 const viewportWidth = window.innerWidth
 const viewportHeight = window.innerHeight
 const magnifierStyle = computed(() => {
   let left = (currentX.value + magnifierSize > viewportWidth) ? 
-    Math.min(currentX.value, viewportWidth) - magnifierSize : currentX.value;
-  let top  = ((currentY.value) + mgnfOffset + mgnfHeight > viewportHeight) ? 
-    Math.min((currentY.value) - mgnfOffset, viewportHeight) - mgnfHeight : (currentY.value + mgnfOffset);
+    currentX.value - magnifierSize : currentX.value;
+  let top = (currentY.value + mgnfOffset + mgnfHeight > viewportHeight) ? 
+    currentY.value - mgnfOffset - mgnfHeight : (currentY.value + mgnfOffset);
 
   return {
     left: `${left}px`,
@@ -263,9 +267,11 @@ function handleMouseUp() {
 }
 
 function handleKeyup(event: KeyboardEvent) {
-  console.log('全局按下了键：', event.key); // TODO del
+  console.log(event.key)
   if (event.key === 'Escape') {
     appWindow.close()
+  } else if (event.key.toLowerCase() === 'c') {
+    writeText(pixelColor.value)
   }
 }
 
@@ -376,6 +382,8 @@ html, body {
   padding: 4px;
   color: white;
   font-size: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .magnifier-info-item {
