@@ -5,7 +5,6 @@ use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
 use crate::module::{self, Module};
-use crate::util::log_util;
 
 pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if event.state() == ShortcutState::Pressed {
@@ -16,7 +15,8 @@ pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: 
             if let Some(module_shortcut) = module.get_shortcut() {
                 if module_shortcut == *shortcut {
                     module.run().unwrap_or_else(|e| {
-                        log_util::log_error(format!("Module {} run error: {:?}", module.flag(), e))
+                        let flag = module.flag();
+                        log::error!("Module {flag} run error: {e}")
                     });
                 }
             }
@@ -47,7 +47,8 @@ impl Application {
     pub fn init(&mut self, app: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         for module in self.modules.values_mut() {
             module.init(&app).unwrap_or_else(|e| {
-                log_util::log_error(format!("Module {} init error: {:?}", module.flag(), e))
+                let flag = module.flag();
+                log::error!("Module {flag} init error: {e}");
             });
             if let Some(shortcut) = module.get_shortcut() {
                 app.global_shortcut().register(shortcut)?;

@@ -124,7 +124,6 @@ appWindow.isVisible().then( (visible)=>{
   }
 })
 
-
 const languageOptions = [
   { label: '系统默认', value: 0 },
   { label: '中文', value: 1 },

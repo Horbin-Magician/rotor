@@ -1,3 +1,5 @@
+use crate::core::config::AppConfig;
+use crate::module::Module;
 use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
@@ -7,8 +9,6 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use tokio::sync::Mutex;
 use xcap::Monitor;
-use crate::core::config::AppConfig;
-use crate::module::Module;
 
 type Image = Vec<u8>;
 pub struct ScreenShotter {
@@ -116,7 +116,6 @@ impl ScreenShotter {
         height: f64,
         label: String,
     ) -> Result<(), Box<dyn Error>> {
-
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
             None => return Err("AppHandle not initialized".into()),

@@ -26,6 +26,7 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "dialog:allow-open",
+    "log:allow-log",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

@@ -4,7 +4,6 @@ use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::core::config::{AppConfig, Config};
-use crate::util::log_util;
 
 #[tauri::command]
 pub fn get_all_cfg() -> Config {
@@ -29,7 +28,7 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
         }
     }
     app_config.set(k, v).unwrap_or_else(|e| {
-        log_util::log_error(format!("Command set_cfg error: {:?}", e));
+        log::error!("Command set_cfg error: {e}");
     });
 }
 
