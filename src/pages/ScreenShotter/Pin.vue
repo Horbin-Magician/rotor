@@ -405,6 +405,13 @@ async function scaleWindow() {
     konvaImage.height(newHeight)
     backImgLayer?.batchDraw()
   }
+  
+  // Scale all drawing elements
+  if (drawingLayer) {
+    const scaleRatio = zoom_scale / 100
+    drawingLayer.scale({ x: scaleRatio, y: scaleRatio })
+    drawingLayer.batchDraw()
+  }
 }
 
 function updateToolbarVisibility() {
@@ -459,39 +466,40 @@ function startDrawing(event: MouseEvent) {
   }
   
   isDrawing = true;
-  startPoint = { x: pos.x, y: pos.y };
+  // Convert position to account for current scale
+  const scaleRatio = zoom_scale / 100;
+  startPoint = { x: pos.x / scaleRatio, y: pos.y / scaleRatio };
 
   if (drawState.value === DrawState.Pen) {
-    currentPath = new Konva.Line({ // TODO smooth and speed up
+    currentPath = new Konva.Line({
       stroke: '#ff0000',
-      strokeWidth: 3,
+      strokeWidth: 3 / scaleRatio, // Adjust stroke width for scale
       globalCompositeOperation: 'source-over',
       lineCap: 'round',
       lineJoin: 'round',
-      // draggable: true,
-      points: [pos.x, pos.y, pos.x, pos.y],
+      points: [pos.x / scaleRatio, pos.y / scaleRatio, pos.x / scaleRatio, pos.y / scaleRatio],
     });
     drawingLayer.add(currentPath);
   } else if (drawState.value === DrawState.Rect) {
     currentRect = new Konva.Rect({
-      x: pos.x,
-      y: pos.y,
+      x: pos.x / scaleRatio,
+      y: pos.y / scaleRatio,
       width: 0,
       height: 0,
       stroke: '#ff0000',
-      strokeWidth: 3,
+      strokeWidth: 3 / scaleRatio, // Adjust stroke width for scale
       fill: 'transparent',
     });
     drawingLayer.add(currentRect);
   } else if (drawState.value === DrawState.Arrow) {
     // Create arrow using Konva.Arrow
     currentArrow = new Konva.Arrow({
-      points: [pos.x, pos.y, pos.x, pos.y],
+      points: [pos.x / scaleRatio, pos.y / scaleRatio, pos.x / scaleRatio, pos.y / scaleRatio],
       stroke: '#ff0000',
-      strokeWidth: 3,
+      strokeWidth: 3 / scaleRatio, // Adjust stroke width for scale
       fill: '#ff0000',
-      pointerLength: 15,
-      pointerWidth: 15,
+      pointerLength: 15 / scaleRatio, // Adjust pointer size for scale
+      pointerWidth: 15 / scaleRatio,
     });
     drawingLayer.add(currentArrow);
   }
@@ -503,17 +511,21 @@ function continueDrawing(_event: MouseEvent) {
   const pos = stage.getPointerPosition();
   if (!pos) return;
 
+  const scaleRatio = zoom_scale / 100;
+  const scaledX = pos.x / scaleRatio;
+  const scaledY = pos.y / scaleRatio;
+
   if (drawState.value === DrawState.Pen && currentPath) {
-    const newPoints = currentPath.points().concat([pos.x, pos.y]);
+    const newPoints = currentPath.points().concat([scaledX, scaledY]);
     currentPath.points(newPoints);
   } else if (drawState.value === DrawState.Rect && currentRect && startPoint) {
     // Update rectangle dimensions based on current mouse position
-    const width = pos.x - startPoint.x;
-    const height = pos.y - startPoint.y;
+    const width = scaledX - startPoint.x;
+    const height = scaledY - startPoint.y;
     
     // Handle negative dimensions (drawing from bottom-right to top-left)
     if (width < 0) {
-      currentRect.x(pos.x);
+      currentRect.x(scaledX);
       currentRect.width(Math.abs(width));
     } else {
       currentRect.x(startPoint.x);
@@ -521,14 +533,14 @@ function continueDrawing(_event: MouseEvent) {
     }
     
     if (height < 0) {
-      currentRect.y(pos.y);
+      currentRect.y(scaledY);
       currentRect.height(Math.abs(height));
     } else {
       currentRect.y(startPoint.y);
       currentRect.height(height);
     }
   } else if (drawState.value === DrawState.Arrow && currentArrow && startPoint) {
-    currentArrow.points([startPoint.x, startPoint.y, pos.x, pos.y]); // Update arrow points
+    currentArrow.points([startPoint.x, startPoint.y, scaledX, scaledY]); // Update arrow points
   }
   
   drawingLayer?.batchDraw();
@@ -605,8 +617,9 @@ function startTextInput(event: MouseEvent, stagePos: { x: number; y: number }) {
     y: event.clientY - rect.top
   };
   
-  // Store the stage position for text placement
-  startPoint = { x: stagePos.x, y: stagePos.y };
+  // Store the stage position for text placement, accounting for scale
+  const scaleRatio = zoom_scale / 100;
+  startPoint = { x: stagePos.x / scaleRatio, y: stagePos.y / scaleRatio };
   
   // Show text input
   showTextInput.value = true;
@@ -624,12 +637,13 @@ function finishTextInput() {
     return;
   }
 
-  // Create text object
+  // Create text object with scale-adjusted font size
+  const scaleRatio = zoom_scale / 100;
   currentText = new Konva.Text({
     x: startPoint.x,
     y: startPoint.y,
     text: textInputValue.value,
-    fontSize: 16,
+    fontSize: 16 / scaleRatio, // Adjust font size for scale
     fill: '#ff0000',
   });
   
