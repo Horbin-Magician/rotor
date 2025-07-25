@@ -1,4 +1,6 @@
 use tauri_plugin_dialog::DialogExt;
+// use image::DynamicImage;
+// use image::RgbaImage;
 
 use crate::core::application::Application;
 use crate::module::screen_shotter::ScreenShotter;
@@ -77,6 +79,10 @@ pub async fn get_screen_img_rect(
                 cropped_image.extend_from_slice(&row[start..end]);
             }
         }
+
+        // let img = RgbaImage::from_raw(width as u32, height as u32, cropped_image.clone()).unwrap();
+        // let img_dyn = DynamicImage::ImageRgba8(img);
+
         return tauri::ipc::Response::new(cropped_image);
     } else {
         return tauri::ipc::Response::new(vec![]);

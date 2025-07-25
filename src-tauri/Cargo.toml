@@ -29,6 +29,9 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["full"] }
 
+[dependencies.rust-paddle-ocr]
+git = "https://github.com/zibo-chen/rust-paddle-ocr.git"
+
 [target."cfg(target_os = \"macos\")".dependencies]
 
 [target."cfg(target_os = \"windows\")".dependencies]
