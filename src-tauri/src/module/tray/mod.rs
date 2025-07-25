@@ -47,6 +47,11 @@ impl Tray {
     }
 
     fn set_system_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+        #[cfg(target_os = "macos")]
+        let icon_path = app
+            .path()
+            .resolve("icons/128x128White.png", tauri::path::BaseDirectory::Resource)?;
+        #[cfg(target_os = "windows")]
         let icon_path = app
             .path()
             .resolve("icons/128x128.png", tauri::path::BaseDirectory::Resource)?;
