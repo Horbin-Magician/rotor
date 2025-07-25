@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
 use toml;
 
-use crate::util::{file_util, log_util};
+use crate::util::file_util;
 
 pub type Config = HashMap<String, String>;
 
@@ -56,13 +56,13 @@ impl AppConfig {
         if let Some(user_data_path) = file_util::get_userdata_path() {
             let path = user_data_path.join("config.toml");
             let config_str = fs::read_to_string(path).unwrap_or_else(|e| {
-                log_util::log_warn(format!("AppConfig: can not read config file: {:?}", e));
+                log::warn!("AppConfig: can not read config file: {e}");
                 return String::new();
             });
 
             match toml::from_str::<Config>(&config_str) {
                 Ok(c) => config = c,
-                Err(e) => log_util::log_warn(format!("AppConfig: config format error: {:?}", e)),
+                Err(e) => log::warn!("AppConfig: config format error: {e}"),
             }
         }
 

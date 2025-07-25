@@ -8,11 +8,14 @@ use tauri_plugin_autostart::MacosLauncher;
 
 use command::{config_cmd, screen_shotter_cmd};
 use core::application;
-use util::log_util;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let info = "123";
+    log::info!("info: {info}");
+
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -44,7 +47,7 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {
-            log_util::log_error(format!("Build tauri::application error: {:?}", e));
+            log::error!("Build tauri::application error: {e}");
             panic!()
         });
 
@@ -53,7 +56,7 @@ pub fn run() {
         .unwrap()
         .init(app.app_handle().clone())
         .unwrap_or_else(|e| {
-            log_util::log_error(format!("Error while init rotor application: {:?}", e));
+            log::error!("Error while init rotor application: {e}");
             panic!()
         });
 

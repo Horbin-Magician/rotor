@@ -33,11 +33,12 @@ pub async fn get_screen_img_rect(
     y: String,
     width: String,
     height: String,
-    webview_window: tauri::WebviewWindow
+    webview_window: tauri::WebviewWindow,
 ) -> tauri::ipc::Response {
     let (masks_arc, pin_mask_label) = {
         let mut app = Application::global().lock().unwrap();
-        if let Some(ss) = app.get_module("screenshot")
+        if let Some(ss) = app
+            .get_module("screenshot")
             .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
         {
             (Some(ss.masks.clone()), Some(ss.pin_mask_label.clone()))
@@ -55,11 +56,28 @@ pub async fn get_screen_img_rect(
         None => return tauri::ipc::Response::new(vec![]),
     };
 
-    let x: usize = match x.parse() { Ok(v) => v, _ => return tauri::ipc::Response::new(vec![]) };
-    let y: usize = match y.parse() { Ok(v) => v, _ => return tauri::ipc::Response::new(vec![]) };
-    let width: usize = match width.parse() { Ok(v) => v, _ => return tauri::ipc::Response::new(vec![]) };
-    let height: usize = match height.parse() { Ok(v) => v, _ => return tauri::ipc::Response::new(vec![]) };
-    let img_width = webview_window.current_monitor().unwrap().unwrap().size().width as usize;
+    let x: usize = match x.parse() {
+        Ok(v) => v,
+        _ => return tauri::ipc::Response::new(vec![]),
+    };
+    let y: usize = match y.parse() {
+        Ok(v) => v,
+        _ => return tauri::ipc::Response::new(vec![]),
+    };
+    let width: usize = match width.parse() {
+        Ok(v) => v,
+        _ => return tauri::ipc::Response::new(vec![]),
+    };
+    let height: usize = match height.parse() {
+        Ok(v) => v,
+        _ => return tauri::ipc::Response::new(vec![]),
+    };
+    let img_width = webview_window
+        .current_monitor()
+        .unwrap()
+        .unwrap()
+        .size()
+        .width as usize;
 
     if x + width > img_width || height == 0 {
         return tauri::ipc::Response::new(vec![]);
@@ -133,8 +151,10 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     // let save_path = app_config.get_save_path();
     // let if_auto_change = app_config.get_if_auto_change_save_path();
     // let if_ask_path = app_config.get_if_ask_save_path();
-    
-    let file_name = chrono::Local::now().format("Rotor_%Y-%m-%d-%H-%M-%S.png").to_string();
+
+    let file_name = chrono::Local::now()
+        .format("Rotor_%Y-%m-%d-%H-%M-%S.png")
+        .to_string();
 
     let file_path = app
         .dialog()

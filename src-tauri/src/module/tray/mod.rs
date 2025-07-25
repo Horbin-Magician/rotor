@@ -48,13 +48,15 @@ impl Tray {
 
     fn set_system_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "macos")]
-        let icon_path = app
-            .path()
-            .resolve("assets/icons/128x128White.png", tauri::path::BaseDirectory::Resource)?;
+        let icon_path = app.path().resolve(
+            "assets/icons/128x128White.png",
+            tauri::path::BaseDirectory::Resource,
+        )?;
         #[cfg(target_os = "windows")]
-        let icon_path = app
-            .path()
-            .resolve("assets/icons/128x128.png", tauri::path::BaseDirectory::Resource)?;
+        let icon_path = app.path().resolve(
+            "assets/icons/128x128.png",
+            tauri::path::BaseDirectory::Resource,
+        )?;
         let icon = tauri::image::Image::from_path(icon_path).unwrap();
         let setting_i = MenuItem::with_id(app, "setting", "设置", true, None::<&str>)?;
         let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
