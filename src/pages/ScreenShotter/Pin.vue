@@ -534,12 +534,39 @@ function continueDrawing(_event: MouseEvent) {
   drawingLayer?.batchDraw();
 }
 
+// Smoothing function for free drawing lines
+function smoothPoints(points: number[], alpha: number = 0.3): number[] {
+  const n = points.length;
+  if (n < 6) return points.slice();
+  const smoothed: number[] = [];
+
+  smoothed.push(points[0], points[1]);
+
+  for (let i = 2; i < n - 2; i += 2) {
+    const prevX = points[i - 2], prevY = points[i - 1];
+    const currX = points[i],   currY = points[i + 1];
+    const nextX = points[i + 2], nextY = points[i + 3];
+
+    const x = prevX * alpha + currX * (1 - 2 * alpha) + nextX * alpha;
+    const y = prevY * alpha + currY * (1 - 2 * alpha) + nextY * alpha;
+
+    smoothed.push(x, y);
+  }
+
+  smoothed.push(points[n - 2], points[n - 1]);
+
+  return smoothed;
+}
+
 function endDrawing() {
   if (!isDrawing) return;
   isDrawing = false;
   
-  if (currentPath) { // Save to history for undo functionality
-    drawingHistory.push(currentPath.clone());
+  // Save to history for undo functionality
+  if (currentPath) { // Apply smoothing to pen tool drawings before adding to history
+    const smoothedPoints = smoothPoints(currentPath.points());
+    currentPath.points(smoothedPoints);
+    drawingHistory.push(currentPath);
   } else if (currentArrow) {
     drawingHistory.push(currentArrow.clone());
   } else if (currentRect) {
