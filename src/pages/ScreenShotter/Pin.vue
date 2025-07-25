@@ -26,68 +26,123 @@
   
   <!-- Normal Toolbar -->
   <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible || state === State.Drawing }">
-    <div class="toolbar-item" @click="enterEditMode">
-      <n-icon size="20" color="#007bff">
-        <EditOutlined />
-      </n-icon>
-    </div>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="enterEditMode">
+          <n-icon size="20" color="#007bff">
+            <EditOutlined />
+          </n-icon>
+        </div>
+      </template>
+      标注模式
+    </n-tooltip>
     <div class="toolbar-divider"></div>
-    <div class="toolbar-item" @click="minimizeWindow">
-      <n-icon size="20" color="#007bff">
-        <MinusFilled />
-      </n-icon>
-    </div>
-    <div class="toolbar-item" @click="saveImage">
-      <n-icon size="20" color="#007bff">
-        <SaveAltFilled />
-      </n-icon>
-    </div>
-    <div class="toolbar-item" @click="closeWindow">
-      <n-icon size="20" color="#007bff">
-        <CloseFilled />
-      </n-icon>
-    </div>
-    <div class="toolbar-item" @click="copyImage">
-      <n-icon size="20" color="#007bff">
-        <ContentCopyRound />
-      </n-icon>
-    </div>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="minimizeWindow">
+          <n-icon size="20" color="#007bff">
+            <MinusFilled />
+          </n-icon>
+        </div>
+      </template>
+      最小化 (H)
+    </n-tooltip>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="saveImage">
+          <n-icon size="20" color="#007bff">
+            <SaveAltFilled />
+          </n-icon>
+        </div>
+      </template>
+      保存图片 (S)
+    </n-tooltip>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="closeWindow">
+          <n-icon size="20" color="#007bff">
+            <CloseFilled />
+          </n-icon>
+        </div>
+      </template>
+      关闭 (ESC)
+    </n-tooltip>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="copyImage">
+          <n-icon size="20" color="#007bff">
+            <ContentCopyRound />
+          </n-icon>
+        </div>
+      </template>
+      复制图片 (Enter)
+    </n-tooltip>
   </div>
 
   <!-- Drawing Toolbar -->
   <div class="toolbar drawing-toolbar" :class="{ 'toolbar-hidden': !toolbarVisible || state != State.Drawing }">
-    <div class="toolbar-item" @click="exitEditMode">
-      <n-icon size="20" color="#007bff">
-        <ArrowBackIosRound />
-      </n-icon>
-    </div>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="exitEditMode">
+          <n-icon size="20" color="#007bff">
+            <ArrowBackIosRound />
+          </n-icon>
+        </div>
+      </template>
+      退出标注 (ESC)
+    </n-tooltip>
     <div class="toolbar-divider"></div>
-    <div class="toolbar-item" @click="selectPenTool" :class="{ 'active': drawState === DrawState.Pen }">
-      <n-icon size="20" color="#007bff">
-        <EditOutlined />
-      </n-icon>
-    </div>
-    <div class="toolbar-item" @click="selectRectTool" :class="{ 'active': drawState === DrawState.Rect }">
-      <n-icon size="20" color="#007bff">
-        <CropDinRound />
-      </n-icon>
-    </div>
-    <div class="toolbar-item" @click="selectArrowTool" :class="{ 'active': drawState === DrawState.Arrow }">
-      <n-icon size="20" color="#007bff">
-        <ArrowDownLeft20Filled />
-      </n-icon>
-    </div>
-    <div class="toolbar-item" @click="selectTextTool" :class="{ 'active': drawState === DrawState.Text }">
-      <n-icon size="20" color="#007bff">
-        <TextT20Filled />
-      </n-icon>
-    </div>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="selectPenTool" :class="{ 'active': drawState === DrawState.Pen }">
+          <n-icon size="20" color="#007bff">
+            <EditOutlined />
+          </n-icon>
+        </div>
+      </template>
+      画笔工具
+    </n-tooltip>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="selectRectTool" :class="{ 'active': drawState === DrawState.Rect }">
+          <n-icon size="20" color="#007bff">
+            <CropDinRound />
+          </n-icon>
+        </div>
+      </template>
+      矩形工具
+    </n-tooltip>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="selectArrowTool" :class="{ 'active': drawState === DrawState.Arrow }">
+          <n-icon size="20" color="#007bff">
+            <ArrowDownLeft20Filled />
+          </n-icon>
+        </div>
+      </template>
+      箭头工具
+    </n-tooltip>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="selectTextTool" :class="{ 'active': drawState === DrawState.Text }">
+          <n-icon size="20" color="#007bff">
+            <TextT20Filled />
+          </n-icon>
+        </div>
+      </template>
+      文本工具
+    </n-tooltip>
     <div class="toolbar-divider"></div>
-    <div class="toolbar-item" @click="undoDrawing">
-      <n-icon size="20" color="#007bff">
-        <UndoFilled />
-      </n-icon>
-    </div>
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="undoDrawing">
+          <n-icon size="20" color="#007bff">
+            <UndoFilled />
+          </n-icon>
+        </div>
+      </template>
+      撤销
+    </n-tooltip>
   </div>
 </template>
 
@@ -107,6 +162,7 @@ import {
   ArrowDownLeft20Filled,
   TextT20Filled,
 } from '@vicons/fluent';
+import { NTooltip } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
