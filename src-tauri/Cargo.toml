@@ -35,6 +35,10 @@ log = "0.4.27"
 git = "https://github.com/zibo-chen/rust-paddle-ocr.git"
 
 [target."cfg(target_os = \"macos\")".dependencies]
+cocoa = "0.25"
+core-graphics = "0.23"
+core-foundation = "0.9"
+objc = "0.2"
 
 [target."cfg(target_os = \"windows\")".dependencies]
 windows = "0.61.3"
