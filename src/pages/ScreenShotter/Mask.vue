@@ -10,7 +10,7 @@
     />
     
     <!-- Selection rectangle -->
-    <div v-if="isSelecting" class="selection-rect" :style="selectionStyle"></div>
+    <div class="selection-rect" :style="selectionStyle"></div>
     
     <!-- Magnifier -->
     <div class="magnifier" :style="magnifierStyle">
@@ -60,6 +60,7 @@ const endX = ref(0)
 const endY = ref(0)
 const currentX = ref(-999)
 const currentY = ref(-999)
+const autoSelectRect = ref<{x: number, y: number, width: number, height: number} | null>(null)
 
 // Magnifier state
 const magnifierSize = 100
@@ -75,10 +76,28 @@ let magnifierCtx: CanvasRenderingContext2D | null = null
 
 // Computed styles for selection rectangle
 const selectionStyle = computed(() => {
-  const left = Math.min(startX.value, endX.value)
-  const top = Math.min(startY.value, endY.value)
-  const width = Math.abs(endX.value - startX.value)
-  const height = Math.abs(endY.value - startY.value)
+  let left, top, width, height = 0
+  if (isSelecting.value == true) {
+    width = Math.abs(endX.value - startX.value)
+    height = Math.abs(endY.value - startY.value)
+    if (width > 5 && height > 5) {
+      left = Math.min(startX.value, endX.value)
+      top = Math.min(startY.value, endY.value)
+      return {
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${width}px`,
+        height: `${height}px`
+      }
+    }
+  }
+
+  if (autoSelectRect.value) {
+    left = autoSelectRect.value.x
+    top = autoSelectRect.value.y
+    width = autoSelectRect.value.width
+    height = autoSelectRect.value.height
+  }
   
   return {
     left: `${left}px`,
@@ -215,6 +234,29 @@ function getPixelColor(x: number, y: number) {
   }
 }
 
+// Auto-selection functionality
+async function updateAutoSelection(x: number, y: number) {
+  const result = await invoke("get_window_at_point", { x: Math.floor(x), y: Math.floor(y) }) as [number, number, number, number]
+  const [windowX, windowY, windowWidth, windowHeight] = result
+  
+  // Only update if we got valid window bounds
+  if (windowWidth > 0 && windowHeight > 0) {
+    autoSelectRect.value = {
+      x: windowX,
+      y: windowY,
+      width: windowWidth,
+      height: windowHeight
+    }
+    // Update selection dimensions for display
+    selectionWidth.value = windowWidth
+    selectionHeight.value = windowHeight
+  } else {
+    autoSelectRect.value = null
+    selectionWidth.value = 0
+    selectionHeight.value = 0
+  }
+}
+
 // Mouse event handlers
 function handleMouseDown(event: MouseEvent) {
   // Start selection
@@ -241,7 +283,7 @@ function handleMouseMove(event: MouseEvent) {
     selectionWidth.value = Math.abs(endX.value - startX.value)
     selectionHeight.value = Math.abs(endY.value - startY.value)
   }
-  
+  updateAutoSelection(event.clientX, event.clientY)
   updateMagnifier(event.clientX, event.clientY)
   getPixelColor(event.clientX, event.clientY)
 }
@@ -258,7 +300,14 @@ function handleMouseUp() {
     const width = Math.abs(endX.value - startX.value)
     const height = Math.abs(endY.value - startY.value)
     invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
-  } else {
+  } else if (autoSelectRect.value) {
+    const x = autoSelectRect.value.x
+    const y = autoSelectRect.value.y
+    const width = autoSelectRect.value.width
+    const height = autoSelectRect.value.height
+    invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
+  } 
+  else {
     // Reset selection if it's too small
     isSelecting.value = false
     selectionWidth.value = 0

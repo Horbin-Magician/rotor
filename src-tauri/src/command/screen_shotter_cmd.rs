@@ -4,6 +4,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::core::application::Application;
 use crate::module::screen_shotter::ScreenShotter;
+use crate::util::sys_util;
 
 #[tauri::command]
 pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
@@ -172,4 +173,9 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     }
 
     false
+}
+
+#[tauri::command]
+pub fn get_window_at_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
+    sys_util::get_point_window_rect(x, y)
 }
