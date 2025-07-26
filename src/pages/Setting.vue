@@ -24,7 +24,7 @@
               
               <div class="setting-item">
                 <span class="setting-label">主题</span>
-                <n-select v-model:value="theme" :options="themeOptions" disabled="true"/>
+                <n-select v-model:value="theme" :options="themeOptions" />
               </div>
 
               <div class="setting-item">
@@ -193,7 +193,13 @@ function updateSetting(key: string, value: any) {
 
 // Watch for changes in settings and update them in the backend
 watch(language, (newValue) => updateSetting("language", newValue))
-watch(theme, (newValue) => updateSetting("theme", newValue))
+watch(theme, (newValue) => {
+  updateSetting("theme", newValue)
+  // 更新应用主题
+  if ((window as any).updateAppTheme) {
+    (window as any).updateAppTheme(newValue)
+  }
+})
 watch(powerBoot, (newValue) => { if(newValue) { enable() } else { disable() }})
 watch(shortcutScreenshot, (newValue) => updateSetting("shortcut_screenshot", newValue))
 watch(shortcutSearch, (newValue) => updateSetting("shortcut_search", newValue))
