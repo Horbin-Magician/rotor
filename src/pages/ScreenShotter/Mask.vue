@@ -33,9 +33,6 @@
 </template>
 
 <script setup lang="ts">
-
-console.log("js begin: ", Date.now())
-
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -316,7 +313,6 @@ function handleMouseUp() {
 }
 
 function handleKeyup(event: KeyboardEvent) {
-  console.log(event.key)
   if (event.key === 'Escape') {
     appWindow.close()
   } else if (event.key.toLowerCase() === 'c') {
@@ -336,24 +332,19 @@ onBeforeUnmount(() => {
 
 // Load the screenshot
 async function initializeScreenshot() {
-  try {
-    const imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
+  const imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
 
-    // Create image data and bitmap asynchronously
-    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
-    backImgBitmap.value = await createImageBitmap(imgData)
+  // Create image data and bitmap asynchronously
+  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
+  backImgBitmap.value = await createImageBitmap(imgData)
 
-    // Draw the background image
-    drawBackgroundImage()
+  // Draw the background image
+  drawBackgroundImage()
 
-    // Show window
-    const visible = await appWindow.isVisible()
-    if(!visible) {
-      appWindow.show()
-    }
-  } catch (err) {
-    console.error("Failed to capture_screen", err)
-    appWindow.close()
+  // Show window
+  const visible = await appWindow.isVisible()
+  if(!visible) {
+    appWindow.show()
   }
 }
 

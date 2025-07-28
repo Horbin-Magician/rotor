@@ -159,7 +159,7 @@ invoke("get_all_cfg").then(async (config: any) => {
   language.value = Number(config["language"])
   theme.value = Number(config["theme"])
   powerBoot.value = await isEnabled()
-  console.log(isEnabled())
+
   // currentVerision.value = config["current_verision"]
   shortcutScreenshot.value = config["shortcut_screenshot"]
   shortcutSearch.value = config["shortcut_search"]
