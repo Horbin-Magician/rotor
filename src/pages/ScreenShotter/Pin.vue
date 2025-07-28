@@ -45,7 +45,7 @@
           </n-icon>
         </div>
       </template>
-      最小化 (H)
+      最小化 ({{ shortcuts.hide }})
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -55,7 +55,7 @@
           </n-icon>
         </div>
       </template>
-      保存图片 (S)
+      保存图片 ({{ shortcuts.save }})
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -65,7 +65,7 @@
           </n-icon>
         </div>
       </template>
-      关闭 (ESC)
+      关闭 ({{ shortcuts.close }})
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -75,7 +75,7 @@
           </n-icon>
         </div>
       </template>
-      复制图片 (Enter)
+      复制图片 ({{ shortcuts.copy }})
     </n-tooltip>
   </div>
 
@@ -89,7 +89,7 @@
           </n-icon>
         </div>
       </template>
-      退出标注 (ESC)
+      退出标注 ({{ shortcuts.close }})
     </n-tooltip>
     <div class="toolbar-divider"></div>
     <n-tooltip trigger="hover" placement="top" :delay="800">
@@ -221,9 +221,56 @@ const textInputValue = ref('');
 const textInputPosition = ref({ x: 0, y: 0 });
 const textInputRef = ref<HTMLInputElement | null>(null);
 
+// Shortcut keys from configuration
+const shortcuts = ref({
+  save: 's',
+  close: 'Escape',
+  copy: 'Enter',
+  hide: 'h'
+});
+
 // Minimum window dimensions to show toolbar
 const MIN_WIDTH_FOR_TOOLBAR = 140;
 const MIN_HEIGHT_FOR_TOOLBAR = 80;
+
+// Load shortcuts from configuration
+async function loadShortcuts() {
+  try {
+    const saveShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_save" });
+    const closeShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_close" });
+    const copyShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_copy" });
+    const hideShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_hide" });
+    
+    // Parse shortcut strings to get the key part
+    shortcuts.value = {
+      save: parseShortcutKey(saveShortcut) || 's',
+      close: parseShortcutKey(closeShortcut) || 'Escape',
+      copy: parseShortcutKey(copyShortcut) || 'Enter',
+      hide: parseShortcutKey(hideShortcut) || 'h'
+    };
+  } catch (error) {
+    console.error("Failed to load shortcuts:", error);
+  }
+}
+
+// Parse shortcut string to extract the key part
+function parseShortcutKey(shortcutStr: string): string {
+  if (!shortcutStr) return '';
+  
+  // Handle different shortcut formats
+  if (shortcutStr.includes('+')) {
+    // For shortcuts like "Ctrl+Shift+S", we only want the last part
+    const parts = shortcutStr.split('+');
+    return parts[parts.length - 1].trim();
+  }
+  
+  // For single keys like "Escape", "Enter", "KeyS"
+  if (shortcutStr.startsWith('Key')) {
+    return shortcutStr.substring(3); // "KeyS" -> "s"
+  }
+  
+  return shortcutStr;
+}
 
 // Load the screenshot
 async function loadScreenShot() {
@@ -297,23 +344,20 @@ function handleWheel(event: WheelEvent){
 
 function handleKeyup(event: KeyboardEvent) {
   if (state.value === State.Default) {
-    switch (event.key.toLowerCase()) {
-      case 'Escape'.toLowerCase():
-        closeWindow()
-        break
-      case 'Enter'.toLowerCase():
-        copyImage()
-        break
-      case 's'.toLowerCase():
-        saveImage()
-        break
-      case 'h'.toLowerCase():
-        minimizeWindow()
-        break
+    const key = event.key.toLowerCase();
+    
+    if (key === shortcuts.value.close.toLowerCase()) {
+      closeWindow();
+    } else if (key === shortcuts.value.copy.toLowerCase()) {
+      copyImage();
+    } else if (key === shortcuts.value.save.toLowerCase()) {
+      saveImage();
+    } else if (key === shortcuts.value.hide.toLowerCase()) {
+      minimizeWindow();
     }
   } else if (state.value === State.Drawing) {
-    if (event.key === 'Escape') {
-      state.value = State.Default
+    if (event.key.toLowerCase() === shortcuts.value.close.toLowerCase()) {
+      state.value = State.Default;
     }
   }
 }
@@ -667,6 +711,9 @@ function cancelTextInput() {
 
 { // Mount something
   onMounted(async () => {
+    // Load shortcuts from configuration
+    await loadShortcuts();
+    
     window.addEventListener('keyup', handleKeyup);
     window.addEventListener('resize', handleWindowResize);
 
@@ -679,25 +726,25 @@ function cancelTextInput() {
         {
           id: 'minimize',
           text: '最小化',
-          accelerator: 'h',
+          accelerator: shortcuts.value.hide,
           action: () => minimizeWindow(),
         },
         {
           id: 'save',
           text: '保存图片',
-          accelerator: 's',
+          accelerator: shortcuts.value.save,
           action: () => saveImage(),
         },
         {
           id: 'copy',
           text: '复制图片',
-          accelerator: 'Enter',
+          accelerator: shortcuts.value.copy,
           action: () => copyImage(),
         },
         {
           id: 'close',
           text: '关闭',
-          accelerator: 'ESC',
+          accelerator: shortcuts.value.close,
           action: () => closeWindow(),
         },
       ],
