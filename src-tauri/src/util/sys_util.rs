@@ -1,3 +1,5 @@
+use xcap;
+
 #[cfg(target_os = "windows")]
 mod win_imports {
     use crate::util::log_util;
@@ -86,122 +88,16 @@ use win_imports::*;
 //     });
 // }
 
-// get point(x, y) return the window rect(x, y, width, height)
-#[cfg(target_os = "windows")]
-pub fn get_point_window_rect(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    let point: POINT = POINT { x, y };
-    let mut temp_window = RECT::default();
-    unsafe {
-        let hwnd: HWND = ChildWindowFromPointEx(
-            GetDesktopWindow(),
-            point,
-            CWP_SKIPDISABLED | CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT,
-        );
-        let _ = DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
-            &mut temp_window as *mut _ as *mut _,
-            std::mem::size_of::<RECT>() as u32,
-        );
-    }
-    return (
-        temp_window.left,
-        temp_window.top,
-        temp_window.right - temp_window.left,
-        temp_window.bottom - temp_window.top,
-    );
-}
+pub fn get_all_window_rect() -> Result<Vec<(i32, i32, i32, i32)>, Box<dyn std::error::Error>> {
+    let mut res = Vec::new();
 
-#[cfg(target_os = "macos")]
-pub fn get_point_window_rect(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    use core_graphics::geometry::CGPoint;
-    use core_graphics::window::{
-        kCGWindowListOptionOnScreenOnly, 
-        kCGWindowListExcludeDesktopElements,
-        CGWindowListCopyWindowInfo
-    };
-    use core_foundation::array::CFArray;
-    use core_foundation::base::TCFType;
-    use core_foundation::dictionary::CFDictionary;
-    use core_foundation::number::CFNumber;
-    use core_foundation::string::CFString;
-    
-    let _point = CGPoint::new(x as f64, y as f64);
-    
-    unsafe {
-        // Get list of all on-screen windows
-        let window_list_info = CGWindowListCopyWindowInfo(
-            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-            0
-        );
-        
-        if window_list_info.is_null() {
-            return (0, 0, 0, 0);
-        }
-        
-        let windows: CFArray<CFDictionary> = CFArray::wrap_under_create_rule(window_list_info);
-        
-        // Iterate through windows to find the one containing the point
-        for window_info in windows.iter() {
-            // Get window bounds using string keys directly
-            let bounds_key = CFString::from_static_string("kCGWindowBounds");
-            
-            // Use the raw CFDictionary API
-            let bounds_value = core_foundation::dictionary::CFDictionaryGetValue(
-                window_info.as_concrete_TypeRef(),
-                bounds_key.as_concrete_TypeRef() as *const _
-            );
-            
-            if !bounds_value.is_null() {
-                let bounds_dict: CFDictionary = CFDictionary::wrap_under_get_rule(bounds_value as *const core_foundation::dictionary::__CFDictionary);
-                
-                // Extract X, Y, Width, Height from bounds dictionary
-                let x_key = CFString::from_static_string("X");
-                let y_key = CFString::from_static_string("Y");
-                let width_key = CFString::from_static_string("Width");
-                let height_key = CFString::from_static_string("Height");
-                
-                let x_value = core_foundation::dictionary::CFDictionaryGetValue(
-                    bounds_dict.as_concrete_TypeRef(),
-                    x_key.as_concrete_TypeRef() as *const _
-                );
-                let y_value = core_foundation::dictionary::CFDictionaryGetValue(
-                    bounds_dict.as_concrete_TypeRef(),
-                    y_key.as_concrete_TypeRef() as *const _
-                );
-                let width_value = core_foundation::dictionary::CFDictionaryGetValue(
-                    bounds_dict.as_concrete_TypeRef(),
-                    width_key.as_concrete_TypeRef() as *const _
-                );
-                let height_value = core_foundation::dictionary::CFDictionaryGetValue(
-                    bounds_dict.as_concrete_TypeRef(),
-                    height_key.as_concrete_TypeRef() as *const _
-                );
-                
-                if !x_value.is_null() && !y_value.is_null() && !width_value.is_null() && !height_value.is_null() {
-                    let x_num = CFNumber::wrap_under_get_rule(x_value as *const _);
-                    let y_num = CFNumber::wrap_under_get_rule(y_value as *const _);
-                    let width_num = CFNumber::wrap_under_get_rule(width_value as *const _);
-                    let height_num = CFNumber::wrap_under_get_rule(height_value as *const _);
-                    
-                    if let (Some(wx), Some(wy), Some(ww), Some(wh)) = (
-                        x_num.to_i32(),
-                        y_num.to_i32(),
-                        width_num.to_i32(),
-                        height_num.to_i32()
-                    ) {
-                        // Check if point is within window bounds
-                        if x >= wx && x < wx + ww && y >= wy && y < wy + wh {
-                            return (wx, wy, ww, wh);
-                        }
-                    }
-                }
-            }
-        }
+    let windows = xcap::Window::all()?;
+    for window in windows {
+        let (x, y, width, height) = (window.x()?, window.y()?, window.width()?, window.height()?);
+        res.push((x, y, width as i32, height as i32));
     }
-    
-    // Return empty rect if no window found
-    (0, 0, 0, 0)
+
+    Ok(res)
 }
 
 // #[cfg(target_os = "windows")]

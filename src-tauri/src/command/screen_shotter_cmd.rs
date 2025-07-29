@@ -1,3 +1,6 @@
+use std::f32::INFINITY;
+
+// use rust_paddle_ocr::rec;
 use tauri_plugin_dialog::DialogExt;
 // use image::DynamicImage;
 // use image::RgbaImage;
@@ -177,5 +180,25 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
 
 #[tauri::command]
 pub fn get_window_at_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    sys_util::get_point_window_rect(x, y)
+    let rects = sys_util::get_all_window_rect().unwrap();
+
+    println!("{}, {}", x, y);
+
+    let mut min_area = INFINITY;
+    let mut min_rect = None;
+    for rect in rects {
+        if x > rect.0 && y > rect.1 && x < rect.0 + rect.2 && y < rect.1 + rect.3{
+            let area = (rect.2 * rect.3) as f32;
+            if area < min_area {
+                min_area = area;
+                min_rect = Some(rect);
+            }
+        }
+    }
+
+    if let Some(rect) = min_rect {
+        return rect
+    } else {
+        return (0, 0, 0, 0);
+    }
 }
