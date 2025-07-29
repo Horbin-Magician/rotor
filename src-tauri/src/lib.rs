@@ -11,9 +11,6 @@ use core::application;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let info = "123";
-    log::info!("info: {info}");
-
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
