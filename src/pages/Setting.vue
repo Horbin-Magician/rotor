@@ -191,28 +191,45 @@ function updateSetting(key: string, value: any) {
     })
 }
 
+// Helper function to create watchers for settings
+function createSettingWatcher(ref: any, key: string, callback?: (value: any) => void) {
+  watch(ref, (newValue) => {
+    updateSetting(key, newValue)
+    if (callback) {
+      callback(newValue)
+    }
+  })
+}
+
 // Watch for changes in settings and update them in the backend
-watch(language, (newValue) => updateSetting("language", newValue))
-watch(theme, (newValue) => {
-  updateSetting("theme", newValue)
-  // 更新应用主题
+createSettingWatcher(language, "language")
+createSettingWatcher(theme, "theme", (newValue) => {
+  // Update app theme
   if ((window as any).updateAppTheme) {
     (window as any).updateAppTheme(newValue)
   }
 })
-watch(powerBoot, (newValue) => { if(newValue) { enable() } else { disable() }})
-watch(shortcutScreenshot, (newValue) => updateSetting("shortcut_screenshot", newValue))
-watch(shortcutSearch, (newValue) => updateSetting("shortcut_search", newValue))
+createSettingWatcher(powerBoot, "power_boot", (newValue) => {
+  if (newValue) { 
+    enable().catch(e => console.error('Failed to enable autostart:', e))
+  } else { 
+    disable().catch(e => console.error('Failed to disable autostart:', e))
+  }
+})
 
-// Watch screenshot settings
-watch(shortcutPinwinClose, (newValue) => updateSetting("shortcut_pinwin_close", newValue))
-watch(shortcutPinwinSave, (newValue) => updateSetting("shortcut_pinwin_save", newValue))
-watch(shortcutPinwinCopy, (newValue) => updateSetting("shortcut_pinwin_copy", newValue))
-watch(shortcutPinwinHide, (newValue) => updateSetting("shortcut_pinwin_hide", newValue))
-watch(savePath, (newValue) => updateSetting("save_path", newValue))
-watch(ifAutoChangeSavePath, (newValue) => updateSetting("if_auto_change_save_path", newValue))
-watch(ifAskSavePath, (newValue) => updateSetting("if_ask_save_path", newValue))
-watch(zoomDelta, (newValue) => updateSetting("zoom_delta", newValue))
+// Global shortcuts
+createSettingWatcher(shortcutScreenshot, "shortcut_screenshot")
+createSettingWatcher(shortcutSearch, "shortcut_search")
+
+// Screenshot settings
+createSettingWatcher(shortcutPinwinClose, "shortcut_pinwin_close")
+createSettingWatcher(shortcutPinwinSave, "shortcut_pinwin_save")
+createSettingWatcher(shortcutPinwinCopy, "shortcut_pinwin_copy")
+createSettingWatcher(shortcutPinwinHide, "shortcut_pinwin_hide")
+createSettingWatcher(savePath, "save_path")
+createSettingWatcher(ifAutoChangeSavePath, "if_auto_change_save_path")
+createSettingWatcher(ifAskSavePath, "if_ask_save_path")
+createSettingWatcher(zoomDelta, "zoom_delta")
 
 async function askSave() {
   const path = await open({
