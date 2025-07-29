@@ -3,6 +3,7 @@ use rust_paddle_ocr::{Det, Rec};
 
 use crate::util::file_util;
 
+#[allow(dead_code)]
 pub fn img2text(img: DynamicImage) {
     let userdata_path = file_util::get_userdata_path().unwrap();
     let model_path = userdata_path.join("models");

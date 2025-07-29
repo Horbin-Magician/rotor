@@ -2,6 +2,7 @@ use image::{self, imageops::resize, DynamicImage, RgbaImage};
 use imageproc::{contours, edges};
 
 // return all rect in the image, (x, y, width, height)
+#[allow(dead_code)]
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let scale_factor: u8 = 2;
     let small_original = resize(

@@ -21,10 +21,12 @@ use std::{env, fs};
 // #[cfg(target_os = "windows")]
 // use win_imports::*;
 
+#[allow(dead_code)]
 pub fn file_exists(path: &str) -> bool {
     fs::metadata(path).is_ok()
 }
 
+#[allow(dead_code)]
 pub fn get_app_path() -> std::path::PathBuf {
     if let Ok(exe_path) = env::current_exe() {
         let result = exe_path.parent().unwrap_or(std::path::Path::new("."));
@@ -34,6 +36,7 @@ pub fn get_app_path() -> std::path::PathBuf {
     }
 }
 
+#[allow(dead_code)]
 pub fn get_tmp_path() -> std::path::PathBuf {
     env::temp_dir()
 }
