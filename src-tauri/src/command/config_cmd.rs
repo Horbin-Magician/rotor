@@ -13,23 +13,25 @@ pub fn get_all_cfg() -> Config {
 #[tauri::command]
 pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
     let tokens = k.split('_').collect::<Vec<&str>>();
-    let mut app_config = AppConfig::global().lock().unwrap();
-    if tokens[0] == "shortcut" {
-        if let Ok(shortcut) = Shortcut::from_str(&v) {
-            v = shortcut.to_string();
-            if tokens.len() == 2 {
-                if let Some(old_shortcut) = app_config.get(&k) {
-                    let _ = app
-                        .global_shortcut()
-                        .unregister(Shortcut::from_str(old_shortcut).unwrap());
+    {
+        let mut app_config = AppConfig::global().lock().unwrap();
+        if tokens[0] == "shortcut" {
+            if let Ok(shortcut) = Shortcut::from_str(&v) {
+                v = shortcut.to_string();
+                if tokens.len() == 2 {
+                    if let Some(old_shortcut) = app_config.get(&k) {
+                        let _ = app
+                            .global_shortcut()
+                            .unregister(Shortcut::from_str(old_shortcut).unwrap());
+                    }
+                    let _ = app.global_shortcut().register(shortcut);
                 }
-                let _ = app.global_shortcut().register(shortcut);
             }
         }
+        app_config.set(k, v).unwrap_or_else(|e| {
+            log::error!("Command set_cfg error: {e}");
+        });
     }
-    app_config.set(k, v).unwrap_or_else(|e| {
-        log::error!("Command set_cfg error: {e}");
-    });
 }
 
 #[tauri::command]
