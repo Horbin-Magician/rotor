@@ -9,7 +9,7 @@
     >
       <template #prefix>
         <div class= "logo">
-          <img src="/assets/logo.svg" width="60px" @click="openGitHome" draggable="false"/>
+          <img src="/assets/logo.svg" width="60px" @click="openGitHome" :draggable="false"/>
         </div>
       </template>
       <n-tab-pane class="tab-pane" name="Base" tab="基础">
@@ -19,7 +19,7 @@
               <div class="settings-card-title">通常</div>
               <div class="setting-item">
                 <span class="setting-label">语言</span>
-                <n-select v-model:value="language" :options="languageOptions" disabled="true" />
+                <n-select v-model:value="language" :options="languageOptions" :disabled="true" />
               </div>
               
               <div class="setting-item">
@@ -34,7 +34,7 @@
 
               <div class="setting-item">
                 <span class="setting-label">当前版本：2.0.0</span>
-                <n-button  disabled="true">检查更新</n-button>
+                <n-button :disabled="true">检查更新</n-button>
               </div>
             </div>
             <div class="settings-card">
@@ -170,8 +170,8 @@ invoke("get_all_cfg").then(async (config: any) => {
   shortcutPinwinCopy.value = config["shortcut_pinwin_copy"]
   shortcutPinwinHide.value = config["shortcut_pinwin_hide"]
   savePath.value = config["save_path"]
-  ifAutoChangeSavePath.value = Boolean(config["if_auto_change_save_path"])
-  ifAskSavePath.value = Boolean(config["if_ask_save_path"])
+  ifAutoChangeSavePath.value = config["if_auto_change_save_path"] === "false" ? false : true
+  ifAskSavePath.value = config["if_ask_save_path"] === "false" ? false : true
   zoomDelta.value = Number(config["zoom_delta"])
 })
 

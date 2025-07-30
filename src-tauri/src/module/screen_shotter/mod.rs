@@ -82,9 +82,10 @@ impl Module for ScreenShotter {
 
     fn get_shortcut(&self) -> Option<Shortcut> {
         let app_config = AppConfig::global().lock().unwrap();
-        let shortcut = app_config.get(&"shortcut_screenshot".to_string());
+        let shortcut = app_config.get(&"shortcut_screenshot".to_string()).cloned();
+        drop(app_config);
         if let Some(shortcut_str) = shortcut {
-            return Some(Shortcut::from_str(shortcut_str).unwrap());
+            return Some(Shortcut::from_str(&shortcut_str).unwrap());
         }
         None
     }

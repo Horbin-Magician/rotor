@@ -6,6 +6,7 @@ use tauri_plugin_dialog::DialogExt;
 // use image::RgbaImage;
 
 use crate::core::application::Application;
+use crate::core::config::AppConfig;
 use crate::module::screen_shotter::ScreenShotter;
 use crate::util::sys_util;
 
@@ -149,32 +150,43 @@ pub async fn new_pin(
 
 #[tauri::command]
 pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
-    // let mut app_config = AppConfig::global()
-    //     .lock()
-    //     .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // let save_path = app_config.get_save_path();
-    // let if_auto_change = app_config.get_if_auto_change_save_path();
-    // let if_ask_path = app_config.get_if_ask_save_path();
+    let mut app_config = AppConfig::global().lock().unwrap();
+    let save_path = app_config.get(&"save_path".to_string()).cloned().unwrap_or_default();
+    let if_auto_change = app_config.get(&"if_auto_change_save_path".to_string()).cloned().unwrap_or("true".to_string());
+    let if_ask_path = app_config.get(&"if_ask_save_path".to_string()).cloned().unwrap_or("true".to_string());
+
+    println!("if_auto_change: {}, if_ask_path: {}", if_auto_change, if_ask_path);
 
     let file_name = chrono::Local::now()
         .format("Rotor_%Y-%m-%d-%H-%M-%S.png")
         .to_string();
 
-    let file_path = app
-        .dialog()
-        .file()
-        .add_filter("PNG", &["png"])
-        .set_file_name(file_name)
-        .blocking_save_file();
+    let file_path: Option<std::path::PathBuf>;
 
+    if (if_ask_path == "true") ||  (save_path == "") {
+        file_path = app
+            .dialog()
+            .file()
+            .set_directory(save_path)
+            .add_filter("PNG", &["png"])
+            .set_file_name(file_name)
+            .blocking_save_file()
+            .map(|v| { v.into_path().unwrap() });
+    } else {
+        file_path = Some(std::path::PathBuf::from(save_path))
+    }
+    
     if let Some(file_path) = file_path {
+        if if_auto_change == "true" {
+            app_config.set("save_path".to_string(), file_path.to_string_lossy().to_string()).unwrap();
+        }
         let cursor = std::io::Cursor::new(img_buf);
         if let Ok(img) = image::load(cursor, image::ImageFormat::Png) {
-            img.save(file_path.into_path().unwrap()).unwrap();
+            img.save(file_path).unwrap();
             return true;
         }
     }
-
+    drop(app_config);
     false
 }
 
