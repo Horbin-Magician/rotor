@@ -155,8 +155,6 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     let if_auto_change = app_config.get(&"if_auto_change_save_path".to_string()).cloned().unwrap_or("true".to_string());
     let if_ask_path = app_config.get(&"if_ask_save_path".to_string()).cloned().unwrap_or("true".to_string());
 
-    println!("if_auto_change: {}, if_ask_path: {}", if_auto_change, if_ask_path);
-
     let file_name = chrono::Local::now()
         .format("Rotor_%Y-%m-%d-%H-%M-%S.png")
         .to_string();
@@ -193,8 +191,6 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
 #[tauri::command]
 pub fn get_window_at_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
     let rects = sys_util::get_all_window_rect().unwrap();
-
-    println!("{}, {}", x, y);
 
     let mut min_area = INFINITY;
     let mut min_rect = None;
