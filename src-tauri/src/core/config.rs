@@ -71,6 +71,7 @@ impl AppConfig {
 
     fn save(&self) -> Result<(), Box<dyn Error>> {
         if let Some(user_data_path) = file_util::get_userdata_path() {
+            fs::create_dir_all(&user_data_path)?;
             let path = user_data_path.join("config.toml");
             let config_str = toml::to_string_pretty(&self.config)?;
             fs::write(path, config_str)?;
@@ -78,7 +79,7 @@ impl AppConfig {
         }
         Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
-            "Failed to get user data path",
+            "Failed to save config",
         )))
     }
 
