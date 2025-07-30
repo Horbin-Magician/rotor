@@ -1,4 +1,4 @@
-<p align="center"><a href="https://github.com/Horbin-Magician/rotor-rs" target="_blank" rel="noopener noreferrer"><img width="100" src="./src/ui/assets/logo.png" alt="Rotor logo"></a></p>
+<p align="center"><a href="https://github.com/Horbin-Magician/rotor-rs" target="_blank" rel="noopener noreferrer"><img width="100" src="./public/assets/logo.png" alt="Rotor logo"></a></p>
 
 <p align="center">
 <span>English</span>
@@ -6,7 +6,7 @@
 <a href="doc\README_CN.md">中文</a>
 </p>
 
-<p align="center"><span>A fast, low occupancy and free toolbox for Windows.</span></p>
+<p align="center"><span>A fast, low occupancy and free toolbox for Windows and MacOS.</span></p>
 
 <div align="center">
 
@@ -18,9 +18,9 @@
 
 # What is Rotor?
 
-Rotor is a **fast**, **low occupancy** and **free** toolbox running in windows.
+Rotor is a **fast**, **low occupancy** and **free** toolbox running in windows and MacOS.
 
-Now, Rotor include a **global file search** module, a **screenshot** module.
+Now, Rotor include **file search** and **screenshot** module.
 
 # Modules
 
@@ -48,7 +48,7 @@ Now, Rotor include a **global file search** module, a **screenshot** module.
 
 # Contribution
 
-This project is builded by [Rust](https://www.rust-lang.org/), and use [Slint](https://slint.dev/) as GUI framwork.
+This project is builded by [Rust](https://www.rust-lang.org/), and use [Tauri](https://github.com/tauri-apps/tauri/) as GUI framwork.
 
 I sincerely hope that you can provide quality code for this project.
 
