@@ -202,7 +202,7 @@ const tips = ref("")
 const show_tips = ref(false)
 
 let zoom_scale = 100;
-const toolbarVisible = ref(true)
+const toolbarVisible = ref(false)
 let hideTipTimeout: number | null = null;
 
 // Drawing state
@@ -715,6 +715,7 @@ function cancelTextInput() {
   onMounted(async () => {
     // Load shortcuts from configuration
     await loadShortcuts();
+    updateToolbarVisibility();
     
     window.addEventListener('keyup', handleKeyup);
     window.addEventListener('resize', handleWindowResize);
