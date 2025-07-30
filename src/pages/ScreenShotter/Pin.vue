@@ -409,7 +409,9 @@ async function copyImage() {
 }
 
 async function zoomWindow(wheel_delta: number) {
-  let delta = wheel_delta > 0 ? -2 : 2 // TODO use setting
+  const zoom_delta: number = parseInt(await invoke("get_cfg", { k: "zoom_delta" }), 10);
+
+  let delta = wheel_delta > 0 ? -zoom_delta : zoom_delta
   zoom_scale += delta
   zoom_scale = Math.max(5, Math.min(zoom_scale, 500))
 
