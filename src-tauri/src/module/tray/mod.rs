@@ -9,6 +9,7 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 
 use crate::module::Module;
+use crate::util::i18n;
 
 pub struct Tray {}
 
@@ -58,13 +59,13 @@ impl Tray {
             tauri::path::BaseDirectory::Resource,
         )?;
         let icon = tauri::image::Image::from_path(icon_path).unwrap();
-        let setting_i = MenuItem::with_id(app, "setting", "设置", true, None::<&str>)?;
-        let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+        let setting_i = MenuItem::with_id(app, "setting", &i18n::t("setting"), true, None::<&str>)?;
+        let quit_i = MenuItem::with_id(app, "quit", &i18n::t("quit"), true, None::<&str>)?;
         let menu = Menu::with_items(app, &[&setting_i, &quit_i])?;
 
         let _tray = TrayIconBuilder::new()
             .icon(icon)
-            .tooltip("小云管家")
+            .tooltip(&i18n::t("appName"))
             .menu(&menu)
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "setting" => {
@@ -74,7 +75,7 @@ impl Tray {
                     } else {
                         let mut win_builder =
                             WebviewWindowBuilder::new(app, "setting", WebviewUrl::default())
-                                .title("设置")
+                                .title(&i18n::t("settingWindowTitle"))
                                 .inner_size(500.0, 400.0)
                                 .resizable(false)
                                 .maximizable(false)

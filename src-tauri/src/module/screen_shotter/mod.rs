@@ -10,6 +10,8 @@ use tauri_plugin_global_shortcut::Shortcut;
 use tokio::sync::Mutex;
 use xcap::Monitor;
 
+use crate::util::i18n;
+
 type Image = Vec<u8>;
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
@@ -131,7 +133,7 @@ impl ScreenShotter {
             label,
             WebviewUrl::App("ScreenShotter/Pin".into()),
         )
-        .title("小云视窗")
+        .title(&i18n::t("pinWindowName"))
         .position(x, y)
         .inner_size(width, height)
         .always_on_top(true)
