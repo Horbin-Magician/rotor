@@ -12,93 +12,93 @@
           <img src="/assets/logo.svg" width="60px" @click="openGitHome" :draggable="false"/>
         </div>
       </template>
-      <n-tab-pane class="tab-pane" name="Base" tab="基础">
+      <n-tab-pane class="tab-pane" name="Base" :tab="t('message.base')">
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <div class="settings-card">
-              <div class="settings-card-title">通常</div>
+              <div class="settings-card-title">{{ t('message.common') }}</div>
               <div class="setting-item">
-                <span class="setting-label">语言</span>
-                <n-select v-model:value="language" :options="languageOptions" :disabled="true" />
+                <span class="setting-label">{{ t('message.language') }}</span>
+                <n-select v-model:value="language" :options="languageOptions" />
               </div>
               
               <div class="setting-item">
-                <span class="setting-label">主题</span>
+                <span class="setting-label">{{ t('message.theme') }}</span>
                 <n-select v-model:value="theme" :options="themeOptions" />
               </div>
 
               <div class="setting-item">
-                <span class="setting-label">开机自启</span>
+                <span class="setting-label">{{ t('message.powerBoot') }}</span>
                 <n-switch v-model:value="powerBoot" />
               </div>
 
               <div class="setting-item">
-                <span class="setting-label">当前版本：2.0.0</span>
-                <n-button :disabled="true">检查更新</n-button>
+                <span class="setting-label">{{ t('message.currentVersion') }}2.0.0</span>
+                <n-button :disabled="true">{{ t('message.checkUpdate') }}</n-button>
               </div>
             </div>
             <div class="settings-card">
-              <div class="settings-card-title">全局快捷键</div>
+              <div class="settings-card-title">{{ t('message.globalShortcuts') }}</div>
               <div class="setting-item">
-                <span class="setting-label">截图</span>
+                <span class="setting-label">{{ t('message.screenshot') }}</span>
                 <ShortcutInput v-model:shortcut="shortcutScreenshot" />
               </div>
               <div class="setting-item">
-                <span class="setting-label">搜索</span>
+                <span class="setting-label">{{ t('message.search') }}</span>
                 <ShortcutInput v-model:shortcut="shortcutSearch" />
               </div>
             </div>
           </div>
         </n-scrollbar>
       </n-tab-pane>
-      <n-tab-pane class="tab-pane" name="Screen shotter" tab="截图">
+      <n-tab-pane class="tab-pane" name="Screen shotter" :tab="t('message.screenShotter')">
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <div class="settings-card">
-              <div class="settings-card-title">快捷键</div>
+              <div class="settings-card-title">{{ t('message.shortcuts') }}</div>
               <div class="setting-item">
-                <span class="setting-label">关闭贴图</span>
+                <span class="setting-label">{{ t('message.closePinwin') }}</span>
                 <ShortcutInput v-model:shortcut="shortcutPinwinClose"/>
               </div>
               <div class="setting-item">
-                <span class="setting-label">保存贴图</span>
+                <span class="setting-label">{{ t('message.savePinwin') }}</span>
                 <ShortcutInput v-model:shortcut="shortcutPinwinSave"/>
               </div>
               <div class="setting-item">
-                <span class="setting-label">完成贴图</span>
+                <span class="setting-label">{{ t('message.completePinwin') }}</span>
                 <ShortcutInput v-model:shortcut="shortcutPinwinCopy"/>
               </div>
               <div class="setting-item">
-                <span class="setting-label">隐藏贴图</span>
+                <span class="setting-label">{{ t('message.hidePinwin') }}</span>
                 <ShortcutInput v-model:shortcut="shortcutPinwinHide"/>
               </div>
             </div>
             <div class="settings-card">
-              <div class="settings-card-title">贴图</div>
+              <div class="settings-card-title">{{ t('message.pinwin') }}</div>
               <div class="setting-item">
-                <span class="setting-label">默认保存路径</span>
+                <span class="setting-label">{{ t('message.defaultSavePath') }}</span>
                 <div class="path-selector">
                   <n-input v-model:value="savePath" placeholder="" readonly />
-                  <n-button  @click="askSave">浏览</n-button>
+                  <n-button  @click="askSave">{{ t('message.browse') }}</n-button>
                 </div>
               </div>
               <div class="setting-item">
-                <span class="setting-label">自动更改保存路径</span>
+                <span class="setting-label">{{ t('message.autoChangeSavePath') }}</span>
                 <n-switch v-model:value="ifAutoChangeSavePath" />
               </div>
               <div class="setting-item">
-                <span class="setting-label">每次询问保存路径</span>
+                <span class="setting-label">{{ t('message.askSavePath') }}</span>
                 <n-switch v-model:value="ifAskSavePath" />
               </div>
               <div class="setting-item">
-                <span class="setting-label">缩放增量</span>
+                <span class="setting-label">{{ t('message.zoomDelta') }}</span>
                 <n-slider v-model:value="zoomDelta" :step="1" :max="10" :min="1" />
               </div>
             </div>
           </div>
         </n-scrollbar>
       </n-tab-pane>
-      <n-tab-pane class="tab-pane" name="Search" tab="搜索">
+      <n-tab-pane class="tab-pane" name="Search" :tab="t('message.search')">
       </n-tab-pane>
     </n-tabs>
   </div>
@@ -115,6 +115,9 @@ import { open } from '@tauri-apps/plugin-dialog';
 
 import ShortcutInput from '../components/ShortcutInput.vue';
 
+import { useI18n } from 'vue-i18n'
+const { t, locale } = useI18n() 
+
 import { getCurrentWindow } from '@tauri-apps/api/window'
 const appWindow = getCurrentWindow()
 appWindow.isVisible().then( (visible)=>{
@@ -124,17 +127,32 @@ appWindow.isVisible().then( (visible)=>{
   }
 })
 
-const languageOptions = [
-  { label: '系统默认', value: 0 },
-  { label: '中文', value: 1 },
-  { label: '英文', value: 2 }
-]
+const languageOptions = ref([
+  { label: t('message.systemDefault'), value: 0 },
+  { label: t('message.chinese'), value: 1 },
+  { label: t('message.english'), value: 2 }
+])
 
-const themeOptions = [
-  { label: '跟随系统', value: 0 },
-  { label: '浅色', value: 1 },
-  { label: '深色', value: 2 }
-]
+const themeOptions = ref([
+  { label: t('message.followSystem'), value: 0 },
+  { label: t('message.light'), value: 1 },
+  { label: t('message.dark'), value: 2 }
+])
+
+// Update options when language changes
+watch(locale, () => {
+  languageOptions.value = [
+    { label: t('message.systemDefault'), value: 0 },
+    { label: t('message.chinese'), value: 1 },
+    { label: t('message.english'), value: 2 }
+  ]
+  
+  themeOptions.value = [
+    { label: t('message.followSystem'), value: 0 },
+    { label: t('message.light'), value: 1 },
+    { label: t('message.dark'), value: 2 }
+  ]
+})
 
 // General settings
 const language = ref(0)
@@ -202,7 +220,20 @@ function createSettingWatcher(ref: any, key: string, callback?: (value: any) => 
 }
 
 // Watch for changes in settings and update them in the backend
-createSettingWatcher(language, "language")
+createSettingWatcher(language, "language", (newValue) => {
+  // Update app language
+  if (newValue === 0) {
+    // System default - detect system language
+    const systemLang = navigator.language || navigator.languages[0]
+    locale.value = systemLang.startsWith('zh') ? 'zh-CN' : 'en-US'
+  } else if (newValue === 1) {
+    // Chinese
+    locale.value = 'zh-CN'
+  } else if (newValue === 2) {
+    // English
+    locale.value = 'en-US'
+  }
+})
 createSettingWatcher(theme, "theme", (newValue) => {
   // Update app theme
   if ((window as any).updateAppTheme) {

@@ -1,0 +1,33 @@
+export default {
+  message: {
+    base: '基础',
+    common: '通用',
+    language: '语言',
+    theme: '主题',
+    powerBoot: '开机自启',
+    currentVersion: '当前版本：',
+    checkUpdate: '检查更新',
+    globalShortcuts: '全局快捷键',
+    screenshot: '截图',
+    search: '搜索',
+    screenShotter: '截图',
+    shortcuts: '快捷键',
+    closePinwin: '关闭贴图',
+    savePinwin: '保存贴图',
+    completePinwin: '完成贴图',
+    hidePinwin: '隐藏贴图',
+    pinwin: '贴图',
+    defaultSavePath: '默认保存路径',
+    browse: '浏览',
+    autoChangeSavePath: '自动更改保存路径',
+    askSavePath: '每次询问保存路径',
+    zoomDelta: '缩放增量',
+    pressShortcut: '按下快捷键',
+    systemDefault: '系统默认',
+    chinese: '中文',
+    english: '英文',
+    followSystem: '跟随系统',
+    light: '浅色',
+    dark: '深色'
+  }
+}

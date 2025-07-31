@@ -1,0 +1,33 @@
+export default {
+  message: {
+    base: 'Base',
+    common: 'General',
+    language: 'Language',
+    theme: 'Theme',
+    powerBoot: 'Auto Start',
+    currentVersion: 'Current Version: ',
+    checkUpdate: 'Check Update',
+    globalShortcuts: 'Global Shortcuts',
+    screenshot: 'Screenshot',
+    search: 'Search',
+    screenShotter: 'Screenshot',
+    shortcuts: 'Shortcuts',
+    closePinwin: 'Close Pin',
+    savePinwin: 'Save Pin',
+    completePinwin: 'Complete Pin',
+    hidePinwin: 'Hide Pin',
+    pinwin: 'Pin Window',
+    defaultSavePath: 'Default Save Path',
+    browse: 'Browse',
+    autoChangeSavePath: 'Auto Change Save Path',
+    askSavePath: 'Ask Save Path Each Time',
+    zoomDelta: 'Zoom Delta',
+    pressShortcut: 'Press Shortcut',
+    systemDefault: 'System Default',
+    chinese: 'Chinese',
+    english: 'English',
+    followSystem: 'Follow System',
+    light: 'Light',
+    dark: 'Dark'
+  }
+}

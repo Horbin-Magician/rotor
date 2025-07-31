@@ -12,6 +12,9 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Constants
 const VALID_KEYS = new Set([
@@ -69,7 +72,7 @@ const displayValue = computed(() => {
     } else if (key) {
       value = key;
     } else {
-      value = '按下快捷键';
+      value = t('message.pressShortcut');
     }
   }
 
