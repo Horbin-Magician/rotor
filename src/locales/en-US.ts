@@ -28,6 +28,19 @@ export default {
     english: 'English',
     followSystem: 'Follow System',
     light: 'Light',
-    dark: 'Dark'
+    dark: 'Dark',
+    copyColorHint: 'Copy color (C)',
+    // Pin window specific translations
+    annotationMode: 'Annotation Mode',
+    minimize: 'Minimize',
+    saveImage: 'Save Image',
+    close: 'Close',
+    copyImage: 'Copy Image',
+    exitAnnotation: 'Exit Annotation',
+    penTool: 'Pen Tool',
+    rectangleTool: 'Rectangle Tool',
+    arrowTool: 'Arrow Tool',
+    textTool: 'Text Tool',
+    undo: 'Undo'
   }
 }
