@@ -25,7 +25,7 @@
           <span>{{ pixelColor }}</span>
         </div>
         <div class="magnifier-info-item">
-          <span>C键复制颜色值</span>
+          <span>{{ $t('message.copyColorHint') }}</span>
         </div>
       </div>
     </div>

@@ -28,6 +28,19 @@ export default {
     english: '英文',
     followSystem: '跟随系统',
     light: '浅色',
-    dark: '深色'
+    dark: '深色',
+    copyColorHint: '复制颜色(C)',
+    // Pin window specific translations
+    annotationMode: '标注模式',
+    minimize: '最小化',
+    saveImage: '保存图片',
+    close: '关闭',
+    copyImage: '复制图片',
+    exitAnnotation: '退出标注',
+    penTool: '画笔工具',
+    rectangleTool: '矩形工具',
+    arrowTool: '箭头工具',
+    textTool: '文本工具',
+    undo: '撤销'
   }
 }

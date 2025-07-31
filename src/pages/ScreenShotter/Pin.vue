@@ -34,7 +34,7 @@
           </n-icon>
         </div>
       </template>
-      标注模式
+      {{ t('message.annotationMode') }}
     </n-tooltip>
     <div class="toolbar-divider"></div>
     <n-tooltip trigger="hover" placement="top" :delay="800">
@@ -45,7 +45,7 @@
           </n-icon>
         </div>
       </template>
-      最小化 ({{ shortcuts.hide }})
+      {{ t('message.minimize') }} ({{ shortcuts.hide }})
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -55,7 +55,7 @@
           </n-icon>
         </div>
       </template>
-      保存图片 ({{ shortcuts.save }})
+      {{ t('message.saveImage') }} ({{ shortcuts.save }})
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -65,7 +65,7 @@
           </n-icon>
         </div>
       </template>
-      关闭 ({{ shortcuts.close }})
+      {{ t('message.close') }} ({{ shortcuts.close }})
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -75,7 +75,7 @@
           </n-icon>
         </div>
       </template>
-      复制图片 ({{ shortcuts.copy }})
+      {{ t('message.copyImage') }} ({{ shortcuts.copy }})
     </n-tooltip>
   </div>
 
@@ -89,7 +89,7 @@
           </n-icon>
         </div>
       </template>
-      退出标注 ({{ shortcuts.close }})
+      {{ t('message.exitAnnotation') }} ({{ shortcuts.close }})
     </n-tooltip>
     <div class="toolbar-divider"></div>
     <n-tooltip trigger="hover" placement="top" :delay="800">
@@ -100,7 +100,7 @@
           </n-icon>
         </div>
       </template>
-      画笔工具
+      {{ t('message.penTool') }}
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -110,7 +110,7 @@
           </n-icon>
         </div>
       </template>
-      矩形工具
+      {{ t('message.rectangleTool') }}
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -120,7 +120,7 @@
           </n-icon>
         </div>
       </template>
-      箭头工具
+      {{ t('message.arrowTool') }}
     </n-tooltip>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -130,7 +130,7 @@
           </n-icon>
         </div>
       </template>
-      文本工具
+      {{ t('message.textTool') }}
     </n-tooltip>
     <div class="toolbar-divider"></div>
     <n-tooltip trigger="hover" placement="top" :delay="800">
@@ -141,13 +141,14 @@
           </n-icon>
         </div>
       </template>
-      撤销
+      {{ t('message.undo') }}
     </n-tooltip>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
+import { useI18n } from 'vue-i18n';
 import { 
   CloseFilled, 
   SaveAltFilled, 
@@ -180,6 +181,8 @@ enum DrawState {
   Arrow,
   Text
 }
+
+const { t } = useI18n()
 
 const appWindow = getCurrentWindow()
 appWindow.isVisible().then( (visible)=>{
@@ -728,25 +731,25 @@ function cancelTextInput() {
       items: [
         {
           id: 'minimize',
-          text: '最小化',
+          text: t('message.minimize'),
           accelerator: shortcuts.value.hide,
           action: () => minimizeWindow(),
         },
         {
           id: 'save',
-          text: '保存图片',
+          text: t('message.saveImage'),
           accelerator: shortcuts.value.save,
           action: () => saveImage(),
         },
         {
           id: 'copy',
-          text: '复制图片',
+          text: t('message.copyImage'),
           accelerator: shortcuts.value.copy,
           action: () => copyImage(),
         },
         {
           id: 'close',
-          text: '关闭',
+          text: t('message.close'),
           accelerator: shortcuts.value.close,
           action: () => closeWindow(),
         },
