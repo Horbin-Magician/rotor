@@ -64,10 +64,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { NInput, NIcon } from 'naive-ui'
 import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
-import { LogicalSize, LogicalPosition } from '@tauri-apps/api/window'
+import { LogicalSize } from '@tauri-apps/api/window'
 import { currentMonitor } from '@tauri-apps/api/window'
 import {
   SearchRound as SearchIcon,
@@ -220,8 +220,6 @@ onMounted(async () => {
     resizeWindow()
   })
 })
-
-// watch([searchQuery, displayItems], () => nextTick(resizeWindow), { immediate: true })
 </script>
 
 <style scoped>
@@ -245,10 +243,11 @@ onMounted(async () => {
   align-items: center;
   transition: all 0.1s ease;
   height: 50px;
+  position: relative;
+  overflow: hidden;
 }
 
 .search-item.selected {
-  /* border-left: 1px solid #007bff; */
   background-color: rgb(31, 31, 31);
 }
 
@@ -260,7 +259,10 @@ onMounted(async () => {
 }
 
 .item-content {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  padding-right: 10px;
+  transition: padding-right 0.3s ease;
 }
 
 .item-title {
@@ -282,16 +284,34 @@ onMounted(async () => {
 }
 
 .item-actions {
+  height: 100%;
   display: flex;
-  gap: 8px;
+  transform: translateX(100%);
+  transition: all 0.3s ease;
+  position: absolute;
+  right: 0;
+  top: 0;
+  align-items: center;
+}
+
+.search-item:hover .item-actions {
+  transform: translateX(0);
+}
+
+.search-item:hover .item-content {
+  padding-right: 80px;
 }
 
 .item-action-btn {
-  width: 30px;
-  transition: all 0.2s ease;
+  width: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+  cursor: pointer;
 }
 
-.item-action-btn:hover{
+.item-action-btn:hover {
   color: #4b9df4;
 }
 
