@@ -1,6 +1,7 @@
-pub mod searcher;
-pub mod screen_shotter;
 pub mod tray;
+pub mod screen_shotter;
+#[cfg(target_os = "windows")]
+pub mod searcher;
 
 use std::any::Any;
 use std::{error::Error, vec};
@@ -19,6 +20,7 @@ pub fn get_all_modules() -> Vec<Box<dyn Module + Send>> {
     vec![
         Box::new(tray::Tray::new().unwrap()),
         Box::new(screen_shotter::ScreenShotter::new().unwrap()),
+        #[cfg(target_os = "windows")]
         Box::new(searcher::Searcher::new().unwrap()),
     ]
 }
