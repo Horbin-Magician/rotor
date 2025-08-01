@@ -5,7 +5,8 @@
   "windows": [
     "setting",
     "ssmask-*",
-    "sspin-*"
+    "sspin-*",
+    "searcher"
   ],
   "permissions": [
     "core:default",

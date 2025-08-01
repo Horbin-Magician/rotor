@@ -1,5 +1,4 @@
-// pub mod setting;
-// pub mod searcher;
+pub mod searcher;
 pub mod screen_shotter;
 pub mod tray;
 
@@ -18,7 +17,8 @@ pub trait Module {
 
 pub fn get_all_modules() -> Vec<Box<dyn Module + Send>> {
     vec![
-        Box::new(screen_shotter::ScreenShotter::new().unwrap()),
         Box::new(tray::Tray::new().unwrap()),
+        Box::new(screen_shotter::ScreenShotter::new().unwrap()),
+        Box::new(searcher::Searcher::new().unwrap()),
     ]
 }
