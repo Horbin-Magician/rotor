@@ -1,21 +1,306 @@
 <template>
-    Hello
+  <div class="searcher-container">
+    <!-- Search Input -->
+    <div class="search-input-container">
+      <n-input
+        ref="searchInputRef"
+        v-model:value="searchQuery"
+        :placeholder="$t('message.search')"
+        :autofocus="true"
+        size="large"
+        clearable
+        @input="handleSearch"
+        @keydown="handleKeydown"
+        class="search-input"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+      >
+        <template #prefix>
+          <n-icon size="20" color="#666">
+            <SearchIcon />
+          </n-icon>
+        </template>
+      </n-input>
+    </div>
+
+    <!-- Search Results -->
+    <div class="search-results" v-if="displayItems.length > 0">
+      <div
+        v-for="(item, index) in displayItems"
+        :key="item.id"
+        :class="['search-item', { 'selected': selectedIndex === index }]"
+        @click="selectItem(item)"
+        @mouseenter="selectedIndex = index"
+      >
+        <div class="item-icon">
+          <n-icon size="30">
+            <component :is="getIcon(item.type)" />
+          </n-icon>
+        </div>
+        <div class="item-content">
+          <div class="item-title">{{ item.title }}</div>
+          <div class="item-subtitle">{{ item.subtitle }}</div>
+        </div>
+        <div class="item-actions" v-if="item.actions">
+          <div class="item-action-btn" v-for="action in item.actions" :key="action.type">
+            <n-icon size="20" class="action-icon" :title="action.title">
+              <component :is="getActionIcon(action.type)" />
+            </n-icon>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" v-else-if="searchQuery.trim()">
+      <n-icon size="48" color="#ccc">
+        <SearchIcon />
+      </n-icon>
+      <div>{{ $t('message.search') }} "{{ searchQuery }}" 无结果</div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { NInput, NIcon } from 'naive-ui'
+import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
+import { LogicalSize, LogicalPosition } from '@tauri-apps/api/window'
+import { currentMonitor } from '@tauri-apps/api/window'
+import {
+  SearchRound as SearchIcon,
+  FolderRound as FolderIcon,
+  InsertDriveFileRound as FileIcon,
+  AppsRound as AppIcon,
+  SettingsRound as SettingsIcon,
+  LaunchRound as LaunchIcon,
+  ContentCopyRound as CopyIcon
+} from '@vicons/material'
 
-import { getCurrentWindow } from '@tauri-apps/api/window'
+// 类型定义
+interface Action {
+  type: string
+  title: string
+}
+
+interface SearchItem {
+  id: number
+  title: string
+  subtitle: string
+  type: string
+  actions?: Action[]
+}
+
+type ItemType = 'app' | 'folder' | 'file' | 'settings'
+type ActionType = 'launch' | 'copy'
+
+// 常量配置
+const WINDOW_CONFIG = {
+  width: 500,
+  itemHeight: 50,
+  padding: 12,
+  inputHeight: 50
+}
+
 const appWindow = getCurrentWindow()
-appWindow.isVisible().then( (visible)=>{
-  if(visible == false) {
-    appWindow.show()
-    appWindow.setFocus()
-  }
+const searchInputRef = ref()
+const searchQuery = ref('')
+const selectedIndex = ref(0)
+
+const searchResults = ref<SearchItem[]>([
+  { id: 1, title: 'Zotero.lnk', subtitle: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\asdasdsdadsadsdadadsdsdadsadsdad', type: 'app', actions: [{ type: 'launch', title: '启动' }, { type: 'copy', title: '复制路径' }] },
+  { id: 2, title: 'zotero.exe', subtitle: 'D:\\Zotero\\', type: 'app', actions: [{ type: 'launch', title: '启动' }, { type: 'copy', title: '复制路径' }] },
+  { id: 3, title: 'Zotero', subtitle: 'C:\\Users\\22400\\AppData\\Local\\Zotero\\sdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadad', type: 'folder', actions: [{ type: 'launch', title: '打开' }, { type: 'copy', title: '复制路径' }] },
+  { id: 4, title: 'project-report.pdf', subtitle: 'C:\\Users\\Documents\\', type: 'file', actions: [{ type: 'launch', title: '打开' }, { type: 'copy', title: '复制路径' }] },
+  { id: 5, title: 'Visual Studio Code', subtitle: 'Microsoft Corporation', type: 'app', actions: [{ type: 'launch', title: '启动' }] },
+  { id: 6, title: 'Chrome', subtitle: 'Google LLC', type: 'app', actions: [{ type: 'launch', title: '启动' }] }
+])
+
+const displayItems = computed(() => {
+  if (!searchQuery.value.trim()) { return [] }
+  
+  const query = searchQuery.value.toLowerCase()
+  return searchResults.value
+    .filter(item => 
+      item.title.toLowerCase().includes(query) || 
+      item.subtitle.toLowerCase().includes(query)
+    )
+    .slice(0, 8)
 })
 
+const ICON_MAP: Record<ItemType, { icon: any; color: string }> = {
+  app: { icon: AppIcon, color: '#54a4db' },
+  folder: { icon: FolderIcon, color: '#ffa726' },
+  file: { icon: FileIcon, color: '#66bb6a' },
+  settings: { icon: SettingsIcon, color: '#ab47bc' }
+}
+const ACTION_ICONS: Record<ActionType, any> = {
+  launch: LaunchIcon,
+  copy: CopyIcon
+}
+const getIcon = (type: string) => ICON_MAP[type as ItemType]?.icon || FileIcon
+const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || LaunchIcon
+
+const resizeWindow = async () => {
+  const currentSize = await appWindow.outerSize()
+  let newHeight = WINDOW_CONFIG.inputHeight
+
+  if (searchQuery.value.trim()) {
+    newHeight += displayItems.value.length > 0 ? displayItems.value.length * WINDOW_CONFIG.itemHeight : 120
+  }
+
+  if (currentSize.height != newHeight) {
+    await appWindow.setSize(new LogicalSize(WINDOW_CONFIG.width, newHeight))
+  }
+
+  const monitor = await currentMonitor()
+  if (!monitor) return
+  const scale = await appWindow.scaleFactor()
+
+  const centerX = monitor.position.x + (monitor.size.width - scale * WINDOW_CONFIG.width) / 2
+  const centerY = Math.ceil(monitor.position.y + monitor.size.height * 0.4)
+  
+  await appWindow.setPosition(new PhysicalPosition(centerX, centerY))
+}
+
+const handleSearch = () => {
+  selectedIndex.value = 0
+  nextTick(resizeWindow)
+}
+
+const handleKeydown = (event: KeyboardEvent) => {
+  const maxIndex = displayItems.value.length - 1
+  
+  switch (event.key) {
+    case 'ArrowDown':
+      event.preventDefault()
+      selectedIndex.value = Math.min(selectedIndex.value + 1, maxIndex)
+      break
+    case 'ArrowUp':
+      event.preventDefault()
+      selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
+      break
+    case 'Enter':
+      event.preventDefault()
+      if (displayItems.value[selectedIndex.value]) {
+        selectItem(displayItems.value[selectedIndex.value])
+      }
+      break
+    case 'Escape':
+      event.preventDefault()
+      hideWindow()
+      break
+  }
+}
+
+// TODO
+const selectItem = (item: SearchItem) => {
+  console.log('Selected item:', item)
+  hideWindow()
+}
+
+const hideWindow = async () => {
+  await appWindow.hide()
+  searchQuery.value = ''
+  selectedIndex.value = 0
+  nextTick(resizeWindow)
+}
+
+onMounted(async () => {
+  const visible = await appWindow.isVisible()
+  if (!visible) {
+    await appWindow.show()
+    await appWindow.setFocus()
+  }
+  
+  nextTick(() => {
+    searchInputRef.value?.focus()
+    resizeWindow()
+  })
+})
+
+// watch([searchQuery, displayItems], () => nextTick(resizeWindow), { immediate: true })
 </script>
 
-
 <style scoped>
+.searcher-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+}
 
+.search-input {
+  height: 50px;
+  line-height: 50px;
+}
+
+.search-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  transition: all 0.1s ease;
+  height: 50px;
+}
+
+.search-item.selected {
+  /* border-left: 1px solid #007bff; */
+  background-color: rgb(31, 31, 31);
+}
+
+.item-icon {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-content {
+  width: 100%;
+}
+
+.item-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--n-text-color);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-subtitle {
+  font-size: 12px;
+  color: var(--n-text-color-disabled);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.item-action-btn {
+  width: 30px;
+  transition: all 0.2s ease;
+}
+
+.item-action-btn:hover{
+  color: #4b9df4;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 100%;
+}
 </style>
