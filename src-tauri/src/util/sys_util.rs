@@ -1,38 +1,38 @@
 use xcap;
 
-#[cfg(target_os = "windows")]
-mod win_imports {
-    use crate::util::log_util;
-    pub use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    pub use i_slint_backend_winit::WinitWindowAccessor;
-    pub use is_root::is_root;
-    use std::env;
-    use std::error::Error;
-    pub use windows::core::PCWSTR;
-    pub use windows::Win32::Globalization::GetUserDefaultLocaleName;
-    pub use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
-    };
-    pub use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
-    pub use windows::Win32::UI::Shell::ShellExecuteW;
-    pub use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-    pub use windows::Win32::{
-        Foundation::{HWND, POINT, RECT},
-        Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
-        UI::WindowsAndMessaging::{
-            ChildWindowFromPointEx, GetDesktopWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
-            CWP_SKIPTRANSPARENT,
-        },
-    };
-    pub use windows::Win32::{
-        Graphics::Gdi::HMONITOR,
-        UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
-    };
-    pub use winreg::enums::*;
-    pub use winreg::RegKey;
-}
-#[cfg(target_os = "windows")]
-use win_imports::*;
+// #[cfg(target_os = "windows")]
+// mod win_imports {
+//     use crate::util::log_util;
+//     pub use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+//     pub use i_slint_backend_winit::WinitWindowAccessor;
+//     pub use is_root::is_root;
+//     use std::env;
+//     use std::error::Error;
+//     pub use windows::core::PCWSTR;
+//     pub use windows::Win32::Globalization::GetUserDefaultLocaleName;
+//     pub use windows::Win32::Graphics::Dwm::{
+//         DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
+//     };
+//     pub use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+//     pub use windows::Win32::UI::Shell::ShellExecuteW;
+//     pub use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+//     pub use windows::Win32::{
+//         Foundation::{HWND, POINT, RECT},
+//         Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
+//         UI::WindowsAndMessaging::{
+//             ChildWindowFromPointEx, GetDesktopWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
+//             CWP_SKIPTRANSPARENT,
+//         },
+//     };
+//     pub use windows::Win32::{
+//         Graphics::Gdi::HMONITOR,
+//         UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
+//     };
+//     pub use winreg::enums::*;
+//     pub use winreg::RegKey;
+// }
+// #[cfg(target_os = "windows")]
+// use win_imports::*;
 
 // #[cfg(target_os = "windows")]
 // pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
