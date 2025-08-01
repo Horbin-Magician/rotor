@@ -9,11 +9,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 const Setting = () => import('./pages/Setting.vue')
 const ScreenShotterMask = () => import('./pages/ScreenShotter/Mask.vue')
 const ScreenShotterPin = () => import('./pages/ScreenShotter/Pin.vue')
+const Searcher = () => import('./pages/Searcher.vue')
 
 const routes = [
   { path: '/', component: Setting },
   { path: '/ScreenShotter/Mask', component: ScreenShotterMask },
   { path: '/ScreenShotter/Pin', component: ScreenShotterPin },
+  { path: '/Searcher', component: Searcher },
 ]
 
 const router = createRouter({
