@@ -29,13 +29,13 @@ impl Module for Searcher {
 
         if let Some(window) = app_handle.get_webview_window("searcher") {
             window.show()?;
+            window.set_focus()?;
         } else {
             let win_builder = WebviewWindowBuilder::new(
                 app_handle,
                 "searcher",
                 WebviewUrl::App("Searcher".into()),
             )
-            .center()
             .always_on_top(true)
             .resizable(false)
             .decorations(false)
