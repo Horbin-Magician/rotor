@@ -67,35 +67,15 @@ impl I18n {
     }
     
     fn get_system_language(&self) -> String {
-        // Try to detect system language
-        #[cfg(target_os = "macos")]
-        {
-            if let Ok(output) = std::process::Command::new("defaults")
-                .args(&["read", "-g", "AppleLanguages"])
-                .output()
-            {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                if output_str.contains("zh-Hans") || output_str.contains("zh-CN") {
-                    return "zh-CN".to_string();
+        sys_locale::get_locale()
+            .map(|locale| {
+                if locale.starts_with("zh-CN") {
+                    "zh-CN".to_string()
+                } else {
+                    "en-US".to_string()
                 }
-            }
-        }
-        
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(output) = std::process::Command::new("powershell")
-                .args(&["-Command", "Get-Culture | Select-Object -ExpandProperty Name"])
-                .output()
-            {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                if output_str.contains("zh-CN") {
-                    return "zh-CN".to_string();
-                }
-            }
-        }
-        
-        // Default to English
-        "en-US".to_string()
+            })
+            .unwrap_or_else(|| "en-US".to_string())
     }
 }
 
