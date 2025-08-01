@@ -55,7 +55,6 @@ impl I18n {
     fn get_current_language(&self) -> String {
         let config = AppConfig::global().lock().unwrap();
         let language_setting = config.get(&"language".to_string()).unwrap_or(&"0".to_string()).clone();
-        
         match language_setting.as_str() {
             "1" => "zh-CN".to_string(),
             "2" => "en-US".to_string(),
@@ -69,7 +68,7 @@ impl I18n {
     fn get_system_language(&self) -> String {
         sys_locale::get_locale()
             .map(|locale| {
-                if locale.starts_with("zh-CN") {
+                if locale.starts_with("zh") {
                     "zh-CN".to_string()
                 } else {
                     "en-US".to_string()
