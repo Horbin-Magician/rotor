@@ -361,8 +361,14 @@ async function initializeScreenshot() {
   }
 }
 
-// Initialize screenshot loading
+// Load the rects
+async function initializeAutoRects() {
+  rects = await invoke("get_screen_rects", {label: appWindow.label})
+}
+
+// Initialize
 initializeScreenshot()
+initializeAutoRects()
 </script>
 
 <style scoped>
