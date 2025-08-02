@@ -6,7 +6,7 @@ use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use image::RgbaImage;
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use tokio::sync::Mutex;
 use xcap::Monitor;
@@ -18,6 +18,7 @@ pub struct ScreenShotter {
     pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
     pub pin_mask_label: String,
     max_pin_id: u8,
+    mask_window_label: String,
 }
 
 impl Module for ScreenShotter {
@@ -27,6 +28,7 @@ impl Module for ScreenShotter {
 
     fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
         self.app_hander = Some(app.clone());
+        self.build_mask_windows()?; // Pre-build mask window for faster response
         Ok(())
     }
 
@@ -36,17 +38,10 @@ impl Module for ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
-        let monitor = Monitor::from_point(0, 0)?;
-        let label = format!("ssmask-0");
-
-        let millis = chrono::Utc::now().timestamp_millis();
-        println!("time all begin: {}", millis);
-
         // Capture screen
         let masks_clone = Arc::clone(&self.masks);
-        let label_clone = label.clone();
+        let label_clone = self.mask_window_label.clone();
         tauri::async_runtime::spawn(async move {
-            println!("start Capture 1");
             let masks_clone = Arc::clone(&masks_clone);
             let label_clone = label_clone.clone();
             let mut masks = masks_clone.lock().await;
@@ -59,25 +54,7 @@ impl Module for ScreenShotter {
             }
         });
 
-        let win_builder = WebviewWindowBuilder::new(
-            app_handle,
-            &label,
-            WebviewUrl::App("ScreenShotter/Mask".into()),
-        )
-        .position(monitor.x()? as f64, monitor.y()? as f64)
-        .always_on_top(true)
-        .resizable(false)
-        .decorations(false) // TODO del
-        .fullscreen(true) // TODO windows only
-        // .simple_fullscreen(true)                       // TODO wait tauri update
-        .visible(false)
-        .skip_taskbar(true); // TODO windows only
-
-        let _window = win_builder.build()?;
-
-        let millis = chrono::Utc::now().timestamp_millis();
-        println!("time end rust: {}", millis);
-
+        app_handle.emit("show-mask", ()).unwrap();
         Ok(())
     }
 
@@ -107,7 +84,36 @@ impl ScreenShotter {
             masks: Arc::new(Mutex::new(HashMap::new())),
             max_pin_id: 0,
             pin_mask_label: String::new(),
+            mask_window_label: String::new(),
         })
+    }
+
+    pub fn build_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
+        let app_handle = match &self.app_hander {
+            Some(handle) => handle,
+            None => return Err("AppHandle not initialized".into()),
+        };
+
+        let monitor = Monitor::from_point(0, 0)?;
+        let label = format!("ssmask-0");
+        self.mask_window_label = label.clone();
+
+        let win_builder = WebviewWindowBuilder::new(
+            app_handle,
+            &label,
+            WebviewUrl::App("ScreenShotter/Mask".into()),
+        )
+        .position(monitor.x()? as f64, monitor.y()? as f64)
+        .always_on_top(true)
+        .resizable(false)
+        .decorations(false)
+        .fullscreen(true)
+        .visible(false)
+        .skip_taskbar(true);
+
+        let _window = win_builder.build()?;
+        
+        Ok(())
     }
 
     pub fn new_pin(

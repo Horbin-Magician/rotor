@@ -147,8 +147,6 @@ pub async fn new_pin(
     } else {
         println!("Unable to get current monitor"); // TODO
     }
-
-    webview_window.close().unwrap();
 }
 
 #[tauri::command]
