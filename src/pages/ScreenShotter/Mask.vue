@@ -280,7 +280,9 @@ function handleMouseMove(event: MouseEvent) {
     selectionWidth.value = Math.abs(endX.value - startX.value)
     selectionHeight.value = Math.abs(endY.value - startY.value)
   }
-  updateAutoSelection(event.clientX, event.clientY)
+  if(isSelecting.value == false) {
+    updateAutoSelection(event.clientX, event.clientY)
+  }
   updateMagnifier(event.clientX, event.clientY)
   getPixelColor(event.clientX, event.clientY)
 }
