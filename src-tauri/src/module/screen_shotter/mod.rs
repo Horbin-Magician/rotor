@@ -13,7 +13,6 @@ use xcap::Monitor;
 
 use crate::util::i18n;
 
-type Image = Vec<u8>;
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
     pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
