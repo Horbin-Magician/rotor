@@ -88,13 +88,13 @@ use xcap;
 //     });
 // }
 
-pub fn get_all_window_rect() -> Result<Vec<(i32, i32, i32, i32)>, Box<dyn std::error::Error>> {
+pub fn get_all_window_rect() -> Result<Vec<(i32, i32, u32, u32)>, Box<dyn std::error::Error>> {
     let mut res = Vec::new();
 
     let windows = xcap::Window::all()?;
     for window in windows {
         let (x, y, width, height) = (window.x()?, window.y()?, window.width()?, window.height()?);
-        res.push((x, y, width as i32, height as i32));
+        res.push((x, y, width, height));
     }
 
     Ok(res)

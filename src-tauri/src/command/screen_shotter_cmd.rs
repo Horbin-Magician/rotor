@@ -1,19 +1,34 @@
-use std::f32::INFINITY;
-
-// use rust_paddle_ocr::rec;
 use tauri_plugin_dialog::DialogExt;
-// use image::DynamicImage;
-// use image::RgbaImage;
+use image::imageops::crop_imm;
 
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
 use crate::module::screen_shotter::ScreenShotter;
-use crate::util::sys_util;
+use crate::util::{sys_util, img_util};
 
 #[tauri::command]
 pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
-    let millis = chrono::Utc::now().timestamp_millis();
-    println!("time get ipc request: {}", millis);
+    let masks_arc = {
+        let mut app = Application::global().lock().unwrap();
+        app.get_module("screenshot")
+            .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+            .map(|screenshot| screenshot.masks.clone())
+    };
+
+    let image = if let Some(masks_arc) = masks_arc {
+        let masks = masks_arc.lock().await;
+        masks.get(&label).cloned()
+    } else {
+        None
+    };
+
+    tauri::ipc::Response::new(image.unwrap_or_default().to_vec())
+}
+
+#[tauri::command]
+pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Vec<(i32, i32, u32, u32)> {
+
+    let mut rects = sys_util::get_all_window_rect().unwrap();
 
     let masks_arc = {
         let mut app = Application::global().lock().unwrap();
@@ -29,7 +44,16 @@ pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
         None
     };
 
-    tauri::ipc::Response::new(image.unwrap_or_default())
+    // if let Some(image) = image {
+    //     let rects2 = img_util::detect_rect(&image);
+    //     for rect in rects2 {
+    //         let x = rect.0 as i32 + window.outer_position().unwrap().x;
+    //         let y = rect.1 as i32 + window.outer_position().unwrap().y;
+    //         rects.push((x, y, rect.2, rect.3));
+    //     }
+    // }
+
+    rects
 }
 
 #[tauri::command]
@@ -38,7 +62,6 @@ pub async fn get_screen_img_rect(
     y: String,
     width: String,
     height: String,
-    webview_window: tauri::WebviewWindow,
 ) -> tauri::ipc::Response {
     let (masks_arc, pin_mask_label) = {
         let mut app = Application::global().lock().unwrap();
@@ -61,32 +84,22 @@ pub async fn get_screen_img_rect(
         None => return tauri::ipc::Response::new(vec![]),
     };
 
-    let x: usize = match x.parse() {
+    let x = match x.parse() {
         Ok(v) => v,
         _ => return tauri::ipc::Response::new(vec![]),
     };
-    let y: usize = match y.parse() {
+    let y = match y.parse() {
         Ok(v) => v,
         _ => return tauri::ipc::Response::new(vec![]),
     };
-    let width: usize = match width.parse() {
+    let width = match width.parse() {
         Ok(v) => v,
         _ => return tauri::ipc::Response::new(vec![]),
     };
-    let height: usize = match height.parse() {
+    let height = match height.parse() {
         Ok(v) => v,
         _ => return tauri::ipc::Response::new(vec![]),
     };
-    let img_width = webview_window
-        .current_monitor()
-        .unwrap()
-        .unwrap()
-        .size()
-        .width as usize;
-
-    if x + width > img_width || height == 0 {
-        return tauri::ipc::Response::new(vec![]);
-    }
 
     let image = {
         let masks = masks_arc.lock().await;
@@ -94,19 +107,8 @@ pub async fn get_screen_img_rect(
     };
 
     if let Some(img) = image {
-        let mut cropped_image = Vec::with_capacity(width * height * 4);
-        for row in img.chunks_exact(img_width * 4).skip(y).take(height) {
-            let start = x * 4;
-            let end = (x + width) * 4;
-            if row.len() >= end {
-                cropped_image.extend_from_slice(&row[start..end]);
-            }
-        }
-
-        // let img = RgbaImage::from_raw(width as u32, height as u32, cropped_image.clone()).unwrap();
-        // let img_dyn = DynamicImage::ImageRgba8(img);
-
-        return tauri::ipc::Response::new(cropped_image);
+        let cropped_img = crop_imm(&img, x, y, width, height);
+        return tauri::ipc::Response::new(cropped_img.to_image().to_vec());
     } else {
         return tauri::ipc::Response::new(vec![]);
     }
@@ -186,27 +188,4 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     }
     drop(app_config);
     false
-}
-
-#[tauri::command]
-pub fn get_window_at_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    let rects = sys_util::get_all_window_rect().unwrap();
-
-    let mut min_area = INFINITY;
-    let mut min_rect = None;
-    for rect in rects {
-        if x > rect.0 && y > rect.1 && x < rect.0 + rect.2 && y < rect.1 + rect.3{
-            let area = (rect.2 * rect.3) as f32;
-            if area < min_area {
-                min_area = area;
-                min_rect = Some(rect);
-            }
-        }
-    }
-
-    if let Some(rect) = min_rect {
-        return rect
-    } else {
-        return (0, 0, 0, 0);
-    }
 }
