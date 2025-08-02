@@ -37,6 +37,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { listen } from '@tauri-apps/api/event';
+import { warn } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
 
@@ -229,7 +231,7 @@ function getPixelColor(x: number, y: number) {
 
     pixelColor.value = hexColor
   } catch (error) {
-    console.warn('Error sampling pixel color:', error)
+    warn('Error sampling pixel color: {error}')
   }
 }
 
@@ -309,13 +311,15 @@ function handleMouseUp() {
     const width = Math.abs(endX.value - startX.value)
     const height = Math.abs(endY.value - startY.value)
     invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
+    hideWindow()
   } else if (autoSelectRect.value) {
     const x = autoSelectRect.value.x
     const y = autoSelectRect.value.y
     const width = autoSelectRect.value.width
     const height = autoSelectRect.value.height
     invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
-  } 
+    hideWindow()
+  }
   else {
     // Reset selection if it's too small
     isSelecting.value = false
@@ -326,7 +330,7 @@ function handleMouseUp() {
 
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
-    appWindow.close()
+    hideWindow()
   } else if (event.key.toLowerCase() === 'c') {
     writeText(pixelColor.value)
   }
@@ -346,19 +350,46 @@ onBeforeUnmount(() => {
 async function initializeScreenshot() {
   const imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
   rects = await invoke("get_screen_rects", {label: appWindow.label})
-
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
   backImgBitmap.value = await createImageBitmap(imgData)
-
   // Draw the background image
   drawBackgroundImage()
-
   // Show window
   const visible = await appWindow.isVisible()
   if(!visible) {
     appWindow.show()
+    appWindow.setFocus()
   }
+}
+
+function hideWindow() {
+  canvasRef.value = null
+  magnifierCanvasRef.value = null
+  backImgBitmap.value = null
+
+  isSelecting.value = false
+  selectionWidth.value = 0
+  selectionHeight.value = 0
+  startX.value = 0
+  startY.value = 0
+  endX.value = 0
+  endY.value = 0
+
+  currentX.value = -999
+  currentY.value = -999
+  autoSelectRect.value = null
+
+  pixelColor.value = '#ffffff'
+  selectionWidth.value = 0
+  selectionHeight.value = 0
+
+  mainCanvas = null
+  mainCtx = null
+  magnifierCanvas = null
+  magnifierCtx = null
+  
+  appWindow.hide()
 }
 
 // Load the rects
@@ -366,9 +397,14 @@ async function initializeAutoRects() {
   rects = await invoke("get_screen_rects", {label: appWindow.label})
 }
 
-// Initialize
-initializeScreenshot()
-initializeAutoRects()
+{ // Mount something
+  onMounted(async () => {
+    listen('show-mask', (_event) => {
+      initializeScreenshot()
+      initializeAutoRects()
+    });
+  });
+}
 </script>
 
 <style scoped>
