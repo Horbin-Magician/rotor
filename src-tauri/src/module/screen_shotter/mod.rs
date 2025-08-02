@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
+use image::RgbaImage;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use tokio::sync::Mutex;
@@ -15,7 +16,7 @@ use crate::util::i18n;
 type Image = Vec<u8>;
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
-    pub masks: Arc<Mutex<HashMap<String, Image>>>,
+    pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
     pub pin_mask_label: String,
     max_pin_id: u8,
 }
@@ -53,9 +54,8 @@ impl Module for ScreenShotter {
 
             if let Ok(monitor) = Monitor::from_point(0, 0) {
                 if let Ok(img) = monitor.capture_image() {
-                    let img_vec = img.to_vec();
                     masks.clear();
-                    masks.insert(label_clone, img_vec);
+                    masks.insert(label_clone, img);
                 }
             }
         });

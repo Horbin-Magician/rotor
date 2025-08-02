@@ -49,6 +49,8 @@ const windowHeight = window.screen.height
 const bacImgWidth = windowWidth * window.devicePixelRatio
 const bacImgHeight = windowHeight * window.devicePixelRatio
 
+let rects: [[number, number, number, number]];
+
 // Selection state
 const isSelecting = ref(false)
 const startX = ref(0)
@@ -233,20 +235,28 @@ function getPixelColor(x: number, y: number) {
 
 // Auto-selection functionality
 async function updateAutoSelection(x: number, y: number) {
-  const result = await invoke("get_window_at_point", { x: Math.floor(x), y: Math.floor(y) }) as [number, number, number, number]
-  const [windowX, windowY, windowWidth, windowHeight] = result
-  
+  const minRect = rects.reduce((min: [number, number, number, number] | undefined, rect) => {
+    const [left, top, width, height] = rect;
+    if (x > left && x < left + width && y > top && y < top + height) {
+      if (!min) return rect;
+      const minArea = min[2] * min[3];
+      const rectArea = width * height;
+      return rectArea < minArea ? rect : min;
+    }
+    return min;
+  }, undefined);
+
   // Only update if we got valid window bounds
-  if (windowWidth > 0 && windowHeight > 0) {
+  if (minRect) {
     autoSelectRect.value = {
-      x: windowX,
-      y: windowY,
-      width: windowWidth,
-      height: windowHeight
+      x: minRect[0],
+      y: minRect[1],
+      width: minRect[2],
+      height: minRect[3]
     }
     // Update selection dimensions for display
-    selectionWidth.value = windowWidth
-    selectionHeight.value = windowHeight
+    selectionWidth.value = minRect[2]
+    selectionHeight.value = minRect[3]
   } else {
     autoSelectRect.value = null
     selectionWidth.value = 0
@@ -335,6 +345,7 @@ onBeforeUnmount(() => {
 // Load the screenshot
 async function initializeScreenshot() {
   const imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
+  rects = await invoke("get_screen_rects", {label: appWindow.label})
 
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
