@@ -44,12 +44,13 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
         None
     };
 
+    // let scale_factor = window.scale_factor().unwrap();
     // if let Some(image) = image {
     //     let rects2 = img_util::detect_rect(&image);
     //     for rect in rects2 {
-    //         let x = rect.0 as i32 + window.outer_position().unwrap().x;
-    //         let y = rect.1 as i32 + window.outer_position().unwrap().y;
-    //         rects.push((x, y, rect.2, rect.3));
+    //         let x = (rect.0 as f64 / scale_factor) as i32 + window.outer_position().unwrap().x;
+    //         let y = (rect.1 as f64 / scale_factor) as i32 + window.outer_position().unwrap().y;
+    //         rects.push((x, y, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
     //     }
     // }
 
