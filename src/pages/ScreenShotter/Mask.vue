@@ -77,7 +77,7 @@ let magnifierCtx: CanvasRenderingContext2D | null = null
 
 // Computed styles for selection rectangle
 const selectionStyle = computed(() => {
-  let left, top, width, height = 0
+  let left = -2, top = -2, width = 0, height = 0
   if (isSelecting.value == true) {
     width = Math.abs(endX.value - startX.value)
     height = Math.abs(endY.value - startY.value)
@@ -94,7 +94,7 @@ const selectionStyle = computed(() => {
     width = autoSelectRect.value.width
     height = autoSelectRect.value.height
   }
-  
+
   return {
     left: `${left}px`,
     top: `${top}px`,
@@ -226,7 +226,7 @@ function getPixelColor(x: number, y: number) {
 
     pixelColor.value = hexColor
   } catch (error) {
-    warn('Error sampling pixel color: {error}')
+    warn(`Error sampling pixel color: ${error}`)
   }
 }
 
@@ -374,14 +374,10 @@ function hideWindow() {
   startY.value = 0
   endX.value = 0
   endY.value = 0
-
   currentX.value = -999
   currentY.value = -999
   autoSelectRect.value = null
-
   pixelColor.value = '#ffffff'
-  selectionWidth.value = 0
-  selectionHeight.value = 0
   
   appWindow.hide()
 }
