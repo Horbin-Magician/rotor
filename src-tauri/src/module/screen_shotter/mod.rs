@@ -6,7 +6,7 @@ use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use image::RgbaImage;
-use tauri::{Emitter, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use tokio::sync::Mutex;
 use xcap::Monitor;
@@ -55,6 +55,8 @@ impl Module for ScreenShotter {
         });
 
         app_handle.emit("show-mask", ()).unwrap();
+        self.build_pin_window()?; // Pre-build pin window for faster response after mask is shown
+
         Ok(())
     }
 
@@ -116,6 +118,33 @@ impl ScreenShotter {
         Ok(())
     }
 
+    pub fn build_pin_window(&mut self) -> Result<(), Box<dyn Error>> {
+        let app_handle = match &self.app_hander {
+            Some(handle) => handle,
+            None => return Err("AppHandle not initialized".into()),
+        };
+
+        let label = format!("sspin-{}", self.max_pin_id);
+
+        if app_handle.get_webview_window(&label) == None {
+            let win_builder = WebviewWindowBuilder::new(
+                app_handle,
+                &label,
+                WebviewUrl::App("ScreenShotter/Pin".into()),
+            )
+            .title(&i18n::t("pinWindowName"))
+            .position(0.0, 0.0)
+            .inner_size(100.0, 100.0)
+            .always_on_top(true)
+            .resizable(false)
+            .decorations(false)
+            .visible(false);
+            let _window = win_builder.build()?;
+        }
+
+        Ok(())
+    }
+
     pub fn new_pin(
         &mut self,
         x: f64,
@@ -130,23 +159,15 @@ impl ScreenShotter {
         };
 
         self.pin_mask_label = label;
-        let label = format!("sspin-{}", self.max_pin_id);
-        self.max_pin_id += 1;
-
-        let win_builder = WebviewWindowBuilder::new(
-            app_handle,
-            label,
-            WebviewUrl::App("ScreenShotter/Pin".into()),
-        )
-        .title(&i18n::t("pinWindowName"))
-        .position(x, y)
-        .inner_size(width, height)
-        .always_on_top(true)
-        .resizable(false)
-        .decorations(false)
-        // .accept_first_mouse(true) // TODO: del with
-        .visible(false);
-        let _window = win_builder.build()?;
+        let pin_label = format!("sspin-{}", self.max_pin_id);
+        if let Some(window) = app_handle.get_webview_window(&pin_label) {
+            // Update window properties
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: width, height: height }));
+            let _ = window.set_position( tauri::Position::Logical(tauri::LogicalPosition { x: x, y: y }));
+            app_handle.emit("show-pin", ()).unwrap();
+            self.max_pin_id += 1;
+            return Ok(());
+        }
 
         Ok(())
     }
