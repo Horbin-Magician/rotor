@@ -163,7 +163,7 @@ import {
   ArrowDownLeft20Filled,
   TextT20Filled,
 } from '@vicons/fluent';
-import { NTooltip } from 'naive-ui';
+import { NTooltip, NIcon } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
