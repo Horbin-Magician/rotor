@@ -106,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-// import type { TabsProps, SelectOption } from 'naive-ui'
+import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect } from 'naive-ui'
 import { ref, watch } from 'vue'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from '@tauri-apps/api/core'
