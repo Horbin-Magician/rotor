@@ -84,16 +84,11 @@ const selectionStyle = computed(() => {
     if (width > 5 && height > 5) {
       left = Math.min(startX.value, endX.value)
       top = Math.min(startY.value, endY.value)
-      return {
-        left: `${left}px`,
-        top: `${top}px`,
-        width: `${width}px`,
-        height: `${height}px`
-      }
+    } else {
+      width = 0
+      height = 0
     }
-  }
-
-  if (autoSelectRect.value) {
+  } else if (autoSelectRect.value) {
     left = autoSelectRect.value.x
     top = autoSelectRect.value.y
     width = autoSelectRect.value.width
@@ -364,9 +359,13 @@ async function initializeScreenshot() {
 }
 
 function hideWindow() {
-  canvasRef.value = null
-  magnifierCanvasRef.value = null
-  backImgBitmap.value = null
+  if (mainCtx) { mainCtx.clearRect(0, 0, windowWidth, windowHeight) }
+  if (magnifierCtx) { magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize) }
+  
+  if (backImgBitmap.value) {
+    backImgBitmap.value.close()
+    backImgBitmap.value = null
+  }
 
   isSelecting.value = false
   selectionWidth.value = 0
@@ -383,11 +382,6 @@ function hideWindow() {
   pixelColor.value = '#ffffff'
   selectionWidth.value = 0
   selectionHeight.value = 0
-
-  mainCanvas = null
-  mainCtx = null
-  magnifierCanvas = null
-  magnifierCtx = null
   
   appWindow.hide()
 }
