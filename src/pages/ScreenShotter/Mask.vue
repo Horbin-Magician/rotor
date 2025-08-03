@@ -351,11 +351,12 @@ async function initializeScreenshot() {
   // Draw the background image
   drawBackgroundImage()
   // Show window
-  const visible = await appWindow.isVisible()
-  if(!visible) {
-    appWindow.show()
-    appWindow.setFocus()
-  }
+  appWindow.isVisible().then( (visible)=>{
+    if(visible == false) {
+      appWindow.show()
+      appWindow.setFocus()
+    }
+  })
 }
 
 function hideWindow() {

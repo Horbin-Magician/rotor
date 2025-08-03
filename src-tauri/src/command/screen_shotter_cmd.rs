@@ -128,8 +128,9 @@ pub async fn new_pin(
 
     if let Some(monitor) = webview_window.current_monitor().ok().flatten() {
         let monitor_pos = monitor.position();
-        let x = monitor_pos.x as f64 + offset_x.parse::<f64>().unwrap();
-        let y = monitor_pos.y as f64 + offset_y.parse::<f64>().unwrap();
+        let monitor_pos_lg = monitor_pos.to_logical::<f64>(monitor.scale_factor());
+        let x = monitor_pos_lg.x + offset_x.parse::<f64>().unwrap();
+        let y = monitor_pos_lg.y + offset_y.parse::<f64>().unwrap();
 
         if let Some(s) = screenshot {
             if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {

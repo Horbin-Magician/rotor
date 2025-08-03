@@ -167,8 +167,10 @@ import { NTooltip, NIcon } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
+import { listen } from '@tauri-apps/api/event';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
+import { info } from "@tauri-apps/plugin-log";
 
 enum State {
   Default,
@@ -185,12 +187,6 @@ enum DrawState {
 const { t } = useI18n()
 
 const appWindow = getCurrentWindow()
-appWindow.isVisible().then( (visible)=>{
-  if(visible == false) {
-    appWindow.show()
-    appWindow.setFocus()
-  }
-})
 
 const state = ref(State.Default)
 const drawState = ref(DrawState.Pen)
@@ -285,6 +281,7 @@ async function loadScreenShot() {
     width: size.width.toString(),
     height: size.height.toString(),
   });
+  info(`${pos.x}, ${pos.y}, ${size.width}, ${size.height}`)
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
   backImg.value = await createImageBitmap(imgData)
   
@@ -311,7 +308,6 @@ async function loadScreenShot() {
   drawingLayer = new Konva.Layer();
   stage.add(drawingLayer);
 }
-loadScreenShot();
 
 // Mouse event handlers
 async function handleMouseDown(event: MouseEvent) {
@@ -499,7 +495,6 @@ function selectArrowTool() { drawState.value = DrawState.Arrow }
 
 function selectTextTool() { drawState.value = DrawState.Text }
 
-// TODO
 // Drawing functions
 function startDrawing(event: MouseEvent) {
   if (!drawingLayer || !stage) return;
@@ -718,7 +713,6 @@ function cancelTextInput() {
   onMounted(async () => {
     // Load shortcuts from configuration
     await loadShortcuts();
-    updateToolbarVisibility();
     
     window.addEventListener('keyup', handleKeyup);
     window.addEventListener('resize', handleWindowResize);
@@ -759,6 +753,17 @@ function cancelTextInput() {
     window.addEventListener('contextmenu', async (event) => {
       event.preventDefault();
       menu.popup(new LogicalPosition(event.clientX, event.clientY));
+    });
+
+    listen('show-pin', async (_event) => {
+      await loadScreenShot();
+      updateToolbarVisibility();
+      appWindow.isVisible().then( (visible)=>{
+        if(visible == false) {
+          appWindow.show()
+          appWindow.setFocus()
+        }
+      })
     });
   });
 
