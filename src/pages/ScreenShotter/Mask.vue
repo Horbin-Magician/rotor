@@ -419,7 +419,7 @@ html, body {
 .selection-rect {
   position: absolute;
   border: 1px solid #2196F3;
-  background-color: rgba(33, 150, 243, 0.03);
+  background-color: rgba(33, 150, 243, 0.1);
   pointer-events: none;
 }
 
