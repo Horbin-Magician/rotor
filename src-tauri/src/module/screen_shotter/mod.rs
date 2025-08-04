@@ -160,14 +160,8 @@ impl ScreenShotter {
 
         self.pin_mask_label = label;
         let pin_label = format!("sspin-{}", self.max_pin_id);
-        if let Some(window) = app_handle.get_webview_window(&pin_label) {
-            // Update window properties
-            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: width, height: height }));
-            let _ = window.set_position( tauri::Position::Logical(tauri::LogicalPosition { x: x, y: y }));
-            app_handle.emit("show-pin", ()).unwrap();
-            self.max_pin_id += 1;
-            return Ok(());
-        }
+        app_handle.emit_to(&pin_label, "show-pin", (x, y, width, height)).unwrap();
+        self.max_pin_id += 1;
 
         Ok(())
     }

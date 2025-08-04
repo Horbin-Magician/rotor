@@ -167,10 +167,10 @@ import { NTooltip, NIcon } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
-import { listen } from '@tauri-apps/api/event';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
 import { info } from "@tauri-apps/plugin-log";
+import { UnlistenFn } from "@tauri-apps/api/event";
 
 enum State {
   Default,
@@ -187,6 +187,7 @@ enum DrawState {
 const { t } = useI18n()
 
 const appWindow = getCurrentWindow()
+let unlisten_show_pin: UnlistenFn;
 
 const state = ref(State.Default)
 const drawState = ref(DrawState.Pen)
@@ -755,7 +756,11 @@ function cancelTextInput() {
       menu.popup(new LogicalPosition(event.clientX, event.clientY));
     });
 
-    listen('show-pin', async (_event) => {
+    unlisten_show_pin = await appWindow.listen<[number, number, number, number]>('show-pin', async (event) => {
+      info(appWindow.label)
+      const size = event.payload
+      await appWindow.setSize(new LogicalSize(size[2], size[3]))
+      await appWindow.setPosition(new LogicalPosition(size[0], size[1]))
       await loadScreenShot();
       updateToolbarVisibility();
       appWindow.isVisible().then( (visible)=>{
@@ -764,6 +769,7 @@ function cancelTextInput() {
           appWindow.setFocus()
         }
       })
+      if(unlisten_show_pin) { unlisten_show_pin() }
     });
   });
 
