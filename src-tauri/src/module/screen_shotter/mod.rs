@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use xcap::Monitor;
 
 use crate::util::i18n;
+use crate::util::sys_util;
 
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
@@ -112,9 +113,13 @@ impl ScreenShotter {
         .fullscreen(true)
         .visible(false)
         .skip_taskbar(true);
-
-        let _window = win_builder.build()?;
+        let window = win_builder.build()?;
         
+        #[cfg(target_os = "windows")]
+        window.hwnd().map(|hwnd| {
+            sys_util::forbid_window_animation(hwnd);
+        }).ok();
+
         Ok(())
     }
 
@@ -139,7 +144,12 @@ impl ScreenShotter {
             .resizable(false)
             .decorations(false)
             .visible(false);
-            let _window = win_builder.build()?;
+            let window = win_builder.build()?;
+
+            #[cfg(target_os = "windows")]
+            window.hwnd().map(|hwnd| {
+                sys_util::forbid_window_animation(hwnd);
+            }).ok();
         }
 
         Ok(())

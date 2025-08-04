@@ -350,16 +350,11 @@ async function initializeScreenshot() {
   backImgBitmap.value = await createImageBitmap(imgData)
   // Draw the background image
   drawBackgroundImage()
-  // Show window
-  appWindow.isVisible().then( (visible)=>{
-    if(visible == false) {
-      appWindow.show()
-      appWindow.setFocus()
-    }
-  })
 }
 
 function hideWindow() {
+  appWindow.hide()
+  
   if (mainCtx) { mainCtx.clearRect(0, 0, windowWidth, windowHeight) }
   if (magnifierCtx) { magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize) }
   
@@ -379,8 +374,6 @@ function hideWindow() {
   currentY.value = -999
   autoSelectRect.value = null
   pixelColor.value = '#ffffff'
-  
-  appWindow.hide()
 }
 
 // Load the rects
@@ -390,9 +383,16 @@ async function initializeAutoRects() {
 
 { // Mount something
   onMounted(async () => {
-    listen('show-mask', (_event) => {
-      initializeScreenshot()
+    listen('show-mask', async (_event) => {
       initializeAutoRects()
+      await initializeScreenshot()
+      // Show window
+      appWindow.isVisible().then( (visible)=>{
+        if(visible == false) {
+          appWindow.show()
+          appWindow.setFocus()
+        }
+      })
     });
   });
 }
