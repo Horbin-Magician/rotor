@@ -1,7 +1,7 @@
 use xcap;
 
-// #[cfg(target_os = "windows")]
-// mod win_imports {
+#[cfg(target_os = "windows")]
+mod win_imports {
 //     use crate::util::log_util;
 //     pub use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 //     pub use i_slint_backend_winit::WinitWindowAccessor;
@@ -10,9 +10,10 @@ use xcap;
 //     use std::error::Error;
 //     pub use windows::core::PCWSTR;
 //     pub use windows::Win32::Globalization::GetUserDefaultLocaleName;
-//     pub use windows::Win32::Graphics::Dwm::{
-//         DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
-//     };
+    pub use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
+    };
+    pub use windows::Win32::Foundation::HWND;
 //     pub use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 //     pub use windows::Win32::UI::Shell::ShellExecuteW;
 //     pub use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -30,9 +31,9 @@ use xcap;
 //     };
 //     pub use winreg::enums::*;
 //     pub use winreg::RegKey;
-// }
-// #[cfg(target_os = "windows")]
-// use win_imports::*;
+}
+#[cfg(target_os = "windows")]
+use win_imports::*;
 
 // #[cfg(target_os = "windows")]
 // pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
@@ -100,24 +101,18 @@ pub fn get_all_window_rect() -> Result<Vec<(i32, i32, u32, u32)>, Box<dyn std::e
     Ok(res)
 }
 
-// #[cfg(target_os = "windows")]
-// pub fn forbid_window_animation(window: &slint::Window) {
-//     window.with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
-//         if let Ok(handle) = winit_win.window_handle() {
-//             if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
-//                 let disable: i32 = 1;
-//                 unsafe {
-//                     DwmSetWindowAttribute(
-//                         HWND(win32_handle.hwnd.get() as *mut _),
-//                         DWMWA_TRANSITIONS_FORCEDISABLED,
-//                         &disable as *const _ as *const _,
-//                         std::mem::size_of_val(&disable) as u32,
-//                     )
-//                     .unwrap_or_else(|e| {
-//                         log_util::log_error(format!("DwmSetWindowAttribute error: {:?}", e))
-//                     });
-//                 }
-//             }
-//         }
-//     });
-// }
+#[cfg(target_os = "windows")]
+pub fn forbid_window_animation(handle: HWND) {
+    let disable: i32 = 1;
+    unsafe {
+        DwmSetWindowAttribute(
+            handle,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &disable as *const _ as *const _,
+            std::mem::size_of_val(&disable) as u32,
+        )
+        .unwrap_or_else(|e| {
+            log::error!("DwmSetWindowAttribute error: {:?}", e)
+        });
+    }
+}
