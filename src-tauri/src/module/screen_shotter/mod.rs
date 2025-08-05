@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use xcap::Monitor;
 
 use crate::util::i18n;
+#[cfg(target_os = "windows")]
 use crate::util::sys_util;
 
 pub struct ScreenShotter {
@@ -113,7 +114,10 @@ impl ScreenShotter {
         .fullscreen(true)
         .visible(false)
         .skip_taskbar(true);
+        #[cfg(target_os = "windows")]
         let window = win_builder.build()?;
+        #[cfg(target_os = "macos")]
+        let _window = win_builder.build()?;
         
         #[cfg(target_os = "windows")]
         window.hwnd().map(|hwnd| {
@@ -144,7 +148,10 @@ impl ScreenShotter {
             .resizable(false)
             .decorations(false)
             .visible(false);
+            #[cfg(target_os = "windows")]
             let window = win_builder.build()?;
+            #[cfg(target_os = "macos")]
+            let _window = win_builder.build()?;
 
             #[cfg(target_os = "windows")]
             window.hwnd().map(|hwnd| {
