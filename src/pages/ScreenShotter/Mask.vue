@@ -51,7 +51,7 @@ const windowHeight = window.screen.height
 const bacImgWidth = windowWidth * window.devicePixelRatio
 const bacImgHeight = windowHeight * window.devicePixelRatio
 
-let rects: [[number, number, number, number]];
+let rects: [[number, number, number, number, number]];
 
 // Selection state
 const isSelecting = ref(false)
@@ -232,13 +232,17 @@ function getPixelColor(x: number, y: number) {
 
 // Auto-selection functionality
 async function updateAutoSelection(x: number, y: number) {
-  const minRect = rects.reduce((min: [number, number, number, number] | undefined, rect) => {
-    const [left, top, width, height] = rect;
+  const minRect = rects.reduce((min: [number, number, number, number, number] | undefined, rect) => {
+    const [left, top, _, width, height] = rect;
     if (x > left && x < left + width && y > top && y < top + height) {
       if (!min) return rect;
-      const minArea = min[2] * min[3];
-      const rectArea = width * height;
-      return rectArea < minArea ? rect : min;
+      if (rect[2] >= 0 && min[2] != rect[2]) {
+        return min[2] > rect[2] ? min : rect;
+      } else {
+        const minArea = min[3] * min[4];
+        const rectArea = width * height;
+        return minArea < rectArea ? min : rect;
+      }
     }
     return min;
   }, undefined);
@@ -248,12 +252,12 @@ async function updateAutoSelection(x: number, y: number) {
     autoSelectRect.value = {
       x: minRect[0],
       y: minRect[1],
-      width: minRect[2],
-      height: minRect[3]
+      width: minRect[3],
+      height: minRect[4]
     }
     // Update selection dimensions for display
-    selectionWidth.value = minRect[2]
-    selectionHeight.value = minRect[3]
+    selectionWidth.value = minRect[3]
+    selectionHeight.value = minRect[4]
   } else {
     autoSelectRect.value = null
     selectionWidth.value = 0

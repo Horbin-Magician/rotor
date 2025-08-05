@@ -26,7 +26,7 @@ pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
 }
 
 #[tauri::command]
-pub async fn get_screen_rects(_label: String, _window: tauri::WebviewWindow) -> Vec<(i32, i32, u32, u32)> {
+pub async fn get_screen_rects(_label: String, _window: tauri::WebviewWindow) -> Vec<(i32, i32, i32, u32, u32)> {
 
     let rects = sys_util::get_all_window_rect().unwrap();
 
@@ -50,7 +50,7 @@ pub async fn get_screen_rects(_label: String, _window: tauri::WebviewWindow) -> 
     //     for rect in rects2 {
     //         let x = (rect.0 as f64 / scale_factor) as i32 + window.outer_position().unwrap().x;
     //         let y = (rect.1 as f64 / scale_factor) as i32 + window.outer_position().unwrap().y;
-    //         rects.push((x, y, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
+    //         rects.push((x, y, -1, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
     //     }
     // }
 
