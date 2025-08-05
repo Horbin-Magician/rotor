@@ -233,11 +233,11 @@ function getPixelColor(x: number, y: number) {
 // Auto-selection functionality
 async function updateAutoSelection(x: number, y: number) {
   const minRect = rects.reduce((min: [number, number, number, number, number] | undefined, rect) => {
-    const [left, top, _, width, height] = rect;
+    const [left, top, zindex, width, height] = rect;
     if (x > left && x < left + width && y > top && y < top + height) {
       if (!min) return rect;
-      if (rect[2] >= 0 && min[2] != rect[2]) {
-        return min[2] > rect[2] ? min : rect;
+      if (zindex >= 0 && min[2] != zindex) {
+        return min[2] > zindex ? min : rect;
       } else {
         const minArea = min[3] * min[4];
         const rectArea = width * height;
