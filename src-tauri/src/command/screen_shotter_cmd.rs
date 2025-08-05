@@ -26,9 +26,48 @@ pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
 }
 
 #[tauri::command]
-pub async fn get_screen_rects(_label: String, _window: tauri::WebviewWindow) -> Vec<(i32, i32, i32, u32, u32)> {
+pub async fn get_screen_rects(_label: String, window: tauri::WebviewWindow) -> Vec<(i32, i32, i32, u32, u32)> {
+    let monitor = window.current_monitor().unwrap().unwrap();
+    let mon_pos: tauri::LogicalPosition<i32> = monitor.position().to_logical(monitor.scale_factor());
+    let mon_size: tauri::LogicalSize<i32> = monitor.size().to_logical(monitor.scale_factor());
 
-    let rects = sys_util::get_all_window_rect().unwrap();
+    let raw_rects = sys_util::get_all_window_rect().unwrap();
+    let mut rects = Vec::new();
+
+    for rect in raw_rects {
+        let (rect_x, rect_y, rect_z, rect_width, rect_height) = rect;
+        
+        // Calculate rect bounds
+        let rect_right = rect_x + rect_width as i32;
+        let rect_bottom = rect_y + rect_height as i32;
+        
+        // Calculate monitor bounds
+        let mon_right = mon_pos.x + mon_size.width as i32;
+        let mon_bottom = mon_pos.y + mon_size.height as i32;
+        
+        // Check if rect intersects with monitor
+        if rect_right > mon_pos.x && rect_x < mon_right && 
+           rect_bottom > mon_pos.y && rect_y < mon_bottom {
+            
+            // Clip rect to monitor bounds
+            let clipped_x = rect_x.max(mon_pos.x);
+            let clipped_y = rect_y.max(mon_pos.y);
+            let clipped_right = rect_right.min(mon_right);
+            let clipped_bottom = rect_bottom.min(mon_bottom);
+            
+            println!("clipped_y: {}, clipped_bottom: {}", clipped_y, clipped_bottom);
+
+            // Calculate clipped dimensions
+            let clipped_width = (clipped_right - clipped_x) as u32;
+            let clipped_height = (clipped_bottom - clipped_y) as u32;
+            
+            // Convert to monitor-relative coordinates
+            let relative_x = clipped_x - mon_pos.x;
+            let relative_y = clipped_y - mon_pos.y;
+            
+            rects.push((relative_x, relative_y, rect_z, clipped_width, clipped_height));
+        }
+    }
 
     // let masks_arc = {
     //     let mut app = Application::global().lock().unwrap();
