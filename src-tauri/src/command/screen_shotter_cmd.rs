@@ -54,8 +54,6 @@ pub async fn get_screen_rects(_label: String, window: tauri::WebviewWindow) -> V
             let clipped_y = rect_y.max(mon_pos.y);
             let clipped_right = rect_right.min(mon_right);
             let clipped_bottom = rect_bottom.min(mon_bottom);
-            
-            println!("clipped_y: {}, clipped_bottom: {}", clipped_y, clipped_bottom);
 
             // Calculate clipped dimensions
             let clipped_width = (clipped_right - clipped_x) as u32;
