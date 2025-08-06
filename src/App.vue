@@ -5,65 +5,90 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
-  import { darkTheme, NConfigProvider, GlobalThemeOverrides } from 'naive-ui'
-  import { BuiltInGlobalTheme } from 'naive-ui/es/themes/interface'
-  import { invoke } from '@tauri-apps/api/core'
+import { ref, onMounted, onUnmounted, watchEffect } from 'vue'
+import { darkTheme, NConfigProvider, GlobalThemeOverrides } from 'naive-ui'
+import { BuiltInGlobalTheme } from 'naive-ui/es/themes/interface'
+import { invoke } from '@tauri-apps/api/core'
 
-  const themeOverrides: GlobalThemeOverrides = {
-    common: {
-      primaryColor: '#54a4db',
-      primaryColorHover: '#54a4db',
-      primaryColorPressed: '#54a4db',
-      primaryColorSuppl: '#54a4db',
-    },
+const themeOverrides: GlobalThemeOverrides = {
+  common: {
+    primaryColor: '#54a4db',
+    primaryColorHover: '#54a4db',
+    primaryColorPressed: '#54a4db',
+    primaryColorSuppl: '#54a4db',
+  },
+}
+
+const themeMode = ref(0) // 0: follow system, 1: light, 2: dark
+const currentTheme = ref<BuiltInGlobalTheme | null>(null)
+
+// Create a media query listener for system theme changes
+const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+const updateThemeClass = () => {
+  const body = document.body
+  body.classList.remove('light-theme', 'dark-theme', 'system-theme')
+  
+  if (themeMode.value === 1) {
+    body.classList.add('light-theme')
+    currentTheme.value = null
+  } else if (themeMode.value === 2) {
+    body.classList.add('dark-theme')
+    currentTheme.value = darkTheme
+  } else {
+    body.classList.add('system-theme')
+    currentTheme.value = mediaQuery.matches ? darkTheme : null
   }
+}
 
-  const themeMode = ref(0) // 0: follow system, 1: light, 2: dark
-  const currentTheme = ref<BuiltInGlobalTheme | null>(null)
-
-  // load theme setting from config
-  onMounted(async () => {
-    try {
-      const config: any = await invoke("get_all_cfg")
-      themeMode.value = Number(config["theme"]) || 0
-      updateThemeClass()
-    } catch (error) {
-      console.error('Failed to load theme config:', error)
-      updateThemeClass()
-    }
-  })
-
-  const updateThemeClass = () => {
-    const body = document.body
-    body.classList.remove('light-theme', 'dark-theme', 'system-theme') // remove all theme class
-    
-    if (themeMode.value === 1) {
-      body.classList.add('light-theme')
-      currentTheme.value = null
-    } else if (themeMode.value === 2) {
-      body.classList.add('dark-theme')
-      currentTheme.value = darkTheme
-    } else {
-      body.classList.add('system-theme')
-      currentTheme.value = window.matchMedia('(prefers-color-scheme: dark)').matches ? darkTheme : null
-    }
-  }
-
-  // Provide global topic update methods
-  const updateTheme = (newTheme: number) => {
-    themeMode.value = newTheme
+// Watch for system theme changes
+const handleSystemThemeChange = () => {
+  if (themeMode.value === 0) {
     updateThemeClass()
   }
-  ;(window as any).updateAppTheme = updateTheme
+}
 
+// Load theme setting from config
+onMounted(async () => {
+  try {
+    const config: any = await invoke("get_all_cfg")
+    themeMode.value = Number(config["theme"]) || 0
+    updateThemeClass()
+  } catch (error) {
+    console.error('Failed to load theme config:', error)
+    updateThemeClass()
+  }
+  
+  // Add listener for system theme changes
+  mediaQuery.addEventListener('change', handleSystemThemeChange)
+})
+
+// Watch for theme mode changes
+watchEffect(() => {
+  updateThemeClass()
+})
+
+// Provide global theme update method
+const updateTheme = (newTheme: number) => {
+  themeMode.value = newTheme
+}
+
+// Expose to window for external access
+if (typeof window !== 'undefined') {
+  (window as any).updateAppTheme = updateTheme
+}
+
+// Cleanup
+onUnmounted(() => {
+  mediaQuery.removeEventListener('change', handleSystemThemeChange)
+})
 </script>
 
 <style>
 body {
   user-select: none;
-  -webkit-user-select: none; /* 兼容 Safari 和 Chrome */
-  -ms-user-select: none;     /* 兼容 IE/Edge */
+  -webkit-user-select: none;
+  -ms-user-select: none;
   margin: 0;
 }
 
@@ -73,19 +98,19 @@ body {
   line-height: 24px;
   font-weight: 400;
 
-  /* 浅色主题变量 */
+  /* Light theme variables */
   --light-text-color: #121212;
   --light-bg-color: #f6f6f6;
   --light-border-color: #e0e0e0;
   --light-hover-color: #007bff;
 
-  /* 深色主题变量 */
+  /* Dark theme variables */
   --dark-text-color: #f6f6f6;
   --dark-bg-color: #121212;
   --dark-border-color: #333333;
   --dark-hover-color: #24c8db;
 
-  /* 默认使用浅色主题 */
+  /* Default to light theme */
   color: var(--light-text-color);
   background-color: var(--light-bg-color);
 
@@ -96,19 +121,19 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-/* 深色主题类 */
+/* Dark theme class */
 .dark-theme {
   color: var(--dark-text-color) !important;
   background-color: var(--dark-bg-color) !important;
 }
 
-/* 浅色主题类 */
+/* Light theme class */
 .light-theme {
   color: var(--light-text-color) !important;
   background-color: var(--light-bg-color) !important;
 }
 
-/* 跟随系统主题 */
+/* Follow system theme */
 @media (prefers-color-scheme: dark) {
   .system-theme {
     color: var(--dark-text-color);
@@ -119,5 +144,4 @@ body {
     color: var(--dark-hover-color);
   }
 }
-
 </style>

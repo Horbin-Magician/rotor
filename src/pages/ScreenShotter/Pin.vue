@@ -169,7 +169,6 @@ import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
-import { info } from "@tauri-apps/plugin-log";
 import { UnlistenFn } from "@tauri-apps/api/event";
 
 enum State {
@@ -282,7 +281,7 @@ async function loadScreenShot() {
     width: size.width.toString(),
     height: size.height.toString(),
   });
-  info(`${pos.x}, ${pos.y}, ${size.width}, ${size.height}`)
+
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
   backImg.value = await createImageBitmap(imgData)
   
@@ -757,7 +756,6 @@ function cancelTextInput() {
     });
 
     unlisten_show_pin = await appWindow.listen<[number, number, number, number]>('show-pin', async (event) => {
-      info(appWindow.label)
       const size = event.payload
       await appWindow.setSize(new LogicalSize(size[2], size[3]))
       await appWindow.setPosition(new LogicalPosition(size[0], size[1]))
