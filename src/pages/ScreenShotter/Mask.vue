@@ -329,6 +329,7 @@ function handleMouseUp() {
 
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
+    invoke("close_cache_pin")
     hideWindow()
   } else if (event.key.toLowerCase() === 'c') {
     writeText(pixelColor.value)
