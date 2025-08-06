@@ -188,6 +188,18 @@ pub async fn new_pin(
 }
 
 #[tauri::command]
+pub async fn close_cache_pin() {
+    let mut app = Application::global().lock().unwrap();
+    let screenshot = app.get_module("screenshot");
+
+    if let Some(s) = screenshot {
+        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
+            screenshot.close_cache_pin().unwrap();
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     let mut app_config = AppConfig::global().lock().unwrap();
     let save_path = app_config.get(&"save_path".to_string()).cloned().unwrap_or_default();

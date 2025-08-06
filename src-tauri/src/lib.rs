@@ -28,6 +28,7 @@ pub fn run() {
             screen_shotter_cmd::new_pin,
             screen_shotter_cmd::save_img,
             screen_shotter_cmd::get_screen_rects,
+            screen_shotter_cmd::close_cache_pin,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
