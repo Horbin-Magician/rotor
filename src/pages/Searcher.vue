@@ -13,33 +13,19 @@
           autofocus
           @input="handleSearch"
           @keydown="handleKeydown"
-          @focus="handleFocus"
-          @blur="handleBlur"
           class="search-input"
           autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
           spellcheck="false"
         />
-        <button
-          v-if="searchQuery"
-          @click="clearSearch"
-          class="clear-button"
-          type="button"
-        >
-          <n-icon size="16">
-            <component :is="ClearIcon" />
-          </n-icon>
-        </button>
       </div>
     </div>
 
     <!-- Search Results -->
-    <div class="search-results" v-if="displayItems.length > 0">
+    <div v-if="displayItems.length > 0" class="search-results">
       <div
         v-for="(item, index) in displayItems"
         :key="item.id"
-        :class="['search-item', { 'selected': selectedIndex === index }]"
+        :class="['search-item', { selected: selectedIndex === index }]"
         @click="selectItem(item)"
         @mouseenter="selectedIndex = index"
       >
@@ -52,9 +38,14 @@
           <div class="item-title">{{ item.title }}</div>
           <div class="item-subtitle">{{ item.subtitle }}</div>
         </div>
-        <div class="item-actions" v-if="item.actions">
-          <div class="item-action-btn" v-for="action in item.actions" :key="action.type">
-            <n-icon size="20" class="action-icon" :title="action.title">
+        <div v-if="item.actions" class="item-actions">
+          <div
+            v-for="action in item.actions"
+            :key="action.type"
+            class="item-action-btn"
+            :title="action.title"
+          >
+            <n-icon size="20">
               <component :is="getActionIcon(action.type)" />
             </n-icon>
           </div>
@@ -63,7 +54,7 @@
     </div>
 
     <!-- Empty State -->
-    <div class="empty-state" v-else-if="searchQuery.trim()">
+    <div v-else-if="searchQuery.trim()" class="empty-state">
       <n-icon size="48" color="#ccc">
         <SearchIcon />
       </n-icon>
@@ -75,9 +66,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { NIcon } from 'naive-ui'
-import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
-import { LogicalSize } from '@tauri-apps/api/window'
-import { currentMonitor } from '@tauri-apps/api/window'
+import { getCurrentWindow, PhysicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window'
 import {
   SearchRound as SearchIcon,
   FolderRound as FolderIcon,
@@ -85,11 +74,10 @@ import {
   AppsRound as AppIcon,
   SettingsRound as SettingsIcon,
   LaunchRound as LaunchIcon,
-  ContentCopyRound as CopyIcon,
-  CloseRound as ClearIcon
+  ContentCopyRound as CopyIcon
 } from '@vicons/material'
 
-// 类型定义
+// Types
 interface Action {
   type: string
   title: string
@@ -106,31 +94,92 @@ interface SearchItem {
 type ItemType = 'app' | 'folder' | 'file' | 'settings'
 type ActionType = 'launch' | 'copy'
 
-// 常量配置
+// Constants
 const WINDOW_CONFIG = {
   width: 500,
   itemHeight: 50,
-  padding: 12,
   inputHeight: 50
-}
+} as const
 
+const ICON_MAP: Record<ItemType, any> = {
+  app: AppIcon,
+  folder: FolderIcon,
+  file: FileIcon,
+  settings: SettingsIcon
+} as const
+
+const ACTION_ICONS: Record<ActionType, any> = {
+  launch: LaunchIcon,
+  copy: CopyIcon
+} as const
+
+// State
 const appWindow = getCurrentWindow()
-const searchInputRef = ref()
+const searchInputRef = ref<HTMLInputElement>()
 const searchQuery = ref('')
 const selectedIndex = ref(0)
-const isFocused = ref(false)
 
+// Mock data
 const searchResults = ref<SearchItem[]>([
-  { id: 1, title: 'Zotero.lnk', subtitle: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\asdasdsdadsadsdadadsdsdadsadsdad', type: 'app', actions: [{ type: 'launch', title: '启动' }, { type: 'copy', title: '复制路径' }] },
-  { id: 2, title: 'zotero.exe', subtitle: 'D:\\Zotero\\', type: 'app', actions: [{ type: 'launch', title: '启动' }, { type: 'copy', title: '复制路径' }] },
-  { id: 3, title: 'Zotero', subtitle: 'C:\\Users\\22400\\AppData\\Local\\Zotero\\sdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadadsdasdsdadsadsdadad', type: 'folder', actions: [{ type: 'launch', title: '打开' }, { type: 'copy', title: '复制路径' }] },
-  { id: 4, title: 'project-report.pdf', subtitle: 'C:\\Users\\Documents\\', type: 'file', actions: [{ type: 'launch', title: '打开' }, { type: 'copy', title: '复制路径' }] },
-  { id: 5, title: 'Visual Studio Code', subtitle: 'Microsoft Corporation', type: 'app', actions: [{ type: 'launch', title: '启动' }] },
-  { id: 6, title: 'Chrome', subtitle: 'Google LLC', type: 'app', actions: [{ type: 'launch', title: '启动' }] }
+  {
+    id: 1,
+    title: 'Zotero.lnk',
+    subtitle: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Zotero',
+    type: 'app',
+    actions: [
+      { type: 'launch', title: '启动' },
+      { type: 'copy', title: '复制路径' }
+    ]
+  },
+  {
+    id: 2,
+    title: 'zotero.exe',
+    subtitle: 'D:\\Zotero\\',
+    type: 'app',
+    actions: [
+      { type: 'launch', title: '启动' },
+      { type: 'copy', title: '复制路径' }
+    ]
+  },
+  {
+    id: 3,
+    title: 'Zotero',
+    subtitle: 'C:\\Users\\22400\\AppData\\Local\\Zotero\\',
+    type: 'folder',
+    actions: [
+      { type: 'launch', title: '打开' },
+      { type: 'copy', title: '复制路径' }
+    ]
+  },
+  {
+    id: 4,
+    title: 'project-report.pdf',
+    subtitle: 'C:\\Users\\Documents\\',
+    type: 'file',
+    actions: [
+      { type: 'launch', title: '打开' },
+      { type: 'copy', title: '复制路径' }
+    ]
+  },
+  {
+    id: 5,
+    title: 'Visual Studio Code',
+    subtitle: 'Microsoft Corporation',
+    type: 'app',
+    actions: [{ type: 'launch', title: '启动' }]
+  },
+  {
+    id: 6,
+    title: 'Chrome',
+    subtitle: 'Google LLC',
+    type: 'app',
+    actions: [{ type: 'launch', title: '启动' }]
+  }
 ])
 
+// Computed
 const displayItems = computed(() => {
-  if (!searchQuery.value.trim()) { return [] }
+  if (!searchQuery.value.trim()) return []
   
   const query = searchQuery.value.toLowerCase()
   return searchResults.value
@@ -141,41 +190,37 @@ const displayItems = computed(() => {
     .slice(0, 8)
 })
 
-const ICON_MAP: Record<ItemType, { icon: any; color: string }> = {
-  app: { icon: AppIcon, color: '#54a4db' },
-  folder: { icon: FolderIcon, color: '#ffa726' },
-  file: { icon: FileIcon, color: '#66bb6a' },
-  settings: { icon: SettingsIcon, color: '#ab47bc' }
-}
-const ACTION_ICONS: Record<ActionType, any> = {
-  launch: LaunchIcon,
-  copy: CopyIcon
-}
-const getIcon = (type: string) => ICON_MAP[type as ItemType]?.icon || FileIcon
+// Utils
+const getIcon = (type: string) => ICON_MAP[type as ItemType] || FileIcon
 const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || LaunchIcon
 
+// Window management
 const resizeWindow = async () => {
   const currentSize = await appWindow.outerSize()
   let newHeight = WINDOW_CONFIG.inputHeight
 
   if (searchQuery.value.trim()) {
-    newHeight += displayItems.value.length > 0 ? displayItems.value.length * WINDOW_CONFIG.itemHeight : 120
+    newHeight += displayItems.value.length > 0 
+      ? displayItems.value.length * WINDOW_CONFIG.itemHeight 
+      : 120
   }
 
-  if (currentSize.height != newHeight) {
+  if (currentSize.height !== newHeight) {
     await appWindow.setSize(new LogicalSize(WINDOW_CONFIG.width, newHeight))
   }
 
+  // Center window
   const monitor = await currentMonitor()
   if (!monitor) return
+  
   const scale = await appWindow.scaleFactor()
-
   const centerX = monitor.position.x + (monitor.size.width - scale * WINDOW_CONFIG.width) / 2
   const centerY = Math.ceil(monitor.position.y + monitor.size.height * 0.4)
   
   await appWindow.setPosition(new PhysicalPosition(centerX, centerY))
 }
 
+// Event handlers
 const handleSearch = () => {
   selectedIndex.value = 0
   nextTick(resizeWindow)
@@ -206,24 +251,9 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// TODO
 const selectItem = (item: SearchItem) => {
   console.log('Selected item:', item)
   hideWindow()
-}
-
-const handleFocus = () => {
-  isFocused.value = true
-}
-
-const handleBlur = () => {
-  isFocused.value = false
-}
-
-const clearSearch = () => {
-  searchQuery.value = ''
-  selectedIndex.value = 0
-  nextTick(resizeWindow)
 }
 
 const hideWindow = async () => {
@@ -233,6 +263,7 @@ const hideWindow = async () => {
   nextTick(resizeWindow)
 }
 
+// Lifecycle
 onMounted(async () => {
   const visible = await appWindow.isVisible()
   if (!visible) {
@@ -257,6 +288,7 @@ onMounted(async () => {
   overflow: hidden;
 }
 
+/* Search Input Styles */
 .search-input-container {
   position: relative;
   padding: 0 12px;
@@ -266,28 +298,21 @@ onMounted(async () => {
   content: '';
   position: absolute;
   bottom: 0;
-  left: 12px;
-  right: 12px;
+  left: 10px;
+  right: 10px;
   height: 2px;
+  border-radius: 1px;
   background-color: #4b9df4;
-  transform: scaleX(0);
-  transition: transform 0.3s ease;
-  transform-origin: center;
-}
-
-.search-input-container:focus-within::after {
-  transform: scaleX(1);
 }
 
 .search-input-wrapper {
   display: flex;
   align-items: center;
   height: 50px;
-  position: relative;
+  gap: 8px;
 }
 
 .search-icon {
-  margin-right: 8px;
   flex-shrink: 0;
 }
 
@@ -302,35 +327,12 @@ onMounted(async () => {
   padding: 0;
 }
 
-.search-input::placeholder {
-  color: var(--n-text-color-disabled);
-}
-
-.clear-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  margin-left: 8px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--n-text-color-disabled);
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.clear-button:hover {
-  background-color: var(--n-fill-color-hover);
-  color: var(--n-text-color);
-}
-
+/* Search Results Styles */
 .search-item {
   width: 100%;
   display: flex;
   align-items: center;
-  transition: all 0.1s ease;
+  transition: background-color 0.1s ease;
   height: 50px;
   position: relative;
   overflow: hidden;
@@ -345,6 +347,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .item-content {
@@ -375,12 +378,12 @@ onMounted(async () => {
 .item-actions {
   height: 100%;
   display: flex;
+  align-items: center;
   transform: translateX(100%);
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease;
   position: absolute;
   right: 0;
   top: 0;
-  align-items: center;
 }
 
 .search-item:hover .item-actions {
@@ -393,6 +396,7 @@ onMounted(async () => {
 
 .item-action-btn {
   width: 38px;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -404,6 +408,7 @@ onMounted(async () => {
   color: #4b9df4;
 }
 
+/* Empty State Styles */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -411,5 +416,6 @@ onMounted(async () => {
   justify-content: center;
   gap: 16px;
   height: 100%;
+  color: var(--n-text-color-disabled);
 }
 </style>
