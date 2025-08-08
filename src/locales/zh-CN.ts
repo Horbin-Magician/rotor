@@ -41,6 +41,8 @@ export default {
     rectangleTool: '矩形工具',
     arrowTool: '箭头工具',
     textTool: '文本工具',
-    undo: '撤销'
+    undo: '撤销',
+    // Searcher
+    search_placeholder: '输入你想要搜索的内容...'
   }
 }
