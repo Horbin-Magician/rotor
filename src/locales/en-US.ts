@@ -41,6 +41,8 @@ export default {
     rectangleTool: 'Rectangle Tool',
     arrowTool: 'Arrow Tool',
     textTool: 'Text Tool',
-    undo: 'Undo'
+    undo: 'Undo',
+    // Searcher
+    search_placeholder: 'Enter the content you want to search...'
   }
 }

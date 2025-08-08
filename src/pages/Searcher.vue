@@ -3,13 +3,13 @@
     <!-- Search Input -->
     <div class="search-input-container">
       <div class="search-input-wrapper">
-        <n-icon size="20" color="#666" class="search-icon">
+        <n-icon size="24" color="#666" class="search-icon">
           <SearchIcon />
         </n-icon>
         <input
           ref="searchInputRef"
           v-model="searchQuery"
-          :placeholder="$t('message.search')"
+          :placeholder="$t('message.search_placeholder')"
           autofocus
           @input="handleSearch"
           @keydown="handleKeydown"
@@ -56,7 +56,7 @@
     <!-- Empty State -->
     <div v-else-if="searchQuery.trim()" class="empty-state">
       <n-icon size="48" color="#ccc">
-        <SearchIcon />
+        <EmptyIcon />
       </n-icon>
       <div>{{ $t('message.search') }} "{{ searchQuery }}" 无结果</div>
     </div>
@@ -74,7 +74,8 @@ import {
   AppsRound as AppIcon,
   SettingsRound as SettingsIcon,
   LaunchRound as LaunchIcon,
-  ContentCopyRound as CopyIcon
+  ContentCopyRound as CopyIcon,
+  InboxOutlined as EmptyIcon
 } from '@vicons/material'
 
 // Types
@@ -97,7 +98,7 @@ type ActionType = 'launch' | 'copy'
 // Constants
 const WINDOW_CONFIG = {
   width: 500,
-  itemHeight: 50,
+  itemHeight: 60,
   inputHeight: 50
 } as const
 
@@ -327,7 +328,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   transition: background-color 0.1s ease;
-  height: 50px;
+  height: 60px;
   position: relative;
   overflow: hidden;
 }
@@ -408,7 +409,7 @@ onMounted(async () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 4px;
   height: 100%;
   color: var(--n-text-color-disabled);
 }
