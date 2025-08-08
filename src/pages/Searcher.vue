@@ -64,9 +64,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { NIcon } from 'naive-ui'
 import { getCurrentWindow, PhysicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window'
+import { listen } from '@tauri-apps/api/event'
 import {
   SearchRound as SearchIcon,
   FolderRound as FolderIcon,
@@ -119,6 +120,7 @@ const appWindow = getCurrentWindow()
 const searchInputRef = ref<HTMLInputElement>()
 const searchQuery = ref('')
 const selectedIndex = ref(0)
+let unlistenBlur: (() => void) | null = null
 
 // Mock data
 const searchResults = ref<SearchItem[]>([
@@ -270,6 +272,19 @@ onMounted(async () => {
     searchInputRef.value?.focus()
     resizeWindow()
   })
+
+  // 监听窗口失去焦点事件
+  unlistenBlur = await listen('tauri://blur', () => {
+    hideWindow()
+  })
+})
+
+onUnmounted(() => {
+  // 清理事件监听器
+  if (unlistenBlur) {
+    unlistenBlur()
+    unlistenBlur = null
+  }
 })
 </script>
 
