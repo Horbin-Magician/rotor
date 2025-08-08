@@ -1,3 +1,5 @@
+mod file_data;
+
 use crate::core::config::AppConfig;
 use crate::module::Module;
 use std::any::Any;
