@@ -1,3 +1,3 @@
-mod default_vol;
+mod default_volume;
 #[cfg(target_os = "windows")]
-mod ntfs_vol;
+mod ntfs_volume;

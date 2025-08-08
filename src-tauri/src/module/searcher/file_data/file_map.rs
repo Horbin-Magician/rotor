@@ -12,7 +12,7 @@ pub struct SearchResultItem {
 }
 
 #[allow(unused)]
-pub struct File {
+pub struct FileView {
     pub parent_index: u64,
     pub file_name: String,
     pub filter: u32,
@@ -28,7 +28,7 @@ pub struct FileKey {
 #[allow(unused)]
 pub struct FileMap {
     pub start_usn: i64,
-    main_map: BTreeMap<FileKey, File>,
+    main_map: BTreeMap<FileKey, FileView>,
     rank_map: HashMap<u64, i8, std::hash::BuildHasherDefault<fxhash::FxHasher>>,
 }
 
@@ -47,12 +47,12 @@ impl FileMap {
     pub fn insert(&mut self, index: u64, file_name: String, parent_index: u64) {
         let filter = make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
-        self.insert_simple(index, File { parent_index, file_name, filter, rank });
+        self.insert_simple(index, FileView { parent_index, file_name, filter, rank });
     }
 
     // insert a file to the database by index and file struct
     #[allow(unused)]
-    fn insert_simple(&mut self, index: u64, file: File) {
+    fn insert_simple(&mut self, index: u64, file: FileView) {
         let key = FileKey {
             rank: file.rank,
             index,
@@ -149,7 +149,7 @@ impl FileMap {
             ptr_index += 4;
             let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into()?);
             ptr_index += 1;
-            self.insert_simple(index, File { parent_index, file_name, filter, rank });
+            self.insert_simple(index, FileView { parent_index, file_name, filter, rank });
         }
 
         Ok(())
@@ -167,7 +167,7 @@ impl FileMap {
     }
 
     // get a File by index
-    fn get(&self, index: &u64) -> Option<&File> {
+    fn get(&self, index: &u64) -> Option<&FileView> {
         if let Some(rank) = self.rank_map.get(index) {
             let file_key = FileKey {
                 rank: *rank,
@@ -178,7 +178,7 @@ impl FileMap {
         None
     }
 
-    fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, File> {
+    fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, FileView> {
         self.main_map.iter()
     }
 
