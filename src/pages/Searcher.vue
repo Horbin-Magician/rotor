@@ -2,27 +2,36 @@
   <div class="searcher-container">
     <!-- Search Input -->
     <div class="search-input-container">
-      <n-input
-        ref="searchInputRef"
-        v-model:value="searchQuery"
-        :placeholder="$t('message.search')"
-        :autofocus="true"
-        size="large"
-        clearable
-        @input="handleSearch"
-        @keydown="handleKeydown"
-        class="search-input"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-      >
-        <template #prefix>
-          <n-icon size="20" color="#666">
-            <SearchIcon />
+      <div class="search-input-wrapper">
+        <n-icon size="20" color="#666" class="search-icon">
+          <SearchIcon />
+        </n-icon>
+        <input
+          ref="searchInputRef"
+          v-model="searchQuery"
+          :placeholder="$t('message.search')"
+          autofocus
+          @input="handleSearch"
+          @keydown="handleKeydown"
+          @focus="handleFocus"
+          @blur="handleBlur"
+          class="search-input"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <button
+          v-if="searchQuery"
+          @click="clearSearch"
+          class="clear-button"
+          type="button"
+        >
+          <n-icon size="16">
+            <component :is="ClearIcon" />
           </n-icon>
-        </template>
-      </n-input>
+        </button>
+      </div>
     </div>
 
     <!-- Search Results -->
@@ -65,7 +74,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { NInput, NIcon } from 'naive-ui'
+import { NIcon } from 'naive-ui'
 import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window'
 import { LogicalSize } from '@tauri-apps/api/window'
 import { currentMonitor } from '@tauri-apps/api/window'
@@ -76,7 +85,8 @@ import {
   AppsRound as AppIcon,
   SettingsRound as SettingsIcon,
   LaunchRound as LaunchIcon,
-  ContentCopyRound as CopyIcon
+  ContentCopyRound as CopyIcon,
+  CloseRound as ClearIcon
 } from '@vicons/material'
 
 // 类型定义
@@ -108,6 +118,7 @@ const appWindow = getCurrentWindow()
 const searchInputRef = ref()
 const searchQuery = ref('')
 const selectedIndex = ref(0)
+const isFocused = ref(false)
 
 const searchResults = ref<SearchItem[]>([
   { id: 1, title: 'Zotero.lnk', subtitle: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\asdasdsdadsadsdadadsdsdadsadsdad', type: 'app', actions: [{ type: 'launch', title: '启动' }, { type: 'copy', title: '复制路径' }] },
@@ -201,6 +212,20 @@ const selectItem = (item: SearchItem) => {
   hideWindow()
 }
 
+const handleFocus = () => {
+  isFocused.value = true
+}
+
+const handleBlur = () => {
+  isFocused.value = false
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  selectedIndex.value = 0
+  nextTick(resizeWindow)
+}
+
 const hideWindow = async () => {
   await appWindow.hide()
   searchQuery.value = ''
@@ -232,9 +257,73 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-.search-input {
+.search-input-container {
+  position: relative;
+  padding: 0 12px;
+}
+
+.search-input-container::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background-color: #4b9df4;
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+  transform-origin: center;
+}
+
+.search-input-container:focus-within::after {
+  transform: scaleX(1);
+}
+
+.search-input-wrapper {
+  display: flex;
+  align-items: center;
   height: 50px;
-  line-height: 50px;
+  position: relative;
+}
+
+.search-icon {
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--n-text-color);
+  padding: 0;
+}
+
+.search-input::placeholder {
+  color: var(--n-text-color-disabled);
+}
+
+.clear-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  margin-left: 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--n-text-color-disabled);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.clear-button:hover {
+  background-color: var(--n-fill-color-hover);
+  color: var(--n-text-color);
 }
 
 .search-item {
