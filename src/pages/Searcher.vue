@@ -265,12 +265,6 @@ const hideWindow = async () => {
 
 // Lifecycle
 onMounted(async () => {
-  const visible = await appWindow.isVisible()
-  if (!visible) {
-    await appWindow.show()
-    await appWindow.setFocus()
-  }
-  
   nextTick(() => {
     searchInputRef.value?.focus()
     resizeWindow()

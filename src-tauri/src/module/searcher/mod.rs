@@ -6,7 +6,6 @@ use std::str::FromStr;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 
-
 pub struct Searcher {
     app_hander: Option<tauri::AppHandle>,
 }
@@ -18,6 +17,7 @@ impl Module for Searcher {
 
     fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
         self.app_hander = Some(app.clone());
+        self.build_window()?;
         Ok(())
     }
 
@@ -31,18 +31,7 @@ impl Module for Searcher {
             window.show()?;
             window.set_focus()?;
         } else {
-            let win_builder = WebviewWindowBuilder::new(
-                app_handle,
-                "searcher",
-                WebviewUrl::App("Searcher".into()),
-            )
-            .always_on_top(true)
-            .resizable(false)
-            .decorations(false)
-            .visible(false)
-            .skip_taskbar(true); // TODO windows only
 
-            let _window = win_builder.build()?;
         }
 
         Ok(())
@@ -73,4 +62,38 @@ impl Searcher {
             app_hander: None,
         })
     }
+
+    fn build_window(&self) -> Result<(), Box<dyn Error>> {
+        if let Some(ref app) = self.app_hander {
+            let mut win_builder = WebviewWindowBuilder::new(
+                app,
+                "searcher",
+                WebviewUrl::App("Searcher".into()),
+            )
+            .always_on_top(true)
+            .resizable(false)
+            .visible(false);
+
+            #[cfg(target_os = "windows")]
+            {
+                win_builder = win_builder
+                    .decorations(false)
+                    .skip_taskbar(true);
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                win_builder = win_builder
+                    .hidden_title(true)
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .traffic_light_position(tauri::LogicalPosition { x: (0), y: (-100) });
+            }
+
+            let _window = win_builder.build()?;
+            Ok(())
+        } else {
+            Err("AppHandle not initialized".into())
+        }
+    }
+
 }
