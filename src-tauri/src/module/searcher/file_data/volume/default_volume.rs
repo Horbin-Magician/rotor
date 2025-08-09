@@ -1,15 +1,17 @@
 use std::{fs, io};
 use std::sync::mpsc;
 use std::error::Error;
+use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::time::SystemTime;
+use walkdir::WalkDir;
 
 #[allow(unused_imports)]
 use crate::util::file_util;
 use super::file_map::{FileMap, SearchResultItem};
 
 pub struct Volume {
-    pub drive: char,
+    pub drive: String,
     file_map: FileMap,
     stop_receiver: mpsc::Receiver<()>,
     last_query: String,
@@ -17,7 +19,7 @@ pub struct Volume {
 }
 
 impl Volume {
-    pub fn new(drive: char, stop_receiver: mpsc::Receiver<()>) -> Volume {
+    pub fn new(drive: String, stop_receiver: mpsc::Receiver<()>) -> Volume {
         Volume {
             drive,
             file_map: FileMap::new(),
@@ -27,79 +29,99 @@ impl Volume {
         }
     }
 
-    // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
+    // Enumerate the filesystem using walkdir. Store the file entries in the database.
     pub fn build_index(&mut self) {
-        #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
-        #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::build_index", self.drive);
 
         self.release_index();
 
-        // let h_vol = Self::open_drive(self.drive);
+        // Build the root path based on the drive letter
+        let root_path = if cfg!(target_os = "windows") {
+            format!("{}:\\", self.drive)
+        } else {
+            // For Unix-like systems, use the drive char as a mount point identifier
+            format!("{}", self.drive)
+        };
 
-        // // Query, Return statistics about the journal on the current volume
-        // let mut cd: u32 = 0;
-        // unsafe { 
-        //     IO::DeviceIoControl(
-        //         h_vol, 
-        //         Ioctl::FSCTL_QUERY_USN_JOURNAL, 
-        //         None, 
-        //         0, 
-        //         Some(&mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0 as *mut c_void), 
-        //         std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>() as u32, 
-        //         Some(&mut cd), 
-        //         None
-        //     ).unwrap_or_else(|e| log::error!("{} Volume::build_index, error: {:?}", self.drive, e));
-        // };
+        // Check if the root path exists
+        if !std::path::Path::new(&root_path).exists() {
+            log::error!("{} Root path {} does not exist, skipping index build", self.drive, root_path);
+            return;
+        }
 
-        // self.file_map.start_usn = self.ujd.NextUsn;
+        // Create a mapping from path to unique index
+        let mut path_to_index: HashMap<String, u64> = HashMap::new();
+        let mut current_index: u64 = 1;
 
-        // // add the root directory
-        // let sz_root = format!("{}:", self.drive);
-        // self.file_map.insert(self.drive_frn, sz_root, 0);
+        // Add the root directory first
+        let root_name = format!("{}:", self.drive);
+        path_to_index.insert(root_path.clone(), 0); // Root has index 0
+        self.file_map.insert(0, root_name, 0); // Root's parent is itself (0)
 
-        // let mut med: Ioctl::MFT_ENUM_DATA_V0 = Ioctl::MFT_ENUM_DATA_V0 {
-        //     StartFileReferenceNumber: 0,
-        //     LowUsn: 0,
-        //     HighUsn: self.ujd.NextUsn,
-        // };
-        // let mut data = [0u64; 0x10000];
-        // let mut cb: u32 = 0;
-        
-        // unsafe{
-        //     while IO::DeviceIoControl(
-        //         h_vol, 
-        //         Ioctl::FSCTL_ENUM_USN_DATA, 
-        //         Some(&med as *const _ as *const c_void), 
-        //         std::mem::size_of::<Ioctl::MFT_ENUM_DATA_V0>() as u32, 
-        //         Some(data.as_mut_ptr() as *mut c_void), 
-        //         std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
-        //         Some(&mut cb as *mut u32), 
-        //         None
-        //     ).is_ok() {
-        //         let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
-        //         let data_end = data.as_ptr() as usize + cb as usize;
+        // Walk the directory tree using walkdir
+        let walker = WalkDir::new(&root_path)
+            .follow_links(false) // don't follow symbolic links to avoid infinite loops
+            .into_iter()
+            .filter_map(|e| e.ok()); // skit no permission
 
-        //         while (record_ptr as usize) < data_end {
-        //             let record = &*record_ptr;
+        for entry in walker {
+            // Check if we should stop (user requested cancellation)
+            if self.stop_receiver.try_recv().is_ok() {
+                log::info!("{} Volume::build_index cancelled by user", self.drive);
+                return;
+            }
 
-        //             let file_name_begin_ptr = (record_ptr as usize + record.FileNameOffset as usize) as *const u16;
-        //             let file_name_length = record.FileNameLength as usize / std::mem::size_of::<u16>();
-        //             let file_name_list = std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
-        //             let file_name = String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
+            let path = entry.path();
+            
+            // Skip the root directory as we already added it
+            if path.to_string_lossy() == root_path {
+                continue;
+            }
 
-        //             self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
-        //             record_ptr = (record_ptr as usize + record.RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
-        //         }
+            // Get the file name
+            let file_name = match entry.file_name().to_str() {
+                Some(name) => name.to_string(),
+                None => {
+                    log::warn!("Invalid UTF-8 filename: {:?}", entry.file_name());
+                    continue;
+                }
+            };
 
-        //         med.StartFileReferenceNumber = data[0];
-        //     }
-        // }
+            // Get parent directory path
+            let parent_path = match path.parent() {
+                Some(parent) => parent.to_string_lossy().to_string(),
+                None => root_path.clone(), // If no parent, use root
+            };
 
-        #[cfg(debug_assertions)]
+            // Get or create parent index
+            let parent_index = if parent_path == root_path {
+                0 // Root directory index
+            } else {
+                // Check if parent index exists
+                match path_to_index.get(&parent_path).copied() {
+                    Some(existing_index) => existing_index,
+                    None => {
+                        // This shouldn't happen with walkdir's traversal order, but handle it gracefully
+                        let new_index = current_index;
+                        current_index += 1;
+                        path_to_index.insert(parent_path.clone(), new_index);
+                        new_index
+                    }
+                }
+            };
+
+            // Assign index to current path
+            let file_index = current_index;
+            current_index += 1;
+            path_to_index.insert(path.to_string_lossy().to_string(), file_index);
+
+            // Insert into file map
+            self.file_map.insert(file_index, file_name, parent_index);
+        }
+
         log::info!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis());
-        
+
         self.serialization_write()
             .unwrap_or_else(|e| log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e));
     }
@@ -154,68 +176,15 @@ impl Volume {
         let _ = sender.send(result);
     }
 
-    // update index, add new file, remove deleted file
+    // update index, add new file, remove deleted file TODO
     pub fn update_index(&mut self) {
-        // #[cfg(debug_assertions)]
-        // log::info!("{} Begin Volume::update_index", self.drive);
+        #[cfg(debug_assertions)]
+        log::info!("{} Begin Volume::update_index", self.drive);
 
-        // if self.file_map.is_empty() { 
-        //     self.serialization_read()
-        //         .unwrap_or_else(|e: Box<dyn Error>| {
-        //             log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
-        //             self.build_index();
-        //         });
-        // };
+        // TODO
 
-        // let mut data = [0i64; 0x10000];
-        // let mut cb: u32 = 0;
-        // let mut rujd: Ioctl::READ_USN_JOURNAL_DATA_V0 = Ioctl::READ_USN_JOURNAL_DATA_V0 {
-        //         StartUsn: self.file_map.start_usn,
-        //         ReasonMask: Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_NEW_NAME | Ioctl::USN_REASON_RENAME_OLD_NAME,
-        //         ReturnOnlyOnClose: 0,
-        //         Timeout: 0,
-        //         BytesToWaitFor: 0,
-        //         UsnJournalID: self.ujd.UsnJournalID,
-        // };
-
-        // let h_vol = Self::open_drive(self.drive);
-
-        // unsafe{
-        //     while IO::DeviceIoControl(
-        //         h_vol, 
-        //         Ioctl::FSCTL_READ_USN_JOURNAL, 
-        //         Some(&rujd as *const _ as *const c_void),
-        //         std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>() as u32, 
-        //         Some(data.as_mut_ptr() as *mut c_void), 
-        //         std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32, 
-        //         Some(&mut cb as *mut u32), 
-        //         None
-        //     ).is_ok() {
-        //         if cb == 8 { break };
-        //         let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
-        //         let data_end = data.as_ptr() as usize + cb as usize;
-                
-        //         while (record_ptr as usize) < data_end {
-        //             let record = &*record_ptr;
-        //             let file_name_begin_ptr = (record_ptr as usize + record.FileNameOffset as usize) as *const u16;
-        //             let file_name_length = record.FileNameLength as usize / std::mem::size_of::<u16>();
-        //             let file_name_list = std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
-        //             let file_name = String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
-                    
-        //             if record.Reason & (Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_RENAME_NEW_NAME) != 0 {
-        //                 self.file_map.insert(record.FileReferenceNumber, file_name, record.ParentFileReferenceNumber);
-        //             } else { // Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_OLD_NAME
-        //                 self.file_map.remove(&record.FileReferenceNumber);
-        //             }
-
-        //             record_ptr = (record_ptr as usize + record.RecordLength as usize) as *mut Ioctl::USN_RECORD_V2;
-        //         }
-                
-        //         rujd.StartUsn = data[0];
-        //     }
-        // }
-        // self.file_map.start_usn = rujd.StartUsn;
-        // Self::close_drive(h_vol);
+        #[cfg(debug_assertions)]
+        log::info!("{} End Volume::update_index", self.drive);
     }
 
     // serializate file_map to reduce memory usage
@@ -230,8 +199,8 @@ impl Volume {
         let file_path = file_util::get_userdata_path();
         if let Some(file_path) = file_path {
             if !file_path.exists() { fs::create_dir(&file_path)?; }
-            let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), self.drive);
-
+            let safe_drive = self.drive[1..].replace("/", "_");
+            let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
             self.file_map.save(&file_name)?;
         }
 
@@ -252,7 +221,8 @@ impl Volume {
         
         let file_path = file_util::get_userdata_path();
         if let Some(file_path) = file_path {
-            let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), self.drive);
+            let safe_drive = self.drive[1..].replace("/", "_");
+            let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
             self.file_map.read(&file_name)?;
         }
 
