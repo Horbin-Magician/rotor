@@ -1,11 +1,12 @@
 mod file_data;
 
+use crate::core::application::Application;
 use crate::core::config::AppConfig;
 use crate::module::Module;
 use std::{any::Any, sync::mpsc};
 use std::error::Error;
 use std::str::FromStr;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 
 use file_data::{FileData, SearcherMessage, SearchResultItem};
@@ -108,20 +109,18 @@ impl Searcher {
         }
     }
 
-    fn find(&self, filename: String) {
+    pub fn find(&self, filename: String) {
         let _ = self.searcher_msg_sender.send(SearcherMessage::Find(filename));
     }
 
-    fn release(&self, filename: String) {
+    pub fn release(&self) {
         let _ = self.searcher_msg_sender.send(SearcherMessage::Release);
     }
 
-    fn update_result_model(filename: String, update_result: Vec<SearchResultItem>, increment_find: bool) {
-        for result in update_result {
-            println!("{:?}", result.file_name);
+    fn update_result_model(filename: String, update_result: Vec<SearchResultItem>) {
+        let app = Application::global().lock().unwrap();
+        if let Some(app_handle) = &app.app {
+            app_handle.emit_to("searcher","update-result", (filename, update_result)).unwrap();
         }
-        // if let Some(app_handle) = &self.app_hander {
-        //     app_handle.emit("searcher-update-result", reply).unwrap();
-        // }
     }
 }
