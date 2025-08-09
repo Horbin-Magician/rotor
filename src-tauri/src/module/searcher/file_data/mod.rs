@@ -159,42 +159,6 @@ impl FileData {
         for result in update_result {
             println!("{:?}", result.file_name);
         }
-        // self.search_win.clone().upgrade_in_event_loop(move |search_win| {
-        //     if search_win.get_query() != filename {return;}
-
-        //     let mut result_list = Vec::new();
-        //     for (id, item) in update_result.into_iter().enumerate() {
-        //         let icon = 
-        //             file_util::get_icon((item.path.clone() + item.file_name.as_str()).as_str())
-        //                 .unwrap_or_default();
-
-        //         let mut result_type = SearchResultType::File;
-        //         let mut showname = slint::SharedString::from(item.file_name.clone());
-        //         if let Some(stripped) = item.file_name.strip_suffix(".lnk") {
-        //             result_type = SearchResultType::Application;
-        //             showname = slint::SharedString::from(stripped);
-        //         }
-
-        //         result_list.push(
-        //             SearchResult_slint { 
-        //                 id: id as i32,
-        //                 icon,
-        //                 showname,
-        //                 filename: slint::SharedString::from(item.file_name.clone()),
-        //                 path: slint::SharedString::from(item.path.clone()),
-        //                 result_type,
-        //             }
-        //         );
-        //     }
-
-        //     if let Some(search_result_model) = search_win.get_search_result().as_any().downcast_ref::<VecModel<SearchResult_slint>>() {
-        //         search_result_model.set_vec(result_list);
-        //         if !increment_find {
-        //             search_win.set_viewport_y(0.);
-        //             search_win.set_active_id(0);
-        //         }
-        //     }
-        // }).unwrap_or_else(|e| log::error!("update_result_model: {}", e));
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
