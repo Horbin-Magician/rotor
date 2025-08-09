@@ -7,8 +7,8 @@ use std::collections::VecDeque;
 use windows::Win32::Storage::FileSystem;
 use windows::Win32::Foundation;
 
-use crate::util::file_util;
-use volume::{ntfs_volume::Volume, file_map::SearchResultItem};
+use volume::ntfs_volume::Volume;
+pub use volume::file_map::SearchResultItem;
 
 pub enum SearcherMessage {
     Init,
@@ -43,10 +43,14 @@ pub struct FileData {
     state: FileState,
     show_num: usize,
     batch: u8,
+    find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>, bool) + Send>,
 }
 
 impl FileData {
-    pub fn new() -> FileData {
+    pub fn new<F>(find_result_callback: F) -> FileData
+    where 
+        F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
+    {
         FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
@@ -56,6 +60,7 @@ impl FileData {
             state: FileState::Unbuild,
             show_num: 20,
             batch: 20,
+            find_result_callback: Box::new(find_result_callback),
         }
     }
 
@@ -155,10 +160,8 @@ impl FileData {
         self.vols.len() as u8
     }
 
-    fn update_result_model(&mut self, filename: String, update_result: Vec<SearchResultItem>, increment_find: bool) {
-        for result in update_result {
-            println!("{:?}", result.file_name);
-        }
+    fn find_result(&mut self, filename: String, update_result: Vec<SearchResultItem>, increment_find: bool) {
+        (self.find_result_callback)(filename, update_result, increment_find);
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
@@ -171,7 +174,7 @@ impl FileData {
 
             if self.finding_result.items.len() > self.show_num {
                 let return_result = self.finding_result.items[..self.show_num].to_vec();
-                self.update_result_model(filename, return_result, increment_find);
+                self.find_result(filename, return_result, increment_find);
                 return reply;
             }
         } else { 
@@ -217,7 +220,7 @@ impl FileData {
                     let return_result = 
                         if self.finding_result.items.len() > self.show_num { self.finding_result.items[..self.show_num].to_vec() }
                         else { self.finding_result.items.to_vec() };
-                    self.update_result_model(filename, return_result, increment_find);
+                    self.find_result(filename, return_result, increment_find);
                 }
                 break;
             }
