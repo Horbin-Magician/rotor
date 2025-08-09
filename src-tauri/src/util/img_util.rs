@@ -2,7 +2,7 @@ use image::{self, imageops::resize, DynamicImage, RgbaImage};
 use imageproc::{contours, edges};
 // use rust_paddle_ocr::{Det, Rec};
 
-use crate::util::file_util;
+// use crate::util::file_util;
 
 // return all rect in the image, (x, y, width, height)
 #[allow(dead_code)]

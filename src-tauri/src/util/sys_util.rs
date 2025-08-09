@@ -13,7 +13,10 @@ mod win_imports {
     pub use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
     };
+    pub use windows::Win32::Storage::FileSystem;
     pub use windows::Win32::Foundation::HWND;
+    pub use windows::Win32::Foundation;
+    use std::ffi::{CStr, CString};
 //     pub use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 //     pub use windows::Win32::UI::Shell::ShellExecuteW;
 //     pub use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -76,6 +79,34 @@ use win_imports::*;
 //     return locale_name;
 // }
 
+// Check whether the disk represented by a drive letter is in ntfs format
+#[cfg(target_os = "windows")]
+fn is_ntfs(vol: char) -> bool {
+    if let Ok(root_path_name) = CString::new(format!("{}:\\", vol)) {
+        let mut volume_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
+        let mut volume_serial_number: u32 = 0;
+        let mut maximum_component_length: u32 = 0;
+        let mut file_system_flags: u32 = 0;
+        let mut file_system_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
+
+        unsafe {
+            if FileSystem::GetVolumeInformationA(
+                    windows::core::PCSTR(root_path_name.as_ptr() as *const u8),
+                    Some(&mut volume_name_buffer),
+                    Some(&mut volume_serial_number),
+                    Some(&mut maximum_component_length),
+                    Some(&mut file_system_flags),
+                    Some(&mut file_system_name_buffer),
+                ).is_ok() {
+
+                let result = CStr::from_ptr(file_system_name_buffer.as_ptr() as *const i8);
+                return result.to_string_lossy() == "NTFS";
+            }
+        }
+    }
+    false
+}
+
 // #[cfg(target_os = "windows")]
 // pub fn enable_window(window: &slint::Window, enable: bool) {
 //     window.with_winit_window(|winit_win: &i_slint_backend_winit::winit::window::Window| {
@@ -119,8 +150,6 @@ pub fn forbid_window_animation(handle: HWND) {
 }
 
 // use directories::ProjectDirs;
-// #[cfg(windows)]
-// use std::ffi::CString;
 
 // extern crate chrono;
 // use chrono::Local;
