@@ -118,6 +118,7 @@ impl Searcher {
     }
 
     fn update_result_model(filename: String, update_result: Vec<SearchResultItem>) {
+        log::info!("update searcher result model");
         let app = Application::global().lock().unwrap();
         if let Some(app_handle) = &app.app {
             app_handle.emit_to("searcher","update-result", (filename, update_result)).unwrap();
