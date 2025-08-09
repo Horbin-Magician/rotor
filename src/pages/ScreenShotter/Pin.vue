@@ -274,7 +274,7 @@ function parseShortcutKey(shortcutStr: string): string {
 // Load the screenshot
 async function loadScreenShot() {
   const pos = await appWindow.outerPosition();
-  const size = await appWindow.outerSize();
+  const size = await appWindow.innerSize();
   const imgBuf: ArrayBuffer = await invoke("get_screen_img_rect", {
     x: pos.x.toString(),
     y: pos.y.toString(),
