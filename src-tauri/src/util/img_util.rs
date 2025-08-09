@@ -41,33 +41,22 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     
     for contour in contours {
         // Early filtering
-        if contour.border_type == imageproc::contours::BorderType::Hole {
-            continue;
-        }
+        if contour.border_type == imageproc::contours::BorderType::Hole { continue; }
 
         let points = &contour.points;
-        if points.len() < 4 {
-            continue;
-        }
+        if points.len() < 4 { continue; }
 
         // Use iterator for finding bounds - more efficient
         let (rect_left, rect_right, rect_top, rect_bottom) = points.iter()
             .fold((u32::MAX, 0, u32::MAX, 0), |(min_x, max_x, min_y, max_y), point| {
-                (
-                    min_x.min(point.x),
-                    max_x.max(point.x),
-                    min_y.min(point.y),
-                    max_y.max(point.y)
-                )
+                (min_x.min(point.x),max_x.max(point.x), min_y.min(point.y), max_y.max(point.y))
             });
 
         let width = rect_right - rect_left;
         let height = rect_bottom - rect_top;
         
         // Early size filtering
-        if height < min_size || width < min_size {
-            continue;
-        }
+        if height < min_size || width < min_size { continue; }
 
         res_rects.push((
             rect_left * scale_u32,
