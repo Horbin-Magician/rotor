@@ -21,10 +21,10 @@
     </div>
 
     <!-- Search Results -->
-    <div v-if="displayItems.length > 0" class="search-results">
+    <div v-if="searchResults.length > 0" class="search-results">
       <div
-        v-for="(item, index) in displayItems"
-        :key="item.id"
+        v-for="(item, index) in searchResults"
+        :key="index"
         :class="['search-item', { selected: selectedIndex === index }]"
         @click="selectItem(item)"
         @mouseenter="selectedIndex = index"
@@ -64,20 +64,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { NIcon } from 'naive-ui'
 import { getCurrentWindow, PhysicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window'
-import { listen } from '@tauri-apps/api/event'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import {
   SearchRound as SearchIcon,
   FolderRound as FolderIcon,
   InsertDriveFileRound as FileIcon,
   AppsRound as AppIcon,
   SettingsRound as SettingsIcon,
-  LaunchRound as LaunchIcon,
-  ContentCopyRound as CopyIcon,
-  InboxOutlined as EmptyIcon
+  AdminPanelSettingsFilled as OpenAsAdminIcon,
+  FolderCopyRound as OpenFolderIcon,
+  InboxOutlined as EmptyIcon,
+  ErrorFilled as ErrorIcon,
 } from '@vicons/material'
+import { invoke } from '@tauri-apps/api/core'
 
 // Types
 interface Action {
@@ -86,7 +88,6 @@ interface Action {
 }
 
 interface SearchItem {
-  id: number
   title: string
   subtitle: string
   type: string
@@ -94,7 +95,7 @@ interface SearchItem {
 }
 
 type ItemType = 'app' | 'folder' | 'file' | 'settings'
-type ActionType = 'launch' | 'copy'
+type ActionType = 'OpenAsAdmin' | 'OpenFolder'
 
 // Constants
 const WINDOW_CONFIG = {
@@ -111,8 +112,8 @@ const ICON_MAP: Record<ItemType, any> = {
 } as const
 
 const ACTION_ICONS: Record<ActionType, any> = {
-  launch: LaunchIcon,
-  copy: CopyIcon
+  OpenAsAdmin: OpenAsAdminIcon,
+  OpenFolder: OpenFolderIcon
 } as const
 
 // State
@@ -125,77 +126,19 @@ let unlistenBlur: (() => void) | null = null
 // Mock data
 const searchResults = ref<SearchItem[]>([
   {
-    id: 1,
     title: 'Zotero.lnk',
     subtitle: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Zotero',
     type: 'app',
     actions: [
-      { type: 'launch', title: '启动' },
-      { type: 'copy', title: '复制路径' }
+      { type: 'OpenAsAdmin', title: '管理员权限运行' },
+      { type: 'OpenFolder', title: '打开路径' }
     ]
-  },
-  {
-    id: 2,
-    title: 'zotero.exe',
-    subtitle: 'D:\\Zotero\\',
-    type: 'app',
-    actions: [
-      { type: 'launch', title: '启动' },
-      { type: 'copy', title: '复制路径' }
-    ]
-  },
-  {
-    id: 3,
-    title: 'Zotero',
-    subtitle: 'C:\\Users\\22400\\AppData\\Local\\Zotero\\',
-    type: 'folder',
-    actions: [
-      { type: 'launch', title: '打开' },
-      { type: 'copy', title: '复制路径' }
-    ]
-  },
-  {
-    id: 4,
-    title: 'project-report.pdf',
-    subtitle: 'C:\\Users\\Documents\\',
-    type: 'file',
-    actions: [
-      { type: 'launch', title: '打开' },
-      { type: 'copy', title: '复制路径' }
-    ]
-  },
-  {
-    id: 5,
-    title: 'Visual Studio Code',
-    subtitle: 'Microsoft Corporation',
-    type: 'app',
-    actions: [{ type: 'launch', title: '启动' }]
-  },
-  {
-    id: 6,
-    title: 'Chrome',
-    subtitle: 'Google LLC',
-    type: 'app',
-    actions: [{ type: 'launch', title: '启动' }]
   }
 ])
 
-// Computed
-const displayItems = computed(() => {
-  if (!searchQuery.value.trim()) return []
-  
-  const query = searchQuery.value.toLowerCase()
-  return searchResults.value
-    .filter(item => 
-      item.title.toLowerCase().includes(query) || 
-      item.subtitle.toLowerCase().includes(query)
-    )
-    .slice(0, 8)
-})
-
 // Utils
-const getIcon = (type: string) => ICON_MAP[type as ItemType] || FileIcon
-const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || LaunchIcon
+const getIcon = (type: string) => ICON_MAP[type as ItemType] || ErrorIcon
+const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || ErrorIcon
 
 // Window management
 const resizeWindow = async () => {
@@ -203,8 +146,8 @@ const resizeWindow = async () => {
   let newHeight = WINDOW_CONFIG.inputHeight
 
   if (searchQuery.value.trim()) {
-    newHeight += displayItems.value.length > 0 
-      ? displayItems.value.length * WINDOW_CONFIG.itemHeight 
+    newHeight += searchResults.value.length > 0 
+      ? searchResults.value.length * WINDOW_CONFIG.itemHeight 
       : 120
   }
 
@@ -230,7 +173,7 @@ const handleSearch = () => {
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
-  const maxIndex = displayItems.value.length - 1
+  const maxIndex = searchResults.value.length - 1
   
   switch (event.key) {
     case 'ArrowDown':
@@ -243,8 +186,8 @@ const handleKeydown = (event: KeyboardEvent) => {
       break
     case 'Enter':
       event.preventDefault()
-      if (displayItems.value[selectedIndex.value]) {
-        selectItem(displayItems.value[selectedIndex.value])
+      if (searchResults.value[selectedIndex.value]) {
+        selectItem(searchResults.value[selectedIndex.value])
       }
       break
     case 'Escape':
@@ -263,8 +206,22 @@ const hideWindow = async () => {
   await appWindow.hide()
   searchQuery.value = ''
   selectedIndex.value = 0
+  invoke("searcher_release")
   nextTick(resizeWindow)
 }
+
+watch(searchQuery, (newVal, _oldVal) => {
+  searchResults.value = []
+  invoke("searcher_find", { query: newVal });
+});
+
+let unlisten_update_result: UnlistenFn;
+interface SearchResultItem {
+  path: string;
+  file_name: string;
+  rank: number;
+}
+type UpdateResultPayload = [string, SearchResultItem[]];
 
 // Lifecycle
 onMounted(async () => {
@@ -277,6 +234,24 @@ onMounted(async () => {
   unlistenBlur = await listen('tauri://blur', () => {
     hideWindow()
   })
+
+  unlisten_update_result = await appWindow.listen<UpdateResultPayload>('update-result', async (event) => {
+    const [filename, getSearchResults] = event.payload;
+    if (filename !== searchQuery.value) return;
+
+    searchResults.value = searchResults.value.concat(
+      getSearchResults.map((item, _index) => ({
+        title: item.file_name,
+        subtitle: item.path,
+        type: 'file',
+        actions: [
+          { type: 'OpenAsAdmin', title: '管理员权限运行' },
+          { type: 'OpenFolder', title: '打开路径' }
+        ]
+      }))
+    );
+    nextTick(resizeWindow)
+  });
 })
 
 onUnmounted(() => {
@@ -285,6 +260,8 @@ onUnmounted(() => {
     unlistenBlur()
     unlistenBlur = null
   }
+
+  if(unlisten_update_result) { unlisten_update_result() }
 })
 </script>
 
