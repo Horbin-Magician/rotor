@@ -1,13 +1,14 @@
 mod volume;
 
-use std::ffi::{CStr, CString};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::collections::VecDeque;
-use windows::Win32::Storage::FileSystem;
-use windows::Win32::Foundation;
 
+#[cfg(target_os = "windows")]
 use volume::ntfs_volume::Volume;
+#[cfg(target_os = "macos")]
+use volume::default_volume::Volume;
+
 pub use volume::file_map::SearchResultItem;
 
 pub enum SearcherMessage {
@@ -113,33 +114,8 @@ impl FileData {
         });
     }
 
-    // Check whether the disk represented by a drive letter is in ntfs format
-    fn is_ntfs(vol: char) -> bool {
-        if let Ok(root_path_name) = CString::new(format!("{}:\\", vol)) {
-            let mut volume_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
-            let mut volume_serial_number: u32 = 0;
-            let mut maximum_component_length: u32 = 0;
-            let mut file_system_flags: u32 = 0;
-            let mut file_system_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
-    
-            unsafe {
-                if FileSystem::GetVolumeInformationA(
-                        windows::core::PCSTR(root_path_name.as_ptr() as *const u8),
-                        Some(&mut volume_name_buffer),
-                        Some(&mut volume_serial_number),
-                        Some(&mut maximum_component_length),
-                        Some(&mut file_system_flags),
-                        Some(&mut file_system_name_buffer),
-                    ).is_ok() {
-    
-                    let result = CStr::from_ptr(file_system_name_buffer.as_ptr() as *const i8);
-                    return result.to_string_lossy() == "NTFS";
-                }
-            }
-        }
-        false
-    }
 
+    #[cfg(target_os = "windows")]
     fn update_valid_vols(&mut self) -> u8 {
         let mut bit_mask = unsafe { FileSystem::GetLogicalDrives() };
         self.vols.clear();
@@ -228,6 +204,7 @@ impl FileData {
 
     pub fn init_volumes(&mut self) {
         self.volume_packs.clear();
+        #[cfg(target_os = "windows")]
         self.update_valid_vols();
 
         let handles = self.vols.iter().map(|&c| {
@@ -252,6 +229,7 @@ impl FileData {
     }
 
     pub fn update_index(&mut self) {
+        #[cfg(target_os = "windows")]
         self.update_valid_vols();
 
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
@@ -272,6 +250,7 @@ impl FileData {
     }
 
     pub fn release_index(&mut self) {
+        #[cfg(target_os = "windows")]
         self.update_valid_vols();
         
         self.finding_name = String::new();
