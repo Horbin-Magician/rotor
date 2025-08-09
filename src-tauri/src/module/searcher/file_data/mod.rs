@@ -43,13 +43,13 @@ pub struct FileData {
     state: FileState,
     show_num: usize,
     batch: u8,
-    find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>, bool) + Send>,
+    find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>) + Send>,
 }
 
 impl FileData {
     pub fn new<F>(find_result_callback: F) -> FileData
     where 
-        F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
+        F: Fn(String, Vec<SearchResultItem>) + Send + 'static,
     {
         FileData {
             vols: Vec::new(),
@@ -160,21 +160,19 @@ impl FileData {
         self.vols.len() as u8
     }
 
-    fn find_result(&mut self, filename: String, update_result: Vec<SearchResultItem>, increment_find: bool) {
-        (self.find_result_callback)(filename, update_result, increment_find);
+    fn find_result(&mut self, filename: String, update_result: Vec<SearchResultItem>) {
+        (self.find_result_callback)(filename, update_result);
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
         let mut reply: Option<SearcherMessage> = None;
-        let mut increment_find = false;
 
         if self.finding_name == filename { 
-            increment_find = true;
             self.show_num += self.batch as usize;
 
             if self.finding_result.items.len() > self.show_num {
                 let return_result = self.finding_result.items[..self.show_num].to_vec();
-                self.find_result(filename, return_result, increment_find);
+                self.find_result(filename, return_result);
                 return reply;
             }
         } else { 
@@ -220,7 +218,7 @@ impl FileData {
                     let return_result = 
                         if self.finding_result.items.len() > self.show_num { self.finding_result.items[..self.show_num].to_vec() }
                         else { self.finding_result.items.to_vec() };
-                    self.find_result(filename, return_result, increment_find);
+                    self.find_result(filename, return_result);
                 }
                 break;
             }

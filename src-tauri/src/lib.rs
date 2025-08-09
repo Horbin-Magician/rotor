@@ -6,7 +6,7 @@ mod util;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 
-use command::{config_cmd, screen_shotter_cmd};
+use command::{config_cmd, screen_shotter_cmd, searcher_cmd};
 use core::application;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,6 +29,8 @@ pub fn run() {
             screen_shotter_cmd::save_img,
             screen_shotter_cmd::get_screen_rects,
             screen_shotter_cmd::close_cache_pin,
+            searcher_cmd::searcher_find,
+            searcher_cmd::searcher_release,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use std::fs;
 use std::sync::mpsc::Receiver;
 
-#[allow(unused)]
+#[derive(serde::Serialize)]
 pub struct SearchResultItem {
     pub path: String,
     pub file_name: String,
