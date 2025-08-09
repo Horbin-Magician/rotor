@@ -8,7 +8,7 @@ use std::str::FromStr;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 
-use file_data::{FileData, SearcherMessage};
+use file_data::{FileData, SearcherMessage, SearchResultItem};
 
 pub struct Searcher {
     app_hander: Option<tauri::AppHandle>,
@@ -64,7 +64,8 @@ impl Module for Searcher {
 impl Searcher {
     pub fn new() -> Result<Searcher, Box<dyn Error>> {
         let (searcher_msg_sender, searcher_msg_receiver) = mpsc::channel::<SearcherMessage>();
-        let _file_data = FileData::new();
+
+        let _file_data = FileData::new(Searcher::update_result_model);
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Init);
 
@@ -107,4 +108,20 @@ impl Searcher {
         }
     }
 
+    fn find(&self, filename: String) {
+        let _ = self.searcher_msg_sender.send(SearcherMessage::Find(filename));
+    }
+
+    fn release(&self, filename: String) {
+        let _ = self.searcher_msg_sender.send(SearcherMessage::Release);
+    }
+
+    fn update_result_model(filename: String, update_result: Vec<SearchResultItem>, increment_find: bool) {
+        for result in update_result {
+            println!("{:?}", result.file_name);
+        }
+        // if let Some(app_handle) = &self.app_hander {
+        //     app_handle.emit("searcher-update-result", reply).unwrap();
+        // }
+    }
 }
