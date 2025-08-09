@@ -36,7 +36,7 @@ pub struct SearchResult {
 }
 
 pub struct FileData {
-    vols: Vec<char>,
+    vols: Vec<String>,
     finding_name: String,
     finding_result: SearchResult,
     waiting_finder: u8,
@@ -115,25 +115,38 @@ impl FileData {
     }
 
 
-    #[cfg(target_os = "windows")]
+    
     fn update_valid_vols(&mut self) -> u8 {
-        let mut bit_mask = unsafe { FileSystem::GetLogicalDrives() };
-        self.vols.clear();
-        let mut vol = 'A';
-        while bit_mask != 0 {
-            if bit_mask & 0x1 != 0 && Self::is_ntfs(vol) { self.vols.push(vol); }
-            vol = (vol as u8 + 1) as char;
-            bit_mask >>= 1;
-        }
-
-        self.volume_packs.retain(|volume_pack| {
-            if let Ok(volume)  = volume_pack.volume.lock() {
-                return self.vols.contains(&volume.drive);
+        #[cfg(target_os = "windows")]
+        {
+            let mut bit_mask = unsafe { FileSystem::GetLogicalDrives() };
+            self.vols.clear();
+            let mut vol = 'A';
+            while bit_mask != 0 {
+                if bit_mask & 0x1 != 0 && Self::is_ntfs(vol) { self.vols.push(vol); }
+                vol = (vol as u8 + 1) as char;
+                bit_mask >>= 1;
             }
-            false
-        });
 
-        self.vols.len() as u8
+            self.volume_packs.retain(|volume_pack| {
+                if let Ok(volume)  = volume_pack.volume.lock() {
+                    return self.vols.contains(&volume.drive);
+                }
+                false
+            });
+
+            self.vols.len() as u8
+        }
+        #[cfg(target_os = "macos")]
+        {
+            self.vols.clear();
+
+            let home = std::env::var("HOME").unwrap();
+            println!("{}", &home);
+            self.vols.push(home);
+
+            self.vols.len() as u8
+        }
     }
 
     fn find_result(&mut self, filename: String, update_result: Vec<SearchResultItem>) {
@@ -204,12 +217,11 @@ impl FileData {
 
     pub fn init_volumes(&mut self) {
         self.volume_packs.clear();
-        #[cfg(target_os = "windows")]
         self.update_valid_vols();
 
-        let handles = self.vols.iter().map(|&c| {
+        let handles = self.vols.iter().map(|c| {
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
-            let volume = Arc::new(Mutex::new(Volume::new(c, stop_receiver)));
+            let volume = Arc::new(Mutex::new(Volume::new(c.clone(), stop_receiver)));
             
             self.volume_packs.push(VolumePack { volume: volume.clone(), stop_sender });
 
@@ -229,7 +241,6 @@ impl FileData {
     }
 
     pub fn update_index(&mut self) {
-        #[cfg(target_os = "windows")]
         self.update_valid_vols();
 
         let handles = self.volume_packs.iter().map(|VolumePack{volume, ..}| {
@@ -250,7 +261,6 @@ impl FileData {
     }
 
     pub fn release_index(&mut self) {
-        #[cfg(target_os = "windows")]
         self.update_valid_vols();
         
         self.finding_name = String::new();
