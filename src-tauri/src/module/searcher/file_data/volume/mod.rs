@@ -1,3 +1,5 @@
-mod default_volume;
+pub mod file_map;
+
+pub mod default_volume;
 #[cfg(target_os = "windows")]
-mod ntfs_volume;
+pub mod ntfs_volume;
