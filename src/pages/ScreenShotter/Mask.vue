@@ -51,7 +51,7 @@ const windowHeight = window.screen.height
 const bacImgWidth = windowWidth * window.devicePixelRatio
 const bacImgHeight = windowHeight * window.devicePixelRatio
 
-let rects: [[number, number, number, number, number]];
+let rects: [number, number, number, number, number][] = [];
 
 // Selection state
 const isSelecting = ref(false)
@@ -349,7 +349,6 @@ onBeforeUnmount(() => {
 // Load the screenshot
 async function initializeScreenshot() {
   const imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
-  rects = await invoke("get_screen_rects", {label: appWindow.label})
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
   backImgBitmap.value = await createImageBitmap(imgData)
@@ -379,6 +378,7 @@ function hideWindow() {
   currentY.value = -999
   autoSelectRect.value = null
   pixelColor.value = '#ffffff'
+  rects = []
 }
 
 // Load the rects

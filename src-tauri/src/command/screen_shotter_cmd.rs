@@ -4,7 +4,7 @@ use image::imageops::crop_imm;
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
 use crate::module::screen_shotter::ScreenShotter;
-use crate::util::sys_util;
+use crate::util::{img_util, sys_util};
 
 #[tauri::command]
 pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
@@ -26,10 +26,11 @@ pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
 }
 
 #[tauri::command]
-pub async fn get_screen_rects(_label: String, window: tauri::WebviewWindow) -> Vec<(i32, i32, i32, u32, u32)> {
+pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Vec<(i32, i32, i32, u32, u32)> {
     let monitor = window.current_monitor().unwrap().unwrap();
-    let mon_pos: tauri::LogicalPosition<i32> = monitor.position().to_logical(monitor.scale_factor());
-    let mon_size: tauri::LogicalSize<i32> = monitor.size().to_logical(monitor.scale_factor());
+    let scale_factor = monitor.scale_factor();
+    let mon_pos: tauri::LogicalPosition<i32> = monitor.position().to_logical(scale_factor);
+    let mon_size: tauri::LogicalSize<i32> = monitor.size().to_logical(scale_factor);
 
     let raw_rects = sys_util::get_all_window_rect().unwrap();
     let mut rects = Vec::new();
@@ -67,29 +68,28 @@ pub async fn get_screen_rects(_label: String, window: tauri::WebviewWindow) -> V
         }
     }
 
-    // let masks_arc = {
-    //     let mut app = Application::global().lock().unwrap();
-    //     app.get_module("screenshot")
-    //         .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-    //         .map(|screenshot| screenshot.masks.clone())
-    // };
+    let masks_arc = {
+        let mut app = Application::global().lock().unwrap();
+        app.get_module("screenshot")
+            .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+            .map(|screenshot| screenshot.masks.clone())
+    };
 
-    // let image = if let Some(masks_arc) = masks_arc {
-    //     let masks = masks_arc.lock().await;
-    //     masks.get(&label).cloned()
-    // } else {
-    //     None
-    // };
+    let image = if let Some(masks_arc) = masks_arc {
+        let masks = masks_arc.lock().await;
+        masks.get(&label).cloned()
+    } else {
+        None
+    };
 
-    // let scale_factor = window.scale_factor().unwrap();
-    // if let Some(image) = image {
-    //     let rects2 = img_util::detect_rect(&image);
-    //     for rect in rects2 {
-    //         let x = (rect.0 as f64 / scale_factor) as i32 + window.outer_position().unwrap().x;
-    //         let y = (rect.1 as f64 / scale_factor) as i32 + window.outer_position().unwrap().y;
-    //         rects.push((x, y, -1, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
-    //     }
-    // }
+    if let Some(image) = image {
+        let rects2 = img_util::detect_rect(&image);
+        for rect in rects2 {
+            let x = (rect.0 as f64 / scale_factor) as i32 + mon_pos.x;
+            let y = (rect.1 as f64 / scale_factor) as i32 + mon_pos.y;
+            rects.push((x, y, -1, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
+        }
+    }
 
     rects
 }
