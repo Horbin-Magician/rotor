@@ -89,7 +89,7 @@ impl FileMap {
 
     // remove item
     #[allow(unused)]
-    pub fn remove(&mut self, index: &u64) {
+    pub fn remove(&mut self, index: &u64) {  // TODO change
         if self.rank_map.contains_key(index) {
             let file_key = FileKey {
                 rank: self.rank_map[index],
@@ -201,7 +201,7 @@ impl FileMap {
 
     // get a File by index
     #[allow(unused)]
-    fn get(&self, index: &u64) -> Option<&FileView> {
+    fn get(&self, index: &u64) -> Option<&FileView> { // TODO change
         if let Some(rank) = self.rank_map.get(index) {
             let file_key = FileKey {
                 rank: *rank,
