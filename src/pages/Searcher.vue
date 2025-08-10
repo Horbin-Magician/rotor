@@ -261,6 +261,10 @@ onMounted(async () => {
     hideWindow()
   })
 
+  unlistenBlur = await listen('tauri://focus', () => {
+    searchInputRef.value?.focus()
+  })
+
   unlisten_update_result = await appWindow.listen<UpdateResultPayload>('update-result', async (event) => {
     const [filename, getSearchResults] = event.payload;
     if (filename !== searchQuery.value) return;
