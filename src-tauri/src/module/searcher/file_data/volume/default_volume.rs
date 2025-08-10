@@ -1,14 +1,11 @@
 use std::{fs, io};
 use std::sync::mpsc;
 use std::error::Error;
-use std::collections::HashMap;
-#[allow(unused_imports)]
 use std::time::SystemTime;
 use walkdir::WalkDir;
 
-#[allow(unused_imports)]
 use crate::util::file_util;
-use super::file_map::{FileMap, SearchResultItem};
+use super::default_file_map::{FileMap, SearchResultItem};
 
 pub struct Volume {
     pub drive: String,
@@ -50,14 +47,7 @@ impl Volume {
             return;
         }
 
-        // Create a mapping from path to unique index
-        let mut path_to_index: HashMap<String, u64> = HashMap::new();
-        let mut current_index: u64 = 1;
-
-        // Add the root directory first
-        let root_name = format!("{}:", self.drive);
-        path_to_index.insert(root_path.clone(), 0); // Root has index 0
-        self.file_map.insert(0, root_name, 0); // Root's parent is itself (0)
+        self.file_map.insert(root_path.clone(), root_path.clone()); // Add the root directory first TODO fix
 
         // Walk the directory tree using walkdir
         let walker = WalkDir::new(&root_path)
@@ -94,30 +84,8 @@ impl Volume {
                 None => root_path.clone(), // If no parent, use root
             };
 
-            // Get or create parent index
-            let parent_index = if parent_path == root_path {
-                0 // Root directory index
-            } else {
-                // Check if parent index exists
-                match path_to_index.get(&parent_path).copied() {
-                    Some(existing_index) => existing_index,
-                    None => {
-                        // This shouldn't happen with walkdir's traversal order, but handle it gracefully
-                        let new_index = current_index;
-                        current_index += 1;
-                        path_to_index.insert(parent_path.clone(), new_index);
-                        new_index
-                    }
-                }
-            };
-
-            // Assign index to current path
-            let file_index = current_index;
-            current_index += 1;
-            path_to_index.insert(path.to_string_lossy().to_string(), file_index);
-
             // Insert into file map
-            self.file_map.insert(file_index, file_name, parent_index);
+            self.file_map.insert(file_name, parent_path);
         }
 
         log::info!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis());
