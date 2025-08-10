@@ -225,7 +225,9 @@ const handleLoadMore = () => {
 }
 
 watch(searchQuery, (newVal, _oldVal) => {
-  invoke("searcher_find", { query: newVal });
+  if( newVal != "" ) {
+    invoke("searcher_find", { query: newVal });
+  }
 });
 
 let unlisten_update_result: UnlistenFn;

@@ -2,7 +2,9 @@ use std::{fs, io};
 use std::sync::mpsc;
 use std::error::Error;
 use std::time::SystemTime;
+use notify::event::{ModifyKind, RenameMode};
 use walkdir::{DirEntry, WalkDir};
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher, Event, EventKind};
 
 use crate::util::file_util;
 use super::default_file_map::{FileMap, SearchResultItem};
@@ -13,6 +15,8 @@ pub struct Volume {
     stop_receiver: mpsc::Receiver<()>,
     last_query: String,
     last_search_num: usize,
+    watcher: Option<RecommendedWatcher>,
+    event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
 }
 
 impl Volume {
@@ -23,7 +27,137 @@ impl Volume {
             stop_receiver,
             last_query: String::new(),
             last_search_num: 0,
+            watcher: None,
+            event_receiver: None,
         }
+    }
+
+    pub fn start_watching(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.watcher.is_some() {
+            return Ok(());
+        }
+
+        let root_path = if cfg!(target_os = "windows") {
+            format!("{}:\\", self.drive)
+        } else {
+            format!("{}", self.drive)
+        };
+
+        if !std::path::Path::new(&root_path).exists() {
+            return Err(format!("Root path {} does not exist", root_path).into());
+        }
+
+        let (tx, rx) = mpsc::channel();
+        let config = Config::default().with_poll_interval(std::time::Duration::from_secs(2));
+        let mut watcher = notify::recommended_watcher(move |res| {
+            if let Err(e) = tx.send(res) {
+                log::error!("Failed to send file event: {:?}", e);
+            }
+        })?;
+
+        watcher.configure(config)?;
+        watcher.watch(root_path.as_ref(), RecursiveMode::Recursive)?;
+
+        self.watcher = Some(watcher);
+        self.event_receiver = Some(rx);
+
+        log::info!("{} File watching started for path: {}", self.drive, root_path);
+        Ok(())
+    }
+
+    pub fn stop_watching(&mut self) {
+        if let Some(watcher) = self.watcher.take() {
+            drop(watcher);
+            log::info!("{} File watcher stopped", self.drive);
+        }
+        self.event_receiver = None;
+    }
+
+    pub fn handle_file_events(&mut self) -> bool {
+        let Some(ref receiver) = self.event_receiver else {
+            return false;
+        };
+
+        let mut has_changes = false;
+        
+        while let Ok(event_result) = receiver.try_recv() {
+            match event_result {
+                Ok(event) => {
+                    has_changes = true;
+                    match event.kind {
+                        EventKind::Create(_) => {
+                            for path in event.paths {
+                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                    if let Some(parent) = path.parent() {
+                                        let parent_path = parent.to_string_lossy().to_string();
+                                        self.file_map.insert(file_name.to_string(), parent_path);
+                                    }
+                                }
+                            }
+                        }
+                        EventKind::Remove(_) => {
+                            // TODO del old one
+                        }
+                        EventKind::Modify(modify_kind) => {
+                            match modify_kind {
+                                ModifyKind::Name(rename_mode) => {
+                                    match rename_mode {
+                                        RenameMode::From => {
+                                            // TODO del old one
+                                        }
+                                        RenameMode::To => {
+                                            for path in event.paths {
+                                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                                    if let Some(parent) = path.parent() {
+                                                        let parent_path = parent.to_string_lossy().to_string();
+                                                        self.file_map.insert(file_name.to_string(), parent_path);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        RenameMode::Both => {
+                                            let mut flag = true;
+                                            for path in event.paths {
+                                                if flag {
+                                                    // TODO del old one
+                                                } else {
+                                                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                                        if let Some(parent) = path.parent() {
+                                                            let parent_path = parent.to_string_lossy().to_string();
+                                                            self.file_map.insert(file_name.to_string(), parent_path);
+                                                        }
+                                                    }
+                                                }
+                                                flag = !flag;
+                                            }
+                                        }
+                                        _ => {
+                                            for path in event.paths {
+                                                if path.exists() {
+                                                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                                        if let Some(parent) = path.parent() {
+                                                            let parent_path = parent.to_string_lossy().to_string();
+                                                            self.file_map.insert(file_name.to_string(), parent_path);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Err(e) => {
+                    log::error!("{} File watcher error: {:?}", self.drive, e);
+                }
+            }
+        }
+
+        has_changes
     }
 
     // Enumerate the filesystem using walkdir. Store the file entries in the database.
@@ -31,6 +165,7 @@ impl Volume {
         let sys_time = SystemTime::now();
         log::info!("{} Begin Volume::build_index", self.drive);
 
+        self.stop_watching();
         self.release_index();
 
         // Build the root path based on the drive letter
@@ -103,6 +238,10 @@ impl Volume {
 
         log::info!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis());
 
+        if let Err(e) = self.start_watching() {
+            log::error!("{} Failed to start file watching: {:?}", self.drive, e);
+        }
+
         self.serialization_write()
             .unwrap_or_else(|e| log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e));
     }
@@ -169,7 +308,8 @@ impl Volume {
                     self.build_index();
                 });
         };
-        // TODO
+
+        let _ = self.handle_file_events();
 
         #[cfg(debug_assertions)]
         log::info!("{} End Volume::update_index", self.drive);
