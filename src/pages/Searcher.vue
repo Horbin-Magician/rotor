@@ -200,7 +200,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 const clickItem = (item: SearchItem) => {
   info(`open: ${item.subtitle+item.title}`)
-  // TODO
+  invoke("open_file", {filePath: item.subtitle + item.title})
   hideWindow()
 }
 
