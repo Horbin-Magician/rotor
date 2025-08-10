@@ -44,6 +44,7 @@
             :key="action.type"
             class="item-action-btn"
             :title="action.title"
+            @click.stop="handleActionClick(action, item)"
           >
             <n-icon size="20">
               <component :is="getActionIcon(action.type)" />
@@ -80,7 +81,6 @@ import {
   ErrorFilled as ErrorIcon,
 } from '@vicons/material'
 import { invoke } from '@tauri-apps/api/core'
-import { info } from '@tauri-apps/plugin-log'
 
 // Types
 interface Action {
@@ -199,8 +199,26 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 const clickItem = (item: SearchItem) => {
-  info(`open: ${item.subtitle+item.title}`)
-  invoke("open_file", {filePath: item.subtitle + item.title})
+  invoke("open_file", {filePath: item.subtitle + '/' + item.title})
+  hideWindow()
+}
+
+const handleActionClick = (action: Action, item: SearchItem) => {
+  const filePath = item.subtitle + '/' + item.title
+  
+  switch (action.type) {
+    case 'OpenAsAdmin':
+      invoke("open_file_as_admin", { filePath })
+        .catch(err => console.error('Failed to open as admin:', err))
+      break
+    case 'OpenFolder':
+      invoke("open_file_as_admin", { filePath: item.subtitle })
+        .catch(err => console.error('Failed to open folder:', err))
+      break
+    default:
+      console.warn('Unknown action type:', action.type)
+  }
+  
   hideWindow()
 }
 
