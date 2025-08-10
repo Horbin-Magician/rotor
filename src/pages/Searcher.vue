@@ -110,18 +110,7 @@ const searchQuery = ref('')
 const selectedIndex = ref(0)
 let unlistenBlur: (() => void) | null = null
 
-// Mock data
-const searchResults = ref<SearchItem[]>([
-  {
-    title: 'Zotero.lnk',
-    subtitle: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Zotero',
-    type: 'app',
-    actions: [
-      { type: 'OpenAsAdmin', title: '管理员权限运行' },
-      { type: 'OpenFolder', title: '打开路径' }
-    ]
-  }
-])
+const searchResults = ref<SearchItem[]>([])
 
 // Utils
 const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || ErrorIcon
