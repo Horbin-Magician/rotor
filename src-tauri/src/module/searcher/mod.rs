@@ -118,7 +118,6 @@ impl Searcher {
     }
 
     fn update_result_model(filename: String, update_result: Vec<SearchResultItem>, if_increase: bool) {
-        log::info!("update searcher result model");
         let app = Application::global().lock().unwrap();
         if let Some(app_handle) = &app.app {
             app_handle.emit_to("searcher","update_result", (filename, update_result, if_increase)).unwrap();

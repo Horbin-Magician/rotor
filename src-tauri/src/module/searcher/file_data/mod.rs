@@ -151,26 +151,27 @@ impl FileData {
     }
 
     fn find_result(&mut self, filename: String, update_result: Vec<SearchResultItem>, if_increase: bool) {
+        self.show_num += update_result.len();
         (self.find_result_callback)(filename, update_result, if_increase);
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
         let mut reply: Option<SearcherMessage> = None;
         let mut if_increase = false;
-        let mut old_show_num = 0;
+        let need_num;
 
         if self.finding_name == filename { 
-            old_show_num = self.show_num;
-            self.show_num += self.batch as usize;
+            need_num = self.show_num + self.batch as usize;
             if_increase = true;
-            if self.finding_result.items.len() > self.show_num {
-                let return_result = self.finding_result.items[old_show_num..self.show_num].to_vec();
+            if self.finding_result.items.len() >= need_num {
+                let return_result = self.finding_result.items[self.show_num..need_num].to_vec();
                 self.find_result(filename, return_result, if_increase);
                 return reply;
             }
         } else { 
             self.finding_name = filename.clone();
-            self.show_num = self.batch as usize;
+            need_num = self.batch as usize;
+            self.show_num = 0;
             self.finding_result.items.clear();
             self.finding_result.query = filename.clone();
         }
@@ -209,8 +210,11 @@ impl FileData {
 
                     self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
                     let return_result = 
-                        if self.finding_result.items.len() > self.show_num { self.finding_result.items[old_show_num..self.show_num].to_vec() }
-                        else { self.finding_result.items.to_vec() };
+                        if self.finding_result.items.len() > self.show_num { 
+                            let max = std::cmp::min(self.finding_result.items.len(), need_num);
+                            self.finding_result.items[self.show_num..max].to_vec()
+                        }
+                        else { vec![] };
                     self.find_result(filename, return_result, if_increase);
                 }
                 break;

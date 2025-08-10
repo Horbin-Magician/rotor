@@ -267,7 +267,6 @@ onMounted(async () => {
   unlisten_update_result = await appWindow.listen<UpdateResultPayload>('update_result', async (event) => {
     const [filename, getSearchResults, if_increase] = event.payload;
     if (filename !== searchQuery.value) return;
-
     if (!if_increase) searchResults.value = [];
     searchResults.value = searchResults.value.concat(
       getSearchResults.map((item, _index) => ({
