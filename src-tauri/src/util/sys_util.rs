@@ -169,6 +169,7 @@ pub fn forbid_window_animation(handle: HWND) {
 //   }
 //   vec![]
 // }
+
 // pub fn open_file_path(path: &str) {
 //   let curr_path = std::path::Path::new(path);
 //   let arg;
@@ -197,49 +198,6 @@ pub fn forbid_window_animation(handle: HWND) {
 //   }
 // }
 
-// pub fn open_file_path_in_terminal(path: &str) {
-//   let curr_path = std::path::Path::new(path);
-//   let arg;
-//   if curr_path.is_dir() {
-//     arg = curr_path.to_str().unwrap();
-//   } else {
-//     arg = curr_path.parent().unwrap().to_str().unwrap();
-//   }
-
-//   if cfg!(target_os = "windows") {
-//     //cmd /K "cd C:\Windows\"
-//     std::process::Command::new("cmd")
-//       .args([
-//         "/c",
-//         "start",
-//         "cmd",
-//         "/K",
-//         "pushd",
-//         &format!("{}", win_norm4explorer(arg)),
-//       ])
-//       .output()
-//       .expect("failed to execute process");
-//   } else if cfg!(target_os = "linux") {
-//     // gnome-terminal -e "bash -c command;bash"
-//     std::process::Command::new("gnome-terminal")
-//       .args(["-e", &format!("bash -c 'cd {}';bash", arg)])
-//       .output()
-//       .expect("failed to execute process");
-//   } else {
-//     //mac os
-//     //open -a Terminal "/Library"
-//     std::process::Command::new("open")
-//       .args(["-a", "Terminal", arg])
-//       .output()
-//       .expect("failed to execute process");
-//   }
-// }
-
-// pub fn data_dir() -> String {
-//   let project_dir = ProjectDirs::from("com", "github", "Orange").unwrap();
-//   project_dir.data_dir().to_str().unwrap().to_string()
-// }
-
 // pub fn path2name(x: String) -> String {
 //   norm(&x)
 //     .as_str()
@@ -258,11 +216,6 @@ pub fn forbid_window_animation(handle: HWND) {
 
 // pub fn norm(path: &str) -> String {
 //   str::replace(path, "\\", "/")
-// }
-
-// pub fn today() -> String {
-//   let date = Local::now();
-//   date.format("%Y-%m-%d").to_string()
 // }
 
 // pub fn win_norm4explorer(path: &str) -> String {

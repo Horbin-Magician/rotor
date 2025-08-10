@@ -31,6 +31,8 @@ pub fn run() {
             screen_shotter_cmd::close_cache_pin,
             searcher_cmd::searcher_find,
             searcher_cmd::searcher_release,
+            searcher_cmd::open_file,
+            searcher_cmd::open_file_as_admin,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
