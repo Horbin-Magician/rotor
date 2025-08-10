@@ -9,7 +9,7 @@ use volume::ntfs_volume::Volume;
 #[cfg(target_os = "macos")]
 use volume::default_volume::Volume;
 
-pub use volume::file_map::SearchResultItem;
+pub use volume::default_file_map::SearchResultItem;
 
 pub enum SearcherMessage {
     Init,
