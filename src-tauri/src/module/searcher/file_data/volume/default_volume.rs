@@ -162,6 +162,13 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::update_index", self.drive);
 
+        if self.file_map.is_empty() { 
+            self.serialization_read()
+                .unwrap_or_else(|e| {
+                    log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
+                    self.build_index();
+                });
+        };
         // TODO
 
         #[cfg(debug_assertions)]
