@@ -35,7 +35,7 @@
           @mouseenter="selectedIndex = index"
         >
           <div class="item-icon">
-              <img :src="`data:image/png;base64,${item.icon_data}`" alt="File icon" />
+              <img :src="`data:image/png;base64,${item.icon_data}`" alt="Icon" />
           </div>
           <div class="item-content">
             <div class="item-title">{{ item.title }}</div>
