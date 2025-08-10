@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::{env, fs};
 use file_icon_provider::get_file_icon;
 use image::{DynamicImage, RgbaImage, ImageFormat};
@@ -53,31 +54,53 @@ pub fn get_userdata_path() -> Option<std::path::PathBuf> {
     None
 }
 
-// #[cfg(target_os = "windows")]
-// pub fn open_file(file_full_name: String) -> Result<(), Box<dyn Error>> {
-//     Command::new("explorer.exe").arg(file_full_name).spawn()?;
-//     Ok(())
-// }
+pub fn open_file(file_path: String) -> Result<(), Box<dyn Error>> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path).into());
+    }
 
-// #[cfg(target_os = "windows")]
-// pub fn open_file_admin(file_full_name: String) {
-//     let file_path: Vec<u16> = file_full_name
-//         .as_str()
-//         .encode_utf16()
-//         .chain(std::iter::once(0))
-//         .collect();
-//     let runas_str: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
-//     unsafe {
-//         ShellExecuteW(
-//             HWND(std::ptr::null_mut()),
-//             PCWSTR(runas_str.as_ptr()),
-//             PCWSTR(file_path.as_ptr()),
-//             PCWSTR::null(),
-//             PCWSTR::null(),
-//             SW_SHOWNORMAL,
-//         )
-//     };
-// }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &file_path])
+            .spawn()?;
+        // Command::new("explorer.exe").arg(file_full_name).spawn()?; // Old use
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&file_path)
+            .spawn()?;
+    }
+    
+    Ok(())
+}
+
+pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
+    #[cfg(target_os = "windows")]
+    {
+        let path = Path::new(&file_path);
+        if !path.exists() {
+            return Err(format!("File does not exist: {}", file_path).into());
+        }
+
+        std::process::Command::new("powershell")
+            .args([
+                "-Command",
+                &format!("Start-Process -FilePath '{}' -Verb RunAs", file_path)
+            ])
+            .spawn()?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        open_file(file_path)?;
+        return Err(format!("MacOS does not support, use normal open instead").into());
+    }
+}
 
 // Get file icon as base64 encoded PNG data
 pub fn get_file_icon_data(file_path: &str) -> Option<String> {
