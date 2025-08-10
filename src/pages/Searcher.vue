@@ -59,14 +59,6 @@
         </div>
       </n-infinite-scroll>
     </div>
-
-    <!-- Empty State -->
-    <div v-else-if="searchQuery.trim()" class="empty-state">
-      <n-icon size="48" color="#ccc">
-        <EmptyIcon />
-      </n-icon>
-      <div>{{ $t('message.search') }} "{{ searchQuery }}" 无结果</div>
-    </div>
   </div>
 </template>
 
@@ -83,7 +75,6 @@ import {
   SettingsRound as SettingsIcon,
   AdminPanelSettingsFilled as OpenAsAdminIcon,
   FolderCopyRound as OpenFolderIcon,
-  InboxOutlined as EmptyIcon,
   ErrorFilled as ErrorIcon,
 } from '@vicons/material'
 import { invoke } from '@tauri-apps/api/core'
@@ -153,11 +144,9 @@ const resizeWindow = async () => {
   const currentSize = await appWindow.outerSize()
   let newHeight = WINDOW_CONFIG.inputHeight
 
-  if (searchQuery.value.trim()) {
+  if (searchQuery.value.trim() && searchResults.value.length > 0) {
     const visibleItems = Math.min(searchResults.value.length, WINDOW_CONFIG.maxVisibleItems)
-    newHeight += searchResults.value.length > 0 
-      ? visibleItems * WINDOW_CONFIG.itemHeight 
-      : 120
+    newHeight += visibleItems * WINDOW_CONFIG.itemHeight
   }
 
   if (currentSize.height !== newHeight) {
