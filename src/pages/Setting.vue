@@ -108,7 +108,6 @@
 <script setup lang="ts">
 import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect } from 'naive-ui'
 import { ref, watch } from 'vue'
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -194,7 +193,10 @@ invoke("get_all_cfg").then(async (config: any) => {
 })
 
 function openGitHome() {
-  openUrl("https://github.com/Horbin-Magician/rotor")
+  invoke("open_url", { url: "https://github.com/Horbin-Magician/rotor" })
+    .catch((error) => {
+      console.error("Failed to open URL:", error)
+    })
 }
 
 // Function to update a setting in the backend

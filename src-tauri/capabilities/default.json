@@ -10,7 +10,6 @@
   ],
   "permissions": [
     "core:default",
-    "opener:allow-open-path",
     "core:window:allow-set-size",
     "core:window:allow-show",
     "core:window:allow-hide",
@@ -27,14 +26,6 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "dialog:allow-open",
-    "log:allow-log",
-    {
-      "identifier": "opener:allow-open-url",
-      "allow": [
-        {
-          "url": "https://github.com/Horbin-Magician/rotor"
-        }
-      ]
-    }
+    "log:allow-log"
   ]
 }

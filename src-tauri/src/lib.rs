@@ -17,12 +17,12 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent,None))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(application::handle_global_hotkey_event).build())
         .invoke_handler(tauri::generate_handler![
             config_cmd::get_cfg,
             config_cmd::get_all_cfg,
             config_cmd::set_cfg,
+            config_cmd::open_url,
             screen_shotter_cmd::get_screen_img,
             screen_shotter_cmd::get_screen_img_rect,
             screen_shotter_cmd::new_pin,

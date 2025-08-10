@@ -26,7 +26,7 @@
         v-for="(item, index) in searchResults"
         :key="index"
         :class="['search-item', { selected: selectedIndex === index }]"
-        @click="selectItem(item)"
+        @click="clickItem(item)"
         @mouseenter="selectedIndex = index"
       >
         <div class="item-icon">
@@ -80,6 +80,7 @@ import {
   ErrorFilled as ErrorIcon,
 } from '@vicons/material'
 import { invoke } from '@tauri-apps/api/core'
+import { info } from '@tauri-apps/plugin-log'
 
 // Types
 interface Action {
@@ -187,7 +188,7 @@ const handleKeydown = (event: KeyboardEvent) => {
     case 'Enter':
       event.preventDefault()
       if (searchResults.value[selectedIndex.value]) {
-        selectItem(searchResults.value[selectedIndex.value])
+        clickItem(searchResults.value[selectedIndex.value])
       }
       break
     case 'Escape':
@@ -197,8 +198,9 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-const selectItem = (item: SearchItem) => {
-  console.log('Selected item:', item)
+const clickItem = (item: SearchItem) => {
+  info(`open: ${item.subtitle+item.title}`)
+  // TODO
   hideWindow()
 }
 
