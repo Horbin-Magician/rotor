@@ -4,11 +4,14 @@ use std::io::{self, Write};
 use std::fs;
 use std::sync::mpsc::Receiver;
 
+use crate::util::file_util;
+
 #[derive(serde::Serialize)]
 pub struct SearchResultItem {
     pub path: String,
     pub file_name: String,
     pub rank: i8,
+    pub icon_data: Option<String>, // Base64 encoded icon data
 }
 
 impl Clone for SearchResultItem {
@@ -17,6 +20,7 @@ impl Clone for SearchResultItem {
             path: self.path.clone(),
             file_name: self.file_name.clone(),
             rank: self.rank,
+            icon_data: self.icon_data.clone(),
         }
     }
 }
@@ -110,10 +114,14 @@ impl FileMap {
             if stop_receiver.try_recv().is_ok() { return (None, 0); }
             search_num += 1;
             if (file.filter & query_filter) == query_filter && match_str(&file.file_name, &query_lower) {
+                let full_path = format!("{}/{}", file.path, file.file_name);
+                let icon_data = file_util::get_file_icon_data(&full_path);
+                
                 result.push(SearchResultItem {
                     path: file.path.clone(),
                     file_name: file.file_name.clone(),
                     rank: file.rank,
+                    icon_data,
                 });
                 find_num += 1;
                 if find_num >= batch { break; }

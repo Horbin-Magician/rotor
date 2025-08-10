@@ -35,9 +35,7 @@
           @mouseenter="selectedIndex = index"
         >
           <div class="item-icon">
-            <n-icon size="30">
-              <component :is="getIcon(item.type)" />
-            </n-icon>
+              <img :src="`data:image/png;base64,${item.icon_data}`" alt="File icon" />
           </div>
           <div class="item-content">
             <div class="item-title">{{ item.title }}</div>
@@ -69,10 +67,6 @@ import { getCurrentWindow, PhysicalPosition, LogicalSize, currentMonitor } from 
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import {
   SearchRound as SearchIcon,
-  FolderRound as FolderIcon,
-  InsertDriveFileRound as FileIcon,
-  AppsRound as AppIcon,
-  SettingsRound as SettingsIcon,
   AdminPanelSettingsFilled as OpenAsAdminIcon,
   FolderCopyRound as OpenFolderIcon,
   ErrorFilled as ErrorIcon,
@@ -88,8 +82,9 @@ interface Action {
 interface SearchItem {
   title: string
   subtitle: string
-  type: string
+  type: ItemType
   actions?: Action[]
+  icon_data?: string // Base64 encoded PNG data
 }
 
 type ItemType = 'app' | 'folder' | 'file' | 'settings'
@@ -101,13 +96,6 @@ const WINDOW_CONFIG = {
   itemHeight: 60,
   inputHeight: 50,
   maxVisibleItems: 7
-} as const
-
-const ICON_MAP: Record<ItemType, any> = {
-  app: AppIcon,
-  folder: FolderIcon,
-  file: FileIcon,
-  settings: SettingsIcon
 } as const
 
 const ACTION_ICONS: Record<ActionType, any> = {
@@ -136,7 +124,6 @@ const searchResults = ref<SearchItem[]>([
 ])
 
 // Utils
-const getIcon = (type: string) => ICON_MAP[type as ItemType] || ErrorIcon
 const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || ErrorIcon
 
 // Window management
@@ -258,6 +245,7 @@ interface SearchResultItem {
   path: string;
   file_name: string;
   rank: number;
+  icon_data?: string;
 }
 type UpdateResultPayload = [string, SearchResultItem[]];
 
@@ -282,6 +270,7 @@ onMounted(async () => {
         title: item.file_name,
         subtitle: item.path,
         type: 'file',
+        icon_data: item.icon_data,
         actions: [
           { type: 'OpenAsAdmin', title: '管理员权限运行' },
           { type: 'OpenFolder', title: '打开路径' }

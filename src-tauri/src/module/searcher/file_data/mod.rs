@@ -142,7 +142,6 @@ impl FileData {
             self.vols.clear();
 
             let home = std::env::var("HOME").unwrap();
-            println!("{}", &home);
             self.vols.push(home);
 
             self.vols.len() as u8
