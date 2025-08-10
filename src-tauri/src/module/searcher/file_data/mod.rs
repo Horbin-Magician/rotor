@@ -44,13 +44,13 @@ pub struct FileData {
     state: FileState,
     show_num: usize,
     batch: u8,
-    find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>) + Send>,
+    find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>, bool) + Send>,
 }
 
 impl FileData {
     pub fn new<F>(find_result_callback: F) -> FileData
     where 
-        F: Fn(String, Vec<SearchResultItem>) + Send + 'static,
+        F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
     {
         FileData {
             vols: Vec::new(),
@@ -150,19 +150,22 @@ impl FileData {
         }
     }
 
-    fn find_result(&mut self, filename: String, update_result: Vec<SearchResultItem>) {
-        (self.find_result_callback)(filename, update_result);
+    fn find_result(&mut self, filename: String, update_result: Vec<SearchResultItem>, if_increase: bool) {
+        (self.find_result_callback)(filename, update_result, if_increase);
     }
 
     pub fn find(&mut self, filename: String, msg_reciever: &mpsc::Receiver<SearcherMessage>) -> Option<SearcherMessage> {
         let mut reply: Option<SearcherMessage> = None;
+        let mut if_increase = false;
+        let mut old_show_num = 0;
 
         if self.finding_name == filename { 
+            old_show_num = self.show_num;
             self.show_num += self.batch as usize;
-
+            if_increase = true;
             if self.finding_result.items.len() > self.show_num {
-                let return_result = self.finding_result.items[..self.show_num].to_vec();
-                self.find_result(filename, return_result);
+                let return_result = self.finding_result.items[old_show_num..self.show_num].to_vec();
+                self.find_result(filename, return_result, if_increase);
                 return reply;
             }
         } else { 
@@ -206,9 +209,9 @@ impl FileData {
 
                     self.finding_result.items.sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
                     let return_result = 
-                        if self.finding_result.items.len() > self.show_num { self.finding_result.items[..self.show_num].to_vec() }
+                        if self.finding_result.items.len() > self.show_num { self.finding_result.items[old_show_num..self.show_num].to_vec() }
                         else { self.finding_result.items.to_vec() };
-                    self.find_result(filename, return_result);
+                    self.find_result(filename, return_result, if_increase);
                 }
                 break;
             }

@@ -236,7 +236,6 @@ const handleLoadMore = () => {
 }
 
 watch(searchQuery, (newVal, _oldVal) => {
-  searchResults.value = []
   invoke("searcher_find", { query: newVal });
 });
 
@@ -247,7 +246,7 @@ interface SearchResultItem {
   rank: number;
   icon_data?: string;
 }
-type UpdateResultPayload = [string, SearchResultItem[]];
+type UpdateResultPayload = [string, SearchResultItem[], boolean];
 
 // Lifecycle
 onMounted(async () => {
@@ -265,10 +264,11 @@ onMounted(async () => {
     searchInputRef.value?.focus()
   })
 
-  unlisten_update_result = await appWindow.listen<UpdateResultPayload>('update-result', async (event) => {
-    const [filename, getSearchResults] = event.payload;
+  unlisten_update_result = await appWindow.listen<UpdateResultPayload>('update_result', async (event) => {
+    const [filename, getSearchResults, if_increase] = event.payload;
     if (filename !== searchQuery.value) return;
 
+    if (!if_increase) searchResults.value = [];
     searchResults.value = searchResults.value.concat(
       getSearchResults.map((item, _index) => ({
         title: item.file_name,
