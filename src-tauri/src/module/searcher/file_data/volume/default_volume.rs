@@ -2,7 +2,7 @@ use std::{fs, io};
 use std::sync::mpsc;
 use std::error::Error;
 use std::time::SystemTime;
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 use crate::util::file_util;
 use super::default_file_map::{FileMap, SearchResultItem};
@@ -47,10 +47,30 @@ impl Volume {
             return;
         }
 
+        fn is_ignored(entry: &DirEntry) -> bool {
+            let file_name = entry.file_name().to_str().unwrap().to_lowercase();
+            if file_name.starts_with(".") { return true }
+            #[cfg(target_os = "macos")]
+            {
+                let ignore_names = [
+                    "cache".to_string(),
+                    "caches".to_string()
+                ];
+                if ignore_names.contains(&file_name) { return true }
+            }
+            return false
+        }
+
         // Walk the directory tree using walkdir
-        let walker = WalkDir::new(&root_path)
-            .follow_links(false) // don't follow symbolic links to avoid infinite loops
+        let mut walkdir = WalkDir::new(&root_path)
+            .follow_links(false); // don't follow symbolic links to avoid infinite loops
+        if root_path == "/Applications" {
+            walkdir = walkdir.max_depth(1);
+        }
+
+        let walker = walkdir
             .into_iter()
+            .filter_entry(|e| !is_ignored(e))
             .filter_map(|e| e.ok()); // skit no permission
 
         for entry in walker {
