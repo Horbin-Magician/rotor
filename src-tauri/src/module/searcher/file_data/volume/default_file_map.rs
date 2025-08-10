@@ -221,6 +221,7 @@ impl FileMap {
         let mut rank: i8 = 0;
 
         if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
+        else if file_name.to_lowercase().ends_with(".app") { rank += 10; }
         else if file_name.to_lowercase().ends_with(".lnk") { rank += 25; }
 
         let tmp = 40i16 - file_name.len() as i16;
