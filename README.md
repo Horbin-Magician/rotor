@@ -7,6 +7,7 @@
 </p>
 
 <p align="center"><span>A fast, low occupancy and free toolbox for Windows and MacOS.</span></p>
+<p align="center"><span>(The new version is being reconstructed, and there are still many shortcomings.)</span></p>
 
 <div align="center">
 
