@@ -3,8 +3,6 @@ use xcap;
 #[cfg(target_os = "windows")]
 mod win_imports {
 //     use crate::util::log_util;
-//     pub use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-//     pub use i_slint_backend_winit::WinitWindowAccessor;
 //     pub use is_root::is_root;
 //     use std::env;
 //     use std::error::Error;
@@ -32,8 +30,6 @@ mod win_imports {
 //         Graphics::Gdi::HMONITOR,
 //         UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
 //     };
-//     pub use winreg::enums::*;
-//     pub use winreg::RegKey;
 }
 #[cfg(target_os = "windows")]
 use win_imports::*;
