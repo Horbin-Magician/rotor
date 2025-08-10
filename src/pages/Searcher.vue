@@ -21,34 +21,36 @@
     </div>
 
     <!-- Search Results -->
-    <div v-if="searchResults.length > 0" class="search-results">
-      <div
-        v-for="(item, index) in searchResults"
-        :key="index"
-        :class="['search-item', { selected: selectedIndex === index }]"
-        @click="clickItem(item)"
-        @mouseenter="selectedIndex = index"
-      >
-        <div class="item-icon">
-          <n-icon size="30">
-            <component :is="getIcon(item.type)" />
-          </n-icon>
-        </div>
-        <div class="item-content">
-          <div class="item-title">{{ item.title }}</div>
-          <div class="item-subtitle">{{ item.subtitle }}</div>
-        </div>
-        <div v-if="item.actions" class="item-actions">
-          <div
-            v-for="action in item.actions"
-            :key="action.type"
-            class="item-action-btn"
-            :title="action.title"
-            @click.stop="handleActionClick(action, item)"
-          >
-            <n-icon size="20">
-              <component :is="getActionIcon(action.type)" />
+    <div v-if="searchResults.length > 0" class="search-results-container">
+      <div class="search-results">
+        <div
+          v-for="(item, index) in searchResults"
+          :key="index"
+          :class="['search-item', { selected: selectedIndex === index }]"
+          @click="clickItem(item)"
+          @mouseenter="selectedIndex = index"
+        >
+          <div class="item-icon">
+            <n-icon size="30">
+              <component :is="getIcon(item.type)" />
             </n-icon>
+          </div>
+          <div class="item-content">
+            <div class="item-title">{{ item.title }}</div>
+            <div class="item-subtitle">{{ item.subtitle }}</div>
+          </div>
+          <div v-if="item.actions" class="item-actions">
+            <div
+              v-for="action in item.actions"
+              :key="action.type"
+              class="item-action-btn"
+              :title="action.title"
+              @click.stop="handleActionClick(action, item)"
+            >
+              <n-icon size="20">
+                <component :is="getActionIcon(action.type)" />
+              </n-icon>
+            </div>
           </div>
         </div>
       </div>
@@ -102,7 +104,8 @@ type ActionType = 'OpenAsAdmin' | 'OpenFolder'
 const WINDOW_CONFIG = {
   width: 500,
   itemHeight: 60,
-  inputHeight: 50
+  inputHeight: 50,
+  maxVisibleItems: 7
 } as const
 
 const ICON_MAP: Record<ItemType, any> = {
@@ -147,8 +150,9 @@ const resizeWindow = async () => {
   let newHeight = WINDOW_CONFIG.inputHeight
 
   if (searchQuery.value.trim()) {
+    const visibleItems = Math.min(searchResults.value.length, WINDOW_CONFIG.maxVisibleItems)
     newHeight += searchResults.value.length > 0 
-      ? searchResults.value.length * WINDOW_CONFIG.itemHeight 
+      ? visibleItems * WINDOW_CONFIG.itemHeight 
       : 120
   }
 
@@ -180,10 +184,12 @@ const handleKeydown = (event: KeyboardEvent) => {
     case 'ArrowDown':
       event.preventDefault()
       selectedIndex.value = Math.min(selectedIndex.value + 1, maxIndex)
+      scrollToSelected()
       break
     case 'ArrowUp':
       event.preventDefault()
       selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
+      scrollToSelected()
       break
     case 'Enter':
       event.preventDefault()
@@ -196,6 +202,21 @@ const handleKeydown = (event: KeyboardEvent) => {
       hideWindow()
       break
   }
+}
+
+const scrollToSelected = () => {
+  nextTick(() => {
+    const container = document.querySelector('.search-results')
+    if (!container) return
+    
+    const selectedElement = container.querySelector('.search-item.selected')
+    if (selectedElement) {
+      selectedElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      })
+    }
+  })
 }
 
 const clickItem = (item: SearchItem) => {
@@ -335,6 +356,59 @@ onUnmounted(() => {
 }
 
 /* Search Results Styles */
+.search-results-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.search-results {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(75, 157, 244, 0.6) rgba(255, 255, 255, 0.05);
+  padding-right: 2px;
+}
+
+.search-results::-webkit-scrollbar {
+  width: 8px;
+}
+
+.search-results::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.search-results::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg, 
+    rgba(75, 157, 244, 0.8) 0%, 
+    rgba(61, 139, 235, 0.9) 100%
+  );
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.search-results::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg, 
+    rgba(75, 157, 244, 1) 0%, 
+    rgba(61, 139, 235, 1) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scaleX(1.2);
+}
+
+.search-results::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(
+    180deg, 
+    rgba(61, 139, 235, 1) 0%, 
+    rgba(75, 157, 244, 1) 100%
+  );
+}
+
 .search-item {
   width: 100%;
   display: flex;
