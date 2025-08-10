@@ -22,7 +22,11 @@
 
     <!-- Search Results -->
     <div v-if="searchResults.length > 0" class="search-results-container">
-      <div class="search-results">
+      <n-infinite-scroll
+        class="search-results"
+        @load="handleLoadMore"
+        :scrollbar-props="{trigger: 'none'}"
+      >
         <div
           v-for="(item, index) in searchResults"
           :key="index"
@@ -53,7 +57,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </n-infinite-scroll>
     </div>
 
     <!-- Empty State -->
@@ -68,7 +72,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { NIcon } from 'naive-ui'
+import { NIcon, NInfiniteScroll } from 'naive-ui'
 import { getCurrentWindow, PhysicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import {
@@ -251,6 +255,10 @@ const hideWindow = async () => {
   nextTick(resizeWindow)
 }
 
+const handleLoadMore = () => {
+  invoke("searcher_find", { query: searchQuery.value });
+}
+
 watch(searchQuery, (newVal, _oldVal) => {
   searchResults.value = []
   invoke("searcher_find", { query: newVal });
@@ -368,45 +376,6 @@ onUnmounted(() => {
   scrollbar-width: thin;
   scrollbar-color: rgba(75, 157, 244, 0.6) rgba(255, 255, 255, 0.05);
   padding-right: 2px;
-}
-
-.search-results::-webkit-scrollbar {
-  width: 8px;
-}
-
-.search-results::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  margin: 4px 0;
-}
-
-.search-results::-webkit-scrollbar-thumb {
-  background: linear-gradient(
-    180deg, 
-    rgba(75, 157, 244, 0.8) 0%, 
-    rgba(61, 139, 235, 0.9) 100%
-  );
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.2s ease;
-}
-
-.search-results::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(
-    180deg, 
-    rgba(75, 157, 244, 1) 0%, 
-    rgba(61, 139, 235, 1) 100%
-  );
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: scaleX(1.2);
-}
-
-.search-results::-webkit-scrollbar-thumb:active {
-  background: linear-gradient(
-    180deg, 
-    rgba(61, 139, 235, 1) 0%, 
-    rgba(75, 157, 244, 1) 100%
-  );
 }
 
 .search-item {
