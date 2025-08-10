@@ -47,8 +47,6 @@ impl Volume {
             return;
         }
 
-        self.file_map.insert(root_path.clone(), root_path.clone()); // Add the root directory first TODO fix
-
         // Walk the directory tree using walkdir
         let walker = WalkDir::new(&root_path)
             .follow_links(false) // don't follow symbolic links to avoid infinite loops
@@ -63,11 +61,6 @@ impl Volume {
             }
 
             let path = entry.path();
-            
-            // Skip the root directory as we already added it
-            if path.to_string_lossy() == root_path {
-                continue;
-            }
 
             // Get the file name
             let file_name = match entry.file_name().to_str() {
