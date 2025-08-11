@@ -55,10 +55,14 @@ I sincerely hope that you can provide quality code for this project.
 
 ## Important to-do list
 
-- [ ] OCR function for screenshots, directly scratch and copy the text in the image just like WeChat.
+- [ ] OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
+- [ ] Word lookup and translation function;
+- [ ] Basic query-based AI dialogue function;
+- [ ] Plug-in system.
 
 # License
 
 [MIT](https://opensource.org/licenses/MIT)
 
 Copyright (c) 2022-present, Horbin
+
