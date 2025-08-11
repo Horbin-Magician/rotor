@@ -55,7 +55,8 @@ I sincerely hope that you can provide quality code for this project.
 
 ## Important to-do list
 
-- [ ] OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
+- [ ] 🚧Replace Slint with Tauri;
+- [ ] 🚧OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
 - [ ] Word lookup and translation function;
 - [ ] Basic query-based AI dialogue function;
 - [ ] Plug-in system.
@@ -65,4 +66,5 @@ I sincerely hope that you can provide quality code for this project.
 [MIT](https://opensource.org/licenses/MIT)
 
 Copyright (c) 2022-present, Horbin
+
 
