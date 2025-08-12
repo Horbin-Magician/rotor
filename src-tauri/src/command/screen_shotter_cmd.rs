@@ -183,7 +183,7 @@ pub async fn new_pin(
             }
         }
     } else {
-        println!("Unable to get current monitor"); // TODO
+        log::error!("Unable to get current monitor");
     }
 }
 

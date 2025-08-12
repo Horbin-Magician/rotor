@@ -296,7 +296,7 @@ impl Volume {
         let _ = sender.send(result);
     }
 
-    // update index, add new file, remove deleted file TODO
+    // update index, add new file, remove deleted file
     pub fn update_index(&mut self) {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::update_index", self.drive);

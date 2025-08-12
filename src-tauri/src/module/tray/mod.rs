@@ -95,7 +95,7 @@ impl Tray {
                     app.exit(0);
                 }
                 _ => {
-                    println!("menu item {:?} not handled", event.id);
+                    log::warn!("menu item {:?} not handled", event.id);
                 }
             })
             .build(app)?;

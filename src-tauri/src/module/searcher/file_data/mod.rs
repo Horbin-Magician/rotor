@@ -243,7 +243,7 @@ impl FileData {
 
         for handle in handles {
             if let Err(e) = handle.join() {
-                eprintln!("Thread panicked: {:?}", e); // TODO handle error
+                log::error!("Init volume failed: {:?}", e);
             }
         }
     }
@@ -263,7 +263,7 @@ impl FileData {
 
         for handle in handles {
             if let Err(e) = handle.join() {
-                eprintln!("Thread panicked: {:?}", e); // TODO handle error
+                log::error!("Update index failed: {:?}", e);
             }
         }
     }
@@ -284,7 +284,7 @@ impl FileData {
 
         for handle in handles {
             if let Err(e) = handle.join() {
-                eprintln!("Thread panicked: {:?}", e); // TODO handle error
+                log::error!("Release index failed: {:?}", e);
             }
         }
     }
