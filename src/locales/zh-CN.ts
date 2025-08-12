@@ -43,6 +43,8 @@ export default {
     textTool: '文本工具',
     undo: '撤销',
     // Searcher
-    search_placeholder: '输入你想要搜索的内容...'
+    searchPlaceholder: '输入你想要搜索的内容...',
+    openAsAdminTip: '以管理员权限打开',
+    openFolderTip: '打开文件所在目录'
   }
 }

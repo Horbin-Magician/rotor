@@ -43,6 +43,8 @@ export default {
     textTool: 'Text Tool',
     undo: 'Undo',
     // Searcher
-    search_placeholder: 'Enter the content you want to search...'
+    searchPlaceholder: 'Enter the content you want to search...',
+    openAsAdminTip: 'Open as admin',
+    openFolderTip: 'Open folder'
   }
 }

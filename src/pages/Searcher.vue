@@ -9,7 +9,7 @@
         <input
           ref="searchInputRef"
           v-model="searchQuery"
-          :placeholder="$t('message.search_placeholder')"
+          :placeholder="$t('message.searchPlaceholder')"
           autofocus
           @input="handleSearch"
           @keydown="handleKeydown"
@@ -46,7 +46,7 @@
               v-for="action in item.actions"
               :key="action.type"
               class="item-action-btn"
-              :title="action.title"
+              :title="$t(action.title)"
               @click.stop="handleActionClick(action, item)"
             >
               <n-icon size="20">
@@ -266,8 +266,8 @@ onMounted(async () => {
         type: 'file',
         icon_data: item.icon_data,
         actions: [
-          { type: 'OpenAsAdmin', title: '管理员权限运行' },
-          { type: 'OpenFolder', title: '打开路径' }
+          { type: 'OpenAsAdmin', title: 'message.openAsAdminTip' },
+          { type: 'OpenFolder', title: 'message.openFolderTip' }
         ]
       }))
     );
