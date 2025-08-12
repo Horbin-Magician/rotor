@@ -56,7 +56,7 @@ impl AppConfig {
             let path = user_data_path.join("config.toml");
             let config_str = fs::read_to_string(path).unwrap_or_else(|e| {
                 log::warn!("AppConfig: can not read config file: {e}");
-                return String::new();
+                String::new()
             });
 
             match toml::from_str::<Config>(&config_str) {
@@ -76,10 +76,7 @@ impl AppConfig {
             fs::write(path, config_str)?;
             return Ok(());
         }
-        Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Failed to save config",
-        )))
+        Err(Box::new(std::io::Error::other("Failed to save config")))
     }
 
     pub fn global() -> &'static Mutex<AppConfig> {
@@ -96,7 +93,7 @@ impl AppConfig {
         if self.config.contains_key(k) {
             return self.config.get(k);
         }
-        return DEFAULT_CONFIG.get(k);
+        DEFAULT_CONFIG.get(k)
     }
 
     pub fn get_all(&self) -> Config {
@@ -107,7 +104,7 @@ impl AppConfig {
         for (key, value) in DEFAULT_CONFIG.iter() {
             merged.entry(key.clone()).or_insert_with(|| value.clone());
         }
-        return merged;
+        merged
     }
 }
 

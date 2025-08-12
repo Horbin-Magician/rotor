@@ -36,7 +36,7 @@ pub fn run() {
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
-            let _ = app.set_dock_visibility(false);
+            app.set_dock_visibility(false);
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -56,7 +56,7 @@ pub fn run() {
 
     app.run(|app, event| match event {
         tauri::RunEvent::ExitRequested { code, api, .. } => {
-            if code == None {
+            if code.is_none() {
                 api.prevent_exit();
                 for (_label, window) in app.webview_windows() {
                     window.close().unwrap();

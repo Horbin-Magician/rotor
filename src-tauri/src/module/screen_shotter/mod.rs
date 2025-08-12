@@ -135,13 +135,13 @@ impl ScreenShotter {
 
         let label = format!("sspin-{}", self.max_pin_id);
 
-        if app_handle.get_webview_window(&label) == None {
+        if app_handle.get_webview_window(&label).is_none() {
             let win_builder = WebviewWindowBuilder::new(
                 app_handle,
                 &label,
                 WebviewUrl::App("ScreenShotter/Pin".into()),
             )
-            .title(&i18n::t("pinWindowName"))
+            .title(i18n::t("pinWindowName"))
             .position(0.0, 0.0)
             .inner_size(100.0, 100.0)
             .always_on_top(true)

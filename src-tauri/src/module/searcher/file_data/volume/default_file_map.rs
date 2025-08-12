@@ -80,7 +80,7 @@ impl FileMap {
     fn insert_simple_with_index(&mut self, index: u64, file: FileView) {
         let key = FileKey {
             rank: file.rank,
-            index: index,
+            index,
         };
         self.rank_map.insert(index, file.rank);
         self.main_map.insert(key, file);
@@ -220,9 +220,9 @@ impl FileMap {
     fn get_file_rank(file_name: &str) -> i8 {
         let mut rank: i8 = 0;
 
-        if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
-        else if file_name.to_lowercase().ends_with(".app") { rank += 10; }
-        else if file_name.to_lowercase().ends_with(".lnk") { rank += 25; }
+        let file_name_lower = file_name.to_lowercase();
+        if file_name_lower.ends_with(".exe") || file_name_lower.ends_with(".app") { rank += 10; }
+        else if file_name_lower.ends_with(".lnk") { rank += 25; }
 
         let tmp = 40i16 - file_name.len() as i16;
         if tmp > 0 { rank += tmp as i8; }

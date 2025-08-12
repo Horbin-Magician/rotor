@@ -43,8 +43,8 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
         let rect_bottom = rect_y + rect_height as i32;
         
         // Calculate monitor bounds
-        let mon_right = mon_pos.x + mon_size.width as i32;
-        let mon_bottom = mon_pos.y + mon_size.height as i32;
+        let mon_right = mon_pos.x + mon_size.width;
+        let mon_bottom = mon_pos.y + mon_size.height;
         
         // Check if rect intersects with monitor
         if rect_right > mon_pos.x && rect_x < mon_right && 
@@ -146,9 +146,9 @@ pub async fn get_screen_img_rect(
 
     if let Some(img) = image {
         let cropped_img = crop_imm(&img, x, y, width, height);
-        return tauri::ipc::Response::new(cropped_img.to_image().to_vec());
+        tauri::ipc::Response::new(cropped_img.to_image().to_vec())
     } else {
-        return tauri::ipc::Response::new(vec![]);
+        tauri::ipc::Response::new(vec![])
     }
 }
 
@@ -210,20 +210,18 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
         .format("Rotor_%Y-%m-%d-%H-%M-%S.png")
         .to_string();
 
-    let file_path: Option<std::path::PathBuf>;
-
-    if (if_ask_path == "true") ||  (save_path == "") {
-        file_path = app
+    let file_path: Option<std::path::PathBuf> = if (if_ask_path == "true") ||  (save_path.is_empty()) {
+        app
             .dialog()
             .file()
             .set_directory(save_path)
             .add_filter("PNG", &["png"])
             .set_file_name(file_name)
             .blocking_save_file()
-            .map(|v| { v.into_path().unwrap() });
+            .map(|v| { v.into_path().unwrap() })
     } else {
-        file_path = Some(std::path::PathBuf::from(save_path))
-    }
+        Some(std::path::PathBuf::from(save_path))
+    };
     
     if let Some(file_path) = file_path {
         if if_auto_change == "true" {

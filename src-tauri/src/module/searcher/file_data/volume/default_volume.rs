@@ -40,7 +40,7 @@ impl Volume {
         let root_path = if cfg!(target_os = "windows") {
             format!("{}:\\", self.drive)
         } else {
-            format!("{}", self.drive)
+            self.drive.to_string()
         };
 
         if !std::path::Path::new(&root_path).exists() {
@@ -98,54 +98,47 @@ impl Volume {
                         EventKind::Remove(_) => {
                             // TODO del old one
                         }
-                        EventKind::Modify(modify_kind) => {
-                            match modify_kind {
-                                ModifyKind::Name(rename_mode) => {
-                                    match rename_mode {
-                                        RenameMode::From => {
+                        EventKind::Modify(ModifyKind::Name(rename_mode)) => {
+                            match rename_mode {
+                                RenameMode::From => {
+                                    // TODO del old one
+                                }
+                                RenameMode::To => {
+                                    for path in event.paths {
+                                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                            if let Some(parent) = path.parent() {
+                                                let parent_path = parent.to_string_lossy().to_string();
+                                                self.file_map.insert(file_name.to_string(), parent_path);
+                                            }
+                                        }
+                                    }
+                                }
+                                RenameMode::Both => {
+                                    let mut flag = true;
+                                    for path in event.paths {
+                                        if flag {
                                             // TODO del old one
-                                        }
-                                        RenameMode::To => {
-                                            for path in event.paths {
-                                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                                    if let Some(parent) = path.parent() {
-                                                        let parent_path = parent.to_string_lossy().to_string();
-                                                        self.file_map.insert(file_name.to_string(), parent_path);
-                                                    }
-                                                }
+                                        } else if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                            if let Some(parent) = path.parent() {
+                                                let parent_path = parent.to_string_lossy().to_string();
+                                                self.file_map.insert(file_name.to_string(), parent_path);
                                             }
                                         }
-                                        RenameMode::Both => {
-                                            let mut flag = true;
-                                            for path in event.paths {
-                                                if flag {
-                                                    // TODO del old one
-                                                } else {
-                                                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                                        if let Some(parent) = path.parent() {
-                                                            let parent_path = parent.to_string_lossy().to_string();
-                                                            self.file_map.insert(file_name.to_string(), parent_path);
-                                                        }
-                                                    }
-                                                }
-                                                flag = !flag;
-                                            }
-                                        }
-                                        _ => {
-                                            for path in event.paths {
-                                                if path.exists() {
-                                                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                                        if let Some(parent) = path.parent() {
-                                                            let parent_path = parent.to_string_lossy().to_string();
-                                                            self.file_map.insert(file_name.to_string(), parent_path);
-                                                        }
-                                                    }
+                                        flag = !flag;
+                                    }
+                                }
+                                _ => {
+                                    for path in event.paths {
+                                        if path.exists() {
+                                            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                                if let Some(parent) = path.parent() {
+                                                    let parent_path = parent.to_string_lossy().to_string();
+                                                    self.file_map.insert(file_name.to_string(), parent_path);
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                _ => {}
                             }
                         }
                         _ => {}
@@ -172,8 +165,7 @@ impl Volume {
         let root_path = if cfg!(target_os = "windows") {
             format!("{}:\\", self.drive)
         } else {
-            // For Unix-like systems, use the drive char as a mount point identifier
-            format!("{}", self.drive)
+            self.drive.to_string()
         };
 
         // Check if the root path exists
@@ -193,7 +185,7 @@ impl Volume {
                 ];
                 if ignore_names.contains(&file_name) { return true }
             }
-            return false
+            false
         }
 
         // Walk the directory tree using walkdir

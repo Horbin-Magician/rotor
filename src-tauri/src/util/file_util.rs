@@ -77,7 +77,7 @@ pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
     #[cfg(target_os = "macos")]
     {
         open_file(file_path)?;
-        return Err(format!("MacOS does not support, use normal open instead").into());
+        Err("MacOS does not support, use normal open instead".into())
     }
 }
 
@@ -89,7 +89,7 @@ pub fn get_file_icon_data(file_path: &str) -> Option<String> {
     }
     
     // Get icon with 32x32 size
-    match get_file_icon(path.to_path_buf(), 32) {
+    match get_file_icon(path, 32) {
         Ok(icon) => {
             // Convert Icon to Image
             match RgbaImage::from_raw(icon.width, icon.height, icon.pixels) {
