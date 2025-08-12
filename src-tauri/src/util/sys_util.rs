@@ -2,7 +2,6 @@ use xcap;
 
 #[cfg(target_os = "windows")]
 mod win_imports {
-//     use crate::util::log_util;
 //     pub use is_root::is_root;
 //     use std::env;
 //     use std::error::Error;
@@ -25,10 +24,6 @@ mod win_imports {
 //             ChildWindowFromPointEx, GetDesktopWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
 //             CWP_SKIPTRANSPARENT,
 //         },
-//     };
-//     pub use windows::Win32::{
-//         Graphics::Gdi::HMONITOR,
-//         UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
 //     };
 }
 #[cfg(target_os = "windows")]

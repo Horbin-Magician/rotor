@@ -6,27 +6,6 @@ use std::io::Cursor;
 use std::path::Path;
 use base64::prelude::*;
 
-// #[cfg(target_os = "windows")]
-// mod win_imports {
-//     pub use crate::util::log_util;
-//     pub use std::error::Error;
-//     pub use std::ffi::c_void;
-//     pub use std::process::Command;
-//     pub use std::{io, mem, ptr};
-//     pub use windows::core::PCWSTR;
-//     pub use windows::Win32::Foundation::{BOOL, HWND};
-//     pub use windows::Win32::Graphics::Gdi::{
-//         self, DeleteObject, GetBitmapBits, BITMAP, BITMAPINFOHEADER, HBITMAP, HGDIOBJ,
-//     };
-//     pub use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-//     pub use windows::Win32::UI::Shell::{SHGetFileInfoW, ShellExecuteW, SHFILEINFOW, SHGFI_ICON};
-//     pub use windows::Win32::UI::WindowsAndMessaging::{
-//         DestroyIcon, GetIconInfo, HICON, ICONINFO, SW_SHOWNORMAL,
-//     };
-// }
-// #[cfg(target_os = "windows")]
-// use win_imports::*;
-
 #[allow(dead_code)]
 pub fn file_exists(path: &str) -> bool {
     fs::metadata(path).is_ok()

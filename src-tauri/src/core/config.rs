@@ -10,7 +10,6 @@ pub type Config = HashMap<String, String>;
 
 static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
     HashMap::from([
-        // ("power_boot".into(), "false".into()),
         ("language".into(), "0".into()),
         ("theme".into(), "0".into()),
         ("save_path".into(), "".into()),

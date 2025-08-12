@@ -1,6 +1,5 @@
 pub mod tray;
 pub mod screen_shotter;
-// #[cfg(target_os = "windows")]
 pub mod searcher;
 
 use std::any::Any;
