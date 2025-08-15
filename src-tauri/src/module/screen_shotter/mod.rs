@@ -1,3 +1,5 @@
+mod shotter_record;
+
 use crate::core::config::AppConfig;
 use crate::module::Module;
 use std::any::Any;
