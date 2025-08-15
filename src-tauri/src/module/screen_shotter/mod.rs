@@ -18,9 +18,7 @@ use crate::util::sys_util;
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
     pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
-    pub pin_mask_label: String,
     max_pin_id: u8,
-    mask_window_label: String,
 }
 
 impl Module for ScreenShotter {
@@ -41,20 +39,21 @@ impl Module for ScreenShotter {
         };
 
         // Capture screen
-        let masks_clone = Arc::clone(&self.masks);
-        let label_clone = self.mask_window_label.clone();
-        tauri::async_runtime::spawn(async move {
-            let masks_clone = Arc::clone(&masks_clone);
-            let label_clone = label_clone.clone();
-            let mut masks = masks_clone.lock().await;
+        for monitor in Monitor::all()? {
+            let masks_clone = Arc::clone(&self.masks);
+            let label = format!("ssmask-{}", monitor.id()?);
+            tauri::async_runtime::spawn(async move {
+                let masks_clone = Arc::clone(&masks_clone);
+                let mut masks = masks_clone.lock().await;
 
-            if let Ok(monitor) = Monitor::from_point(0, 0) {
-                if let Ok(img) = monitor.capture_image() {
-                    masks.clear();
-                    masks.insert(label_clone, img);
+                if let Ok(monitor) = Monitor::from_point(0, 0) {
+                    if let Ok(img) = monitor.capture_image() {
+                        masks.clear();
+                        masks.insert(label, img);
+                    }
                 }
-            }
-        });
+            });
+        }
 
         app_handle.emit("show-mask", ()).unwrap();
         self.build_pin_window()?; // Pre-build pin window for faster response after mask is shown
@@ -87,8 +86,6 @@ impl ScreenShotter {
             app_hander: None,
             masks: Arc::new(Mutex::new(HashMap::new())),
             max_pin_id: 0,
-            pin_mask_label: String::new(),
-            mask_window_label: String::new(),
         })
     }
 
@@ -97,32 +94,32 @@ impl ScreenShotter {
             Some(handle) => handle,
             None => return Err("AppHandle not initialized".into()),
         };
-
-        let monitor = Monitor::from_point(0, 0)?;
-        let label = format!("ssmask-0");
-        self.mask_window_label = label.clone();
-
-        let win_builder = WebviewWindowBuilder::new(
-            app_handle,
-            &label,
-            WebviewUrl::App("ScreenShotter/Mask".into()),
-        )
-        .position(monitor.x()? as f64, monitor.y()? as f64)
-        .always_on_top(true)
-        .resizable(false)
-        .decorations(false)
-        .fullscreen(true)
-        .visible(false)
-        .skip_taskbar(true);
-        #[cfg(target_os = "windows")]
-        let window = win_builder.build()?;
-        #[cfg(target_os = "macos")]
-        let _window = win_builder.build()?;
         
-        #[cfg(target_os = "windows")]
-        window.hwnd().map(|hwnd| {
-            sys_util::forbid_window_animation(hwnd);
-        }).ok();
+        for monitor in Monitor::all()? {
+            let label = format!("ssmask-{}", monitor.id()?);
+
+            let win_builder = WebviewWindowBuilder::new(
+                app_handle,
+                &label,
+                WebviewUrl::App("ScreenShotter/Mask".into()),
+            )
+            .position(monitor.x()? as f64, monitor.y()? as f64)
+            .always_on_top(true)
+            .resizable(false)
+            .decorations(false)
+            .fullscreen(true)
+            .visible(false)
+            .skip_taskbar(true);
+            #[cfg(target_os = "windows")]
+            {
+                let window = win_builder.build()?;
+                window.hwnd().map(|hwnd| {
+                    sys_util::forbid_window_animation(hwnd);
+                }).ok();
+            }
+            #[cfg(target_os = "macos")]
+            let _window = win_builder.build()?;
+        }
 
         Ok(())
     }
@@ -175,9 +172,8 @@ impl ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
-        self.pin_mask_label = label;
         let pin_label = format!("sspin-{}", self.max_pin_id);
-        app_handle.emit_to(&pin_label, "show-pin", (x, y, width, height)).unwrap();
+        app_handle.emit_to(&pin_label, "show-pin", (x, y, width, height, label)).unwrap();
         self.max_pin_id += 1;
 
         Ok(())

@@ -272,7 +272,7 @@ function parseShortcutKey(shortcutStr: string): string {
 }
 
 // Load the screenshot
-async function loadScreenShot() {
+async function loadScreenShot(maskLabel: string) {
   const pos = await appWindow.outerPosition();
   const size = await appWindow.innerSize();
   const imgBuf: ArrayBuffer = await invoke("get_screen_img_rect", {
@@ -280,6 +280,7 @@ async function loadScreenShot() {
     y: pos.y.toString(),
     width: size.width.toString(),
     height: size.height.toString(),
+    maskLabel: maskLabel,
   });
 
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
@@ -755,11 +756,11 @@ function cancelTextInput() {
       menu.popup(new LogicalPosition(event.clientX, event.clientY));
     });
 
-    unlisten_show_pin = await appWindow.listen<[number, number, number, number]>('show-pin', async (event) => {
-      const size = event.payload
-      await appWindow.setSize(new LogicalSize(size[2], size[3]))
-      await appWindow.setPosition(new LogicalPosition(size[0], size[1]))
-      await loadScreenShot();
+    unlisten_show_pin = await appWindow.listen<[number, number, number, number, string]>('show-pin', async (event) => {
+      const sizeInfo = event.payload
+      await appWindow.setSize(new LogicalSize(sizeInfo[2], sizeInfo[3]))
+      await appWindow.setPosition(new LogicalPosition(sizeInfo[0], sizeInfo[1]))
+      await loadScreenShot(sizeInfo[4]);
       updateToolbarVisibility();
       appWindow.isVisible().then( (visible)=>{
         if(visible == false) {

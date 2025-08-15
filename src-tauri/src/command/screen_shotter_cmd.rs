@@ -100,25 +100,22 @@ pub async fn get_screen_img_rect(
     y: String,
     width: String,
     height: String,
+    mask_label: String
 ) -> tauri::ipc::Response {
-    let (masks_arc, pin_mask_label) = {
+    let masks_arc= {
         let mut app = Application::global().lock().unwrap();
         if let Some(ss) = app
             .get_module("screenshot")
             .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
         {
-            (Some(ss.masks.clone()), Some(ss.pin_mask_label.clone()))
+            Some(ss.masks.clone())
         } else {
-            (None, None)
+            None
         }
     };
 
     let masks_arc = match masks_arc {
         Some(a) => a,
-        None => return tauri::ipc::Response::new(vec![]),
-    };
-    let pin_mask_label = match pin_mask_label {
-        Some(l) => l,
         None => return tauri::ipc::Response::new(vec![]),
     };
 
@@ -141,7 +138,7 @@ pub async fn get_screen_img_rect(
 
     let image = {
         let masks = masks_arc.lock().await;
-        masks.get(&pin_mask_label).cloned()
+        masks.get(&mask_label).cloned()
     };
 
     if let Some(img) = image {
