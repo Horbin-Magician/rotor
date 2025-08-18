@@ -1,7 +1,6 @@
 use toml;
 use std::error::Error;
 use std::{collections::HashMap, fs};
-use std::sync::{LazyLock, Mutex};
 use serde::{Serialize, Deserialize};
 use image::{self, DynamicImage};
 
@@ -30,6 +29,8 @@ struct Record {
 fn default_shotter() -> HashMap<String, ShotterConfig> { HashMap::<String, ShotterConfig>::default() }
 fn default_workspace() -> HashMap<String, WorkSpace> { HashMap::<String, WorkSpace>::default() }
 
+const DEFAULT_SPACE_ID: &str = "default";
+
 pub struct ShotterRecord {
     record: Record,
 }
@@ -45,13 +46,18 @@ impl ShotterRecord {
     }
 
     fn get_img_path(id: u32) -> std::path::PathBuf {
-        let space_id = "default";
-        let space_path = ShotterRecord::get_root_path().join(space_id.to_string());
+        let space_path = ShotterRecord::get_root_path().join(DEFAULT_SPACE_ID.to_string());
         if !space_path.exists() {
             fs::create_dir_all(&space_path)
                 .unwrap_or_else(|e| panic!("[ERROR] ShotterRecord create dir: {:?}", e));
         }
         space_path.join(format!("{}.png", id))
+    }
+
+    fn del_record_img(id: u32) -> Result<(), Box<dyn Error>> {
+        let img_path = ShotterRecord::get_img_path(id);
+        fs::remove_file(&img_path)?;
+        Ok(())
     }
 
     pub fn save_record_img(id: u32, img: DynamicImage) {
@@ -62,19 +68,13 @@ impl ShotterRecord {
         });
     }
 
-    fn del_record_img(id: u32) -> Result<(), Box<dyn Error>> {
-        let img_path = ShotterRecord::get_img_path(id);
-        fs::remove_file(&img_path)?;
-        Ok(())
-    }
-
     pub fn load_record_img(id: u32) -> Result<DynamicImage, Box<dyn Error>> {
         let img_path = ShotterRecord::get_img_path(id);
         let img = image::open(img_path)?;
         Ok(img)
     }
 
-    fn new() -> ShotterRecord {
+    pub fn new() -> ShotterRecord {
         let root_path = ShotterRecord::get_root_path();
         let record_path = root_path.join("record.toml");
 
@@ -98,30 +98,22 @@ impl ShotterRecord {
         Ok(())
     }
 
-    pub fn global() -> &'static Mutex<ShotterRecord> {
-        &INSTANCE
-    }
-
     pub fn update_shotter(&mut self, id: u32, shotter: ShotterConfig) -> Result<(), Box<dyn Error>> {
-        let space_id = "default";
-
-        if let Some(workspace) = self.record.workspaces.get_mut(&space_id.to_string()) {
+        if let Some(workspace) = self.record.workspaces.get_mut(&DEFAULT_SPACE_ID.to_string()) {
             workspace.shotters.insert(id.to_string(), shotter);
         } else {
             let mut workspace = WorkSpace {
                 shotters: HashMap::new(),
             };
             workspace.shotters.insert(id.to_string(), shotter);
-            self.record.workspaces.insert(space_id.to_string(), workspace);
+            self.record.workspaces.insert(DEFAULT_SPACE_ID.to_string(), workspace);
         }
         self.save()?;
         Ok(())
     }
 
     pub fn del_shotter(&mut self, id: u32) -> Result<(), Box<dyn Error>> {
-        let space_id = "default";
-
-        if let Some(workspace) = self.record.workspaces.get_mut(&space_id.to_string()) {
+        if let Some(workspace) = self.record.workspaces.get_mut(&DEFAULT_SPACE_ID.to_string()) {
             ShotterRecord::del_record_img(id)?;
             workspace.shotters.remove(&id.to_string());
             self.save()?;
@@ -131,15 +123,9 @@ impl ShotterRecord {
     }
 
     pub fn get_shotters(&self) -> Option<&HashMap<String, ShotterConfig>> {
-        let space_id = "default";
-
-        if let Some(workspace) = self.record.workspaces.get(&space_id.to_string()) {
+        if let Some(workspace) = self.record.workspaces.get(&DEFAULT_SPACE_ID.to_string()) {
             return Some(&workspace.shotters);
         }
         return None;
     }
 }
-
-static INSTANCE: LazyLock<Mutex<ShotterRecord>> = LazyLock::new(|| {
-    Mutex::new(ShotterRecord::new())
-});

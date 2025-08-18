@@ -1,6 +1,6 @@
-mod shotter_record;
+pub mod shotter_record;
 
-use crate::core::config::AppConfig;
+use crate::{core::config::AppConfig, module::screen_shotter::shotter_record::ShotterRecord};
 use crate::module::Module;
 use std::any::Any;
 use std::collections::HashMap;
@@ -20,6 +20,7 @@ use crate::util::sys_util;
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
     pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
+    pub shotter_recort: shotter_record::ShotterRecord,
     max_pin_id: u8,
 }
 
@@ -87,6 +88,7 @@ impl ScreenShotter {
         Ok(ScreenShotter {
             app_hander: None,
             masks: Arc::new(Mutex::new(HashMap::new())),
+            shotter_recort: ShotterRecord::new(),
             max_pin_id: 0,
         })
     }

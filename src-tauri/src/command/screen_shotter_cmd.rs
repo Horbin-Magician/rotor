@@ -4,6 +4,7 @@ use image::imageops::crop_imm;
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
 use crate::module::screen_shotter::ScreenShotter;
+use crate::module::screen_shotter::shotter_record::{ShotterRecord, ShotterConfig};
 use crate::util::{img_util, sys_util};
 
 #[tauri::command]
