@@ -13,6 +13,7 @@ pub struct ShotterConfig {
     pub rect: (u32, u32, u32, u32),
     pub zoom_factor: i32,
     pub mask_label: String,
+    pub minimized: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -79,12 +80,22 @@ impl ShotterRecord {
         let root_path = ShotterRecord::get_root_path();
         let record_path = root_path.join("record.toml");
 
-        let record_str = fs::read_to_string(record_path)
+        let record_str = fs::read_to_string(&record_path)
             .unwrap_or_else(|_| String::new());
 
         let record = match toml::from_str::<Record>(&record_str) {
             Ok(record) => record,
-            Err(e) => panic!("[ERROR] AppConfig read config: {:?}", e),
+            Err(e) => {
+                log::warn!("Failed to parse config file, creating default: {:?}", e);
+                let default_record = Record {
+                    workspaces: HashMap::new(),
+                };
+                // Try to save the default config
+                if let Ok(config_str) = toml::to_string_pretty(&default_record) {
+                    let _ = fs::write(&record_path, config_str);
+                }
+                default_record
+            }
         };
 
         ShotterRecord {

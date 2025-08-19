@@ -180,7 +180,7 @@ impl ScreenShotter {
         let x = pos_x + rect.0 as i32;
         let y = pos_y + rect.1 as i32;
 
-        let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 0, mask_label};
+        let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 0, mask_label, minimized: false};
         self.update_shotter_record(self.max_pin_id, config);
 
         app_handle.emit_to(&pin_label, "show-pin", (x, y, rect.2, rect.3, self.max_pin_id)).unwrap();
@@ -223,7 +223,9 @@ impl ScreenShotter {
                         record.rect.2,
                         record.rect.3
                     ).to_image();
-                    return Some(DynamicImage::ImageRgba8(cropped_img));
+                    let dyn_img = DynamicImage::ImageRgba8(cropped_img);
+                    ShotterRecord::save_record_img(id, dyn_img.clone());
+                    return Some(dyn_img);
                 }
             }
         }
