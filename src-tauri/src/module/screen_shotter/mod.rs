@@ -206,7 +206,7 @@ impl ScreenShotter {
         let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 0, mask_label, minimized: false};
         self.update_shotter_record(self.max_pin_id, config);
 
-        app_handle.emit_to(&pin_label, "show-pin", (x, y, rect.2, rect.3, self.max_pin_id)).unwrap();
+        app_handle.emit_to(&pin_label, "show-pin", (x, y, rect.2, rect.3)).unwrap();
         self.max_pin_id += 1;
 
         Ok(())

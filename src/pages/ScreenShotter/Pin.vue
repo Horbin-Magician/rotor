@@ -770,11 +770,11 @@ function cancelTextInput() {
           }
         })
       } else {
-        unlisten_show_pin = await appWindow.listen<[number, number, number, number, number]>('show-pin', async (event) => {
+        unlisten_show_pin = await appWindow.listen<[number, number, number, number]>('show-pin', async (event) => {
           const sizeInfo = event.payload
           await appWindow.setSize(new PhysicalSize(sizeInfo[2], sizeInfo[3]))
           await appWindow.setPosition(new PhysicalPosition(sizeInfo[0], sizeInfo[1]))
-          await loadScreenShot(sizeInfo[4]);
+          await loadScreenShot(id);
           updateToolbarVisibility();
           appWindow.isVisible().then( (visible)=>{
             if(visible == false) {
