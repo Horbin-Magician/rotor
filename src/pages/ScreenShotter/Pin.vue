@@ -187,6 +187,7 @@ enum DrawState {
 const { t } = useI18n()
 
 const appWindow = getCurrentWindow()
+const pin_id = Number.parseInt(appWindow.label.split('-')[1]);
 let unlisten_show_pin: UnlistenFn;
 
 const state = ref(State.Default)
@@ -378,8 +379,12 @@ function minimizeWindow() {
   appWindow.minimize();
 }
 
-function closeWindow() {
-  // TODO
+async function closeWindow() {
+  try {
+    await invoke("delete_pin_record", { id: pin_id });
+  } catch (error) {
+    warn(`Failed to delete pin record ${pin_id}: ${error}`);
+  }
   appWindow.close();
 }
 
@@ -726,11 +731,10 @@ function cancelTextInput() {
 
       const focused = event.payload;
       if(!focused) { // Update pin window state in shotter_record when lose focus
-        const id = Number.parseInt(appWindow.label.split('-')[1]);
         const position = await appWindow.outerPosition();
         try {
           await invoke("update_pin_state", { 
-            id: id, 
+            id: pin_id, 
             x: position.x,
             y: position.y,
             zoom: zoom_scale,
@@ -777,8 +781,7 @@ function cancelTextInput() {
     });
 
     {
-      let id = Number.parseInt(appWindow.label.split('-')[1])
-      let result = await loadScreenShot(id);
+      let result = await loadScreenShot(pin_id);
       if (result) {
         updateToolbarVisibility();
         appWindow.isVisible().then( (visible)=>{
@@ -792,7 +795,7 @@ function cancelTextInput() {
           const sizeInfo = event.payload
           await appWindow.setSize(new PhysicalSize(sizeInfo[2], sizeInfo[3]))
           await appWindow.setPosition(new PhysicalPosition(sizeInfo[0], sizeInfo[1]))
-          await loadScreenShot(id);
+          await loadScreenShot(pin_id);
           updateToolbarVisibility();
           appWindow.isVisible().then( (visible)=>{
             if(visible == false) {

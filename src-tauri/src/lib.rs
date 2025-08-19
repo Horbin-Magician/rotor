@@ -30,6 +30,7 @@ pub fn run() {
             screen_shotter_cmd::get_screen_rects,
             screen_shotter_cmd::close_cache_pin,
             screen_shotter_cmd::update_pin_state,
+            screen_shotter_cmd::delete_pin_record,
             searcher_cmd::searcher_find,
             searcher_cmd::searcher_release,
             searcher_cmd::open_file,

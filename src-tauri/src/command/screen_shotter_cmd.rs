@@ -186,6 +186,20 @@ pub async fn update_pin_state(id: u32, x: i32, y: i32, zoom: u32, minimized: boo
 }
 
 #[tauri::command]
+pub async fn delete_pin_record(id: u32) {
+    let mut app = Application::global().lock().unwrap();
+    let screenshot = app.get_module("screenshot");
+
+    if let Some(s) = screenshot {
+        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
+            if let Err(e) = screenshot.shotter_recort.del_shotter(id) {
+                log::error!("Failed to delete pin record {}: {}", id, e);
+            }
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     let mut app_config = AppConfig::global().lock().unwrap();
     let save_path = app_config.get(&"save_path".to_string()).cloned().unwrap_or_default();
