@@ -273,14 +273,14 @@ function parseShortcutKey(shortcutStr: string): string {
 }
 
 // Load the screenshot
-async function loadScreenShot(id: number) {
+async function loadScreenShot(id: number): Promise<boolean> {
   const size = await appWindow.innerSize();
   const imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
   
   // Check if imgBuf is empty
   if (imgBuf.byteLength === 0) {
     warn('No image data received');
-    return;
+    return false;
   }
   
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
@@ -308,6 +308,8 @@ async function loadScreenShot(id: number) {
   // Create drawing layer
   drawingLayer = new Konva.Layer();
   stage.add(drawingLayer);
+
+  return true
 }
 
 // Mouse event handlers
@@ -756,20 +758,34 @@ function cancelTextInput() {
       menu.popup(new LogicalPosition(event.clientX, event.clientY));
     });
 
-    unlisten_show_pin = await appWindow.listen<[number, number, number, number, number]>('show-pin', async (event) => {
-      const sizeInfo = event.payload
-      await appWindow.setSize(new PhysicalSize(sizeInfo[2], sizeInfo[3]))
-      await appWindow.setPosition(new PhysicalPosition(sizeInfo[0], sizeInfo[1]))
-      await loadScreenShot(sizeInfo[4]);
-      updateToolbarVisibility();
-      appWindow.isVisible().then( (visible)=>{
-        if(visible == false) {
-          appWindow.show()
-          appWindow.setFocus()
-        }
-      })
-      if(unlisten_show_pin) { unlisten_show_pin() }
-    });
+    {
+      let id = Number.parseInt(appWindow.label.split('-')[1])
+      let result = await loadScreenShot(id);
+      if (result) {
+        updateToolbarVisibility();
+        appWindow.isVisible().then( (visible)=>{
+          if(visible == false) {
+            appWindow.show()
+            appWindow.setFocus()
+          }
+        })
+      } else {
+        unlisten_show_pin = await appWindow.listen<[number, number, number, number, number]>('show-pin', async (event) => {
+          const sizeInfo = event.payload
+          await appWindow.setSize(new PhysicalSize(sizeInfo[2], sizeInfo[3]))
+          await appWindow.setPosition(new PhysicalPosition(sizeInfo[0], sizeInfo[1]))
+          await loadScreenShot(sizeInfo[4]);
+          updateToolbarVisibility();
+          appWindow.isVisible().then( (visible)=>{
+            if(visible == false) {
+              appWindow.show()
+              appWindow.setFocus()
+            }
+          })
+          if(unlisten_show_pin) { unlisten_show_pin() }
+        });
+      }
+    }
   });
 
   onBeforeUnmount(async () => {

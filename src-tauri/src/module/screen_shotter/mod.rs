@@ -60,7 +60,7 @@ impl Module for ScreenShotter {
         }
 
         app_handle.emit("show-mask", ()).unwrap();
-        self.build_pin_window()?; // Pre-build pin window for faster response after mask is shown
+        self.build_pin_window(None)?; // Pre-build pin window for faster response after mask is shown
 
         Ok(())
     }
@@ -129,13 +129,29 @@ impl ScreenShotter {
         Ok(())
     }
 
-    pub fn build_pin_window(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn build_pin_window(&self, id: Option<u32>) -> Result<(), Box<dyn Error>> {
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
             None => return Err("AppHandle not initialized".into()),
         };
 
-        let label = format!("sspin-{}", self.max_pin_id);
+        let mut set_id = self.max_pin_id;
+        let mut pos_x = 0.0;
+        let mut pos_y = 0.0;
+        let mut width = 100.0;
+        let mut height = 100.0;
+        let mut minimized = false;
+        if let Some(id) = id {
+            if let Some(record) = self.shotter_recort.get_record(id) {
+                set_id = id;
+                pos_x = (record.pos_x + record.rect.0 as i32) as f64;
+                pos_y = (record.pos_y + record.rect.1 as i32) as f64;
+                width = record.rect.2 as f64;
+                height = record.rect.3 as f64;
+                minimized = record.minimized;
+            }
+        }
+        let label = format!("sspin-{}", set_id);
 
         if app_handle.get_webview_window(&label).is_none() {
             let win_builder = WebviewWindowBuilder::new(
@@ -144,16 +160,23 @@ impl ScreenShotter {
                 WebviewUrl::App("ScreenShotter/Pin".into()),
             )
             .title(i18n::t("pinWindowName"))
-            .position(0.0, 0.0)
-            .inner_size(100.0, 100.0)
             .always_on_top(true)
             .resizable(false)
             .decorations(false)
             .visible(false);
-            #[cfg(target_os = "windows")]
+
             let window = win_builder.build()?;
-            #[cfg(target_os = "macos")]
-            let _window = win_builder.build()?;
+            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                x: pos_x as i32,
+                y: pos_y as i32,
+            }))?;
+            window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: width as u32,
+                height: height as u32,
+            }))?;
+            if minimized {
+                let _ = window.minimize();
+            }
 
             #[cfg(target_os = "windows")]
             window.hwnd().map(|hwnd| {
@@ -238,7 +261,20 @@ impl ScreenShotter {
         }
     }
 
-    pub fn restore_pin_wins(&self) {
-        // TODO
+    pub fn restore_pin_wins(&mut self) {
+        let mut max_id = 0u32;
+        let records = self.shotter_recort.get_records();
+
+        if let Some(records) = records {
+            for (id_str, config) in records {
+                println!("Restoring pin {} with config: {:?}", id_str, config); // TODO del
+                if let Ok(id) = id_str.parse::<u32>() {
+                    max_id = max_id.max(id);
+                    let _ = self.build_pin_window(Some(id));
+                }
+            }
+        }
+
+        self.max_pin_id = max_id + 1; // Update max_pin_id to ensure new pins don't conflict with restored ones
     }
 }
