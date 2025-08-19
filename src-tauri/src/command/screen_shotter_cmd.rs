@@ -168,6 +168,24 @@ pub async fn close_cache_pin() {
 }
 
 #[tauri::command]
+pub async fn update_pin_state(id: u32, x: i32, y: i32, zoom: u32, minimized: bool) {
+    let mut app = Application::global().lock().unwrap();
+    let screenshot = app.get_module("screenshot");
+
+    if let Some(s) = screenshot {
+        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
+            if let Some(mut record) = screenshot.shotter_recort.get_record(id).cloned() {
+                record.minimized = minimized;
+                record.pos_x = x - record.rect.0 as i32;
+                record.pos_y = y - record.rect.1 as i32;
+                record.zoom_factor = zoom;
+                screenshot.update_shotter_record(id, record);
+            }
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     let mut app_config = AppConfig::global().lock().unwrap();
     let save_path = app_config.get(&"save_path".to_string()).cloned().unwrap_or_default();

@@ -379,6 +379,7 @@ function minimizeWindow() {
 }
 
 function closeWindow() {
+  // TODO
   appWindow.close();
 }
 
@@ -720,8 +721,25 @@ function cancelTextInput() {
     window.addEventListener('keyup', handleKeyup);
     window.addEventListener('resize', handleWindowResize);
 
-    appWindow.onFocusChanged((_event) => {
+    appWindow.onFocusChanged(async (event) => {
       updateToolbarVisibility();
+
+      const focused = event.payload;
+      if(!focused) { // Update pin window state in shotter_record when lose focus
+        const id = Number.parseInt(appWindow.label.split('-')[1]);
+        const position = await appWindow.outerPosition();
+        try {
+          await invoke("update_pin_state", { 
+            id: id, 
+            x: position.x,
+            y: position.y,
+            zoom: zoom_scale,
+            minimized: await appWindow.isMinimized()
+          });
+        } catch (error) {
+          warn(`Failed to update pin state: ${error}`);
+        }
+      }
     });
 
     const menu = await Menu.new({

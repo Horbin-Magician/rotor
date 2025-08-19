@@ -166,13 +166,13 @@ impl ScreenShotter {
             .visible(false);
 
             let window = win_builder.build()?;
-            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                x: pos_x as i32,
-                y: pos_y as i32,
-            }))?;
             window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
                 width: width as u32,
                 height: height as u32,
+            }))?;
+            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                x: pos_x as i32,
+                y: pos_y as i32,
             }))?;
             if minimized {
                 let _ = window.minimize();
@@ -203,7 +203,7 @@ impl ScreenShotter {
         let x = pos_x + rect.0 as i32;
         let y = pos_y + rect.1 as i32;
 
-        let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 0, mask_label, minimized: false};
+        let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 100, mask_label, minimized: false};
         self.update_shotter_record(self.max_pin_id, config);
 
         app_handle.emit_to(&pin_label, "show-pin", (x, y, rect.2, rect.3)).unwrap();
@@ -267,7 +267,6 @@ impl ScreenShotter {
 
         if let Some(records) = records {
             for (id_str, config) in records {
-                println!("Restoring pin {} with config: {:?}", id_str, config); // TODO del
                 if let Ok(id) = id_str.parse::<u32>() {
                     max_id = max_id.max(id);
                     let _ = self.build_pin_window(Some(id));
