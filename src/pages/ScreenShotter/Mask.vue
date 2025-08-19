@@ -298,24 +298,25 @@ function handleMouseMove(event: MouseEvent) {
   getPixelColor(event.clientX, event.clientY)
 }
 
-function handleMouseUp() {
+async function handleMouseUp() {
   // Complete selection if it has a minimum size
   const width = Math.abs(endX.value - startX.value)
   const height = Math.abs(endY.value - startY.value)
+  const scale_factor = await appWindow.scaleFactor()
   
   if (width > 5 && height > 5) {
     isSelecting.value = false
-    const x = Math.min(startX.value, endX.value)
-    const y = Math.min(startY.value, endY.value)
-    const width = Math.abs(endX.value - startX.value)
-    const height = Math.abs(endY.value - startY.value)
+    const x = Math.min(startX.value, endX.value) * scale_factor
+    const y = Math.min(startY.value, endY.value) * scale_factor
+    const width = Math.abs(endX.value - startX.value) * scale_factor
+    const height = Math.abs(endY.value - startY.value) * scale_factor
     invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
     hideWindow()
   } else if (autoSelectRect.value) {
-    const x = autoSelectRect.value.x
-    const y = autoSelectRect.value.y
-    const width = autoSelectRect.value.width
-    const height = autoSelectRect.value.height
+    const x = autoSelectRect.value.x * scale_factor
+    const y = autoSelectRect.value.y * scale_factor
+    const width = autoSelectRect.value.width * scale_factor
+    const height = autoSelectRect.value.height * scale_factor
     invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
     hideWindow()
   }

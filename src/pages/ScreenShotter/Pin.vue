@@ -165,11 +165,12 @@ import {
 } from '@vicons/fluent';
 import { NTooltip, NIcon } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
 import { UnlistenFn } from "@tauri-apps/api/event";
+import { warn } from "@tauri-apps/plugin-log";
 
 enum State {
   Default,
@@ -272,17 +273,16 @@ function parseShortcutKey(shortcutStr: string): string {
 }
 
 // Load the screenshot
-async function loadScreenShot(maskLabel: string) {
-  const pos = await appWindow.outerPosition();
+async function loadScreenShot(id: number) {
   const size = await appWindow.innerSize();
-  const imgBuf: ArrayBuffer = await invoke("get_screen_img_rect", {
-    x: pos.x.toString(),
-    y: pos.y.toString(),
-    width: size.width.toString(),
-    height: size.height.toString(),
-    maskLabel: maskLabel,
-  });
-
+  const imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
+  
+  // Check if imgBuf is empty
+  if (imgBuf.byteLength === 0) {
+    warn('No image data received');
+    return;
+  }
+  
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
   backImg.value = await createImageBitmap(imgData)
   
@@ -756,10 +756,10 @@ function cancelTextInput() {
       menu.popup(new LogicalPosition(event.clientX, event.clientY));
     });
 
-    unlisten_show_pin = await appWindow.listen<[number, number, number, number, string]>('show-pin', async (event) => {
+    unlisten_show_pin = await appWindow.listen<[number, number, number, number, number]>('show-pin', async (event) => {
       const sizeInfo = event.payload
-      await appWindow.setSize(new LogicalSize(sizeInfo[2], sizeInfo[3]))
-      await appWindow.setPosition(new LogicalPosition(sizeInfo[0], sizeInfo[1]))
+      await appWindow.setSize(new PhysicalSize(sizeInfo[2], sizeInfo[3]))
+      await appWindow.setPosition(new PhysicalPosition(sizeInfo[0], sizeInfo[1]))
       await loadScreenShot(sizeInfo[4]);
       updateToolbarVisibility();
       appWindow.isVisible().then( (visible)=>{

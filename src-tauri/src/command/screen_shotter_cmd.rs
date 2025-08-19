@@ -1,10 +1,10 @@
+use image::DynamicImage;
+use log::warn;
 use tauri_plugin_dialog::DialogExt;
-use image::imageops::crop_imm;
 
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
 use crate::module::screen_shotter::ScreenShotter;
-use crate::module::screen_shotter::shotter_record::{ShotterRecord, ShotterConfig};
 use crate::util::{img_util, sys_util};
 
 #[tauri::command]
@@ -17,7 +17,7 @@ pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
     };
 
     let image = if let Some(masks_arc) = masks_arc {
-        let masks = masks_arc.lock().await;
+        let masks = masks_arc.lock().unwrap();
         masks.get(&label).cloned()
     } else {
         None
@@ -77,7 +77,7 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
     };
 
     let image = if let Some(masks_arc) = masks_arc {
-        let masks = masks_arc.lock().await;
+        let masks = masks_arc.lock().unwrap();
         masks.get(&label).cloned()
     } else {
         None
@@ -96,58 +96,26 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
 }
 
 #[tauri::command]
-pub async fn get_screen_img_rect(
-    x: String,
-    y: String,
-    width: String,
-    height: String,
-    mask_label: String
-) -> tauri::ipc::Response {
-    let masks_arc= {
-        let mut app = Application::global().lock().unwrap();
-        if let Some(ss) = app
-            .get_module("screenshot")
-            .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-        {
-            Some(ss.masks.clone())
-        } else {
-            None
+pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
+    let mut app = Application::global().lock().unwrap();
+    let mut img: Option<DynamicImage> = None;
+
+    if let Some(ss) = app
+        .get_module("screenshot")
+        .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+    {
+        match id.parse::<u32>() {
+            Ok(parsed_id) => img = ss.get_pin_img(parsed_id),
+            Err(_) => {},
         }
-    };
-
-    let masks_arc = match masks_arc {
-        Some(a) => a,
-        None => return tauri::ipc::Response::new(vec![]),
-    };
-
-    let x = match x.parse() {
-        Ok(v) => v,
-        _ => return tauri::ipc::Response::new(vec![]),
-    };
-    let y = match y.parse() {
-        Ok(v) => v,
-        _ => return tauri::ipc::Response::new(vec![]),
-    };
-    let width = match width.parse() {
-        Ok(v) => v,
-        _ => return tauri::ipc::Response::new(vec![]),
-    };
-    let height = match height.parse() {
-        Ok(v) => v,
-        _ => return tauri::ipc::Response::new(vec![]),
-    };
-
-    let image = {
-        let masks = masks_arc.lock().await;
-        masks.get(&mask_label).cloned()
-    };
-
-    if let Some(img) = image {
-        let cropped_img = crop_imm(&img, x, y, width, height);
-        tauri::ipc::Response::new(cropped_img.to_image().to_vec())
-    } else {
-        tauri::ipc::Response::new(vec![])
     }
+
+    if let Some(img) = img {
+        return tauri::ipc::Response::new(img.to_rgba8().to_vec());
+    }
+    
+    warn!("No image found for id: {}", id);
+    tauri::ipc::Response::new(vec![])
 }
 
 #[tauri::command]
@@ -163,18 +131,20 @@ pub async fn new_pin(
 
     if let Some(monitor) = webview_window.current_monitor().ok().flatten() {
         let monitor_pos = monitor.position();
-        let monitor_pos_lg = monitor_pos.to_logical::<f64>(monitor.scale_factor());
-        let x = monitor_pos_lg.x + offset_x.parse::<f64>().unwrap();
-        let y = monitor_pos_lg.y + offset_y.parse::<f64>().unwrap();
+        let rect = (
+            offset_x.parse::<u32>().unwrap(),
+            offset_y.parse::<u32>().unwrap(),
+            width.parse::<u32>().unwrap(),
+            height.parse::<u32>().unwrap(),
+        );
 
         if let Some(s) = screenshot {
             if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
                 screenshot
                     .new_pin(
-                        x,
-                        y,
-                        width.parse::<f64>().unwrap(),
-                        height.parse::<f64>().unwrap(),
+                        monitor_pos.x,
+                        monitor_pos.y,
+                        rect,
                         webview_window.label().to_string(),
                     )
                     .unwrap();

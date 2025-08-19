@@ -10,8 +10,9 @@ use crate::util::file_util;
 pub struct ShotterConfig {
     pub pos_x: i32,
     pub pos_y: i32,
-    pub rect: (i32, i32, i32, i32),
+    pub rect: (u32, u32, u32, u32),
     pub zoom_factor: i32,
+    pub mask_label: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -122,7 +123,14 @@ impl ShotterRecord {
         Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "No such workspace")))
     }
 
-    pub fn get_shotters(&self) -> Option<&HashMap<String, ShotterConfig>> {
+    pub fn get_record(&self, id: u32) -> Option<&ShotterConfig> {
+        if let Some(workspace) = self.record.workspaces.get(&DEFAULT_SPACE_ID.to_string()) {
+            return workspace.shotters.get(&id.to_string());
+        }
+        return None;
+    }
+
+    pub fn get_records(&self) -> Option<&HashMap<String, ShotterConfig>> {
         if let Some(workspace) = self.record.workspaces.get(&DEFAULT_SPACE_ID.to_string()) {
             return Some(&workspace.shotters);
         }

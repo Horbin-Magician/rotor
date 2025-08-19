@@ -1,16 +1,16 @@
 pub mod shotter_record;
 
-use crate::{core::config::AppConfig, module::screen_shotter::shotter_record::ShotterRecord};
+use crate::{core::config::AppConfig, module::screen_shotter::shotter_record::{ShotterRecord, ShotterConfig}};
 use crate::module::Module;
 use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
-use image::RgbaImage;
+use image::{DynamicImage, RgbaImage};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 use xcap::Monitor;
 
 use crate::util::i18n;
@@ -21,7 +21,7 @@ pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
     pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
     pub shotter_recort: shotter_record::ShotterRecord,
-    max_pin_id: u8,
+    max_pin_id: u32,
 }
 
 impl Module for ScreenShotter {
@@ -32,6 +32,7 @@ impl Module for ScreenShotter {
     fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
         self.app_hander = Some(app.clone());
         self.build_mask_windows()?; // Pre-build mask window for faster response
+        self.restore_pin_wins();
         Ok(())
     }
 
@@ -47,7 +48,7 @@ impl Module for ScreenShotter {
             let label = format!("ssmask-{}", monitor.id()?);
             tauri::async_runtime::spawn(async move {
                 let masks_clone = Arc::clone(&masks_clone);
-                let mut masks = masks_clone.lock().await;
+                let mut masks = masks_clone.lock().unwrap();
 
                 if let Ok(monitor) = Monitor::from_point(0, 0) {
                     if let Ok(img) = monitor.capture_image() {
@@ -165,19 +166,24 @@ impl ScreenShotter {
 
     pub fn new_pin(
         &mut self,
-        x: f64,
-        y: f64,
-        width: f64,
-        height: f64,
-        label: String,
+        pos_x: i32,
+        pos_y: i32,
+        rect: (u32, u32, u32, u32),
+        mask_label: String,
     ) -> Result<(), Box<dyn Error>> {
         let app_handle = match &self.app_hander {
-            Some(handle) => handle,
+            Some(handle) => handle.clone(),
             None => return Err("AppHandle not initialized".into()),
         };
 
         let pin_label = format!("sspin-{}", self.max_pin_id);
-        app_handle.emit_to(&pin_label, "show-pin", (x, y, width, height, label)).unwrap();
+        let x = pos_x + rect.0 as i32;
+        let y = pos_y + rect.1 as i32;
+
+        let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 0, mask_label};
+        self.update_shotter_record(self.max_pin_id, config);
+
+        app_handle.emit_to(&pin_label, "show-pin", (x, y, rect.2, rect.3, self.max_pin_id)).unwrap();
         self.max_pin_id += 1;
 
         Ok(())
@@ -196,5 +202,41 @@ impl ScreenShotter {
         }
 
         Ok(())
+    }
+
+    pub fn get_pin_img(&self, id: u32) -> Option<DynamicImage> {
+        if let Ok(img) = ShotterRecord::load_record_img(id) {
+            return Some(img);
+        } else {
+            let record = self.shotter_recort.get_record(id);
+            if let Some(record) = record {
+                let image = {
+                    let masks = self.masks.lock().unwrap();
+                    masks.get(&record.mask_label).cloned()
+                };
+
+                if let Some(img) = image {
+                    let cropped_img = image::imageops::crop_imm(
+                        &img,
+                        record.rect.0,
+                        record.rect.1,
+                        record.rect.2,
+                        record.rect.3
+                    ).to_image();
+                    return Some(DynamicImage::ImageRgba8(cropped_img));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn update_shotter_record(&mut self, id: u32, config: ShotterConfig) {
+        if let Err(e) = self.shotter_recort.update_shotter(id, config) {
+            log::error!("Failed to update shotter record {}: {}", id, e);
+        }
+    }
+
+    pub fn restore_pin_wins(&self) {
+        // TODO
     }
 }
