@@ -8,7 +8,11 @@ use crate::module::screen_shotter::ScreenShotter;
 use crate::util::{img_util, sys_util};
 
 #[tauri::command]
-pub async fn get_screen_img(label: String) -> tauri::ipc::Response {
+pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc::Response {
+    window.set_simple_fullscreen(true).unwrap_or_else(|e| {
+        warn!("Failed to set window to fullscreen: {}", e);
+    });
+
     let masks_arc = {
         let mut app = Application::global().lock().unwrap();
         app.get_module("screenshot")

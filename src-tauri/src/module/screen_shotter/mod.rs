@@ -111,19 +111,25 @@ impl ScreenShotter {
             .position(monitor.x()? as f64, monitor.y()? as f64)
             .always_on_top(true)
             .resizable(false)
-            .decorations(false)
-            .fullscreen(true)
             .visible(false)
             .skip_taskbar(true);
+
+            let window = win_builder.build()?;
             #[cfg(target_os = "windows")]
             {
-                let window = win_builder.build()?;
                 window.hwnd().map(|hwnd| {
                     sys_util::forbid_window_animation(hwnd);
                 }).ok();
             }
             #[cfg(target_os = "macos")]
-            let _window = win_builder.build()?;
+            {
+                use cocoa::appkit::{NSWindow};
+                use cocoa::base::id;
+                let ns_window = window.ns_window().unwrap() as id;
+                unsafe {
+                    ns_window.setLevel_(i32::MAX as i64); // 更高层级
+                }
+            }
         }
 
         Ok(())
