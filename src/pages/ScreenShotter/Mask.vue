@@ -144,8 +144,8 @@ function drawBackgroundImage() {
 // Computed styles for magnifier
 const mgnfHeight = magnifierSize + 50
 const mgnfOffset = 20
-const viewportWidth = window.innerWidth
-const viewportHeight = window.innerHeight
+const viewportWidth = window.screen.width
+const viewportHeight = window.screen.height
 const magnifierStyle = computed(() => {
   let left = (currentX.value + magnifierSize > viewportWidth) ? 
     currentX.value - magnifierSize : currentX.value;
