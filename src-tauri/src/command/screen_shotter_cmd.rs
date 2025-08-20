@@ -4,8 +4,10 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
-use crate::module::screen_shotter::ScreenShotter;
+use crate::module::screen_shotter::{ScreenShotter, shotter_record::ShotterConfig};
 use crate::util::{img_util, sys_util};
+
+// Command for mask window
 
 #[tauri::command]
 pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc::Response {
@@ -100,29 +102,6 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
 }
 
 #[tauri::command]
-pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
-    let mut app = Application::global().lock().unwrap();
-    let mut img: Option<DynamicImage> = None;
-
-    if let Some(ss) = app
-        .get_module("screenshot")
-        .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-    {
-        match id.parse::<u32>() {
-            Ok(parsed_id) => img = ss.get_pin_img(parsed_id),
-            Err(_) => {},
-        }
-    }
-
-    if let Some(img) = img {
-        return tauri::ipc::Response::new(img.to_rgba8().to_vec());
-    }
-    
-    warn!("No image found for id: {}", id);
-    tauri::ipc::Response::new(vec![])
-}
-
-#[tauri::command]
 pub async fn new_pin(
     offset_x: String,
     offset_y: String,
@@ -169,6 +148,46 @@ pub async fn close_cache_pin() {
             screenshot.close_cache_pin().unwrap();
         }
     }
+}
+
+// Command for pin window
+
+#[tauri::command]
+pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
+    let mut app = Application::global().lock().unwrap();
+    let mut img: Option<DynamicImage> = None;
+
+    if let Some(ss) = app
+        .get_module("screenshot")
+        .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+    {
+        match id.parse::<u32>() {
+            Ok(parsed_id) => img = ss.get_pin_img(parsed_id),
+            Err(_) => {},
+        }
+    }
+
+    if let Some(img) = img {
+        return tauri::ipc::Response::new(img.to_rgba8().to_vec());
+    }
+    
+    warn!("No image found for id: {}", id);
+    tauri::ipc::Response::new(vec![])
+}
+
+#[tauri::command]
+pub async fn get_pin_state(id: u32) -> Option<ShotterConfig> {
+    let mut app = Application::global().lock().unwrap();
+    let mut state: Option<ShotterConfig> = None;
+
+    if let Some(ss) = app
+        .get_module("screenshot")
+        .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+    {
+        state = ss.shotter_recort.get_record(id).cloned();
+    }
+
+    state
 }
 
 #[tauri::command]

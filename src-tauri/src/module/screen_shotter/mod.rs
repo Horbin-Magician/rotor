@@ -141,22 +141,7 @@ impl ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
-        let mut set_id = self.max_pin_id;
-        let mut pos_x = 0.0;
-        let mut pos_y = 0.0;
-        let mut width = 100.0;
-        let mut height = 100.0;
-        let mut minimized = false;
-        if let Some(id) = id {
-            if let Some(record) = self.shotter_recort.get_record(id) {
-                set_id = id;
-                pos_x = (record.pos_x + record.rect.0 as i32) as f64;
-                pos_y = (record.pos_y + record.rect.1 as i32) as f64;
-                width = record.rect.2 as f64;
-                height = record.rect.3 as f64;
-                minimized = record.minimized;
-            }
-        }
+        let set_id = if let Some(id) = id { id } else { self.max_pin_id };
         let label = format!("sspin-{}", set_id);
 
         if app_handle.get_webview_window(&label).is_none() {
@@ -171,23 +156,18 @@ impl ScreenShotter {
             .decorations(false)
             .visible(false);
 
-            let window = win_builder.build()?;
-            window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                width: width as u32,
-                height: height as u32,
-            }))?;
-            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                x: pos_x as i32,
-                y: pos_y as i32,
-            }))?;
-            if minimized {
-                let _ = window.minimize();
+            #[cfg(target_os = "windows")]
+            {
+                let window = win_builder.build()?;
+                window.hwnd().map(|hwnd| {
+                    sys_util::forbid_window_animation(hwnd);
+                }).ok();
             }
 
-            #[cfg(target_os = "windows")]
-            window.hwnd().map(|hwnd| {
-                sys_util::forbid_window_animation(hwnd);
-            }).ok();
+            #[cfg(target_os = "macos")]
+            {
+                let _window = win_builder.build()?;
+            }
         }
 
         Ok(())

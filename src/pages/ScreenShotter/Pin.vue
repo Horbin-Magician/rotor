@@ -274,7 +274,22 @@ function parseShortcutKey(shortcutStr: string): string {
 }
 
 // Load the screenshot
-async function loadScreenShot(id: number): Promise<boolean> {
+interface PinConfig {
+  pos_x: number;
+  pos_y: number;
+  rect: [number, number, number, number];
+  zoom_factor: number;
+  mask_label: string;
+  minimized: boolean;
+}
+
+async function tryLoadScreenShot(id: number): Promise<boolean> {
+  const pin_config = await invoke("get_pin_state", { id }) as PinConfig;
+  if (!pin_config) return false;
+
+  zoom_scale = pin_config.zoom_factor || 100;
+  await appWindow.setSize(new PhysicalSize(pin_config.rect[2] || 0, pin_config.rect[3] || 0));
+
   const size = await appWindow.innerSize();
   const imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
   
@@ -309,6 +324,18 @@ async function loadScreenShot(id: number): Promise<boolean> {
   // Create drawing layer
   drawingLayer = new Konva.Layer();
   stage.add(drawingLayer);
+
+  await scaleWindow();
+  await appWindow.setPosition(new PhysicalPosition((pin_config.pos_x + pin_config.rect[0] || 0), (pin_config.pos_y + pin_config.rect[1] || 0)));
+
+  updateToolbarVisibility();
+  appWindow.isVisible().then( (visible)=>{
+    if(visible == false) {
+      appWindow.show()
+      appWindow.setFocus()
+      if (pin_config.minimized) appWindow.minimize()
+    }
+  })
 
   return true
 }
@@ -781,28 +808,10 @@ function cancelTextInput() {
     });
 
     {
-      let result = await loadScreenShot(pin_id);
-      if (result) {
-        updateToolbarVisibility();
-        appWindow.isVisible().then( (visible)=>{
-          if(visible == false) {
-            appWindow.show()
-            appWindow.setFocus()
-          }
-        })
-      } else {
-        unlisten_show_pin = await appWindow.listen<[number, number, number, number]>('show-pin', async (event) => {
-          const sizeInfo = event.payload
-          await appWindow.setSize(new PhysicalSize(sizeInfo[2], sizeInfo[3]))
-          await appWindow.setPosition(new PhysicalPosition(sizeInfo[0], sizeInfo[1]))
-          await loadScreenShot(pin_id);
-          updateToolbarVisibility();
-          appWindow.isVisible().then( (visible)=>{
-            if(visible == false) {
-              appWindow.show()
-              appWindow.setFocus()
-            }
-          })
+      let result = await tryLoadScreenShot(pin_id);
+      if (!result) {
+        unlisten_show_pin = await appWindow.listen<[number, number, number, number]>('show-pin', async (_event) => { // TODO del input
+          await tryLoadScreenShot(pin_id);
           if(unlisten_show_pin) { unlisten_show_pin() }
         });
       }
