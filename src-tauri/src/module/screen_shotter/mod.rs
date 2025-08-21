@@ -42,19 +42,18 @@ impl Module for ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
+        let mut mask = self.masks.lock().unwrap();
+        mask.clear();
+        drop(mask);
+
         // Capture screen
         for monitor in Monitor::all()? {
             let masks_clone = Arc::clone(&self.masks);
             let label = format!("ssmask-{}", monitor.id()?);
             tauri::async_runtime::spawn(async move {
-                let masks_clone = Arc::clone(&masks_clone);
                 let mut masks = masks_clone.lock().unwrap();
-
-                if let Ok(monitor) = Monitor::from_point(0, 0) {
-                    if let Ok(img) = monitor.capture_image() {
-                        masks.clear();
-                        masks.insert(label, img);
-                    }
+                if let Ok(img) = monitor.capture_image() {
+                    masks.insert(label.clone(), img);
                 }
             });
         }
@@ -108,19 +107,20 @@ impl ScreenShotter {
                 &label,
                 WebviewUrl::App("ScreenShotter/Mask".into()),
             )
-            .position(monitor.x()? as f64, monitor.y()? as f64)
             .always_on_top(true)
             .resizable(false)
             .visible(false)
             .skip_taskbar(true);
 
             let window = win_builder.build()?;
+
             #[cfg(target_os = "windows")]
             {
                 window.hwnd().map(|hwnd| {
                     sys_util::forbid_window_animation(hwnd);
                 }).ok();
             }
+
             #[cfg(target_os = "macos")]
             {
                 use cocoa::appkit::{NSWindow};
@@ -130,6 +130,8 @@ impl ScreenShotter {
                     ns_window.setLevel_(i32::MAX as i64); // 更高层级
                 }
             }
+
+            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: monitor.x()?, y: monitor.y()? }))?;
         }
 
         Ok(())

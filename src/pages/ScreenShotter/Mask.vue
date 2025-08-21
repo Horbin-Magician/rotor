@@ -349,7 +349,15 @@ onBeforeUnmount(() => {
 
 // Load the screenshot
 async function initializeScreenshot() {
-  const imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
+  let imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
+
+  let try_times = 1
+  while (imgBuf.byteLength === 0) {
+    if (try_times > 3) return false
+    imgBuf = await invoke("get_screen_img", {label: appWindow.label})
+    try_times += 1
+  }
+
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
   backImgBitmap.value = await createImageBitmap(imgData)
