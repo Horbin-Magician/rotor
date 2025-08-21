@@ -38,7 +38,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { warn } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
@@ -397,6 +397,7 @@ async function initializeScreenshot() {
 
 function hideWindow() {
   appWindow.hide()
+  emit('hide-mask') // Emit hide-mask event to notify other hide windows to close
   
   if (mainCtx) { mainCtx.clearRect(0, 0, windowWidth, windowHeight) }
   if (magnifierCtx) { magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize) }
@@ -432,6 +433,14 @@ async function initializeAutoRects() {
       await initializeScreenshot()
       appWindow.show()
       changeCurrentMask()
+    });
+    
+    listen('hide-mask', async (_event) => {
+      appWindow.isVisible().then( (visible)=>{
+        if(visible == true) {
+          hideWindow()
+        }
+      })
     });
   });
 }
