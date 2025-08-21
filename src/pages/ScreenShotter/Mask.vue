@@ -2,6 +2,7 @@
   <main class="container" 
         @mousedown="handleMouseDown" 
         @mousemove="handleMouseMove" 
+        @mouseout="handleMouseOut"
         @mouseup="handleMouseUp">
     <canvas ref="canvasRef" id="main-canvas"
       :style="{ width: windowWidth + 'px', height: windowHeight + 'px' }"
@@ -69,6 +70,7 @@ const zoomFactor = 4
 const pixelColor = ref('#ffffff')
 const selectionWidth = ref(0)
 const selectionHeight = ref(0)
+const isWindowFocused = ref(true)
 
 let mainCanvas: HTMLCanvasElement | null = null
 let mainCtx: CanvasRenderingContext2D | null = null
@@ -77,6 +79,10 @@ let magnifierCtx: CanvasRenderingContext2D | null = null
 
 // Computed styles for selection rectangle
 const selectionStyle = computed(() => {
+  if (!isWindowFocused.value) {
+    return { display: 'none' }
+  }
+  
   let left = -2, top = -2, width = 0, height = 0
   if (isSelecting.value == true) {
     width = Math.abs(endX.value - startX.value)
@@ -147,6 +153,10 @@ const mgnfOffset = 20
 const viewportWidth = window.screen.width
 const viewportHeight = window.screen.height
 const magnifierStyle = computed(() => {
+  if (!isWindowFocused.value) {
+    return { display: 'none' }
+  }
+  
   let left = (currentX.value + magnifierSize > viewportWidth) ? 
     currentX.value - magnifierSize : currentX.value;
   let top = (currentY.value + mgnfOffset + mgnfHeight > viewportHeight) ? 
@@ -231,6 +241,10 @@ function getPixelColor(x: number, y: number) {
 }
 
 // Auto-selection functionality
+async function changeCurrentMask() {
+  invoke("change_current_mask")
+}
+
 async function updateAutoSelection(x: number, y: number) {
   const minRect = rects.reduce((min: [number, number, number, number, number] | undefined, rect) => {
     const [left, top, zindex, width, height] = rect;
@@ -298,6 +312,10 @@ function handleMouseMove(event: MouseEvent) {
   getPixelColor(event.clientX, event.clientY)
 }
 
+function handleMouseOut(_event: MouseEvent) {
+  changeCurrentMask()
+}
+
 async function handleMouseUp() {
   // Complete selection if it has a minimum size
   const width = Math.abs(endX.value - startX.value)
@@ -337,14 +355,26 @@ function handleKeyup(event: KeyboardEvent) {
   }
 }
 
+function handleWindowFocus() {
+  isWindowFocused.value = true
+}
+
+function handleWindowBlur() {
+  isWindowFocused.value = false
+}
+
 onMounted(async () => {
   window.addEventListener('keyup', handleKeyup);
+  window.addEventListener('focus', handleWindowFocus);
+  window.addEventListener('blur', handleWindowBlur);
   initializeCanvas()
   initializeMagnifierCanvas()
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
+  window.removeEventListener('focus', handleWindowFocus);
+  window.removeEventListener('blur', handleWindowBlur);
 });
 
 // Load the screenshot
@@ -400,13 +430,8 @@ async function initializeAutoRects() {
     listen('show-mask', async (_event) => {
       initializeAutoRects()
       await initializeScreenshot()
-      // Show window
-      appWindow.isVisible().then( (visible)=>{
-        if(visible == false) {
-          appWindow.show()
-          appWindow.setFocus()
-        }
-      })
+      appWindow.show()
+      changeCurrentMask()
     });
   });
 }

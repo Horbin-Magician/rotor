@@ -1,6 +1,8 @@
 use image::DynamicImage;
 use log::warn;
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
+use xcap::Monitor;
 
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
@@ -99,6 +101,24 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
     }
 
     rects
+}
+
+#[tauri::command]
+pub async fn change_current_mask(handle: tauri::AppHandle) {
+    // Get current cursor position
+    let cursor_position = sys_util::get_cursor_position().unwrap();
+
+    // Find which monitor contains the cursor
+    match Monitor::from_point(cursor_position.0, cursor_position.1) {
+        Ok(monitor) => {
+            let label = format!("ssmask-{}", monitor.id().unwrap_or_default());
+            let window = handle.get_webview_window(&label);
+            if let Some(window) = window {
+                let _ = window.set_focus();
+            }
+        },
+        Err(_) => {},
+    }
 }
 
 #[tauri::command]

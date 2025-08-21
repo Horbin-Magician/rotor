@@ -96,6 +96,41 @@ pub fn get_all_window_rect() -> Result<Vec<(i32, i32, i32, u32, u32)>, Box<dyn s
     Ok(res)
 }
 
+pub fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    {
+        use core_graphics::event::CGEvent;
+        use core_graphics::event_source::CGEventSource;
+        use core_graphics::event_source::CGEventSourceStateID;
+        
+        // Create a CGEvent using a default event source to get the current cursor position
+        if let Ok(event_source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
+            if let Ok(event) = CGEvent::new(event_source) {
+                let location = event.location();
+                return Ok((location.x as i32, location.y as i32));
+            }
+        }
+        Err("Failed to get cursor position".into())
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        use windows::Win32::Foundation::POINT;
+        
+        let mut point = POINT { x: 0, y: 0 };
+        unsafe {
+            GetCursorPos(&mut point)?;
+        }
+        Ok((point.x, point.y))
+    }
+    
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Ok((0, 0))
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn forbid_window_animation(handle: HWND) {
     let disable: i32 = 1;
