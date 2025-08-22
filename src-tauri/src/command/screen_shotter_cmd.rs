@@ -268,7 +268,7 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     
     if let Some(file_path) = file_path {
         if if_auto_change == "true" {
-            app_config.set("save_path".to_string(), file_path.to_string_lossy().to_string()).unwrap();
+            app_config.set("save_path".to_string(), file_path.parent().unwrap().to_string_lossy().to_string()).unwrap();
         }
         let cursor = std::io::Cursor::new(img_buf);
         if let Ok(img) = image::load(cursor, image::ImageFormat::Png) {
