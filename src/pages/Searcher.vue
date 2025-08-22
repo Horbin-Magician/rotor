@@ -63,7 +63,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { NIcon, NInfiniteScroll } from 'naive-ui'
-import { getCurrentWindow, PhysicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window'
+import { getCurrentWindow, PhysicalPosition, LogicalSize, primaryMonitor } from '@tauri-apps/api/window'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import {
   SearchRound as SearchIcon,
@@ -130,7 +130,7 @@ const resizeWindow = async () => {
   }
 
   // Center window
-  const monitor = await currentMonitor()
+  const monitor = await primaryMonitor()
   if (!monitor) return
   
   const scale = await appWindow.scaleFactor()
@@ -217,7 +217,6 @@ const hideWindow = async () => {
   searchQuery.value = ''
   selectedIndex.value = 0
   invoke("searcher_release")
-  nextTick(resizeWindow)
 }
 
 const handleLoadMore = () => {
@@ -243,7 +242,6 @@ type UpdateResultPayload = [string, SearchResultItem[], boolean];
 onMounted(async () => {
   nextTick(() => {
     searchInputRef.value?.focus()
-    resizeWindow()
   })
 
   // 监听窗口失去焦点事件
@@ -253,6 +251,7 @@ onMounted(async () => {
 
   unlistenBlur = await listen('tauri://focus', () => {
     searchInputRef.value?.focus()
+    resizeWindow()
   })
 
   unlisten_update_result = await appWindow.listen<UpdateResultPayload>('update_result', async (event) => {
