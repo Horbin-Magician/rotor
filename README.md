@@ -7,7 +7,6 @@
 </p>
 
 <p align="center"><span>A fast, low occupancy and free toolbox for Windows and MacOS.</span></p>
-<p align="center"><span>(The new version is being reconstructed, and there are still many shortcomings.)</span></p>
 
 <div align="center">
 
@@ -27,24 +26,23 @@ Now, Rotor include **file search** and **screenshot** module.
 
 ## File Searching
 
-1. Shortcut key `Shift+F` shows the search window.
+1. Shortcut key `CMD+Shift+F` shows the search window.
 2. Next, enter any information in the search window to get the search results immediately.
-3. `Up` and `down` keys to select the result, `Enter` key to open the file. 
+3. `Up` and `Down` keys to select the result, `Enter` key to open the file. 
 4. A menu is displayed when the mouse hovers over the result item. You can opening the directory where the file is located or run as admin.
 
 <div align=center>
-<img src="./doc/search_demo.png" width="521" height="500"> 
+<img src="./doc/search_demo.png" width="500" height="470"> 
 </div>
-
 
 ## Screenshot
 
-1. Shortcut key `Shift+C` prints screen.
+1. Shortcut key `CMD+Shift+S` prints screen.
 2. Then by holding down the `left mouse button` drag to select the area you want to take a screenshot, release to complete;
-3. By default, the captured image is fixed to the screen, and press `ESC` to close it, `s` to save it, `Enter` to copy it, `h` to minimize it.
+3. By default, the captured image is fixed to the screen, and press `ESC` to close it, `S` to save it, `Enter` to copy it, `H` to minimize it.
 
 <div align=center>
-<img src="./doc/screenshot_demo.png" width="671" height="528"> 
+<img src="./doc/screenshot_demo.png" width="742" height="290"> 
 </div>
 
 # Contribution
@@ -55,8 +53,7 @@ I sincerely hope that you can provide quality code for this project.
 
 ## Important to-do list
 
-- [ ] 🚧Replace Slint with Tauri;
-- [ ] 🚧OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
+- [ ] 🚧 OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
 - [ ] Word lookup and translation function;
 - [ ] Basic query-based AI dialogue function;
 - [ ] Plug-in system.
