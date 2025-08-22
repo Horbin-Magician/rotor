@@ -187,14 +187,11 @@ impl ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
-        let pin_label = format!("sspin-{}", self.max_pin_id);
-        let x = pos_x + rect.0 as i32;
-        let y = pos_y + rect.1 as i32;
-
         let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 100, mask_label, minimized: false};
         self.update_shotter_record(self.max_pin_id, config);
 
-        app_handle.emit_to(&pin_label, "show-pin", (x, y, rect.2, rect.3)).unwrap();
+        let pin_label = format!("sspin-{}", self.max_pin_id);
+        app_handle.emit_to(&pin_label, "show-pin", ()).unwrap();
         self.max_pin_id += 1;
 
         Ok(())

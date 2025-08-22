@@ -287,6 +287,8 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
   const pin_config = await invoke("get_pin_state", { id }) as PinConfig;
   if (!pin_config) return false;
 
+  await appWindow.setPosition(new PhysicalPosition((pin_config.pos_x + pin_config.rect[0] || 0), (pin_config.pos_y + pin_config.rect[1] || 0))); // set position first to get right scale
+
   zoom_scale = pin_config.zoom_factor || 100;
   await appWindow.setSize(new PhysicalSize(pin_config.rect[2] || 0, pin_config.rect[3] || 0));
 
@@ -810,7 +812,7 @@ function cancelTextInput() {
     {
       let result = await tryLoadScreenShot(pin_id);
       if (!result) {
-        unlisten_show_pin = await appWindow.listen<[number, number, number, number]>('show-pin', async (_event) => { // TODO del input
+        unlisten_show_pin = await appWindow.listen('show-pin', async (_event) => {
           await tryLoadScreenShot(pin_id);
           if(unlisten_show_pin) { unlisten_show_pin() }
         });
