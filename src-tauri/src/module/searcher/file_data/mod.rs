@@ -236,8 +236,11 @@ impl FileData {
 
         let handles = self.vols.iter().map(|c| {
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
+            #[cfg(target_os = "windows")] // TODO
             let volume = Arc::new(Mutex::new(Volume::new(c.chars().next().unwrap(), stop_receiver)));
-            
+            #[cfg(target_os = "macos")]
+            let volume = Arc::new(Mutex::new(Volume::new(c.clone(), stop_receiver)));
+
             self.volume_packs.push(VolumePack { volume: volume.clone(), stop_sender });
 
             thread::spawn(move || {
