@@ -11,7 +11,7 @@ use std::time::SystemTime;
 
 #[allow(unused_imports)]
 use crate::util::file_util;
-use super::file_map::{FileMap, SearchResultItem};
+use super::ntfs_file_map::{FileMap, SearchResultItem};
 
 pub struct Volume {
     pub drive: char,

@@ -13,7 +13,7 @@ mod win_imports {
     pub use windows::Win32::Storage::FileSystem;
     pub use windows::Win32::Foundation::HWND;
     pub use windows::Win32::Foundation;
-    use std::ffi::{CStr, CString};
+    pub use std::ffi::{CStr, CString};
 //     pub use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 //     pub use windows::Win32::UI::Shell::ShellExecuteW;
 //     pub use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -57,7 +57,7 @@ use win_imports::*;
 
 // Check whether the disk represented by a drive letter is in ntfs format
 #[cfg(target_os = "windows")]
-fn is_ntfs(vol: char) -> bool {
+pub fn is_ntfs(vol: char) -> bool {
     if let Ok(root_path_name) = CString::new(format!("{}:\\", vol)) {
         let mut volume_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
         let mut volume_serial_number: u32 = 0;

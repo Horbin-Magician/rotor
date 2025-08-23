@@ -6,9 +6,16 @@ use std::collections::VecDeque;
 
 #[cfg(target_os = "windows")]
 use volume::ntfs_volume::Volume;
+#[cfg(target_os = "windows")]
+pub use volume::ntfs_file_map::SearchResultItem;
+#[cfg(target_os = "windows")]
+use windows::Win32::Storage::FileSystem;
+#[cfg(target_os = "windows")]
+use crate::util::sys_util::is_ntfs;
+
 #[cfg(target_os = "macos")]
 use volume::default_volume::Volume;
-
+#[cfg(target_os = "macos")]
 pub use volume::default_file_map::SearchResultItem;
 
 pub enum SearcherMessage {
@@ -123,14 +130,14 @@ impl FileData {
             self.vols.clear();
             let mut vol = 'A';
             while bit_mask != 0 {
-                if bit_mask & 0x1 != 0 && Self::is_ntfs(vol) { self.vols.push(vol); }
+                if bit_mask & 0x1 != 0 && is_ntfs(vol) { self.vols.push(vol.to_string()); }
                 vol = (vol as u8 + 1) as char;
                 bit_mask >>= 1;
             }
 
             self.volume_packs.retain(|volume_pack| {
                 if let Ok(volume)  = volume_pack.volume.lock() {
-                    return self.vols.contains(&volume.drive);
+                    return self.vols.contains(&volume.drive.to_string());
                 }
                 false
             });
@@ -229,7 +236,7 @@ impl FileData {
 
         let handles = self.vols.iter().map(|c| {
             let (stop_sender, stop_receiver) = mpsc::channel::<()>();
-            let volume = Arc::new(Mutex::new(Volume::new(c.clone(), stop_receiver)));
+            let volume = Arc::new(Mutex::new(Volume::new(c.chars().next().unwrap(), stop_receiver)));
             
             self.volume_packs.push(VolumePack { volume: volume.clone(), stop_sender });
 

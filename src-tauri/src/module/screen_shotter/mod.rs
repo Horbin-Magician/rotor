@@ -47,16 +47,33 @@ impl Module for ScreenShotter {
         drop(mask);
 
         // Capture screen
-        for monitor in Monitor::all()? {
+        #[cfg(target_os = "windows")]
+        { // TODO optimize performance
             let masks_clone = Arc::clone(&self.masks);
-            let label = format!("ssmask-{}", monitor.id()?);
             tauri::async_runtime::spawn(async move {
-                let mut masks = masks_clone.lock().unwrap();
-                if let Ok(img) = monitor.capture_image() {
-                    masks.insert(label.clone(), img);
+                for monitor in Monitor::all().unwrap() {
+                    let label = format!("ssmask-{}", monitor.id().unwrap());
+                    let mut masks = masks_clone.lock().unwrap();
+                    if let Ok(img) = monitor.capture_image() {
+                        masks.insert(label.clone(), img);
+                    }
                 }
             });
         }
+        #[cfg(target_os = "macos")]
+        {
+            for monitor in Monitor::all()? {
+                let masks_clone = Arc::clone(&self.masks);
+                let label = format!("ssmask-{}", monitor.id()?);
+                tauri::async_runtime::spawn(async move {
+                    let mut masks = masks_clone.lock().unwrap();
+                    if let Ok(img) = monitor.capture_image() {
+                        masks.insert(label.clone(), img);
+                    }
+                });
+            }
+        }
+
 
         app_handle.emit("show-mask", ()).unwrap();
         self.build_pin_window(None)?; // Pre-build pin window for faster response after mask is shown
