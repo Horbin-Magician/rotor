@@ -53,6 +53,7 @@ I sincerely hope that you can provide quality code for this project.
 
 ## Important to-do list
 
+- [ ] 🚧 Optimize the user experience under the Windows OS;
 - [ ] 🚧 A brand new update system;
 - [ ] 🚧 OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
 - [ ] Word lookup and translation function;
@@ -64,5 +65,6 @@ I sincerely hope that you can provide quality code for this project.
 [MIT](https://opensource.org/licenses/MIT)
 
 Copyright (c) 2022-present, Horbin
+
 
 
