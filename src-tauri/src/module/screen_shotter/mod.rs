@@ -144,7 +144,15 @@ impl ScreenShotter {
                 use cocoa::base::id;
                 let ns_window = window.ns_window().unwrap() as id;
                 unsafe {
-                    ns_window.setLevel_(i32::MAX as i64); // 更高层级
+                    // Use CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) + 1 to ensure mask appears above fullscreen apps
+                    // kCGScreenSaverWindowLevelKey = 1000, so we use 1001 to be above it
+                    ns_window.setLevel_(1001);
+                    // Also ensure window collection behavior allows display on all spaces
+                    use cocoa::appkit::NSWindowCollectionBehavior;
+                    let collection_behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces |
+                                             NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary |
+                                             NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle;
+                    ns_window.setCollectionBehavior_(collection_behavior);
                 }
             }
 
