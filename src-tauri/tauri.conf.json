@@ -10,6 +10,9 @@
     "frontendDist": "../dist"
   },
   "bundle": {
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "active": true,
     "targets": "all",
     "resources": [
