@@ -33,7 +33,8 @@
               </div>
 
               <div class="setting-item">
-                <span class="setting-label">{{ t('message.currentVersion') }}2.0.0</span>
+                <!-- TODO use other way -->
+                <span class="setting-label">{{ t('message.currentVersion') }}2.0.1</span>
                 <n-button :disabled="true">{{ t('message.checkUpdate') }}</n-button>
               </div>
             </div>
