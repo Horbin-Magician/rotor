@@ -268,7 +268,7 @@ impl ScreenShotter {
         let records = self.shotter_recort.get_records();
 
         if let Some(records) = records {
-            for (id_str, _config) in records {
+            for id_str in records.keys() {
                 if let Ok(id) = id_str.parse::<u32>() {
                     max_id = max_id.max(id);
                     let _ = self.build_pin_window(Some(id));

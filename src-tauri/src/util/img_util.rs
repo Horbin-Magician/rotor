@@ -159,7 +159,7 @@ fn find_contours(img: &GrayImage) -> Vec<Vec<(u32, u32)>> {
 }
 
 // Flood fill to find connected components
-fn flood_fill(img: &GrayImage, visited: &mut Vec<Vec<bool>>, start_x: u32, start_y: u32, contour: &mut Vec<(u32, u32)>) {
+fn flood_fill(img: &GrayImage, visited: &mut [Vec<bool>], start_x: u32, start_y: u32, contour: &mut Vec<(u32, u32)>) {
     let (width, height) = img.dimensions();
     let mut stack = vec![(start_x, start_y)];
     

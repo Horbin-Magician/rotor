@@ -44,11 +44,11 @@ impl ShotterRecord {
             fs::create_dir_all(&root_path)
                 .unwrap_or_else(|e| panic!("[ERROR] ShotterRecord create dir: {:?}", e));
         }
-        return root_path;
+        root_path
     }
 
     fn get_img_path(id: u32) -> std::path::PathBuf {
-        let space_path = ShotterRecord::get_root_path().join(DEFAULT_SPACE_ID.to_string());
+        let space_path = ShotterRecord::get_root_path().join(DEFAULT_SPACE_ID);
         if !space_path.exists() {
             fs::create_dir_all(&space_path)
                 .unwrap_or_else(|e| panic!("[ERROR] ShotterRecord create dir: {:?}", e));
@@ -111,7 +111,7 @@ impl ShotterRecord {
     }
 
     pub fn update_shotter(&mut self, id: u32, shotter: ShotterConfig) -> Result<(), Box<dyn Error>> {
-        if let Some(workspace) = self.record.workspaces.get_mut(&DEFAULT_SPACE_ID.to_string()) {
+        if let Some(workspace) = self.record.workspaces.get_mut(DEFAULT_SPACE_ID) {
             workspace.shotters.insert(id.to_string(), shotter);
         } else {
             let mut workspace = WorkSpace {
@@ -125,26 +125,26 @@ impl ShotterRecord {
     }
 
     pub fn del_shotter(&mut self, id: u32) -> Result<(), Box<dyn Error>> {
-        if let Some(workspace) = self.record.workspaces.get_mut(&DEFAULT_SPACE_ID.to_string()) {
+        if let Some(workspace) = self.record.workspaces.get_mut(DEFAULT_SPACE_ID) {
             ShotterRecord::del_record_img(id)?;
             workspace.shotters.remove(&id.to_string());
             self.save()?;
             return Ok(());
         }
-        Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "No such workspace")))
+        Err(Box::new(std::io::Error::other("No such workspace")))
     }
 
     pub fn get_record(&self, id: u32) -> Option<&ShotterConfig> {
-        if let Some(workspace) = self.record.workspaces.get(&DEFAULT_SPACE_ID.to_string()) {
+        if let Some(workspace) = self.record.workspaces.get(DEFAULT_SPACE_ID) {
             return workspace.shotters.get(&id.to_string());
         }
-        return None;
+        None
     }
 
     pub fn get_records(&self) -> Option<&HashMap<String, ShotterConfig>> {
-        if let Some(workspace) = self.record.workspaces.get(&DEFAULT_SPACE_ID.to_string()) {
+        if let Some(workspace) = self.record.workspaces.get(DEFAULT_SPACE_ID) {
             return Some(&workspace.shotters);
         }
-        return None;
+        None
     }
 }

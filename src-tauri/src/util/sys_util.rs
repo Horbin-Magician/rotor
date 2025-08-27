@@ -83,7 +83,9 @@ pub fn is_ntfs(vol: char) -> bool {
     false
 }
 
-pub fn get_all_window_rect() -> Result<Vec<(i32, i32, i32, u32, u32)>, Box<dyn std::error::Error>> {
+type WindowRect = (i32, i32, i32, u32, u32);
+
+pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
     let mut res = Vec::new();
 
     let windows = xcap::Window::all()?;

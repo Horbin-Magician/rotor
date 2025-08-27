@@ -59,15 +59,12 @@ pub fn run() {
             panic!()
         });
 
-    app.run(|app, event| match event {
-        tauri::RunEvent::ExitRequested { code, api, .. } => {
-            if code.is_none() {
-                api.prevent_exit();
-                for (_label, window) in app.webview_windows() {
-                    window.close().unwrap();
-                }
+    app.run(|app, event| if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+        if code.is_none() {
+            api.prevent_exit();
+            for (_label, window) in app.webview_windows() {
+                window.close().unwrap();
             }
         }
-        _ => (),
     });
 }

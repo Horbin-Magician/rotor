@@ -131,12 +131,24 @@ pub async fn new_pin(
 
     if let Some(monitor) = webview_window.current_monitor().ok().flatten() {
         let monitor_pos = monitor.position();
-        let rect = (
-            offset_x.parse::<u32>().unwrap(),
-            offset_y.parse::<u32>().unwrap(),
-            width.parse::<u32>().unwrap(),
-            height.parse::<u32>().unwrap(),
-        );
+        let Ok(offset_x_val) = offset_x.parse::<u32>() else {
+            log::error!("Failed to parse offset_x: {}", offset_x);
+            return;
+        };
+        let Ok(offset_y_val) = offset_y.parse::<u32>() else {
+            log::error!("Failed to parse offset_y: {}", offset_y);
+            return;
+        };
+        let Ok(width_val) = width.parse::<u32>() else {
+            log::error!("Failed to parse width: {}", width);
+            return;
+        };
+        let Ok(height_val) = height.parse::<u32>() else {
+            log::error!("Failed to parse height: {}", height);
+            return;
+        };
+        
+        let rect = (offset_x_val, offset_y_val, width_val, height_val);
 
         if let Some(s) = screenshot {
             if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
@@ -178,9 +190,8 @@ pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
         .get_module("screenshot")
         .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
     {
-        match id.parse::<u32>() {
-            Ok(parsed_id) => img = ss.get_pin_img(parsed_id),
-            Err(_) => {},
+        if let Ok(parsed_id) = id.parse::<u32>() {
+            img = ss.get_pin_img(parsed_id);
         }
     }
 
@@ -241,7 +252,10 @@ pub async fn delete_pin_record(id: u32) {
 
 #[tauri::command]
 pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
-    let mut app_config = AppConfig::global().lock().unwrap();
+    let Ok(mut app_config) = AppConfig::global().lock() else {
+        log::error!("Failed to acquire config lock");
+        return false;
+    };
     let save_path = app_config.get(&"save_path".to_string()).cloned().unwrap_or_default();
     let if_auto_change = app_config.get(&"if_auto_change_save_path".to_string()).cloned().unwrap_or("true".to_string());
     let if_ask_path = app_config.get(&"if_ask_save_path".to_string()).cloned().unwrap_or("true".to_string());
@@ -258,18 +272,25 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
             .add_filter("PNG", &["png"])
             .set_file_name(file_name)
             .blocking_save_file()
-            .map(|v| { v.into_path().unwrap() })
+            .and_then(|v| v.into_path().ok())
     } else {
         Some(std::path::PathBuf::from(save_path))
     };
     
     if let Some(file_path) = file_path {
         if if_auto_change == "true" {
-            app_config.set("save_path".to_string(), file_path.parent().unwrap().to_string_lossy().to_string()).unwrap();
+            if let Some(parent) = file_path.parent() {
+                if let Err(e) = app_config.set("save_path".to_string(), parent.to_string_lossy().to_string()) {
+                    log::warn!("Failed to update save path: {}", e);
+                }
+            }
         }
         let cursor = std::io::Cursor::new(img_buf);
         if let Ok(img) = image::load(cursor, image::ImageFormat::Png) {
-            img.save(file_path).unwrap();
+            if let Err(e) = img.save(&file_path) {
+                log::error!("Failed to save image: {}", e);
+                return false;
+            }
             return true;
         }
     }

@@ -222,8 +222,7 @@ impl FileMap {
 
         let file_name_lower = file_name.to_lowercase();
         if file_name_lower.ends_with(".exe") { rank += 10; }
-        else if file_name_lower.ends_with(".app") { rank += 25; }
-        else if file_name_lower.ends_with(".lnk") { rank += 25; }
+        else if file_name_lower.ends_with(".app") || file_name_lower.ends_with(".lnk") { rank += 25; }
 
         let tmp = 40i16 - file_name.len() as i16;
         if tmp > 0 { rank += tmp as i8; }
