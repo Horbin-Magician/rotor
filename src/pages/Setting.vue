@@ -33,8 +33,7 @@
               </div>
 
               <div class="setting-item">
-                <!-- TODO use other way -->
-                <span class="setting-label">{{ t('message.currentVersion') }}2.0.1</span>
+                <span class="setting-label">{{ t('message.currentVersion') }}{{ currentVersion }}</span>
                 <n-button :disabled="true">{{ t('message.checkUpdate') }}</n-button>
               </div>
             </div>
@@ -158,7 +157,7 @@ watch(locale, () => {
 const language = ref(0)
 const theme = ref(0)
 const powerBoot = ref(false)
-// const currentVerision = ref("0.0.0")
+const currentVersion = ref("Loading...")
 const shortcutScreenshot = ref('Shift+C')
 const shortcutSearch = ref('Shift+F')
 
@@ -191,6 +190,11 @@ invoke("get_all_cfg").then(async (config: any) => {
   ifAutoChangeSavePath.value = config["if_auto_change_save_path"] === "false" ? false : true
   ifAskSavePath.value = config["if_ask_save_path"] === "false" ? false : true
   zoomDelta.value = Number(config["zoom_delta"])
+})
+
+// Get app version
+invoke("get_app_version").then((version: any) => {
+  currentVersion.value = version
 })
 
 function openGitHome() {

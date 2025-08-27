@@ -22,6 +22,7 @@ pub fn run() {
             config_cmd::get_cfg,
             config_cmd::get_all_cfg,
             config_cmd::set_cfg,
+            config_cmd::get_app_version,
             config_cmd::open_url,
             screen_shotter_cmd::get_screen_img,
             screen_shotter_cmd::new_pin,
