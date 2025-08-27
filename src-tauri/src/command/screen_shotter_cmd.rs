@@ -109,15 +109,12 @@ pub async fn change_current_mask(handle: tauri::AppHandle) {
     let cursor_position = sys_util::get_cursor_position().unwrap();
 
     // Find which monitor contains the cursor
-    match Monitor::from_point(cursor_position.0, cursor_position.1) {
-        Ok(monitor) => {
-            let label = format!("ssmask-{}", monitor.id().unwrap_or_default());
-            let window = handle.get_webview_window(&label);
-            if let Some(window) = window {
-                let _ = window.set_focus();
-            }
-        },
-        Err(_) => {},
+    if let Ok(monitor) = Monitor::from_point(cursor_position.0, cursor_position.1) {
+        let label = format!("ssmask-{}", monitor.id().unwrap_or_default());
+        let window = handle.get_webview_window(&label);
+        if let Some(window) = window {
+            let _ = window.set_focus();
+        }
     }
 }
 
