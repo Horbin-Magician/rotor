@@ -679,15 +679,15 @@ function endDrawing() {
 function undoDrawing() {
   if (!drawingLayer || drawingHistory.length === 0) return;
   
+  // Remove the last item from history
   drawingHistory.pop();
-  drawingLayer.destroyChildren();
   
-  // Redraw all items from history // TODO this there any better way?
-  drawingHistory.forEach(item => {
-    drawingLayer?.add(item.clone());
-  });
-  
-  drawingLayer.batchDraw();
+  // Remove only the last child instead of destroying all and redrawing
+  const children = drawingLayer.getChildren();
+  if (children.length > 0) {
+    children[children.length - 1].destroy();
+    drawingLayer.batchDraw();
+  }
 }
 
 // Text input functions
