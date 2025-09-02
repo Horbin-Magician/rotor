@@ -34,9 +34,6 @@ fxhash = "0.2.1"
 walkdir = "2.5.0"
 notify = "8.2.0"
 
-# [dependencies.rust-paddle-ocr]
-# git = "https://github.com/zibo-chen/rust-paddle-ocr.git"
-
 [target."cfg(target_os = \"macos\")".dependencies]
 cocoa = "0.25"
 core-graphics = "0.23"

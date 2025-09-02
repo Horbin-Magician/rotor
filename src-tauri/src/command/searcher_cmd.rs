@@ -23,12 +23,10 @@ pub async fn searcher_release() {
 
 #[tauri::command]
 pub fn open_file(file_path: String) -> Result<(), String> {
-    let _ = file_util::open_file(file_path);
-    Ok(())
+    file_util::open_file(file_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn open_file_as_admin(file_path: String) -> Result<(), String> {
-    let _ = file_util::open_file_as_admin(file_path);
-    Ok(())
+    file_util::open_file_as_admin(file_path).map_err(|e| e.to_string())
 }

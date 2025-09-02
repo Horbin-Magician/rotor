@@ -20,11 +20,16 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
                 v = shortcut.to_string();
                 if tokens.len() == 2 {
                     if let Some(old_shortcut) = app_config.get(&k) {
-                        let _ = app
+                        app
                             .global_shortcut()
-                            .unregister(Shortcut::from_str(old_shortcut).unwrap());
+                            .unregister(Shortcut::from_str(old_shortcut).unwrap())
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to unregister old shortcut: {e}");
+                            });
                     }
-                    let _ = app.global_shortcut().register(shortcut);
+                    app.global_shortcut().register(shortcut).unwrap_or_else(|e| {
+                        log::error!("Failed to register new shortcut: {e}");
+                    });
                 }
             }
         }

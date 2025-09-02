@@ -1,5 +1,4 @@
 use image::{self, imageops::resize, DynamicImage, RgbaImage, GrayImage};
-// use rust_paddle_ocr::{Det, Rec};
 
 // use crate::util::file_util;
 
