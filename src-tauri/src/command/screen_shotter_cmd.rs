@@ -77,26 +77,29 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
         }
     }
 
-    let masks_arc = {
-        let mut app = Application::global().lock().unwrap();
-        app.get_module("screenshot")
-            .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-            .map(|screenshot| screenshot.masks.clone())
-    };
+    #[cfg(target_os = "macos")]
+    { // Detect more rects from screenshot
+        let masks_arc = {
+            let mut app = Application::global().lock().unwrap();
+            app.get_module("screenshot")
+                .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+                .map(|screenshot| screenshot.masks.clone())
+        };
 
-    let image = if let Some(masks_arc) = masks_arc {
-        let masks = masks_arc.lock().unwrap();
-        masks.get(&label).cloned()
-    } else {
-        None
-    };
+        let image = if let Some(masks_arc) = masks_arc {
+            let masks = masks_arc.lock().unwrap();
+            masks.get(&label).cloned()
+        } else {
+            None
+        };
 
-    if let Some(image) = image {
-        let rects2 = img_util::detect_rect(&image);
-        for rect in rects2 {
-            let x = (rect.0 as f64 / scale_factor) as i32 + mon_pos.x;
-            let y = (rect.1 as f64 / scale_factor) as i32 + mon_pos.y;
-            rects.push((x, y, -1, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
+        if let Some(image) = image {
+            let rects2 = img_util::detect_rect(&image);
+            for rect in rects2 {
+                let x = (rect.0 as f64 / scale_factor) as i32 + mon_pos.x;
+                let y = (rect.1 as f64 / scale_factor) as i32 + mon_pos.y;
+                rects.push((x, y, -1, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
+            }
         }
     }
 
