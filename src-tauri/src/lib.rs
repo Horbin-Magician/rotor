@@ -11,6 +11,15 @@ use core::application;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    if util::sys_util::run_as_admin()
+        .unwrap_or_else( |e| {
+            log::error!("run_as_admin error: {:?}", e);
+            true
+        })
+    { return; }
+
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().level(log::LevelFilter::Debug).build())
         .plugin(tauri_plugin_dialog::init())

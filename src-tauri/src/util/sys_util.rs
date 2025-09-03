@@ -2,11 +2,9 @@ use xcap;
 
 #[cfg(target_os = "windows")]
 mod win_imports {
-//     pub use is_root::is_root;
-//     use std::env;
-//     use std::error::Error;
-//     pub use windows::core::PCWSTR;
-//     pub use windows::Win32::Globalization::GetUserDefaultLocaleName;
+    pub use is_root::is_root;
+    pub use std::env;
+    pub use std::error::Error;
     pub use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
     };
@@ -14,46 +12,18 @@ mod win_imports {
     pub use windows::Win32::Foundation::HWND;
     pub use windows::Win32::Foundation;
     pub use std::ffi::{CStr, CString};
-//     pub use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
-//     pub use windows::Win32::UI::Shell::ShellExecuteW;
-//     pub use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-//     pub use windows::Win32::{
-//         Foundation::{HWND, POINT, RECT},
-//         Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
-//         UI::WindowsAndMessaging::{
-//             ChildWindowFromPointEx, GetDesktopWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
-//             CWP_SKIPTRANSPARENT,
-//         },
-//     };
+    pub use crate::util::file_util;
 }
 #[cfg(target_os = "windows")]
 use win_imports::*;
 
-// #[cfg(target_os = "windows")]
-// pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
-//     if is_root() {
-//         return Ok(false);
-//     }
-//     let file_path: Vec<u16> = env::current_exe()?
-//         .to_str()
-//         .ok_or("Failed to_str")?
-//         .encode_utf16()
-//         .chain(std::iter::once(0))
-//         .collect();
-//     let runas_str: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
-//     let ins = unsafe {
-//         // TODO use the method of file_util
-//         ShellExecuteW(
-//             HWND(std::ptr::null_mut()),
-//             PCWSTR(runas_str.as_ptr()),
-//             PCWSTR(file_path.as_ptr()),
-//             PCWSTR::null(),
-//             PCWSTR::null(),
-//             SW_SHOWNORMAL,
-//         )
-//     };
-//     Ok(!ins.is_invalid()) // return true if programe run success
-// }
+#[cfg(target_os = "windows")]
+pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
+    if is_root() { return Ok(false); }
+    let file_path = env::current_exe()?.to_string_lossy().into_owned();
+    file_util::open_file_as_admin(file_path)?;
+    Ok(true)
+}
 
 // Check whether the disk represented by a drive letter is in ntfs format
 #[cfg(target_os = "windows")]
