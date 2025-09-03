@@ -28,7 +28,7 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self' 'unsafe-inline'; connect-src 'self' ipc://localhost; img-src 'self' data:;"
+      "csp": "default-src 'self' 'unsafe-inline'; connect-src 'self' ipc://localhost http://ipc.localhost; img-src 'self' data:;"
     }
   }
 }
