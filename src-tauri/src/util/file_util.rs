@@ -1,4 +1,6 @@
 use std::error::Error;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::{env, fs};
 use file_icon_provider::get_file_icon;
 use image::{DynamicImage, RgbaImage, ImageFormat};
@@ -41,10 +43,10 @@ pub fn open_file(file_path: String) -> Result<(), Box<dyn Error>> {
 
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &file_path])
+        std::process::Command::new("explorer.exe")
+            .arg(file_path)
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn()?;
-        // Command::new("explorer.exe").arg(file_full_name).spawn()?; // Old use
     }
     
     #[cfg(target_os = "macos")]
@@ -70,6 +72,7 @@ pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
                 "-Command",
                 &format!("Start-Process -FilePath '{}' -Verb RunAs", file_path)
             ])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn()?;
         Ok(())
     }

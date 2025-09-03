@@ -189,12 +189,12 @@ const scrollToSelected = () => {
 }
 
 const clickItem = (item: SearchItem) => {
-  invoke("open_file", {filePath: item.subtitle + '/' + item.title})
+  invoke("open_file", {filePath: item.subtitle + item.title})
   hideWindow()
 }
 
 const handleActionClick = (action: Action, item: SearchItem) => {
-  const filePath = item.subtitle + '/' + item.title
+  const filePath = item.subtitle + item.title // TODO fix in MacOS (add '/')
   
   switch (action.type) {
     case 'OpenAsAdmin':
@@ -202,7 +202,7 @@ const handleActionClick = (action: Action, item: SearchItem) => {
         .catch(err => console.error('Failed to open as admin:', err))
       break
     case 'OpenFolder':
-      invoke("open_file_as_admin", { filePath: item.subtitle })
+      invoke("open_file", { filePath: item.subtitle })
         .catch(err => console.error('Failed to open folder:', err))
       break
     default:
