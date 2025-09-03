@@ -13,6 +13,7 @@
 ![GitHub License](https://img.shields.io/github/license/Horbin-Magician/rotor)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/Horbin-Magician/rotor/total)
 ![Windows Support](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
+![macOS Support](https://img.shields.io/badge/macOS-000000?style=flat&logo=apple&logoColor=white)
 
 </div>
 
@@ -42,7 +43,7 @@ Now, Rotor include **file search** and **screenshot** module.
 3. By default, the captured image is fixed to the screen, and press `ESC` to close it, `S` to save it, `Enter` to copy it, `H` to minimize it.
 
 <div align=center>
-<img src="./doc/screenshot_demo.png" width="742" height="290"> 
+<img src="./doc/screenshot_demo.png" width="558" height="352"> 
 </div>
 
 # Contribution
@@ -65,6 +66,3 @@ I sincerely hope that you can provide quality code for this project.
 [MIT](https://opensource.org/licenses/MIT)
 
 Copyright (c) 2022-present, Horbin
-
-
-
