@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "bundle": {
+    "createUpdaterArtifacts": true,
     "macOS": {
       "signingIdentity": "-"
     },
@@ -29,6 +30,14 @@
   "app": {
     "security": {
       "csp": "default-src 'self' 'unsafe-inline'; connect-src 'self' ipc://localhost http://ipc.localhost; img-src 'self' data:;"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4RjBFRTQxNEU0NEJBMjAKUldRZ3VrUk9RZTd3Mk44akdOZXg5eTI1Y3RGYmlXNFVqM3Q2L0VBODF3UFN5Z1MvdkFQbHAxdm0K%",
+      "endpoints": [
+        "https://github.com/Horbin-Magician/rotor/releases/latest/download/latest.json"
+      ]
     }
   }
 }
