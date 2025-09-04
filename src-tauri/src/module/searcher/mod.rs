@@ -3,13 +3,13 @@ mod file_data;
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
 use crate::module::Module;
-use std::{any::Any, sync::mpsc};
 use std::error::Error;
 use std::str::FromStr;
+use std::{any::Any, sync::mpsc};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 
-use file_data::{FileData, SearcherMessage, SearchResultItem};
+use file_data::{FileData, SearchResultItem, SearcherMessage};
 
 pub struct Searcher {
     app_hander: Option<tauri::AppHandle>,
@@ -78,20 +78,15 @@ impl Searcher {
 
     fn build_window(&self) -> Result<(), Box<dyn Error>> {
         if let Some(ref app) = self.app_hander {
-            let mut win_builder = WebviewWindowBuilder::new(
-                app,
-                "searcher",
-                WebviewUrl::App("Searcher".into()),
-            )
-            .always_on_top(true)
-            .resizable(false)
-            .visible(false);
+            let mut win_builder =
+                WebviewWindowBuilder::new(app, "searcher", WebviewUrl::App("Searcher".into()))
+                    .always_on_top(true)
+                    .resizable(false)
+                    .visible(false);
 
             #[cfg(target_os = "windows")]
             {
-                win_builder = win_builder
-                    .decorations(false)
-                    .skip_taskbar(true);
+                win_builder = win_builder.decorations(false).skip_taskbar(true);
             }
 
             #[cfg(target_os = "macos")]
@@ -110,17 +105,29 @@ impl Searcher {
     }
 
     pub fn find(&self, filename: String) {
-        let _ = self.searcher_msg_sender.send(SearcherMessage::Find(filename));
+        let _ = self
+            .searcher_msg_sender
+            .send(SearcherMessage::Find(filename));
     }
 
     pub fn release(&self) {
         let _ = self.searcher_msg_sender.send(SearcherMessage::Release);
     }
 
-    fn update_result_model(filename: String, update_result: Vec<SearchResultItem>, if_increase: bool) {
+    fn update_result_model(
+        filename: String,
+        update_result: Vec<SearchResultItem>,
+        if_increase: bool,
+    ) {
         let app = Application::global().lock().unwrap();
         if let Some(app_handle) = &app.app {
-            app_handle.emit_to("searcher","update_result", (filename, update_result, if_increase)).unwrap();
+            app_handle
+                .emit_to(
+                    "searcher",
+                    "update_result",
+                    (filename, update_result, if_increase),
+                )
+                .unwrap();
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
-use std::io::{self, Write};
 use std::fs;
+use std::io::{self, Write};
 use std::sync::mpsc::Receiver;
 
 #[derive(serde::Serialize)]
@@ -44,7 +44,7 @@ pub struct FileMap {
 
 impl FileMap {
     #[allow(unused)]
-    pub fn new() -> FileMap{
+    pub fn new() -> FileMap {
         FileMap {
             start_usn: 0,
             main_map: BTreeMap::new(),
@@ -57,7 +57,15 @@ impl FileMap {
     pub fn insert(&mut self, index: u64, file_name: String, parent_index: u64) {
         let filter = make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
-        self.insert_simple(index, FileView { parent_index, file_name, filter, rank });
+        self.insert_simple(
+            index,
+            FileView {
+                parent_index,
+                file_name,
+                filter,
+                rank,
+            },
+        );
     }
 
     // insert a file to the database by index and file struct
@@ -86,7 +94,13 @@ impl FileMap {
 
     // search for files by query
     #[allow(unused)]
-    pub fn search(&self, query: &str, last_search_num: usize, batch: u8, stop_receiver: &Receiver<()> ) -> (Option<Vec<SearchResultItem>>, usize) {
+    pub fn search(
+        &self,
+        query: &str,
+        last_search_num: usize,
+        batch: u8,
+        stop_receiver: &Receiver<()>,
+    ) -> (Option<Vec<SearchResultItem>>, usize) {
         let mut result = Vec::new();
         let mut find_num = 0;
         let mut search_num: usize = 0;
@@ -95,9 +109,13 @@ impl FileMap {
 
         let file_map_iter = self.iter().rev().skip(last_search_num);
         for (_, file) in file_map_iter {
-            if stop_receiver.try_recv().is_ok() { return (None, 0); }
+            if stop_receiver.try_recv().is_ok() {
+                return (None, 0);
+            }
             search_num += 1;
-            if (file.filter & query_filter) == query_filter && match_str(&file.file_name, &query_lower) {
+            if (file.filter & query_filter) == query_filter
+                && match_str(&file.file_name, &query_lower)
+            {
                 if let Some(path) = self.get_path(&file.parent_index) {
                     result.push(SearchResultItem {
                         path,
@@ -105,7 +123,9 @@ impl FileMap {
                         rank: file.rank,
                     });
                     find_num += 1;
-                    if find_num >= batch { break; }
+                    if find_num >= batch {
+                        break;
+                    }
                 }
             }
         }
@@ -136,30 +156,52 @@ impl FileMap {
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
         let file_data = fs::read(path)?;
 
-        if file_data.len() < 8 { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data too short.").into()); }
+        if file_data.len() < 8 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "File data too short.").into());
+        }
 
         self.start_usn = i64::from_be_bytes(file_data[0..8].try_into()?);
         let mut ptr_index = 8;
 
         while ptr_index < file_data.len() {
-            if ptr_index + 18 > file_data.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into()); }
-            
-            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into()?);
+            if ptr_index + 18 > file_data.len() {
+                return Err(
+                    io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
+                );
+            }
+
+            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index + 8].try_into()?);
             ptr_index += 8;
-            let parent_index = usize::from_be_bytes(file_data[ptr_index..ptr_index+8].try_into()?) as u64;
+            let parent_index =
+                usize::from_be_bytes(file_data[ptr_index..ptr_index + 8].try_into()?) as u64;
             ptr_index += 8;
-            let file_name_len = u16::from_be_bytes(file_data[ptr_index..ptr_index+2].try_into()?) as u16;
+            let file_name_len =
+                u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?) as u16;
             ptr_index += 2;
 
-            if ptr_index + (file_name_len as usize) + 5 > file_data.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into()); }
+            if ptr_index + (file_name_len as usize) + 5 > file_data.len() {
+                return Err(
+                    io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
+                );
+            }
 
-            let file_name = String::from_utf8(file_data[ptr_index..(ptr_index + file_name_len as usize)].to_vec())?;
+            let file_name = String::from_utf8(
+                file_data[ptr_index..(ptr_index + file_name_len as usize)].to_vec(),
+            )?;
             ptr_index += file_name_len as usize;
-            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index+4].try_into()?);
+            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index + 4].try_into()?);
             ptr_index += 4;
-            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index+1].try_into()?);
+            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index + 1].try_into()?);
             ptr_index += 1;
-            self.insert_simple(index, FileView { parent_index, file_name, filter, rank });
+            self.insert_simple(
+                index,
+                FileView {
+                    parent_index,
+                    file_name,
+                    filter,
+                    rank,
+                },
+            );
         }
 
         Ok(())
@@ -196,11 +238,16 @@ impl FileMap {
     fn get_file_rank(file_name: &str) -> i8 {
         let mut rank: i8 = 0;
 
-        if file_name.to_lowercase().ends_with(".exe") { rank += 10; }
-        else if file_name.to_lowercase().ends_with(".lnk") { rank += 25; }
+        if file_name.to_lowercase().ends_with(".exe") {
+            rank += 10;
+        } else if file_name.to_lowercase().ends_with(".lnk") {
+            rank += 25;
+        }
 
         let tmp = 40i16 - file_name.len() as i16;
-        if tmp > 0 { rank += tmp as i8; }
+        if tmp > 0 {
+            rank += tmp as i8;
+        }
 
         rank
     }
@@ -220,7 +267,6 @@ impl FileMap {
         }
         Some(path)
     }
-
 }
 
 // Calculates a 32bit value that is used to filter out many files before comparing their filenames
@@ -234,12 +280,14 @@ fn make_filter(str: &str) -> u32 {
     28 not in ASCII
     */
     let len = str.len();
-    if len == 0 { return 0;}
+    if len == 0 {
+        return 0;
+    }
     let mut address: u32 = 0;
     let str_lower = str.to_lowercase();
 
     for c in str_lower.chars() {
-        if c == '*' { 
+        if c == '*' {
             continue; // Reserved for wildcard
         } else if c.is_ascii_lowercase() {
             address |= 1 << (c as u32 - 97);
@@ -257,7 +305,8 @@ fn make_filter(str: &str) -> u32 {
 // return true if contain query
 fn match_str(contain: &str, query_lower: &str) -> bool {
     let mut lower_contain = contain.to_lowercase();
-    for s in query_lower.split('*') { // for wildcard
+    for s in query_lower.split('*') {
+        // for wildcard
         if let Some(index) = lower_contain.find(s) {
             lower_contain = (lower_contain.split_at(index).1).to_string();
         } else {

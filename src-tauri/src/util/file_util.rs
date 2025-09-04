@@ -1,12 +1,12 @@
+use base64::prelude::*;
+use file_icon_provider::get_file_icon;
+use image::{DynamicImage, ImageFormat, RgbaImage};
 use std::error::Error;
+use std::io::Cursor;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use std::{env, fs};
-use file_icon_provider::get_file_icon;
-use image::{DynamicImage, RgbaImage, ImageFormat};
-use std::io::Cursor;
 use std::path::Path;
-use base64::prelude::*;
+use std::{env, fs};
 
 #[allow(dead_code)]
 pub fn file_exists(path: &str) -> bool {
@@ -48,14 +48,12 @@ pub fn open_file(file_path: String) -> Result<(), Box<dyn Error>> {
             .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn()?;
     }
-    
+
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(&file_path)
-            .spawn()?;
+        std::process::Command::new("open").arg(&file_path).spawn()?;
     }
-    
+
     Ok(())
 }
 
@@ -70,7 +68,7 @@ pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
         std::process::Command::new("powershell")
             .args([
                 "-Command",
-                &format!("Start-Process -FilePath '{}' -Verb RunAs", file_path)
+                &format!("Start-Process -FilePath '{}' -Verb RunAs", file_path),
             ])
             .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn()?;
@@ -90,7 +88,7 @@ pub fn get_file_icon_data(file_path: &str) -> Option<String> {
     if !path.exists() {
         return None;
     }
-    
+
     // Get icon with 32x32 size
     match get_file_icon(path, 32) {
         Ok(icon) => {
@@ -98,11 +96,11 @@ pub fn get_file_icon_data(file_path: &str) -> Option<String> {
             match RgbaImage::from_raw(icon.width, icon.height, icon.pixels) {
                 Some(img) => {
                     let dynamic_img = DynamicImage::ImageRgba8(img);
-                    
+
                     // Convert to PNG bytes
                     let mut png_bytes = Vec::new();
                     let mut cursor = Cursor::new(&mut png_bytes);
-                    
+
                     match dynamic_img.write_to(&mut cursor, ImageFormat::Png) {
                         Ok(()) => {
                             // Encode as base64

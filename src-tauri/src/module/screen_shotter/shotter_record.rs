@@ -1,8 +1,8 @@
-use toml;
+use image::{self, DynamicImage};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::{collections::HashMap, fs};
-use serde::{Serialize, Deserialize};
-use image::{self, DynamicImage};
+use toml;
 
 use crate::util::file_util;
 
@@ -28,8 +28,12 @@ struct Record {
     workspaces: HashMap<String, WorkSpace>,
 }
 
-fn default_shotter() -> HashMap<String, ShotterConfig> { HashMap::<String, ShotterConfig>::default() }
-fn default_workspace() -> HashMap<String, WorkSpace> { HashMap::<String, WorkSpace>::default() }
+fn default_shotter() -> HashMap<String, ShotterConfig> {
+    HashMap::<String, ShotterConfig>::default()
+}
+fn default_workspace() -> HashMap<String, WorkSpace> {
+    HashMap::<String, WorkSpace>::default()
+}
 
 const DEFAULT_SPACE_ID: &str = "default";
 
@@ -80,8 +84,7 @@ impl ShotterRecord {
         let root_path = ShotterRecord::get_root_path();
         let record_path = root_path.join("record.toml");
 
-        let record_str = fs::read_to_string(&record_path)
-            .unwrap_or_else(|_| String::new());
+        let record_str = fs::read_to_string(&record_path).unwrap_or_else(|_| String::new());
 
         let record = match toml::from_str::<Record>(&record_str) {
             Ok(record) => record,
@@ -98,9 +101,7 @@ impl ShotterRecord {
             }
         };
 
-        ShotterRecord {
-            record,
-        }
+        ShotterRecord { record }
     }
 
     fn save(&self) -> Result<(), Box<dyn Error>> {
@@ -110,7 +111,11 @@ impl ShotterRecord {
         Ok(())
     }
 
-    pub fn update_shotter(&mut self, id: u32, shotter: ShotterConfig) -> Result<(), Box<dyn Error>> {
+    pub fn update_shotter(
+        &mut self,
+        id: u32,
+        shotter: ShotterConfig,
+    ) -> Result<(), Box<dyn Error>> {
         if let Some(workspace) = self.record.workspaces.get_mut(DEFAULT_SPACE_ID) {
             workspace.shotters.insert(id.to_string(), shotter);
         } else {
@@ -118,7 +123,9 @@ impl ShotterRecord {
                 shotters: HashMap::new(),
             };
             workspace.shotters.insert(id.to_string(), shotter);
-            self.record.workspaces.insert(DEFAULT_SPACE_ID.to_string(), workspace);
+            self.record
+                .workspaces
+                .insert(DEFAULT_SPACE_ID.to_string(), workspace);
         }
         self.save()?;
         Ok(())

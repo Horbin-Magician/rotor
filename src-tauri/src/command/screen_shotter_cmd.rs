@@ -6,7 +6,7 @@ use xcap::Monitor;
 
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
-use crate::module::screen_shotter::{ScreenShotter, shotter_record::ShotterConfig};
+use crate::module::screen_shotter::{shotter_record::ShotterConfig, ScreenShotter};
 use crate::util::{img_util, sys_util};
 
 // Command for mask window
@@ -35,7 +35,10 @@ pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc:
 }
 
 #[tauri::command]
-pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Vec<(i32, i32, i32, u32, u32)> {
+pub async fn get_screen_rects(
+    label: String,
+    window: tauri::WebviewWindow,
+) -> Vec<(i32, i32, i32, u32, u32)> {
     let monitor = window.current_monitor().unwrap().unwrap();
     let scale_factor = monitor.scale_factor();
     let mon_pos: tauri::LogicalPosition<i32> = monitor.position().to_logical(scale_factor);
@@ -46,19 +49,21 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
 
     for rect in raw_rects {
         let (rect_x, rect_y, rect_z, rect_width, rect_height) = rect;
-        
+
         // Calculate rect bounds
         let rect_right = rect_x + rect_width as i32;
         let rect_bottom = rect_y + rect_height as i32;
-        
+
         // Calculate monitor bounds
         let mon_right = mon_pos.x + mon_size.width;
         let mon_bottom = mon_pos.y + mon_size.height;
-        
+
         // Check if rect intersects with monitor
-        if rect_right > mon_pos.x && rect_x < mon_right && 
-           rect_bottom > mon_pos.y && rect_y < mon_bottom {
-            
+        if rect_right > mon_pos.x
+            && rect_x < mon_right
+            && rect_bottom > mon_pos.y
+            && rect_y < mon_bottom
+        {
             // Clip rect to monitor bounds
             let clipped_x = rect_x.max(mon_pos.x);
             let clipped_y = rect_y.max(mon_pos.y);
@@ -68,17 +73,24 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
             // Calculate clipped dimensions
             let clipped_width = (clipped_right - clipped_x) as u32;
             let clipped_height = (clipped_bottom - clipped_y) as u32;
-            
+
             // Convert to monitor-relative coordinates
             let relative_x = clipped_x - mon_pos.x;
             let relative_y = clipped_y - mon_pos.y;
-            
-            rects.push((relative_x, relative_y, rect_z, clipped_width, clipped_height));
+
+            rects.push((
+                relative_x,
+                relative_y,
+                rect_z,
+                clipped_width,
+                clipped_height,
+            ));
         }
     }
 
     #[cfg(target_os = "macos")]
-    { // Detect more rects from screenshot
+    {
+        // Detect more rects from screenshot
         let masks_arc = {
             let mut app = Application::global().lock().unwrap();
             app.get_module("screenshot")
@@ -98,7 +110,13 @@ pub async fn get_screen_rects(label: String, window: tauri::WebviewWindow) -> Ve
             for rect in rects2 {
                 let x = (rect.0 as f64 / scale_factor) as i32 + mon_pos.x;
                 let y = (rect.1 as f64 / scale_factor) as i32 + mon_pos.y;
-                rects.push((x, y, -1, (rect.2 as f64 / scale_factor) as u32, (rect.3 as f64 / scale_factor) as u32));
+                rects.push((
+                    x,
+                    y,
+                    -1,
+                    (rect.2 as f64 / scale_factor) as u32,
+                    (rect.3 as f64 / scale_factor) as u32,
+                ));
             }
         }
     }
@@ -150,7 +168,7 @@ pub async fn new_pin(
             log::error!("Failed to parse height: {}", height);
             return;
         };
-        
+
         let rect = (offset_x_val, offset_y_val, width_val, height_val);
 
         if let Some(s) = screenshot {
@@ -201,7 +219,7 @@ pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
     if let Some(img) = img {
         return tauri::ipc::Response::new(img.to_rgba8().to_vec());
     }
-    
+
     warn!("No image found for id: {}", id);
     tauri::ipc::Response::new(vec![])
 }
@@ -259,17 +277,26 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
         log::error!("Failed to acquire config lock");
         return false;
     };
-    let save_path = app_config.get(&"save_path".to_string()).cloned().unwrap_or_default();
-    let if_auto_change = app_config.get(&"if_auto_change_save_path".to_string()).cloned().unwrap_or("true".to_string());
-    let if_ask_path = app_config.get(&"if_ask_save_path".to_string()).cloned().unwrap_or("true".to_string());
+    let save_path = app_config
+        .get(&"save_path".to_string())
+        .cloned()
+        .unwrap_or_default();
+    let if_auto_change = app_config
+        .get(&"if_auto_change_save_path".to_string())
+        .cloned()
+        .unwrap_or("true".to_string());
+    let if_ask_path = app_config
+        .get(&"if_ask_save_path".to_string())
+        .cloned()
+        .unwrap_or("true".to_string());
 
     let file_name = chrono::Local::now()
         .format("Rotor_%Y-%m-%d-%H-%M-%S.png")
         .to_string();
 
-    let file_path: Option<std::path::PathBuf> = if (if_ask_path == "true") ||  (save_path.is_empty()) {
-        app
-            .dialog()
+    let file_path: Option<std::path::PathBuf> = if (if_ask_path == "true") || (save_path.is_empty())
+    {
+        app.dialog()
             .file()
             .set_directory(save_path)
             .add_filter("PNG", &["png"])
@@ -279,11 +306,14 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     } else {
         Some(std::path::PathBuf::from(save_path))
     };
-    
+
     if let Some(file_path) = file_path {
         if if_auto_change == "true" {
             if let Some(parent) = file_path.parent() {
-                if let Err(e) = app_config.set("save_path".to_string(), parent.to_string_lossy().to_string()) {
+                if let Err(e) = app_config.set(
+                    "save_path".to_string(),
+                    parent.to_string_lossy().to_string(),
+                ) {
                     log::warn!("Failed to update save path: {}", e);
                 }
             }

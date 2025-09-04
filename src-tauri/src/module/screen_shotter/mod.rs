@@ -1,16 +1,19 @@
 pub mod shotter_record;
 
-use crate::{core::config::AppConfig, module::screen_shotter::shotter_record::{ShotterRecord, ShotterConfig}};
 use crate::module::Module;
+use crate::{
+    core::config::AppConfig,
+    module::screen_shotter::shotter_record::{ShotterConfig, ShotterRecord},
+};
+use image::{DynamicImage, RgbaImage};
 use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
-use image::{DynamicImage, RgbaImage};
+use std::sync::Mutex;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
-use std::sync::Mutex;
 use xcap::Monitor;
 
 use crate::util::i18n;
@@ -48,7 +51,8 @@ impl Module for ScreenShotter {
 
         // Capture screen
         #[cfg(target_os = "windows")]
-        { // TODO optimize performance
+        {
+            // TODO optimize performance
             let masks_clone = Arc::clone(&self.masks);
             tauri::async_runtime::spawn(async move {
                 for monitor in Monitor::all().unwrap() {
@@ -73,7 +77,6 @@ impl Module for ScreenShotter {
                 });
             }
         }
-
 
         app_handle.emit("show-mask", ()).unwrap();
         self.build_pin_window(None)?; // Pre-build pin window for faster response after mask is shown
@@ -115,7 +118,7 @@ impl ScreenShotter {
             Some(handle) => handle,
             None => return Err("AppHandle not initialized".into()),
         };
-        
+
         for monitor in Monitor::all()? {
             let label = format!("ssmask-{}", monitor.id()?);
 
@@ -133,14 +136,17 @@ impl ScreenShotter {
 
             #[cfg(target_os = "windows")]
             {
-                window.hwnd().map(|hwnd| {
-                    sys_util::forbid_window_animation(hwnd);
-                }).ok();
+                window
+                    .hwnd()
+                    .map(|hwnd| {
+                        sys_util::forbid_window_animation(hwnd);
+                    })
+                    .ok();
             }
 
             #[cfg(target_os = "macos")]
             {
-                use cocoa::appkit::{NSWindow, NSMainMenuWindowLevel};
+                use cocoa::appkit::{NSMainMenuWindowLevel, NSWindow};
                 use cocoa::base::id;
                 let ns_window = window.ns_window().unwrap() as id;
                 unsafe {
@@ -148,7 +154,10 @@ impl ScreenShotter {
                 }
             }
 
-            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: monitor.x()?, y: monitor.y()? }))?;
+            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                x: monitor.x()?,
+                y: monitor.y()?,
+            }))?;
         }
 
         Ok(())
@@ -160,7 +169,11 @@ impl ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
-        let set_id = if let Some(id) = id { id } else { self.max_pin_id };
+        let set_id = if let Some(id) = id {
+            id
+        } else {
+            self.max_pin_id
+        };
         let label = format!("sspin-{}", set_id);
 
         if app_handle.get_webview_window(&label).is_none() {
@@ -178,9 +191,12 @@ impl ScreenShotter {
             #[cfg(target_os = "windows")]
             {
                 let window = win_builder.build()?;
-                window.hwnd().map(|hwnd| {
-                    sys_util::forbid_window_animation(hwnd);
-                }).ok();
+                window
+                    .hwnd()
+                    .map(|hwnd| {
+                        sys_util::forbid_window_animation(hwnd);
+                    })
+                    .ok();
             }
 
             #[cfg(target_os = "macos")]
@@ -204,7 +220,14 @@ impl ScreenShotter {
             None => return Err("AppHandle not initialized".into()),
         };
 
-        let config = ShotterConfig {pos_x, pos_y, rect, zoom_factor: 100, mask_label, minimized: false};
+        let config = ShotterConfig {
+            pos_x,
+            pos_y,
+            rect,
+            zoom_factor: 100,
+            mask_label,
+            minimized: false,
+        };
         self.update_shotter_record(self.max_pin_id, config);
 
         let pin_label = format!("sspin-{}", self.max_pin_id);
@@ -246,8 +269,9 @@ impl ScreenShotter {
                         record.rect.0,
                         record.rect.1,
                         record.rect.2,
-                        record.rect.3
-                    ).to_image();
+                        record.rect.3,
+                    )
+                    .to_image();
                     let dyn_img = DynamicImage::ImageRgba8(cropped_img);
                     ShotterRecord::save_record_img(id, dyn_img.clone());
                     return Some(dyn_img);

@@ -1,6 +1,6 @@
-pub mod tray;
 pub mod screen_shotter;
 pub mod searcher;
+pub mod tray;
 
 use std::any::Any;
 use std::{error::Error, vec};

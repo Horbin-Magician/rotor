@@ -2,24 +2,26 @@ use xcap;
 
 #[cfg(target_os = "windows")]
 mod win_imports {
+    pub use crate::util::file_util;
     pub use is_root::is_root;
     pub use std::env;
     pub use std::error::Error;
+    pub use std::ffi::{CStr, CString};
+    pub use windows::Win32::Foundation;
+    pub use windows::Win32::Foundation::HWND;
     pub use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
     };
     pub use windows::Win32::Storage::FileSystem;
-    pub use windows::Win32::Foundation::HWND;
-    pub use windows::Win32::Foundation;
-    pub use std::ffi::{CStr, CString};
-    pub use crate::util::file_util;
 }
 #[cfg(target_os = "windows")]
 use win_imports::*;
 
 #[cfg(target_os = "windows")]
 pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
-    if is_root() { return Ok(false); }
+    if is_root() {
+        return Ok(false);
+    }
     let file_path = env::current_exe()?.to_string_lossy().into_owned();
     file_util::open_file_as_admin(file_path)?;
     Ok(true)
@@ -37,14 +39,15 @@ pub fn is_ntfs(vol: char) -> bool {
 
         unsafe {
             if FileSystem::GetVolumeInformationA(
-                    windows::core::PCSTR(root_path_name.as_ptr() as *const u8),
-                    Some(&mut volume_name_buffer),
-                    Some(&mut volume_serial_number),
-                    Some(&mut maximum_component_length),
-                    Some(&mut file_system_flags),
-                    Some(&mut file_system_name_buffer),
-                ).is_ok() {
-
+                windows::core::PCSTR(root_path_name.as_ptr() as *const u8),
+                Some(&mut volume_name_buffer),
+                Some(&mut volume_serial_number),
+                Some(&mut maximum_component_length),
+                Some(&mut file_system_flags),
+                Some(&mut file_system_name_buffer),
+            )
+            .is_ok()
+            {
                 let result = CStr::from_ptr(file_system_name_buffer.as_ptr() as *const i8);
                 return result.to_string_lossy() == "NTFS";
             }
@@ -74,7 +77,7 @@ pub fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
         use core_graphics::event::CGEvent;
         use core_graphics::event_source::CGEventSource;
         use core_graphics::event_source::CGEventSourceStateID;
-        
+
         // Create a CGEvent using a default event source to get the current cursor position
         if let Ok(event_source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
             if let Ok(event) = CGEvent::new(event_source) {
@@ -84,19 +87,19 @@ pub fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
         }
         Err("Failed to get cursor position".into())
     }
-    
+
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
         use windows::Win32::Foundation::POINT;
-        
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
         let mut point = POINT { x: 0, y: 0 };
         unsafe {
             GetCursorPos(&mut point)?;
         }
         Ok((point.x, point.y))
     }
-    
+
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         Ok((0, 0))
@@ -113,8 +116,6 @@ pub fn forbid_window_animation(handle: HWND) {
             &disable as *const _ as *const _,
             std::mem::size_of_val(&disable) as u32,
         )
-        .unwrap_or_else(|e| {
-            log::error!("DwmSetWindowAttribute error: {:?}", e)
-        });
+        .unwrap_or_else(|e| log::error!("DwmSetWindowAttribute error: {:?}", e));
     }
 }

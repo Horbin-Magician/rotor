@@ -1,13 +1,13 @@
-use std::{fs, io};
-use std::sync::mpsc;
-use std::error::Error;
-use std::time::SystemTime;
 use notify::event::{ModifyKind, RenameMode};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::error::Error;
+use std::sync::mpsc;
+use std::time::SystemTime;
+use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher, Event, EventKind};
 
-use crate::util::file_util;
 use super::default_file_map::{FileMap, SearchResultItem};
+use crate::util::file_util;
 
 pub struct Volume {
     pub drive: String,
@@ -61,7 +61,11 @@ impl Volume {
         self.watcher = Some(watcher);
         self.event_receiver = Some(rx);
 
-        log::info!("{} File watching started for path: {}", self.drive, root_path);
+        log::info!(
+            "{} File watching started for path: {}",
+            self.drive,
+            root_path
+        );
         Ok(())
     }
 
@@ -79,7 +83,7 @@ impl Volume {
         };
 
         let mut has_changes = false;
-        
+
         while let Ok(event_result) = receiver.try_recv() {
             match event_result {
                 Ok(event) => {
@@ -105,10 +109,14 @@ impl Volume {
                                 }
                                 RenameMode::To => {
                                     for path in event.paths {
-                                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                        if let Some(file_name) =
+                                            path.file_name().and_then(|n| n.to_str())
+                                        {
                                             if let Some(parent) = path.parent() {
-                                                let parent_path = parent.to_string_lossy().to_string();
-                                                self.file_map.insert(file_name.to_string(), parent_path);
+                                                let parent_path =
+                                                    parent.to_string_lossy().to_string();
+                                                self.file_map
+                                                    .insert(file_name.to_string(), parent_path);
                                             }
                                         }
                                     }
@@ -118,10 +126,14 @@ impl Volume {
                                     for path in event.paths {
                                         if flag {
                                             // TODO del old one
-                                        } else if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                        } else if let Some(file_name) =
+                                            path.file_name().and_then(|n| n.to_str())
+                                        {
                                             if let Some(parent) = path.parent() {
-                                                let parent_path = parent.to_string_lossy().to_string();
-                                                self.file_map.insert(file_name.to_string(), parent_path);
+                                                let parent_path =
+                                                    parent.to_string_lossy().to_string();
+                                                self.file_map
+                                                    .insert(file_name.to_string(), parent_path);
                                             }
                                         }
                                         flag = !flag;
@@ -130,10 +142,14 @@ impl Volume {
                                 _ => {
                                     for path in event.paths {
                                         if path.exists() {
-                                            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                            if let Some(file_name) =
+                                                path.file_name().and_then(|n| n.to_str())
+                                            {
                                                 if let Some(parent) = path.parent() {
-                                                    let parent_path = parent.to_string_lossy().to_string();
-                                                    self.file_map.insert(file_name.to_string(), parent_path);
+                                                    let parent_path =
+                                                        parent.to_string_lossy().to_string();
+                                                    self.file_map
+                                                        .insert(file_name.to_string(), parent_path);
                                                 }
                                             }
                                         }
@@ -170,27 +186,31 @@ impl Volume {
 
         // Check if the root path exists
         if !std::path::Path::new(&root_path).exists() {
-            log::error!("{} Root path {} does not exist, skipping index build", self.drive, root_path);
+            log::error!(
+                "{} Root path {} does not exist, skipping index build",
+                self.drive,
+                root_path
+            );
             return;
         }
 
         fn is_ignored(entry: &DirEntry) -> bool {
             let file_name = entry.file_name().to_str().unwrap().to_lowercase();
-            if file_name.starts_with(".") { return true }
+            if file_name.starts_with(".") {
+                return true;
+            }
             #[cfg(target_os = "macos")]
             {
-                let ignore_names = [
-                    "cache".to_string(),
-                    "caches".to_string()
-                ];
-                if ignore_names.contains(&file_name) { return true }
+                let ignore_names = ["cache".to_string(), "caches".to_string()];
+                if ignore_names.contains(&file_name) {
+                    return true;
+                }
             }
             false
         }
 
         // Walk the directory tree using walkdir
-        let mut walkdir = WalkDir::new(&root_path)
-            .follow_links(false); // don't follow symbolic links to avoid infinite loops
+        let mut walkdir = WalkDir::new(&root_path).follow_links(false); // don't follow symbolic links to avoid infinite loops
         if root_path == "/Applications" {
             walkdir = walkdir.max_depth(1);
         }
@@ -228,19 +248,26 @@ impl Volume {
             self.file_map.insert(file_name, parent_path);
         }
 
-        log::info!("{} End Volume::build_index, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis());
+        log::info!(
+            "{} End Volume::build_index, use time: {:?} ms",
+            self.drive,
+            sys_time.elapsed().unwrap_or_default().as_millis()
+        );
 
         if let Err(e) = self.start_watching() {
             log::error!("{} Failed to start file watching: {:?}", self.drive, e);
         }
 
-        self.serialization_write()
-            .unwrap_or_else(|e| log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e));
+        self.serialization_write().unwrap_or_else(|e| {
+            log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e)
+        });
     }
 
     // Clears the database
     pub fn release_index(&mut self) {
-        if self.file_map.is_empty() {return;}
+        if self.file_map.is_empty() {
+            return;
+        }
 
         self.last_query = String::new();
         self.last_search_num = 0;
@@ -252,14 +279,19 @@ impl Volume {
     }
 
     // searching
-    pub fn find(&mut self, query: String, batch: u8, sender: mpsc::Sender<Option<Vec<SearchResultItem>>>) {
+    pub fn find(
+        &mut self,
+        query: String,
+        batch: u8,
+        sender: mpsc::Sender<Option<Vec<SearchResultItem>>>,
+    ) {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
 
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::Find {query}", self.drive);
 
-        if query.is_empty() { 
+        if query.is_empty() {
             let _ = sender.send(None);
             return;
         }
@@ -269,20 +301,25 @@ impl Volume {
             self.last_query = query.clone();
         }
 
-        if self.file_map.is_empty() { 
-            self.serialization_read()
-                .unwrap_or_else(|e| {
-                    log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
-                    self.build_index();
-                });
+        if self.file_map.is_empty() {
+            self.serialization_read().unwrap_or_else(|e| {
+                log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
+                self.build_index();
+            });
         };
 
-        while self.stop_receiver.try_recv().is_ok() { } // clear channel before find
-        let (result, search_num) = self.file_map.search(&query, self.last_search_num, batch, &self.stop_receiver);
+        while self.stop_receiver.try_recv().is_ok() {} // clear channel before find
+        let (result, search_num) =
+            self.file_map
+                .search(&query, self.last_search_num, batch, &self.stop_receiver);
 
         #[cfg(debug_assertions)]
-        log::info!("{} End Volume::Find {query}, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis());
-        
+        log::info!(
+            "{} End Volume::Find {query}, use time: {:?} ms",
+            self.drive,
+            sys_time.elapsed().unwrap_or_default().as_millis()
+        );
+
         self.last_search_num += search_num;
 
         let _ = sender.send(result);
@@ -293,12 +330,11 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::update_index", self.drive);
 
-        if self.file_map.is_empty() { 
-            self.serialization_read()
-                .unwrap_or_else(|e| {
-                    log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
-                    self.build_index();
-                });
+        if self.file_map.is_empty() {
+            self.serialization_read().unwrap_or_else(|e| {
+                log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
+                self.build_index();
+            });
         };
 
         let _ = self.handle_file_events();
@@ -314,11 +350,15 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_write", self.drive);
 
-        if self.file_map.is_empty() {return Ok(())};
-        
+        if self.file_map.is_empty() {
+            return Ok(());
+        };
+
         let file_path = file_util::get_userdata_path();
         if let Some(file_path) = file_path {
-            if !file_path.exists() { fs::create_dir(&file_path)?; }
+            if !file_path.exists() {
+                fs::create_dir(&file_path)?;
+            }
             let safe_drive = self.drive[1..].replace("/", "_");
             let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
             self.file_map.save(&file_name)?;
@@ -327,7 +367,11 @@ impl Volume {
         self.release_index();
 
         #[cfg(debug_assertions)]
-        log::info!("{} End Volume::serialization_write, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis());
+        log::info!(
+            "{} End Volume::serialization_write, use time: {:?} ms",
+            self.drive,
+            sys_time.elapsed().unwrap_or_default().as_millis()
+        );
 
         Ok(())
     }
@@ -338,7 +382,7 @@ impl Volume {
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_read", self.drive);
-        
+
         let file_path = file_util::get_userdata_path();
         if let Some(file_path) = file_path {
             let safe_drive = self.drive[1..].replace("/", "_");
@@ -347,7 +391,11 @@ impl Volume {
         }
 
         #[cfg(debug_assertions)]
-        log::info!("{} End Volume::serialization_read, use time: {:?} ms", self.drive, sys_time.elapsed().unwrap_or_default().as_millis());
+        log::info!(
+            "{} End Volume::serialization_read, use time: {:?} ms",
+            self.drive,
+            sys_time.elapsed().unwrap_or_default().as_millis()
+        );
 
         Ok(())
     }

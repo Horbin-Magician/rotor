@@ -20,16 +20,17 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
                 v = shortcut.to_string();
                 if tokens.len() == 2 {
                     if let Some(old_shortcut) = app_config.get(&k) {
-                        app
-                            .global_shortcut()
+                        app.global_shortcut()
                             .unregister(Shortcut::from_str(old_shortcut).unwrap())
                             .unwrap_or_else(|e| {
                                 log::error!("Failed to unregister old shortcut: {e}");
                             });
                     }
-                    app.global_shortcut().register(shortcut).unwrap_or_else(|e| {
-                        log::error!("Failed to register new shortcut: {e}");
-                    });
+                    app.global_shortcut()
+                        .register(shortcut)
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to register new shortcut: {e}");
+                        });
                 }
             }
         }
@@ -61,7 +62,7 @@ pub fn open_url(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open URL: {}", e))?;
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
@@ -69,7 +70,7 @@ pub fn open_url(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open URL: {}", e))?;
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
@@ -77,6 +78,6 @@ pub fn open_url(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open URL: {}", e))?;
     }
-    
+
     Ok(())
 }
