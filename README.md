@@ -10,8 +10,8 @@
 
 <div align="center">
 
-![GitHub License](https://img.shields.io/github/license/Horbin-Magician/rotor)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/Horbin-Magician/rotor/total)
+![GitHub License](https://img.shields.io/github/license/Horbin-Magician/rotor?style=flat)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/Horbin-Magician/rotor/total?style=flat)
 ![Windows Support](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
 ![macOS Support](https://img.shields.io/badge/macOS-000000?style=flat&logo=apple&logoColor=white)
 
