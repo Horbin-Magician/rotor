@@ -10,15 +10,9 @@
     "frontendDist": "../dist"
   },
   "bundle": {
-    "createUpdaterArtifacts": true,
-    "macOS": {
-      "signingIdentity": "-"
-    },
     "active": true,
-    "targets": "all",
-    "resources": [
-      "assets/**/*"
-    ],
+    "createUpdaterArtifacts": true,
+    "resources": ["assets/**/*"],
     "icon": [
       "assets/icons/32x32.png",
       "assets/icons/128x128.png",
