@@ -26,7 +26,10 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "dialog:allow-open",
+    "dialog:allow-message",
+    "dialog:allow-confirm",
     "log:allow-log",
-    "updater:default"
+    "updater:default",
+    "process:allow-restart"
   ]
 }

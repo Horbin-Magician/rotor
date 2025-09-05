@@ -34,7 +34,7 @@
 
               <div class="setting-item">
                 <span class="setting-label">{{ t('message.currentVersion') }}{{ currentVersion }}</span>
-                <n-button :disabled="true">{{ t('message.checkUpdate') }}</n-button>
+                <n-button @click="checkUpdate">{{ t('message.checkUpdate') }}</n-button>
               </div>
             </div>
             <div class="settings-card">
@@ -110,7 +110,9 @@ import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect
 import { ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, confirm, message } from '@tauri-apps/plugin-dialog';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 import ShortcutInput from '../components/ShortcutInput.vue';
 
@@ -118,6 +120,7 @@ import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n() 
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { info, error } from '@tauri-apps/plugin-log';
 const appWindow = getCurrentWindow()
 appWindow.isVisible().then( (visible)=>{
   if(visible == false) {
@@ -202,6 +205,45 @@ function openGitHome() {
     .catch((error) => {
       console.error("Failed to open URL:", error)
     })
+}
+
+function checkUpdate() {
+  check().then(async (update) => {
+    if (update) {
+      info(`Update available: ${update.version}`)
+      
+      // Ask user if they want to install the update
+      const result = await confirm(`A new version ${update.version} is available. Do you want to install it now?`)
+      
+      if (result) {
+        info("Downloading and installing update...")
+        
+        // Download and install the update
+        await update.downloadAndInstall((event) => {
+          switch (event.event) {
+            case 'Started':
+              info('Update started')
+              break
+            case 'Progress':
+              info(`Downloaded ${event.data.chunkLength} bytes`)
+              break
+            case 'Finished':
+              info('Update downloaded')
+              break
+          }
+        })
+        
+        // Relaunch the app after update
+        await relaunch()
+      }
+    } else {
+      info("You're already on the latest version")
+      await message("You're already on the latest version", { title: "No Updates Available", kind: "info" })
+    }
+  }).catch((err) => {
+    error(`Failed to check for updates: ${err}`)
+    message(`Failed to check for updates: ${err}`, { title: "Update Error", kind: "error" })
+  })
 }
 
 // Function to update a setting in the backend
