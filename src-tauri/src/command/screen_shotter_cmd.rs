@@ -13,9 +13,16 @@ use crate::util::{img_util, sys_util};
 
 #[tauri::command]
 pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc::Response {
+    let start = std::time::Instant::now();
+
     window.set_simple_fullscreen(true).unwrap_or_else(|e| {
         warn!("Failed to set window to fullscreen: {}", e);
     });
+
+    if Application::global().try_lock().is_ok() {
+        println!("Application lock acquired successfully.");
+        log::info!("Application lock acquired successfully. for label '{}' taken in {:?}", label, start.elapsed());
+    }
 
     let masks_arc = {
         let mut app = Application::global().lock().unwrap();
@@ -24,14 +31,22 @@ pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc:
             .map(|screenshot| screenshot.masks.clone())
     };
 
+    log::info!("get mask for label '{}' taken in {:?}", label, start.elapsed());
+
     let image = if let Some(masks_arc) = masks_arc {
         let masks = masks_arc.lock().unwrap();
-        masks.get(&label).cloned()
+        masks.get(&label).map_or(Vec::new(), |img| img.to_vec())
     } else {
-        None
+        Vec::new()
     };
 
-    tauri::ipc::Response::new(image.unwrap_or_default().to_vec())
+    log::info!(
+        "Screenshot for label '{}' taken in {:?}",
+        label,
+        start.elapsed()
+    );
+
+    tauri::ipc::Response::new(image)
 }
 
 #[tauri::command]
@@ -147,9 +162,6 @@ pub async fn new_pin(
     height: String,
     webview_window: tauri::WebviewWindow,
 ) {
-    let mut app = Application::global().lock().unwrap();
-    let screenshot = app.get_module("screenshot");
-
     if let Some(monitor) = webview_window.current_monitor().ok().flatten() {
         let monitor_pos = monitor.position();
         let Ok(offset_x_val) = offset_x.parse::<u32>() else {
@@ -171,6 +183,8 @@ pub async fn new_pin(
 
         let rect = (offset_x_val, offset_y_val, width_val, height_val);
 
+        let mut app = Application::global().lock().unwrap();
+        let screenshot = app.get_module("screenshot");
         if let Some(s) = screenshot {
             if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
                 screenshot
@@ -204,10 +218,9 @@ pub async fn close_cache_pin() {
 
 #[tauri::command]
 pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
-    let mut app = Application::global().lock().unwrap();
     let mut img: Option<DynamicImage> = None;
 
-    if let Some(ss) = app
+    if let Some(ss) = Application::global().lock().unwrap()
         .get_module("screenshot")
         .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
     {
@@ -226,10 +239,9 @@ pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
 
 #[tauri::command]
 pub async fn get_pin_state(id: u32) -> Option<ShotterConfig> {
-    let mut app = Application::global().lock().unwrap();
     let mut state: Option<ShotterConfig> = None;
 
-    if let Some(ss) = app
+    if let Some(ss) = Application::global().lock().unwrap()
         .get_module("screenshot")
         .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
     {
