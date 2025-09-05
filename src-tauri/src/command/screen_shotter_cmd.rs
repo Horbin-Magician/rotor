@@ -13,16 +13,9 @@ use crate::util::{img_util, sys_util};
 
 #[tauri::command]
 pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc::Response {
-    let start = std::time::Instant::now();
-
     window.set_simple_fullscreen(true).unwrap_or_else(|e| {
         warn!("Failed to set window to fullscreen: {}", e);
     });
-
-    if Application::global().try_lock().is_ok() {
-        println!("Application lock acquired successfully.");
-        log::info!("Application lock acquired successfully. for label '{}' taken in {:?}", label, start.elapsed());
-    }
 
     let masks_arc = {
         let mut app = Application::global().lock().unwrap();
@@ -31,20 +24,12 @@ pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc:
             .map(|screenshot| screenshot.masks.clone())
     };
 
-    log::info!("get mask for label '{}' taken in {:?}", label, start.elapsed());
-
     let image = if let Some(masks_arc) = masks_arc {
         let masks = masks_arc.lock().unwrap();
         masks.get(&label).map_or(Vec::new(), |img| img.to_vec())
     } else {
         Vec::new()
     };
-
-    log::info!(
-        "Screenshot for label '{}' taken in {:?}",
-        label,
-        start.elapsed()
-    );
 
     tauri::ipc::Response::new(image)
 }

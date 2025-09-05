@@ -39,7 +39,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
-import { info, warn } from '@tauri-apps/plugin-log';
+import { warn } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
 
@@ -379,11 +379,7 @@ onBeforeUnmount(() => {
 
 // Load the screenshot
 async function initializeScreenshot() {
-  const start = Date.now();
-
   let imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
-
-  info(`label: ${appWindow.label}, Screenshot taken in ${Date.now() - start} ms`)
   
   let try_times = 1
   while (imgBuf.byteLength === 0) { // TODO: fix the empty screenshot issue
@@ -395,10 +391,9 @@ async function initializeScreenshot() {
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
   backImgBitmap.value = await createImageBitmap(imgData)
+
   // Draw the background image
   drawBackgroundImage()
-
-  info(`label: ${appWindow.label}, Screenshot taken in ${Date.now() - start} ms`)
 }
 
 function hideWindow() {
