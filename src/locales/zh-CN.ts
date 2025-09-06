@@ -45,6 +45,22 @@ export default {
     // Searcher
     searchPlaceholder: '输入你想要搜索的内容...',
     openAsAdminTip: '以管理员权限打开',
-    openFolderTip: '打开文件所在目录'
+    openFolderTip: '打开文件所在目录',
+    // Update related translations
+    updateAvailable: '有可用更新',
+    newVersionAvailable: '新版本',
+    isAvailable: '已可用',
+    installNow: '是否立即安装？',
+    cancel: '取消',
+    install: '安装',
+    updatingApp: '正在更新应用',
+    restartingSoon: '应用程序即将重启...',
+    noUpdatesAvailable: '没有可用更新',
+    latestVersion: '您已经是最新版本',
+    updateError: '更新错误',
+    downloadingUpdate: '正在下载并安装更新...',
+    updateStarted: '更新已开始',
+    downloading: '正在下载',
+    updateCompleted: '更新完成，正在重启...'
   }
 }

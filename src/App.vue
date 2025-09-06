@@ -1,12 +1,14 @@
 <template>
   <n-config-provider :theme="currentTheme" :theme-overrides="themeOverrides">
-    <RouterView />
+    <n-notification-provider placement="top">
+      <RouterView />
+    </n-notification-provider>
   </n-config-provider>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watchEffect } from 'vue'
-import { darkTheme, NConfigProvider, GlobalThemeOverrides } from 'naive-ui'
+import { darkTheme, NConfigProvider, NNotificationProvider, GlobalThemeOverrides } from 'naive-ui'
 import { BuiltInGlobalTheme } from 'naive-ui/es/themes/interface'
 import { invoke } from '@tauri-apps/api/core'
 

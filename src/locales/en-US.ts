@@ -45,6 +45,22 @@ export default {
     // Searcher
     searchPlaceholder: 'Enter the content you want to search...',
     openAsAdminTip: 'Open as admin',
-    openFolderTip: 'Open folder'
+    openFolderTip: 'Open folder',
+    // Update related translations
+    updateAvailable: 'Update Available',
+    newVersionAvailable: 'A new version',
+    isAvailable: 'is available.',
+    installNow: 'Do you want to install it now?',
+    cancel: 'Cancel',
+    install: 'Install',
+    updatingApp: 'Updating Application',
+    restartingSoon: 'The application will restart shortly...',
+    noUpdatesAvailable: 'No Updates Available',
+    latestVersion: "You're already on the latest version",
+    updateError: 'Update Error',
+    downloadingUpdate: 'Downloading and installing update...',
+    updateStarted: 'Update started',
+    downloading: 'Downloading',
+    updateCompleted: 'Update completed, restarting...'
   }
 }

@@ -34,7 +34,9 @@
 
               <div class="setting-item">
                 <span class="setting-label">{{ t('message.currentVersion') }}{{ currentVersion }}</span>
-                <n-button @click="checkUpdate">{{ t('message.checkUpdate') }}</n-button>
+                <n-button @click="checkUpdate" :loading="isCheckingUpdate" :disabled="isCheckingUpdate">
+                  {{ t('message.checkUpdate') }}
+                </n-button>
               </div>
             </div>
             <div class="settings-card">
@@ -103,21 +105,57 @@
     </n-tabs>
   </div>
   <div class="drag-region"  data-tauri-drag-region></div>
+
+  <!-- Update Confirmation Modal -->
+  <n-modal v-model:show="showUpdateModal" preset="dialog" :title="t('message.updateAvailable')" style="width: 400px;">
+    <div class="update-modal-content">
+      <p>{{ t('message.newVersionAvailable') }} <strong>{{ updateVersion }}</strong> {{ t('message.isAvailable') }}</p>
+      <p>{{ t('message.installNow') }}</p>
+    </div>
+    <template #action>
+      <div class="modal-actions">
+        <n-button @click="cancelUpdate" class="cancel-btn">
+          {{ t('message.cancel') }}
+        </n-button>
+        <n-button type="primary" @click="confirmUpdate" class="confirm-btn">
+          {{ t('message.install') }}
+        </n-button>
+      </div>
+    </template>
+  </n-modal>
+
+  <!-- Update Progress Modal -->
+  <n-modal v-model:show="showProgressModal" :closable="false" :mask-closable="false">
+    <n-card style="width: 400px" :title="t('message.updatingApp')">
+      <div class="progress-content">
+        <n-progress 
+          type="line" 
+          :percentage="updateProgress" 
+          indicator-placement="inside"
+          :color="themeVars.primaryColor"
+          status="success"
+        />
+        <p class="progress-status">{{ updateStatus }}</p>
+      </div>
+    </n-card>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
-import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect } from 'naive-ui'
+import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect, NModal, NCard, NProgress, useNotification, useThemeVars } from 'naive-ui'
 import { ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
-import { open, confirm, message } from '@tauri-apps/plugin-dialog';
-import { check } from '@tauri-apps/plugin-updater';
+import { open } from '@tauri-apps/plugin-dialog';
+import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
 import ShortcutInput from '../components/ShortcutInput.vue';
 
 import { useI18n } from 'vue-i18n'
-const { t, locale } = useI18n() 
+const { t, locale } = useI18n()
+const notification = useNotification()
+const themeVars = useThemeVars()
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { info, error } from '@tauri-apps/plugin-log';
@@ -174,6 +212,17 @@ const ifAutoChangeSavePath = ref(true)
 const ifAskSavePath = ref(true)
 const zoomDelta = ref(2)
 
+// Update modal states
+const showUpdateModal = ref(false)
+const showProgressModal = ref(false)
+const updateVersion = ref<String>("null")
+const updateProgress = ref(0)
+const updateStatus = ref('')
+const isUpdating = ref(false)
+const isCheckingUpdate = ref(false)
+
+let update_cache: Update | null = null
+
 // Search settings
 invoke("get_all_cfg").then(async (config: any) => {
   language.value = Number(config["language"])
@@ -208,42 +257,94 @@ function openGitHome() {
 }
 
 function checkUpdate() {
-  check().then(async (update) => {
+  isCheckingUpdate.value = true
+
+  let options: CheckOptions = {
+    timeout: 3000, // 3 seconds timeout
+  }
+
+  check(options).then(async (update) => {
     if (update) {
+      console.log(update)
       info(`Update available: ${update.version}`)
-      
-      // Ask user if they want to install the update
-      const result = await confirm(`A new version ${update.version} is available. Do you want to install it now?`)
-      
-      if (result) {
-        info("Downloading and installing update...")
-        
-        // Download and install the update
-        await update.downloadAndInstall((event) => {
-          switch (event.event) {
-            case 'Started':
-              info('Update started')
-              break
-            case 'Progress':
-              info(`Downloaded ${event.data.chunkLength} bytes`)
-              break
-            case 'Finished':
-              info('Update downloaded')
-              break
-          }
-        })
-        
-        // Relaunch the app after update
-        await relaunch()
-      }
+      update_cache = update
+      updateVersion.value = update.version
+      showUpdateModal.value = true
     } else {
       info("You're already on the latest version")
-      await message("You're already on the latest version", { title: "No Updates Available", kind: "info" })
+      notification.info({
+        title: t('message.noUpdatesAvailable'),
+        content: t('message.latestVersion'),
+        duration: 3000
+      })
     }
   }).catch((err) => {
     error(`Failed to check for updates: ${err}`)
-    message(`Failed to check for updates: ${err}`, { title: "Update Error", kind: "error" })
+    notification.error({
+      title: t('message.updateError'),
+      content: `Failed to check for updates: ${err}`,
+      duration: 5000
+    })
+  }).finally(() => {
+    isCheckingUpdate.value = false
   })
+}
+
+async function confirmUpdate() {
+  showUpdateModal.value = false
+  showProgressModal.value = true
+  isUpdating.value = true
+  updateProgress.value = 0
+  updateStatus.value = t('message.downloadingUpdate')
+  
+  info("Downloading and installing update...")
+  
+  // Download and install the update
+  if (update_cache) {
+    await update_cache.downloadAndInstall((event) => {
+      switch (event.event) {
+        case 'Started':
+          updateStatus.value = t('message.updateStarted')
+          updateProgress.value = 10
+          info('Update started')
+          break
+        case 'Progress':
+          // Calculate progress based on downloaded bytes (this is a rough estimate)
+          updateProgress.value = Math.min(90, updateProgress.value + 5)
+          const chunkLength = event.data?.chunkLength || 0
+          updateStatus.value = `${t('message.downloading')}: ${chunkLength} bytes`
+          info(`Downloaded ${chunkLength} bytes`)
+          break
+        case 'Finished':
+          updateProgress.value = 100
+          updateStatus.value = t('message.updateCompleted')
+          info('Update downloaded')
+          
+          // Delay before relaunch to show completion
+          setTimeout(async () => {
+            try {
+              await relaunch()
+            } catch (err) {
+              error(`Failed to relaunch: ${err}`)
+            }
+          }, 1000)
+          break
+      }
+    })
+  } else {
+    error('Update object is invalid or missing downloadAndInstall method')
+    showProgressModal.value = false
+    isUpdating.value = false
+    notification.error({
+      title: t('message.updateError'),
+      content: 'Update object is invalid',
+      duration: 5000
+    })
+  }
+}
+
+function cancelUpdate() {
+  showUpdateModal.value = false
 }
 
 // Function to update a setting in the backend
@@ -400,5 +501,30 @@ async function askSave() {
   top: 0;
   width: 100%;
   height: 30px;
+}
+
+/* Update Modal Styles */
+.update-modal-content p {
+  margin: 6px 0;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.cancel-btn {
+  min-width: 80px;
+}
+
+.confirm-btn {
+  min-width: 80px;
+}
+
+.progress-status {
+  margin-top: 10px;
+  text-align: center;
+  color: #666;
 }
 </style>
