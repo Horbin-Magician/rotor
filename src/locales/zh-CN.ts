@@ -61,6 +61,8 @@ export default {
     downloadingUpdate: '正在下载并安装更新...',
     updateStarted: '更新已开始',
     downloading: '正在下载',
-    updateCompleted: '更新完成，正在重启...'
+    updateCompleted: '更新完成，正在重启...',
+    updateCheckFailed: '检查更新失败',
+    manualDownloadSuggestion: '请尝试从项目页面手动下载最新版本'
   }
 }

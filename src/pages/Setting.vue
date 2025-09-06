@@ -143,7 +143,7 @@
 
 <script setup lang="ts">
 import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect, NModal, NCard, NProgress, useNotification, useThemeVars } from 'naive-ui'
-import { ref, watch } from 'vue'
+import { ref, watch, h } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -282,7 +282,21 @@ function checkUpdate() {
     error(`Failed to check for updates: ${err}`)
     notification.error({
       title: t('message.updateError'),
-      content: `Failed to check for updates: ${err}`,
+      content: () => h('div', [
+        `${t('message.updateCheckFailed')}: ${err}. ${t('message.manualDownloadSuggestion')}: `,
+        h('a', {
+          href: '#',
+          style: {
+            color: '#007bff',
+            textDecoration: 'underline',
+            cursor: 'pointer'
+          },
+          onClick: (e: Event) => {
+            e.preventDefault()
+            openGitHome()
+          }
+        }, 'https://github.com/Horbin-Magician/rotor')
+      ]),
       duration: 5000
     })
   }).finally(() => {

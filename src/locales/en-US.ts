@@ -61,6 +61,8 @@ export default {
     downloadingUpdate: 'Downloading and installing update...',
     updateStarted: 'Update started',
     downloading: 'Downloading',
-    updateCompleted: 'Update completed, restarting...'
+    updateCompleted: 'Update completed, restarting...',
+    updateCheckFailed: 'Failed to check for updates',
+    manualDownloadSuggestion: 'Please try to manually download the latest version from the project page'
   }
 }
