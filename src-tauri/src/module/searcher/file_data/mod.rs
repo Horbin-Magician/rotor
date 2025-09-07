@@ -12,8 +12,6 @@ use volume::default_volume::Volume;
 #[cfg(target_os = "windows")]
 use crate::util::sys_util::is_ntfs;
 #[cfg(target_os = "windows")]
-pub use volume::ntfs_file_map::SearchResultItem;
-#[cfg(target_os = "windows")]
 use volume::ntfs_volume::Volume;
 
 pub enum SearcherMessage {
