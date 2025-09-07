@@ -115,7 +115,6 @@ impl FileMap {
 
     #[allow(unused)]
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        println!("Saving file map to {}", path);
         let mut save_file = fs::File::create(path)?;
 
         let mut buf = Vec::new();
