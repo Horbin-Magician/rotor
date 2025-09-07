@@ -213,9 +213,10 @@ const handleActionClick = (action: Action, item: SearchItem) => {
 }
 
 const hideWindow = async () => {
-  await appWindow.hide()
   searchQuery.value = ''
   selectedIndex.value = 0
+  resizeWindow()
+  await appWindow.hide()
   invoke("searcher_release")
 }
 
@@ -240,10 +241,6 @@ type UpdateResultPayload = [string, SearchResultItem[], boolean];
 
 // Lifecycle
 onMounted(async () => {
-  nextTick(() => {
-    searchInputRef.value?.focus()
-  })
-
   // 监听窗口失去焦点事件
   unlistenBlur = await listen('tauri://blur', () => {
     hideWindow()
@@ -270,12 +267,14 @@ onMounted(async () => {
         ]
       }))
     );
-    nextTick(resizeWindow)
+    resizeWindow()
   });
+
+  nextTick(resizeWindow)
 })
 
 onUnmounted(() => {
-  // 清理事件监听器
+  // clean listeners
   if (unlistenBlur) {
     unlistenBlur()
     unlistenBlur = null

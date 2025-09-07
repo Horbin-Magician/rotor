@@ -134,7 +134,7 @@ impl FileMap {
                 let icon_data = file_util::get_file_icon_data(&full_path);
 
                 result.push(SearchResultItem {
-                    path: file.path.clone(),
+                    path: file.path.clone() + "/",
                     file_name: file.file_name.clone(),
                     rank: file.rank,
                     icon_data,
