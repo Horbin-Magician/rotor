@@ -3,20 +3,18 @@ mod volume;
 use std::collections::VecDeque;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+#[cfg(target_os = "windows")]
+use windows::Win32::Storage::FileSystem;
 
+pub use volume::SearchResultItem;
+#[cfg(target_os = "macos")]
+use volume::default_volume::Volume;
 #[cfg(target_os = "windows")]
 use crate::util::sys_util::is_ntfs;
 #[cfg(target_os = "windows")]
 pub use volume::ntfs_file_map::SearchResultItem;
 #[cfg(target_os = "windows")]
 use volume::ntfs_volume::Volume;
-#[cfg(target_os = "windows")]
-use windows::Win32::Storage::FileSystem;
-
-#[cfg(target_os = "macos")]
-pub use volume::default_file_map::SearchResultItem;
-#[cfg(target_os = "macos")]
-use volume::default_volume::Volume;
 
 pub enum SearcherMessage {
     Init,

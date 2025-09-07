@@ -9,7 +9,8 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem;
 use windows::Win32::System::{Ioctl, IO};
 
-use super::ntfs_file_map::{FileMap, SearchResultItem};
+use super::ntfs_file_map::FileMap;
+use super::SearchResultItem;
 #[allow(unused_imports)]
 use crate::util::file_util;
 

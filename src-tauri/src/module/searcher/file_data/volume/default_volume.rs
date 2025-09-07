@@ -6,7 +6,8 @@ use std::time::SystemTime;
 use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
 
-use super::default_file_map::{FileMap, SearchResultItem};
+use super::default_file_map::FileMap;
+use super::SearchResultItem;
 use crate::util::file_util;
 
 pub struct Volume {

@@ -5,25 +5,7 @@ use std::io::{self, Write};
 use std::sync::mpsc::Receiver;
 
 use crate::util::file_util;
-
-#[derive(serde::Serialize)]
-pub struct SearchResultItem {
-    pub path: String,
-    pub file_name: String,
-    pub rank: i8,
-    pub icon_data: Option<String>, // Base64 encoded icon data
-}
-
-impl Clone for SearchResultItem {
-    fn clone(&self) -> Self {
-        SearchResultItem {
-            path: self.path.clone(),
-            file_name: self.file_name.clone(),
-            rank: self.rank,
-            icon_data: self.icon_data.clone(),
-        }
-    }
-}
+use super::SearchResultItem;
 
 #[allow(unused)]
 pub struct FileView {
