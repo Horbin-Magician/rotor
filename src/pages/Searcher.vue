@@ -220,6 +220,7 @@ const handleActionClick = (action: Action, item: SearchItem) => {
 const hideWindow = async () => {
   searchQuery.value = ''
   selectedIndex.value = 0
+  searchResults.value = []
   resizeWindow()
   await appWindow.hide()
   invoke("searcher_release")

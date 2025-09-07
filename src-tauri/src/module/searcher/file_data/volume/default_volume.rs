@@ -10,6 +10,12 @@ use super::default_file_map::FileMap;
 use super::SearchResultItem;
 use crate::util::file_util;
 
+#[derive(Debug, Clone, Copy)]
+enum FileAction {
+    Insert,
+    Remove,
+}
+
 pub struct Volume {
     pub drive: String,
     file_map: FileMap,
@@ -78,119 +84,76 @@ impl Volume {
         self.event_receiver = None;
     }
 
-    pub fn handle_file_events(&mut self) -> bool {
-        let Some(ref receiver) = self.event_receiver else {
-            return false;
-        };
+    fn process_path(&mut self, path: &std::path::Path, action: FileAction) {
+        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+            if let Some(parent) = path.parent() {
+                let parent_path = parent.to_string_lossy().to_string();
+                let file_name = file_name.to_string();
+                
+                match action {
+                    FileAction::Insert => self.file_map.insert(file_name, parent_path),
+                    FileAction::Remove => self.file_map.remove(file_name, parent_path),
+                }
+            }
+        }
+    }
 
-        let mut has_changes = false;
+    fn handle_event(&mut self, event: Event) {
+        use EventKind::*;
+        use ModifyKind::Name;
+        
+        match event.kind {
+            Create(_) => {
+                for path in &event.paths {
+                    self.process_path(path, FileAction::Insert);
+                }
+            }
+            Remove(_) => {
+                for path in &event.paths {
+                    self.process_path(path, FileAction::Remove);
+                }
+            }
+            Modify(Name(rename_mode)) => {
+                match rename_mode {
+                    RenameMode::From => {
+                        for path in &event.paths {
+                            self.process_path(path, FileAction::Remove);
+                        }
+                    }
+                    RenameMode::To => {
+                        for path in &event.paths {
+                            self.process_path(path, FileAction::Insert);
+                        }
+                    }
+                    RenameMode::Both => {
+                        let mut paths = event.paths.iter();
+                        if let (Some(from), Some(to)) = (paths.next(), paths.next()) {
+                            self.process_path(from, FileAction::Remove);
+                            self.process_path(to, FileAction::Insert);
+                        }
+                    }
+                    _ => {
+                        for path in &event.paths {
+                            if path.exists() {
+                                self.process_path(path, FileAction::Insert);
+                            } else {
+                                self.process_path(path, FileAction::Remove);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_file_events(&mut self) {
+        let Some(receiver) = self.event_receiver.take() else { return; };
 
         while let Ok(event_result) = receiver.try_recv() {
             match event_result {
                 Ok(event) => {
-                    has_changes = true;
-                    match event.kind {
-                        EventKind::Create(_) => {
-                            for path in event.paths {
-                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                    if let Some(parent) = path.parent() {
-                                        let parent_path = parent.to_string_lossy().to_string();
-                                        self.file_map.insert(file_name.to_string(), parent_path);
-                                    }
-                                }
-                            }
-                        }
-                        EventKind::Remove(_) => {
-                            for path in event.paths {
-                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                    if let Some(parent) = path.parent() {
-                                        let parent_path = parent.to_string_lossy().to_string();
-                                        self.file_map.remove(file_name.to_string(), parent_path);
-                                    }
-                                }
-                            }
-                        }
-                        EventKind::Modify(ModifyKind::Name(rename_mode)) => {
-                            match rename_mode {
-                                RenameMode::From => {
-                                    for path in event.paths {
-                                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                            if let Some(parent) = path.parent() {
-                                                let parent_path = parent.to_string_lossy().to_string();
-                                                self.file_map.remove(file_name.to_string(), parent_path);
-                                            }
-                                        }
-                                    }
-                                }
-                                RenameMode::To => {
-                                    for path in event.paths {
-                                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                            if let Some(parent) = path.parent() {
-                                                let parent_path = parent.to_string_lossy().to_string();
-                                                self.file_map.insert(file_name.to_string(), parent_path);
-                                            }
-                                        }
-                                    }
-                                }
-                                RenameMode::Both => {
-                                    let mut flag = true;
-                                    for path in event.paths {
-                                        if flag {
-                                            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                                if let Some(parent) = path.parent() {
-                                                    let parent_path = parent.to_string_lossy().to_string();
-                                                    self.file_map.remove(file_name.to_string(), parent_path);
-                                                }
-                                            }
-                                        } else if let Some(file_name) = path.file_name().and_then(|n| n.to_str())
-                                        {   
-                                            if let Some(parent) = path.parent() {
-                                                let parent_path =
-                                                    parent.to_string_lossy().to_string();
-                                                self.file_map
-                                                    .insert(file_name.to_string(), parent_path);
-                                            }
-                                        }
-                                        flag = !flag;
-                                    }
-                                }
-                                _ => {
-                                    for path in event.paths {
-                                        if path.exists() {
-                                            if let Some(file_name) =
-                                                path.file_name().and_then(|n| n.to_str())
-                                            {
-                                                if file_name.contains("test") {
-                                                    log::info!("Modify event (to): {:?}", path);
-                                                }
-                                                if let Some(parent) = path.parent() {
-                                                    let parent_path =
-                                                        parent.to_string_lossy().to_string();
-                                                    self.file_map
-                                                        .insert(file_name.to_string(), parent_path);
-                                                }
-                                            }
-                                        } else {
-                                            if let Some(file_name) =
-                                                path.file_name().and_then(|n| n.to_str())
-                                            {
-                                                if file_name.contains("test") {
-                                                    log::info!("Modify event (from): {:?}", path);
-                                                }
-                                                if let Some(parent) = path.parent() {
-                                                    let parent_path =
-                                                        parent.to_string_lossy().to_string();
-                                                    self.file_map
-                                                        .remove(file_name.to_string(), parent_path);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
+                    self.handle_event(event);
                 }
                 Err(e) => {
                     log::error!("{} File watcher error: {:?}", self.drive, e);
@@ -198,7 +161,7 @@ impl Volume {
             }
         }
 
-        has_changes
+        self.event_receiver = Some(receiver);
     }
 
     // Enumerate the filesystem using walkdir. Store the file entries in the database.
@@ -372,7 +335,7 @@ impl Volume {
             });
         };
 
-        let _ = self.handle_file_events();
+        self.handle_file_events();
 
         #[cfg(debug_assertions)]
         log::info!("{} End Volume::update_index", self.drive);
