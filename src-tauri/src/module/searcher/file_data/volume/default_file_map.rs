@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 use std::io::{self, Write};
@@ -18,23 +18,19 @@ pub struct FileView {
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct FileKey {
     rank: i8,
-    pub index: u64,
+    pub full_name: String,
 }
 
 #[allow(unused)]
 pub struct FileMap {
-    pub next_index: u64,
     main_map: BTreeMap<FileKey, FileView>,
-    rank_map: HashMap<u64, i8, std::hash::BuildHasherDefault<fxhash::FxHasher>>,
 }
 
 impl FileMap {
     #[allow(unused)]
     pub fn new() -> FileMap {
         FileMap {
-            next_index: 0,
             main_map: BTreeMap::new(),
-            rank_map: HashMap::default(),
         }
     }
 
@@ -54,38 +50,23 @@ impl FileMap {
     // insert a file to the database by index and file struct
     #[allow(unused)]
     fn insert_simple(&mut self, file: FileView) {
+        let full_name = format!("{}/{}", file.path, file.file_name);
         let key = FileKey {
             rank: file.rank,
-            index: self.next_index,
+            full_name,
         };
-        self.rank_map.insert(self.next_index, file.rank);
         self.main_map.insert(key, file);
-        self.next_index += 1;
     }
 
+    // remove item by FileView
     #[allow(unused)]
-    fn insert_simple_with_index(&mut self, index: u64, file: FileView) {
+    pub fn remove(&mut self, file: FileView) {
+        let full_name = format!("{}/{}", file.path, file.file_name);
         let key = FileKey {
             rank: file.rank,
-            index,
+            full_name,
         };
-        self.rank_map.insert(index, file.rank);
-        self.main_map.insert(key, file);
-        self.next_index += 1;
-    }
-
-    // remove item
-    #[allow(unused)]
-    pub fn remove(&mut self, index: &u64) {
-        // TODO change
-        if self.rank_map.contains_key(index) {
-            let file_key = FileKey {
-                rank: self.rank_map[index],
-                index: *index,
-            };
-            self.main_map.remove(&file_key);
-            self.rank_map.remove(index);
-        }
+        self.main_map.remove(&key);
     }
 
     // search for files by query
@@ -116,7 +97,7 @@ impl FileMap {
                 let icon_data = file_util::get_file_icon_data(&full_path);
 
                 result.push(SearchResultItem {
-                    path: file.path.clone() + "/",
+                    path: file.path.clone() + "/", // TODO del
                     file_name: file.file_name.clone(),
                     rank: file.rank,
                     icon_data,
@@ -136,9 +117,7 @@ impl FileMap {
         let mut save_file = fs::File::create(path)?;
 
         let mut buf = Vec::new();
-        buf.write_all(&self.next_index.to_be_bytes())?;
         for (file_key, file) in self.iter() {
-            buf.write_all(&file_key.index.to_be_bytes())?;
             buf.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
             buf.write_all(file.file_name.as_bytes())?;
             buf.write_all(&(file.path.len() as u16).to_be_bytes())?;
@@ -155,22 +134,13 @@ impl FileMap {
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
         let file_data = fs::read(path)?;
 
-        if file_data.len() < 8 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "File data too short.").into());
-        }
-
-        self.next_index = u64::from_be_bytes(file_data[0..8].try_into()?);
-        let mut ptr_index = 8;
-
+        let mut ptr_index = 0;
         while ptr_index < file_data.len() {
-            if ptr_index + 18 > file_data.len() {
+            if ptr_index + 10 > file_data.len() {
                 return Err(
                     io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
                 );
             }
-
-            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index + 8].try_into()?);
-            ptr_index += 8;
 
             let file_name_len =
                 u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?) as u16;
@@ -202,8 +172,8 @@ impl FileMap {
             ptr_index += 4;
             let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index + 1].try_into()?);
             ptr_index += 1;
-            self.insert_simple_with_index(
-                index,
+
+            self.insert_simple(
                 FileView {
                     file_name,
                     path,
@@ -219,7 +189,6 @@ impl FileMap {
     #[allow(unused)]
     pub fn clear(&mut self) {
         self.main_map.clear();
-        self.rank_map.clear();
     }
 
     #[allow(unused)]
@@ -229,16 +198,8 @@ impl FileMap {
 
     // get a File by index
     #[allow(unused)]
-    fn get(&self, index: &u64) -> Option<&FileView> {
-        // TODO change
-        if let Some(rank) = self.rank_map.get(index) {
-            let file_key = FileKey {
-                rank: *rank,
-                index: *index,
-            };
-            return self.main_map.get(&file_key);
-        }
-        None
+    fn get(&self, key: FileKey) -> Option<&FileView> {
+        return self.main_map.get(&key);
     }
 
     fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, FileView> {

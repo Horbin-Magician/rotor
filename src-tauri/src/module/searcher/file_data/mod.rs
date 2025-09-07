@@ -144,9 +144,7 @@ impl FileData {
         {
             self.vols.clear();
 
-            let home = std::env::var("HOME").unwrap();
-            self.vols.push(home);
-
+            self.vols.push(std::env::var("HOME").unwrap());
             self.vols.push("/Applications".to_string());
 
             self.vols.len() as u8
