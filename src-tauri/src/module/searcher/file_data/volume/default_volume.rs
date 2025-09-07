@@ -101,23 +101,33 @@ impl Volume {
                             }
                         }
                         EventKind::Remove(_) => {
-                            // TODO del old one
+                            for path in event.paths {
+                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                    if let Some(parent) = path.parent() {
+                                        let parent_path = parent.to_string_lossy().to_string();
+                                        self.file_map.remove(file_name.to_string(), parent_path);
+                                    }
+                                }
+                            }
                         }
                         EventKind::Modify(ModifyKind::Name(rename_mode)) => {
                             match rename_mode {
                                 RenameMode::From => {
-                                    // TODO del old one
+                                    for path in event.paths {
+                                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                            if let Some(parent) = path.parent() {
+                                                let parent_path = parent.to_string_lossy().to_string();
+                                                self.file_map.remove(file_name.to_string(), parent_path);
+                                            }
+                                        }
+                                    }
                                 }
                                 RenameMode::To => {
                                     for path in event.paths {
-                                        if let Some(file_name) =
-                                            path.file_name().and_then(|n| n.to_str())
-                                        {
+                                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                                             if let Some(parent) = path.parent() {
-                                                let parent_path =
-                                                    parent.to_string_lossy().to_string();
-                                                self.file_map
-                                                    .insert(file_name.to_string(), parent_path);
+                                                let parent_path = parent.to_string_lossy().to_string();
+                                                self.file_map.insert(file_name.to_string(), parent_path);
                                             }
                                         }
                                     }
@@ -126,10 +136,14 @@ impl Volume {
                                     let mut flag = true;
                                     for path in event.paths {
                                         if flag {
-                                            // TODO del old one
-                                        } else if let Some(file_name) =
-                                            path.file_name().and_then(|n| n.to_str())
-                                        {
+                                            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                                if let Some(parent) = path.parent() {
+                                                    let parent_path = parent.to_string_lossy().to_string();
+                                                    self.file_map.remove(file_name.to_string(), parent_path);
+                                                }
+                                            }
+                                        } else if let Some(file_name) = path.file_name().and_then(|n| n.to_str())
+                                        {   
                                             if let Some(parent) = path.parent() {
                                                 let parent_path =
                                                     parent.to_string_lossy().to_string();
@@ -146,11 +160,28 @@ impl Volume {
                                             if let Some(file_name) =
                                                 path.file_name().and_then(|n| n.to_str())
                                             {
+                                                if file_name.contains("test") {
+                                                    log::info!("Modify event (to): {:?}", path);
+                                                }
                                                 if let Some(parent) = path.parent() {
                                                     let parent_path =
                                                         parent.to_string_lossy().to_string();
                                                     self.file_map
                                                         .insert(file_name.to_string(), parent_path);
+                                                }
+                                            }
+                                        } else {
+                                            if let Some(file_name) =
+                                                path.file_name().and_then(|n| n.to_str())
+                                            {
+                                                if file_name.contains("test") {
+                                                    log::info!("Modify event (from): {:?}", path);
+                                                }
+                                                if let Some(parent) = path.parent() {
+                                                    let parent_path =
+                                                        parent.to_string_lossy().to_string();
+                                                    self.file_map
+                                                        .remove(file_name.to_string(), parent_path);
                                                 }
                                             }
                                         }
@@ -176,7 +207,7 @@ impl Volume {
         log::info!("{} Begin Volume::build_index", self.drive);
 
         self.stop_watching();
-        self.release_index();
+        self.release_index_without_save();
 
         // Build the root path based on the drive letter
         let root_path = if cfg!(target_os = "windows") {
@@ -259,24 +290,7 @@ impl Volume {
             log::error!("{} Failed to start file watching: {:?}", self.drive, e);
         }
 
-        self.serialization_write().unwrap_or_else(|e| {
-            log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e)
-        });
-    }
-
-    // Clears the database
-    pub fn release_index(&mut self) {
-        if self.file_map.is_empty() {
-            return;
-        }
-
-        self.last_query = String::new();
-        self.last_search_num = 0;
-
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::release_index", self.drive);
-
-        self.file_map.clear();
+        self.release_index();
     }
 
     // searching
@@ -304,7 +318,7 @@ impl Volume {
 
         if self.file_map.is_empty() {
             self.serialization_read().unwrap_or_else(|e| {
-                log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
+                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
                 self.build_index();
             });
         };
@@ -326,6 +340,26 @@ impl Volume {
         let _ = sender.send(result);
     }
 
+    // Clears the database
+    pub fn release_index(&mut self) {
+        #[cfg(debug_assertions)]
+        log::info!("{} Begin Volume::release_index", self.drive);
+
+        if self.file_map.is_empty() { return; }
+
+        self.serialization_write().unwrap_or_else(|e| {
+            log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e)
+        });
+
+        self.release_index_without_save();
+    }
+
+    pub fn release_index_without_save(&mut self) {
+        self.last_query = String::new();
+        self.last_search_num = 0;
+        self.file_map.clear();
+    }
+
     // update index, add new file, remove deleted file
     pub fn update_index(&mut self) {
         #[cfg(debug_assertions)]
@@ -333,7 +367,7 @@ impl Volume {
 
         if self.file_map.is_empty() {
             self.serialization_read().unwrap_or_else(|e| {
-                log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
+                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
                 self.build_index();
             });
         };
@@ -364,8 +398,6 @@ impl Volume {
             let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
             self.file_map.save(&file_name)?;
         }
-
-        self.release_index();
 
         #[cfg(debug_assertions)]
         log::info!(

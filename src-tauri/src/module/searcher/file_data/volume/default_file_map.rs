@@ -60,10 +60,11 @@ impl FileMap {
 
     // remove item by FileView
     #[allow(unused)]
-    pub fn remove(&mut self, file: FileView) {
-        let full_name = format!("{}/{}", file.path, file.file_name);
+    pub fn remove(&mut self, file_name: String, path: String) {
+        let full_name = format!("{}/{}", path, file_name);
+        let rank = Self::get_file_rank(&file_name);
         let key = FileKey {
-            rank: file.rank,
+            rank,
             full_name,
         };
         self.main_map.remove(&key);
@@ -114,6 +115,7 @@ impl FileMap {
 
     #[allow(unused)]
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
+        println!("Saving file map to {}", path);
         let mut save_file = fs::File::create(path)?;
 
         let mut buf = Vec::new();
