@@ -25,17 +25,22 @@
       <n-infinite-scroll
         class="search-results"
         @load="handleLoadMore"
-        :scrollbar-props="{trigger: 'none'}"
+        :scrollbar-props="{ trigger: 'none' }"
       >
         <div
           v-for="(item, index) in searchResults"
-          :key="index"
+          :key="`${item.subtitle}${item.title}`"
           :class="['search-item', { selected: selectedIndex === index }]"
           @click="clickItem(item)"
           @mouseenter="selectedIndex = index"
         >
           <div class="item-icon">
-              <img :src="`data:image/png;base64,${item.icon_data}`" alt="Icon" />
+            <img 
+              v-if="item.icon_data" 
+              :src="`data:image/png;base64,${item.icon_data}`" 
+              alt="Icon"
+              loading="lazy"
+            />
           </div>
           <div class="item-content">
             <div class="item-title">{{ item.title }}</div>
@@ -108,7 +113,9 @@ const appWindow = getCurrentWindow()
 const searchInputRef = ref<HTMLInputElement>()
 const searchQuery = ref('')
 const selectedIndex = ref(0)
+
 let unlistenBlur: (() => void) | null = null
+let unlistenFocus: (() => void) | null = null
 
 const searchResults = ref<SearchItem[]>([])
 
@@ -176,9 +183,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 const scrollToSelected = () => {
   nextTick(() => {
     const container = document.querySelector('.search-results')
-    if (!container) return
-    
-    const selectedElement = container.querySelector('.search-item.selected')
+    const selectedElement = container?.querySelector('.search-item.selected')
     if (selectedElement) {
       selectedElement.scrollIntoView({
         behavior: 'smooth',
@@ -194,7 +199,7 @@ const clickItem = (item: SearchItem) => {
 }
 
 const handleActionClick = (action: Action, item: SearchItem) => {
-  const filePath = item.subtitle + item.title // TODO fix in MacOS (add '/')
+  const filePath = item.subtitle + item.title
   
   switch (action.type) {
     case 'OpenAsAdmin':
@@ -241,16 +246,16 @@ type UpdateResultPayload = [string, SearchResultItem[], boolean];
 
 // Lifecycle
 onMounted(async () => {
-  // 监听窗口失去焦点事件
   unlistenBlur = await listen('tauri://blur', () => {
     hideWindow()
   })
 
-  unlistenBlur = await listen('tauri://focus', () => {
+  unlistenFocus = await listen('tauri://focus', () => {
     searchInputRef.value?.focus()
     resizeWindow()
   })
 
+  // Listen for search result updates
   unlisten_update_result = await appWindow.listen<UpdateResultPayload>('update_result', async (event) => {
     const [filename, getSearchResults, if_increase] = event.payload;
     if (filename !== searchQuery.value) return;
@@ -259,7 +264,7 @@ onMounted(async () => {
       getSearchResults.map((item, _index) => ({
         title: item.file_name,
         subtitle: item.path,
-        type: 'file',
+        type: 'file' as ItemType,
         icon_data: item.icon_data,
         actions: [
           { type: 'OpenAsAdmin', title: 'message.openAsAdminTip' },
@@ -275,12 +280,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   // clean listeners
-  if (unlistenBlur) {
-    unlistenBlur()
-    unlistenBlur = null
-  }
-
-  if(unlisten_update_result) { unlisten_update_result() }
+  if (unlistenBlur) { unlistenBlur() }
+  if (unlistenFocus) { unlistenFocus() }
+  if (unlisten_update_result) { unlisten_update_result() }
 })
 </script>
 
