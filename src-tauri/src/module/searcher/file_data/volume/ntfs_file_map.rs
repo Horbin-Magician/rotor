@@ -104,7 +104,6 @@ impl FileMap {
             {
                 if let Some(path) = self.get_path(&file.parent_index) {
                     let full_path = format!("{}{}", path, file.file_name);
-                    println!("Found file: {}", full_path);
                     let icon_data = file_util::get_file_icon_data(&full_path);
                     result.push(SearchResultItem {
                         path,

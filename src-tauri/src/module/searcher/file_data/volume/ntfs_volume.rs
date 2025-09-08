@@ -15,7 +15,7 @@ use super::SearchResultItem;
 use crate::util::file_util;
 
 pub struct Volume {
-    pub drive: char,
+    pub drive: String,
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     file_map: FileMap,
@@ -25,7 +25,7 @@ pub struct Volume {
 }
 
 impl Volume {
-    pub fn new(drive: char, stop_receiver: mpsc::Receiver<()>) -> Volume {
+    pub fn new(drive: String, stop_receiver: mpsc::Receiver<()>) -> Volume {
         Volume {
             drive,
             drive_frn: 0x5000000000005,
@@ -46,7 +46,7 @@ impl Volume {
     }
 
     // This is a helper function that opens a handle to the volume specified by the cDriveLetter parameter.
-    fn open_drive(drive_letter: char) -> Foundation::HANDLE {
+    fn open_drive(drive_letter: &str) -> Foundation::HANDLE {
         unsafe {
             if let Ok(c_str) = CString::new(format!("\\\\.\\{}:", drive_letter)) {
                 FileSystem::CreateFileA(
@@ -82,7 +82,7 @@ impl Volume {
 
         self.release_index();
 
-        let h_vol = Self::open_drive(self.drive);
+        let h_vol = Self::open_drive(&self.drive);
 
         // Query, Return statistics about the journal on the current volume
         let mut cd: u32 = 0;
@@ -257,7 +257,7 @@ impl Volume {
             UsnJournalID: self.ujd.UsnJournalID,
         };
 
-        let h_vol = Self::open_drive(self.drive);
+        let h_vol = Self::open_drive(&self.drive);
 
         unsafe {
             while IO::DeviceIoControl(
