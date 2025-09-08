@@ -165,7 +165,7 @@ import {
 } from '@vicons/fluent';
 import { NTooltip, NIcon } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
@@ -197,7 +197,7 @@ const backImg = ref()
 const backImgRef = ref<ImageBitmap | null>(null)
 let backImgLayer: Konva.Layer | null = null
 let stage: Konva.Stage | null = null
-let pixelRatio = 1
+let scale_factor: number = 1
 
 const tips = ref("")
 const show_tips = ref(false)
@@ -285,41 +285,45 @@ interface PinConfig {
 
 async function tryLoadScreenShot(id: number): Promise<boolean> {
   const pin_config = await invoke("get_pin_state", { id }) as PinConfig;
-  if (!pin_config) return false;
-
-  await appWindow.setPosition(new PhysicalPosition((pin_config.pos_x + pin_config.rect[0] || 0), (pin_config.pos_y + pin_config.rect[1] || 0))); // set position first to get right scale
-
-  zoom_scale = pin_config.zoom_factor || 100;
-  await appWindow.setSize(new PhysicalSize(pin_config.rect[2] || 0, pin_config.rect[3] || 0));
-
-  const size = await appWindow.innerSize();
-  const imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
-  
-  // Check if imgBuf is empty
-  if (imgBuf.byteLength === 0) {
-    warn('No image data received');
+  if (!pin_config) {
+    warn(`No pin config found for id: ${id}`);
     return false;
   }
   
-  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), size.width, size.height);
-  backImg.value = await createImageBitmap(imgData)
-  
-  pixelRatio = size.width / window.innerWidth
+  scale_factor = window.devicePixelRatio;
+
+  const img_width = pin_config.rect[2];
+  const img_height = pin_config.rect[3];
+  const win_width = Math.round(img_width / scale_factor);
+  const win_height = Math.round(img_height / scale_factor);
+
+  await appWindow.setSize(new LogicalSize(win_width, win_height))
+  await appWindow.setPosition(new PhysicalPosition((pin_config.pos_x + pin_config.rect[0] || 0), (pin_config.pos_y + pin_config.rect[1] || 0)));
+
+  try {
+    let imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
+    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), img_width, img_height);
+    backImg.value = await createImageBitmap(imgData)
+  } catch (error) {
+    warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
+    await invoke("delete_pin_record", { id: pin_id });
+    return false;
+  }
 
   backImgLayer = new Konva.Layer(); // then create layer
   const konvaImage = new Konva.Image({
     x: 0,
     y: 0,
     image: backImg.value,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: img_width / scale_factor,
+    height: img_height / scale_factor,
   });
   backImgLayer.add(konvaImage);
 
   stage = new Konva.Stage({
     container: 'stage', // id of container <div>
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: img_width / scale_factor,
+    height: img_height / scale_factor,
   });
   stage.add(backImgLayer); // add the layer to the stage
   
@@ -327,6 +331,7 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
   drawingLayer = new Konva.Layer();
   stage.add(drawingLayer);
 
+  zoom_scale = pin_config.zoom_factor || 100;
   await scaleWindow();
   await appWindow.setPosition(new PhysicalPosition((pin_config.pos_x + pin_config.rect[0] || 0), (pin_config.pos_y + pin_config.rect[1] || 0)));
 
@@ -420,7 +425,7 @@ async function closeWindow() {
 async function saveImage() {
   if (!stage) return;
   stage?.toBlob({
-    pixelRatio: pixelRatio,
+    pixelRatio: window.devicePixelRatio,
     callback(blob) {
       if(!blob) return
       blob.arrayBuffer().then((imgBuf)=>{
@@ -434,7 +439,7 @@ async function saveImage() {
 
 async function copyImage() {
   stage?.toBlob({
-    pixelRatio: pixelRatio,
+    pixelRatio: window.devicePixelRatio,
     callback(blob) {
       if(!blob) return
       blob.arrayBuffer().then((imgBuf)=>{
@@ -467,8 +472,8 @@ async function zoomWindow(wheel_delta: number) {
 async function scaleWindow() {
   if (!stage || !backImg.value) return
   
-  const originalWidth = backImg.value.width / pixelRatio
-  const originalHeight = backImg.value.height / pixelRatio
+  const originalWidth = backImg.value.width / scale_factor
+  const originalHeight = backImg.value.height / scale_factor
   
   // Calculate new size based on zoom scale
   const newWidth = Math.round(originalWidth * zoom_scale / 100)

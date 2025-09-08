@@ -31,6 +31,7 @@ struct Record {
 fn default_shotter() -> HashMap<String, ShotterConfig> {
     HashMap::<String, ShotterConfig>::default()
 }
+
 fn default_workspace() -> HashMap<String, WorkSpace> {
     HashMap::<String, WorkSpace>::default()
 }
@@ -133,7 +134,7 @@ impl ShotterRecord {
 
     pub fn del_shotter(&mut self, id: u32) -> Result<(), Box<dyn Error>> {
         if let Some(workspace) = self.record.workspaces.get_mut(DEFAULT_SPACE_ID) {
-            ShotterRecord::del_record_img(id)?;
+            let _ = ShotterRecord::del_record_img(id);
             workspace.shotters.remove(&id.to_string());
             self.save()?;
             return Ok(());

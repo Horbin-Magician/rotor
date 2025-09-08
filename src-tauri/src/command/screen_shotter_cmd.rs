@@ -28,6 +28,7 @@ pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc:
         let masks = masks_arc.lock().unwrap();
         masks.get(&label).map_or(Vec::new(), |img| img.to_vec())
     } else {
+        log::error!("Failed to get screenshot module or masks");
         Vec::new()
     };
 
@@ -136,6 +137,14 @@ pub async fn change_current_mask(handle: tauri::AppHandle) {
         if let Some(window) = window {
             let _ = window.set_focus();
         }
+
+        let mut app = Application::global().lock().unwrap();
+        let screenshot = app.get_module("screenshot");
+        if let Some(s) = screenshot {
+            if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
+                screenshot.move_cache_pin(monitor.x().unwrap(), monitor.y().unwrap()).unwrap();
+            }
+        }
     }
 }
 
@@ -218,7 +227,6 @@ pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
         return tauri::ipc::Response::new(img.to_rgba8().to_vec());
     }
 
-    warn!("No image found for id: {}", id);
     tauri::ipc::Response::new(vec![])
 }
 

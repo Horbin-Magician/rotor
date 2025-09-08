@@ -255,6 +255,21 @@ impl ScreenShotter {
         Ok(())
     }
 
+    pub fn move_cache_pin(&mut self, x: i32, y: i32) -> Result<(), Box<dyn Error>> {
+        let app_handle = match &self.app_hander {
+            Some(handle) => handle,
+            None => return Err("AppHandle not initialized".into()),
+        };
+
+        let pin_label = format!("sspin-{}", self.max_pin_id);
+        let pin_win = app_handle.get_webview_window(&pin_label);
+        if let Some(win) = pin_win {
+            win.set_position(tauri::Position::Physical(tauri::PhysicalPosition {x,y}))?;
+        }
+
+        Ok(())
+    }
+
     pub fn get_pin_img(&self, id: u32) -> Option<DynamicImage> {
         if let Ok(img) = ShotterRecord::load_record_img(id) {
             return Some(img);
