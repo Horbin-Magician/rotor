@@ -29,31 +29,8 @@ pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc:
     };
 
     let image = if let Some(masks_arc) = masks_arc {
-        // Try to get the image without blocking
-        let mut result = None;
-        
-        // First attempt - non-blocking
-        if let Ok(masks) = masks_arc.try_lock() {
-            result = Some(masks.get(&label).map_or(Vec::new(), |img| img.to_vec()));
-        }
-        
-        // If first attempt failed, wait and try again
-        if result.is_none() {
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-            
-            // Second attempt - blocking
-            match masks_arc.lock() {
-                Ok(masks) => {
-                    result = Some(masks.get(&label).map_or(Vec::new(), |img| img.to_vec()));
-                }
-                Err(e) => {
-                    log::error!("Failed to acquire masks lock: {}", e);
-                    result = Some(Vec::new());
-                }
-            }
-        }
-        
-        result.unwrap_or_else(Vec::new)
+        let masks = masks_arc.lock().unwrap();
+        masks.get(&label).map_or(Vec::new(), |img| img.to_vec())
     } else {
         log::error!("Failed to get screenshot module or masks");
         Vec::new()

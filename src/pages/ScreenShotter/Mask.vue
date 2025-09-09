@@ -39,13 +39,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
-import { warn } from '@tauri-apps/plugin-log';
+import { info, warn } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null)
-const backImgBitmap = ref<ImageBitmap | null>(null)
+let backImgBitmap: ImageBitmap | null = null
 
 const windowWidth = window.screen.width
 const windowHeight = window.screen.height
@@ -137,11 +137,11 @@ function initializeMagnifierCanvas() {
 
 // Draw background image
 function drawBackgroundImage() {
-  if (!mainCtx || !backImgBitmap.value) return
+  if (!mainCtx || !backImgBitmap) return
   
   mainCtx.clearRect(0, 0, window.screen.width, window.screen.height)
   mainCtx.drawImage(
-    backImgBitmap.value,
+    backImgBitmap,
     0, 0,
     window.screen.width, window.screen.height
   )
@@ -173,7 +173,7 @@ const magnifierStyle = computed(() => {
 // Update magnifier
 const srcSize = magnifierSize / zoomFactor
 function updateMagnifier(x: number, y: number) {
-  if (!magnifierCtx || !backImgBitmap.value) return
+  if (!magnifierCtx || !backImgBitmap) return
   
   // Clear magnifier canvas
   magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize)
@@ -203,7 +203,7 @@ function updateMagnifier(x: number, y: number) {
 
     // Draw the intersected area
     magnifierCtx.drawImage(
-      backImgBitmap.value,
+      backImgBitmap,
       srcX, srcY, srcWidth, srcHeight,
       destX, destY, destWidth, destHeight
     )
@@ -379,12 +379,15 @@ onBeforeUnmount(() => {
 
 // Load the screenshot
 async function initializeScreenshot() {
+
+  let time = Date.now();
+
   let imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
-  
+
   let try_times = 1
   while (imgBuf.byteLength === 0) {
-    if (try_times > 10) { // Increased retry attempts
-      warn('Failed to capture screenshot after 5 attempts')
+    if (try_times > 20) { // Increased retry attempts
+      warn('Failed to capture screenshot after 10 attempts')
       return false
     }
     // Shorter delay between retries for faster response
@@ -393,9 +396,11 @@ async function initializeScreenshot() {
     try_times += 1
   }
 
+  info(`Screenshot captured in ${Date.now() - time} ms with ${try_times} attempts`)
+
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
-  backImgBitmap.value = await createImageBitmap(imgData, {
+  backImgBitmap = await createImageBitmap(imgData, {
     premultiplyAlpha: 'none',
     colorSpaceConversion: 'none'
   })
@@ -411,10 +416,10 @@ function hideWindow() {
   
   if (mainCtx) { mainCtx.clearRect(0, 0, windowWidth, windowHeight) }
   if (magnifierCtx) { magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize) }
-  
-  if (backImgBitmap.value) {
-    backImgBitmap.value.close()
-    backImgBitmap.value = null
+
+  if (backImgBitmap) {
+    backImgBitmap.close()
+    backImgBitmap = null
   }
 
   isSelecting.value = false
