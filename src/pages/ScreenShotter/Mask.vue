@@ -382,18 +382,27 @@ async function initializeScreenshot() {
   let imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
   
   let try_times = 1
-  while (imgBuf.byteLength === 0) { // TODO: fix the empty screenshot issue
-    if (try_times > 3) return false
+  while (imgBuf.byteLength === 0) {
+    if (try_times > 10) { // Increased retry attempts
+      warn('Failed to capture screenshot after 5 attempts')
+      return false
+    }
+    // Shorter delay between retries for faster response
+    await new Promise(resolve => setTimeout(resolve, 20))
     imgBuf = await invoke("get_screen_img", {label: appWindow.label})
     try_times += 1
   }
 
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
-  backImgBitmap.value = await createImageBitmap(imgData)
+  backImgBitmap.value = await createImageBitmap(imgData, {
+    premultiplyAlpha: 'none',
+    colorSpaceConversion: 'none'
+  })
 
   // Draw the background image
   drawBackgroundImage()
+  return true
 }
 
 function hideWindow() {
@@ -430,28 +439,28 @@ async function initializeAutoRects() {
 { // Mount something
   onMounted(async () => {
     listen('show-mask', async (_event) => {
-      initializeAutoRects()
-      await initializeScreenshot()
-      appWindow.show()
-      changeCurrentMask()
+      // Parallelize initialization tasks for better performance
+      const [rectsPromise, screenshotPromise] = [
+        initializeAutoRects(),
+        initializeScreenshot()
+      ];
+      await Promise.all([rectsPromise, screenshotPromise]); // Wait for both to complete
+
+      await appWindow.show()
+      changeCurrentMask() // Focus the current mask window
     });
     
     listen('hide-mask', async (_event) => {
-      appWindow.isVisible().then( (visible)=>{
-        if(visible == true) {
-          hideWindow()
-        }
-      })
+      const visible = await appWindow.isVisible();
+      if (visible) {
+        hideWindow()
+      }
     });
   });
 }
 </script>
 
 <style scoped>
-html, body {
-  background-color: transparent !important;
-}
-
 .container {
   position: relative;
   height: 100vh;

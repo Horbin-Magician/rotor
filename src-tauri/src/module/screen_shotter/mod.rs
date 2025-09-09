@@ -51,34 +51,30 @@ impl Module for ScreenShotter {
 
         // Capture screen
         #[cfg(target_os = "windows")]
-        {
-            for monitor in Monitor::all()? {
-                let masks_clone = Arc::clone(&self.masks);
-                let pos_x = monitor.x()?;
-                let pox_y = monitor.y()?;
-                tauri::async_runtime::spawn(async move {
-                    let monitor = Monitor::from_point(pos_x, pox_y).unwrap();
+        for monitor in Monitor::all()? {
+            let masks_clone = Arc::clone(&self.masks);
+            let pos_x = monitor.x()?;
+            let pox_y = monitor.y()?;
+            tauri::async_runtime::spawn(async move {
+                let monitor = Monitor::from_point(pos_x, pox_y).unwrap();
+                if let Ok(img) = monitor.capture_image() {
                     let label = format!("ssmask-{}", monitor.id().unwrap());
                     let mut masks = masks_clone.lock().unwrap();
-                    if let Ok(img) = monitor.capture_image() {
-                        masks.insert(label.clone(), img);
-                    }
-                });
-            }
+                    masks.insert(label.clone(), img);
+                }
+            });
         }
 
         #[cfg(target_os = "macos")]
-        {
-            for monitor in Monitor::all()? {
-                let masks_clone = Arc::clone(&self.masks);
-                tauri::async_runtime::spawn(async move {
+        for monitor in Monitor::all()? {
+            let masks_clone = Arc::clone(&self.masks);
+            tauri::async_runtime::spawn(async move {
+                if let Ok(img) = monitor.capture_image() {
                     let label = format!("ssmask-{}", monitor.id().unwrap());
                     let mut masks = masks_clone.lock().unwrap();
-                    if let Ok(img) = monitor.capture_image() {
-                        masks.insert(label.clone(), img);
-                    }
-                });
-            }
+                    masks.insert(label.clone(), img);
+                }
+            });
         }
 
         app_handle.emit("show-mask", ()).unwrap();
