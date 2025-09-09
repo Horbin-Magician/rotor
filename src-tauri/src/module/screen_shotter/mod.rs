@@ -69,19 +69,11 @@ impl Module for ScreenShotter {
         for monitor in Monitor::all()? {
             let masks_clone = Arc::clone(&self.masks);
             tauri::async_runtime::spawn(async move {
-                let time = std::time::Instant::now();
-
                 if let Ok(img) = monitor.capture_image() {
                     let label = format!("ssmask-{}", monitor.id().unwrap());
                     let mut masks = masks_clone.lock().unwrap();
                     masks.insert(label.clone(), img);
                 }
-
-                log::info!(
-                    "Captured screen for monitor {} in {:?}",
-                    monitor.id().unwrap(),
-                    time.elapsed()
-                );
             });
         }
 

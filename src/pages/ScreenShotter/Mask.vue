@@ -39,7 +39,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
-import { info, warn } from '@tauri-apps/plugin-log';
+import { warn } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
 
@@ -379,15 +379,12 @@ onBeforeUnmount(() => {
 
 // Load the screenshot
 async function initializeScreenshot() {
-
-  let time = Date.now();
-
   let imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
 
   let try_times = 1
   while (imgBuf.byteLength === 0) {
     if (try_times > 20) { // Increased retry attempts
-      warn('Failed to capture screenshot after 10 attempts')
+      warn('Failed to capture screenshot after 20 attempts')
       return false
     }
     // Shorter delay between retries for faster response
@@ -395,8 +392,6 @@ async function initializeScreenshot() {
     imgBuf = await invoke("get_screen_img", {label: appWindow.label})
     try_times += 1
   }
-
-  info(`Screenshot captured in ${Date.now() - time} ms with ${try_times} attempts`)
 
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
