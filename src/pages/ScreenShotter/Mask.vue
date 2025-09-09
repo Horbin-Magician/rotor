@@ -291,6 +291,8 @@ function handleMouseDown(event: MouseEvent) {
   // Initialize selection dimensions
   selectionWidth.value = 0
   selectionHeight.value = 0
+
+  invoke("new_cache_pin")
 }
 
 function handleMouseMove(event: MouseEvent) {

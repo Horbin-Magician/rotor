@@ -12,7 +12,7 @@ use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
 
@@ -78,7 +78,6 @@ impl Module for ScreenShotter {
         }
 
         app_handle.emit("show-mask", ()).unwrap();
-        self.build_pin_window(None)?; // Pre-build pin window for faster response after mask is shown
 
         Ok(())
     }
@@ -162,7 +161,7 @@ impl ScreenShotter {
         Ok(())
     }
 
-    pub fn build_pin_window(&self, id: Option<u32>) -> Result<(), Box<dyn Error>> {
+    pub fn build_pin_window(&self, id: Option<u32>, pos: Option<PhysicalPosition<i32>>) -> Result<(), Box<dyn Error>> {
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
             None => return Err("AppHandle not initialized".into()),
@@ -175,6 +174,17 @@ impl ScreenShotter {
         };
         let label = format!("sspin-{}", set_id);
 
+        let mut x = 0.0;
+        let mut y = 0.0;
+        if let Some(pos) = pos {
+            if let Ok(monitor) = xcap::Monitor::from_point(pos.x, pos.y) {
+                let scale_factor = monitor.scale_factor()?;
+                x = pos.x as f64 / scale_factor as f64;
+                y = pos.y as f64 / scale_factor as f64;
+            }
+        }
+
+        // Only create the window if it doesn't already exist
         if app_handle.get_webview_window(&label).is_none() {
             let win_builder = WebviewWindowBuilder::new(
                 app_handle,
@@ -185,6 +195,7 @@ impl ScreenShotter {
             .always_on_top(true)
             .resizable(false)
             .decorations(false)
+            .position(x, y)
             .visible(false);
 
             #[cfg(target_os = "windows")]
@@ -209,9 +220,9 @@ impl ScreenShotter {
 
     pub fn new_pin(
         &mut self,
-        pos_x: i32,
-        pos_y: i32,
+        monitor_pos: (i32, i32),
         rect: (u32, u32, u32, u32),
+        offset: (i32, i32),
         mask_label: String,
     ) -> Result<(), Box<dyn Error>> {
         let app_handle = match &self.app_hander {
@@ -220,9 +231,9 @@ impl ScreenShotter {
         };
 
         let config = ShotterConfig {
-            pos_x,
-            pos_y,
+            monitor_pos,
             rect,
+            offset,
             zoom_factor: 100,
             mask_label,
             minimized: false,
@@ -236,6 +247,11 @@ impl ScreenShotter {
         Ok(())
     }
 
+    pub fn new_cache_pin(&mut self, x: i32, y: i32) -> Result<(), Box<dyn Error>> {
+        self.build_pin_window(None, Some(PhysicalPosition { x, y }))?;
+        Ok(())
+    }
+
     pub fn close_cache_pin(&mut self) -> Result<(), Box<dyn Error>> {
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
@@ -246,21 +262,6 @@ impl ScreenShotter {
         let pin_win = app_handle.get_webview_window(&pin_label);
         if let Some(win) = pin_win {
             win.close().unwrap();
-        }
-
-        Ok(())
-    }
-
-    pub fn move_cache_pin(&mut self, x: i32, y: i32) -> Result<(), Box<dyn Error>> {
-        let app_handle = match &self.app_hander {
-            Some(handle) => handle,
-            None => return Err("AppHandle not initialized".into()),
-        };
-
-        let pin_label = format!("sspin-{}", self.max_pin_id);
-        let pin_win = app_handle.get_webview_window(&pin_label);
-        if let Some(win) = pin_win {
-            win.set_position(tauri::Position::Physical(tauri::PhysicalPosition {x,y}))?;
         }
 
         Ok(())
@@ -306,10 +307,18 @@ impl ScreenShotter {
         let records = self.shotter_recort.get_records();
 
         if let Some(records) = records {
-            for id_str in records.keys() {
+            for (id_str, record) in records {
                 if let Ok(id) = id_str.parse::<u32>() {
                     max_id = max_id.max(id);
-                    let _ = self.build_pin_window(Some(id));
+                    self.build_pin_window(
+                        Some(id), 
+                        Some(PhysicalPosition { 
+                            x: record.monitor_pos.0,
+                            y: record.monitor_pos.1
+                        })
+                    ).unwrap_or_else(|e| {
+                        log::error!("Failed to restore pin window {}: {}", id, e);
+                    });
                 }
             }
         }

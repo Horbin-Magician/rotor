@@ -8,9 +8,9 @@ use crate::util::file_util;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ShotterConfig {
-    pub pos_x: i32,
-    pub pos_y: i32,
+    pub monitor_pos: (i32, i32),
     pub rect: (u32, u32, u32, u32),
+    pub offset: (i32, i32),
     pub zoom_factor: u32,
     pub mask_label: String,
     pub minimized: bool,

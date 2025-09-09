@@ -275,9 +275,9 @@ function parseShortcutKey(shortcutStr: string): string {
 
 // Load the screenshot
 interface PinConfig {
-  pos_x: number;
-  pos_y: number;
+  monitor_pos: [number, number],
   rect: [number, number, number, number];
+  offset: [number, number],
   zoom_factor: number;
   mask_label: string;
   minimized: boolean;
@@ -298,7 +298,10 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
   const win_height = Math.round(img_height / scale_factor);
 
   await appWindow.setSize(new LogicalSize(win_width, win_height))
-  await appWindow.setPosition(new PhysicalPosition((pin_config.pos_x + pin_config.rect[0] || 0), (pin_config.pos_y + pin_config.rect[1] || 0)));
+  await appWindow.setPosition(new PhysicalPosition((
+    pin_config.monitor_pos[0] + pin_config.rect[0] + pin_config.offset[0] || 0),
+    (pin_config.monitor_pos[1] + pin_config.rect[1] + pin_config.offset[1] || 0)
+  ));
 
   try {
     let imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
@@ -333,8 +336,11 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
 
   zoom_scale = pin_config.zoom_factor || 100;
   await scaleWindow();
-  await appWindow.setPosition(new PhysicalPosition((pin_config.pos_x + pin_config.rect[0] || 0), (pin_config.pos_y + pin_config.rect[1] || 0)));
-
+  await appWindow.setPosition(new PhysicalPosition((
+    pin_config.monitor_pos[0] + pin_config.rect[0] + pin_config.offset[0] || 0),
+    (pin_config.monitor_pos[1] + pin_config.rect[1] + pin_config.offset[1] || 0)
+  ));
+  
   updateToolbarVisibility();
   appWindow.isVisible().then( (visible)=>{
     if(visible == false) {

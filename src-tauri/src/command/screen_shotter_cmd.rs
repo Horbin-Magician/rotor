@@ -141,14 +141,6 @@ pub async fn change_current_mask(handle: tauri::AppHandle) {
         if let Some(window) = window {
             let _ = window.set_focus();
         }
-
-        let mut app = Application::global().lock().unwrap();
-        let screenshot = app.get_module("screenshot");
-        if let Some(s) = screenshot {
-            if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
-                screenshot.move_cache_pin(monitor.x().unwrap(), monitor.y().unwrap()).unwrap();
-            }
-        }
     }
 }
 
@@ -180,6 +172,8 @@ pub async fn new_pin(
         };
 
         let rect = (offset_x_val, offset_y_val, width_val, height_val);
+        let monitor_position = (monitor_pos.x, monitor_pos.y);
+        let offset = (0, 0); // Default offset, can be adjusted later
 
         let mut app = Application::global().lock().unwrap();
         let screenshot = app.get_module("screenshot");
@@ -187,9 +181,9 @@ pub async fn new_pin(
             if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
                 screenshot
                     .new_pin(
-                        monitor_pos.x,
-                        monitor_pos.y,
+                        monitor_position,
                         rect,
+                        offset,
                         webview_window.label().to_string(),
                     )
                     .unwrap();
@@ -197,6 +191,20 @@ pub async fn new_pin(
         }
     } else {
         log::error!("Unable to get current monitor");
+    }
+}
+
+#[tauri::command]
+pub async fn new_cache_pin(window: tauri::WebviewWindow) {
+    let mut app = Application::global().lock().unwrap();
+    let screenshot = app.get_module("screenshot");
+
+    if let Some(s) = screenshot {
+        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
+            let _ = window.outer_position().map(|pos| {
+                screenshot.new_cache_pin(pos.x, pos.y).unwrap();
+            });
+        }
     }
 }
 
@@ -257,8 +265,9 @@ pub async fn update_pin_state(id: u32, x: i32, y: i32, zoom: u32, minimized: boo
         if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
             if let Some(mut record) = screenshot.shotter_recort.get_record(id).cloned() {
                 record.minimized = minimized;
-                record.pos_x = x - record.rect.0 as i32;
-                record.pos_y = y - record.rect.1 as i32;
+                // Calculate new offset based on current position and monitor position
+                record.offset.0 = x - record.monitor_pos.0 - record.rect.0 as i32;
+                record.offset.1 = y - record.monitor_pos.1 - record.rect.1 as i32;
                 record.zoom_factor = zoom;
                 screenshot.update_shotter_record(id, record);
             }
