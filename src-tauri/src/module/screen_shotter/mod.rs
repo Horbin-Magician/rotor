@@ -56,11 +56,17 @@ impl Module for ScreenShotter {
             let pos_x = monitor.x()?;
             let pox_y = monitor.y()?;
             tauri::async_runtime::spawn(async move {
-                let monitor = Monitor::from_point(pos_x, pox_y).unwrap();
-                if let Ok(img) = monitor.capture_image() {
-                    let label = format!("ssmask-{}", monitor.id().unwrap());
-                    let mut masks = masks_clone.lock().unwrap();
-                    masks.insert(label.clone(), img);
+                let monitor = Monitor::from_point(pos_x, pox_y);
+                if let Ok(monitor) = monitor {
+                    if let Ok(img) = monitor.capture_image() {
+                        let label = format!("ssmask-{}", monitor.id().unwrap());
+                        let mut masks = masks_clone.lock().unwrap();
+                        masks.insert(label.clone(), img);
+                    } else {
+                        log::error!("Failed to capture image for monitor at ({}, {})", pos_x, pox_y);
+                    }
+                } else {
+                    log::error!("Failed to get monitor from point ({}, {})", pos_x, pox_y);
                 }
             });
         }
@@ -73,6 +79,8 @@ impl Module for ScreenShotter {
                     let label = format!("ssmask-{}", monitor.id().unwrap());
                     let mut masks = masks_clone.lock().unwrap();
                     masks.insert(label.clone(), img);
+                } else {
+                    log::error!("Failed to capture image for monitor id {}", monitor.id().unwrap_or_default());
                 }
             });
         }

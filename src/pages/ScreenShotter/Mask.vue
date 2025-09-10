@@ -397,10 +397,7 @@ async function initializeScreenshot() {
 
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
-  backImgBitmap = await createImageBitmap(imgData, {
-    premultiplyAlpha: 'none',
-    colorSpaceConversion: 'none'
-  })
+  backImgBitmap = await createImageBitmap(imgData)
 
   // Draw the background image
   drawBackgroundImage()
