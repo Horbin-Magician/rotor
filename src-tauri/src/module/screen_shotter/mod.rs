@@ -128,6 +128,7 @@ impl ScreenShotter {
             .always_on_top(true)
             .resizable(false)
             .visible(false)
+            .accept_first_mouse(true)
             .skip_taskbar(true);
 
             let window = win_builder.build()?;
@@ -207,6 +208,16 @@ impl ScreenShotter {
                         sys_util::forbid_window_animation(hwnd);
                     })
                     .ok();
+
+                if let Some(pos) = pos { // just fix the focus influenced by the order of window creation
+                    if let Ok(monitor) = xcap::Monitor::from_point(pos.x, pos.y) {
+                        let label = format!("ssmask-{}", monitor.id().unwrap_or_default());
+                        let window = app_handle.get_webview_window(&label);
+                        if let Some(window) = window {
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
             }
 
             #[cfg(target_os = "macos")]
