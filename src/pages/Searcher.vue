@@ -77,6 +77,7 @@ import {
   ErrorFilled as ErrorIcon,
 } from '@vicons/material'
 import { invoke } from '@tauri-apps/api/core'
+import { info } from '@tauri-apps/plugin-log'
 
 // Types
 interface Action {
@@ -248,7 +249,16 @@ type UpdateResultPayload = [string, SearchResultItem[], boolean];
 // Lifecycle
 onMounted(async () => {
   unlistenBlur = await listen('tauri://blur', () => {
-    hideWindow()
+    // Delay checking to avoid instantaneous blur during window switching
+    setTimeout(() => {
+      // Check if the focus has really been lost at present
+      getCurrentWindow().isFocused().then(focused => {
+        if (!focused) {
+          info('Window lost focus, hiding searcher')
+          hideWindow()
+        }
+      })
+    }, 100)
   })
 
   unlistenFocus = await listen('tauri://focus', () => {
