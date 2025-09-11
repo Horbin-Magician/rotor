@@ -1,0 +1,92 @@
+# Cline Rules for Rotor Project
+
+## Project Overview
+This is a Tauri-based desktop application with Vue.js frontend and Rust backend.
+The application provides screen capture and file search functionality.
+
+## Code Style and Standards
+
+### Frontend (Vue.js/TypeScript)
+- Use TypeScript for all new JavaScript files
+- Follow Vue 3 Composition API patterns
+- Use kebab-case for component file names
+- Use camelCase for variables and functions
+- Use PascalCase for component names and interfaces
+- Maintain consistent indentation (2 spaces)
+- Use single quotes for strings unless double quotes are needed
+- Add proper TypeScript types for all functions and variables
+
+### Backend (Rust)
+- Follow Rust naming conventions (snake_case for functions/variables, PascalCase for types)
+- Use proper error handling with Result<T, E>
+- Add comprehensive documentation comments for public functions
+- Maintain module structure in src-tauri/src/
+- Use #[tauri::command] for functions exposed to frontend
+
+### File Organization
+- Keep Vue components in src/components/
+- Keep pages in src/pages/
+- Keep Rust modules organized in src-tauri/src/module/
+- Keep utility functions in appropriate util directories
+- Maintain separation between frontend and backend code
+
+## Development Guidelines
+
+### When modifying Tauri configuration:
+- Update tauri.conf.json for cross-platform settings
+- Use platform-specific configs (tauri.macos.conf.json, tauri.windows.conf.json) when needed
+- Test configuration changes on target platforms
+
+### When adding new features:
+- Create corresponding Rust commands in src-tauri/src/command/
+- Add proper error handling and validation
+- Update frontend components to use new commands
+- Consider internationalization (i18n) for user-facing text
+
+### When working with the searcher module:
+- Understand the volume-based file indexing system
+- Consider performance implications for large file systems
+- Maintain compatibility with different file system types (NTFS, default)
+
+### When working with screen capture:
+- Handle different screen resolutions and multi-monitor setups
+- Ensure proper memory management for image data
+- Consider platform-specific capture methods
+
+## Testing and Quality Assurance
+- Test new features on both development and production builds
+- Verify cross-platform compatibility when possible
+- Test with different file system configurations for searcher functionality
+- Validate screen capture on different display configurations
+
+## Security Considerations
+- Validate all user inputs in Rust commands
+- Use Tauri's security features appropriately
+- Be cautious with file system access permissions
+- Sanitize file paths and user-provided data
+
+## Performance Guidelines
+- Optimize file indexing operations in the searcher module
+- Use efficient image processing for screen capture
+- Consider memory usage when handling large datasets
+- Implement proper cleanup for resources
+
+## Localization
+- Use the existing i18n system for all user-facing text
+- Add new translation keys to both en-US.ts and zh-CN.ts
+- Test UI layout with different language text lengths
+
+## Build and Deployment
+- Ensure all dependencies are properly declared in Cargo.toml and package.json
+- Test build process for target platforms
+- Verify asset bundling and icon generation
+- Check that all required capabilities are declared in capabilities/
+
+## Code Review Checklist
+- [ ] Code follows project conventions
+- [ ] Proper error handling implemented
+- [ ] Documentation added for new functions
+- [ ] Internationalization considered
+- [ ] Cross-platform compatibility verified
+- [ ] Performance implications assessed
+- [ ] Security considerations addressed
