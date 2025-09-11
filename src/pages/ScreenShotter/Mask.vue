@@ -475,18 +475,18 @@ async function initializeAutoRects() {
 
 .selection-rect {
   position: absolute;
-  border: 1px solid #2196F3;
-  background-color: rgba(33, 150, 243, 0.1);
+  border: 1px solid var(--theme-primary-pressed);
+  background-color: var(--theme-primary-overlay);
   pointer-events: none;
 }
 
 .magnifier {
   position: absolute;
-  border: 1px solid #ffffff;
+  border: 1px solid var(--theme-border-hover);
   overflow: hidden;
   pointer-events: none;
   z-index: 1000;
-  background-color: black;
+  background-color: var(--theme-overlay);
   display: flex;
   flex-direction: column;
 }
@@ -497,14 +497,14 @@ async function initializeAutoRects() {
   left: 0;
   pointer-events: none;
   z-index: 1001;
-  border-bottom: 1px solid #ffffff;
+  border-bottom: 1px solid var(--theme-border-hover);
 }
 
 .magnifier-crosshair::before,
 .magnifier-crosshair::after {
   content: '';
   position: absolute;
-  background-color: #2196F3;
+  background-color: var(--theme-primary);
 }
 
 .magnifier-crosshair::before {
@@ -523,7 +523,7 @@ async function initializeAutoRects() {
 
 .magnifier-info {
   padding: 4px;
-  color: white;
+  color: var(--theme-text-primary);
   font-size: 12px;
   display: flex;
   flex-direction: column;

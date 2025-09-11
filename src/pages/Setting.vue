@@ -151,11 +151,13 @@ import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
 import ShortcutInput from '../components/ShortcutInput.vue';
+import { useTheme } from '../composables/useTheme';
 
 import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n()
 const notification = useNotification()
 const themeVars = useThemeVars()
+const { changeTheme } = useTheme()
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { info, error } from '@tauri-apps/plugin-log';
@@ -391,19 +393,16 @@ createSettingWatcher(language, "language", (newValue) => {
     const systemLang = navigator.language || navigator.languages[0]
     locale.value = systemLang.startsWith('zh') ? 'zh-CN' : 'en-US'
   } else if (newValue === 1) {
-    // Chinese
-    locale.value = 'zh-CN'
+    locale.value = 'zh-CN' // Chinese
   } else if (newValue === 2) {
-    // English
-    locale.value = 'en-US'
+    locale.value = 'en-US' // English
   }
 })
-createSettingWatcher(theme, "theme", (newValue) => {
-  // Update app theme
-  if ((window as any).updateAppTheme) {
-    (window as any).updateAppTheme(newValue)
-  }
+
+createSettingWatcher(theme, "theme", (newValue) => { // Update app theme
+  changeTheme(newValue)
 })
+
 createSettingWatcher(powerBoot, "power_boot", (newValue) => {
   if (newValue) { 
     enable().catch(e => console.error('Failed to enable autostart:', e))

@@ -20,6 +20,7 @@
     "core:window:allow-set-position",
     "core:window:allow-destroy",
     "core:window:allow-set-cursor-icon",
+    "core:window:allow-set-theme",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-write-image",
     "autostart:allow-enable",

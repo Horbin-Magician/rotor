@@ -29,7 +29,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="enterEditMode">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <EditOutlined />
           </n-icon>
         </div>
@@ -40,7 +40,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="minimizeWindow">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <MinusFilled />
           </n-icon>
         </div>
@@ -50,7 +50,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="saveImage">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <SaveAltFilled />
           </n-icon>
         </div>
@@ -60,7 +60,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="closeWindow">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <CloseFilled />
           </n-icon>
         </div>
@@ -70,7 +70,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="copyImage">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <ContentCopyRound />
           </n-icon>
         </div>
@@ -84,7 +84,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="exitEditMode">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <ArrowBackIosRound />
           </n-icon>
         </div>
@@ -95,7 +95,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="selectPenTool" :class="{ 'active': drawState === DrawState.Pen }">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <EditOutlined />
           </n-icon>
         </div>
@@ -105,7 +105,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="selectRectTool" :class="{ 'active': drawState === DrawState.Rect }">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <CropDinRound />
           </n-icon>
         </div>
@@ -115,7 +115,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="selectArrowTool" :class="{ 'active': drawState === DrawState.Arrow }">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <ArrowDownLeft20Filled />
           </n-icon>
         </div>
@@ -125,7 +125,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="selectTextTool" :class="{ 'active': drawState === DrawState.Text }">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <TextT20Filled />
           </n-icon>
         </div>
@@ -136,7 +136,7 @@
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
         <div class="toolbar-item" @click="undoDrawing">
-          <n-icon size="20" color="#007bff">
+          <n-icon size="20">
             <UndoFilled />
           </n-icon>
         </div>
@@ -852,8 +852,8 @@ function cancelTextInput() {
   top: 50%;
   padding: 2px 8px 2px 8px;
   transform: translate(-50%, -50%);
-  background-color: black;
-  color: white;
+  background-color: var(--theme-overlay);
+  color: var(--theme-text-primary);
   border-radius: 8px;
   font-size: 14px;
   z-index: 1000;
@@ -867,7 +867,7 @@ function cancelTextInput() {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  background-color: rgba(0, 0, 0);
+  background-color: var(--theme-background);
   border-radius: 8px 8px 0px 0px;
   padding: 4px;
   gap: 4px;
@@ -889,20 +889,21 @@ function cancelTextInput() {
   cursor: pointer;
   border-radius: 4px;
   transition: background-color 0.2s;
+  color: var(--theme-primary);
 }
 
 .toolbar-item:hover {
-  background-color: rgba(255, 255, 255, 0.2);
+  background-color: var(--theme-shadow);
 }
 
 .toolbar-item.active {
-  background-color: rgba(0, 123, 255, 0.3);
+  background-color: var(--theme-shadow);
 }
 
 .toolbar-divider {
   height: 20px;
   width: 1px;
-  background-color: #002c5b;
+  background-color: var(--theme-border);
 }
 
 .text-input-overlay {
@@ -912,12 +913,12 @@ function cancelTextInput() {
 
 .text-input {
   padding: 4px 8px;
-  border: 1px solid #007bff;
+  border: 1px solid var(--theme-primary);
   border-radius: 4px;
-  background-color: transparent;
+  background-color: var(--theme-background-secondary);
   font-size: 16px;
   outline: none;
-  color: white;
+  color: var(--theme-text-primary);
   width: 100px;
 }
 </style>

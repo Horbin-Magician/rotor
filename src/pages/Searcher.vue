@@ -3,7 +3,7 @@
     <!-- Search Input -->
     <div class="search-input-container">
       <div class="search-input-wrapper">
-        <n-icon size="24" color="#666" class="search-icon">
+        <n-icon size="24" class="search-icon">
           <SearchIcon />
         </n-icon>
         <input
@@ -295,12 +295,14 @@ onUnmounted(() => {
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
+  background-color: var(--theme-background);
 }
 
 /* Search Input Styles */
 .search-input-container {
   position: relative;
   padding: 0 12px;
+  background-color: var(--theme-background);
 }
 
 .search-input-container::after {
@@ -311,7 +313,7 @@ onUnmounted(() => {
   right: 10px;
   height: 2px;
   border-radius: 1px;
-  background-color: #4b9df4;
+  background-color: var(--theme-primary);
 }
 
 .search-input-wrapper {
@@ -323,6 +325,7 @@ onUnmounted(() => {
 
 .search-icon {
   flex-shrink: 0;
+  color: var(--theme-text-secondary);
 }
 
 .search-input {
@@ -332,8 +335,12 @@ onUnmounted(() => {
   outline: none;
   background: transparent;
   font-size: 16px;
-  color: var(--n-text-color);
+  color: var(--theme-text-primary);
   padding: 0;
+}
+
+.search-input::placeholder {
+  color: var(--theme-text-disabled);
 }
 
 /* Search Results Styles */
@@ -341,13 +348,13 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
+  background-color: var(--theme-background);
 }
 
 .search-results {
   height: 100%;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(75, 157, 244, 0.6) rgba(255, 255, 255, 0.05);
   padding-right: 2px;
 }
 
@@ -362,7 +369,7 @@ onUnmounted(() => {
 }
 
 .search-item.selected {
-  background-color: rgb(31, 31, 31);
+  background-color: var(--theme-primary-overlay);
 }
 
 .item-icon {
@@ -383,7 +390,7 @@ onUnmounted(() => {
 .item-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--n-text-color);
+  color: var(--theme-text-primary);
   margin-bottom: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -392,7 +399,7 @@ onUnmounted(() => {
 
 .item-subtitle {
   font-size: 12px;
-  color: var(--n-text-color-disabled);
+  color: var(--theme-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -428,17 +435,6 @@ onUnmounted(() => {
 }
 
 .item-action-btn:hover {
-  color: #4b9df4;
-}
-
-/* Empty State Styles */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 100%;
-  color: var(--n-text-color-disabled);
+  color: var(--theme-primary-hover);
 }
 </style>
