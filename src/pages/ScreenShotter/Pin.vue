@@ -3,6 +3,7 @@
         @mousedown="handleMouseDown"
         @mouseup="handleMouseUp"
         @mousemove="handleMouseMove"
+        @mouseout="handleMouseUp"
         @wheel="handleWheel">
     <div id="stage" ref="backImgRef"></div>
     <div class="tips" v-if="show_tips">
