@@ -142,7 +142,7 @@ const resizeWindow = async () => {
   
   const scale = await appWindow.scaleFactor()
   const centerX = monitor.position.x + (monitor.size.width - scale * WINDOW_CONFIG.width) / 2
-  const centerY = Math.ceil(monitor.position.y + monitor.size.height * 0.4)
+  const centerY = Math.ceil(monitor.position.y + monitor.size.height * 0.3)
   
   await appWindow.setPosition(new PhysicalPosition(centerX, centerY))
 }
