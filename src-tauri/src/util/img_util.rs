@@ -1,10 +1,10 @@
 use image::{self, imageops::resize, DynamicImage, GrayImage, RgbaImage};
+use rayon::prelude::*;
 
-// use crate::util::file_util;
-
-// return all rect in the image, (x, y, width, height)
 #[allow(dead_code)]
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
+    let start_time = std::time::Instant::now();
+
     let scale_factor: u8 = 2;
     let small_original = resize(
         original_img,
@@ -13,189 +13,233 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
         image::imageops::FilterType::Nearest,
     );
 
-    let gray = DynamicImage::ImageRgba8(small_original).into_luma8(); // convert to gray
-    let mut edge_image = canny_edge_detection(&gray, 10.0, 30.0);
-
-    // Combine morphological operations when possible
+    let gray = DynamicImage::ImageRgba8(small_original).into_luma8();
+    let edge_image = canny_edge_detection_parallel(&gray, 10.0, 30.0);
+    
+    // Optimized morphological operations
     let morph_size = 4 / scale_factor;
-    dilate(&mut edge_image, morph_size);
-    erode(&mut edge_image, morph_size);
+    let processed_image = morphological_close_optimized(edge_image, morph_size);
 
-    let contours = find_contours(&edge_image); // find contours
+    let contours = find_contours_optimized(&processed_image);
 
-    let mut res_rects: Vec<(u32, u32, u32, u32)> = Vec::with_capacity(contours.len() / 4);
-
-    // Filter thresholds
     let min_size = (100 / scale_factor) as u32;
     let scale_u32 = scale_factor as u32;
 
-    for contour in contours {
-        if contour.len() < 4 {
-            continue;
-        }
+    // Parallel processing of contours
+    let res_rects: Vec<(u32, u32, u32, u32)> = contours
+        .par_iter()
+        .filter_map(|contour| {
+            if contour.len() < 4 {
+                return None;
+            }
 
-        // Use iterator for finding bounds - more efficient
-        let (rect_left, rect_right, rect_top, rect_bottom) = contour.iter().fold(
-            (u32::MAX, 0, u32::MAX, 0),
-            |(min_x, max_x, min_y, max_y), &(x, y)| {
-                (min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y))
-            },
-        );
+            let (rect_left, rect_right, rect_top, rect_bottom) = contour.iter().fold(
+                (u32::MAX, 0, u32::MAX, 0),
+                |(min_x, max_x, min_y, max_y), &(x, y)| {
+                    (min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y))
+                },
+            );
 
-        let width = rect_right - rect_left;
-        let height = rect_bottom - rect_top;
+            let width = rect_right - rect_left;
+            let height = rect_bottom - rect_top;
 
-        // Early size filtering
-        if height < min_size || width < min_size {
-            continue;
-        }
+            if height < min_size || width < min_size {
+                return None;
+            }
 
-        res_rects.push((
-            rect_left * scale_u32,
-            rect_top * scale_u32,
-            width * scale_u32,
-            height * scale_u32,
-        ));
-    }
+            Some((
+                rect_left * scale_u32,
+                rect_top * scale_u32,
+                width * scale_u32,
+                height * scale_u32,
+            ))
+        })
+        .collect();
+
+    println!(
+        "detect_rect found {} rects in {:?}",
+        res_rects.len(),
+        start_time.elapsed()
+    );
 
     res_rects
 }
 
-// Simple Canny edge detection implementation
-fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
+// Optimized Canny edge detection with parallel processing
+fn canny_edge_detection_parallel(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
     let (width, height) = img.dimensions();
     let mut result = GrayImage::new(width, height);
+    
+    // Pre-calculate gradients in parallel
+    let img_data = img.as_raw();
+    let width_usize = width as usize;
+    
+    // Create a buffer for the result
+    let result_buffer: Vec<u8> = (0..height)
+        .into_par_iter()
+        .flat_map(|y| {
+            let mut row = vec![0u8; width_usize];
+            
+            if y > 0 && y < height - 1 {
+                for x in 1..width - 1 {
+                    let idx = |x: u32, y: u32| (y * width + x) as usize;
+                    
+                    // Use unsafe for performance (bounds are guaranteed)
+                    unsafe {
+                        let gx = (*img_data.get_unchecked(idx(x + 1, y - 1)) as i16
+                            + 2 * *img_data.get_unchecked(idx(x + 1, y)) as i16
+                            + *img_data.get_unchecked(idx(x + 1, y + 1)) as i16)
+                            - (*img_data.get_unchecked(idx(x - 1, y - 1)) as i16
+                                + 2 * *img_data.get_unchecked(idx(x - 1, y)) as i16
+                                + *img_data.get_unchecked(idx(x - 1, y + 1)) as i16);
 
-    // Simple Sobel edge detection as approximation
-    for y in 1..height - 1 {
-        for x in 1..width - 1 {
-            let gx = (img.get_pixel(x + 1, y - 1)[0] as i16
-                + 2 * img.get_pixel(x + 1, y)[0] as i16
-                + img.get_pixel(x + 1, y + 1)[0] as i16)
-                - (img.get_pixel(x - 1, y - 1)[0] as i16
-                    + 2 * img.get_pixel(x - 1, y)[0] as i16
-                    + img.get_pixel(x - 1, y + 1)[0] as i16);
+                        let gy = (*img_data.get_unchecked(idx(x - 1, y + 1)) as i16
+                            + 2 * *img_data.get_unchecked(idx(x, y + 1)) as i16
+                            + *img_data.get_unchecked(idx(x + 1, y + 1)) as i16)
+                            - (*img_data.get_unchecked(idx(x - 1, y - 1)) as i16
+                                + 2 * *img_data.get_unchecked(idx(x, y - 1)) as i16
+                                + *img_data.get_unchecked(idx(x + 1, y - 1)) as i16);
 
-            let gy = (img.get_pixel(x - 1, y + 1)[0] as i16
-                + 2 * img.get_pixel(x, y + 1)[0] as i16
-                + img.get_pixel(x + 1, y + 1)[0] as i16)
-                - (img.get_pixel(x - 1, y - 1)[0] as i16
-                    + 2 * img.get_pixel(x, y - 1)[0] as i16
-                    + img.get_pixel(x + 1, y - 1)[0] as i16);
+                        let magnitude = ((gx as i32 * gx as i32 + gy as i32 * gy as i32) as f32).sqrt();
 
-            let magnitude = ((gx as i32 * gx as i32 + gy as i32 * gy as i32) as f32).sqrt();
-
-            let pixel_val = if magnitude > high_threshold {
-                255
-            } else if magnitude > low_threshold {
-                128
-            } else {
-                0
-            };
-
-            result.put_pixel(x, y, image::Luma([pixel_val]));
-        }
+                        row[x as usize] = if magnitude > high_threshold {
+                            255
+                        } else if magnitude > low_threshold {
+                            128
+                        } else {
+                            0
+                        };
+                    }
+                }
+            }
+            
+            row
+        })
+        .collect();
+    
+    // Copy buffer to result image
+    for (i, &pixel) in result_buffer.iter().enumerate() {
+        let x = (i % width_usize) as u32;
+        let y = (i / width_usize) as u32;
+        result.put_pixel(x, y, image::Luma([pixel]));
     }
-
+    
     result
 }
 
-// Simple morphological dilation
-fn dilate(img: &mut GrayImage, size: u8) {
+// Optimized morphological close operation (dilate then erode)
+fn morphological_close_optimized(mut img: GrayImage, size: u8) -> GrayImage {
+    if size == 0 {
+        return img;
+    }
+    
     let (width, height) = img.dimensions();
-    let mut temp = img.clone();
-
+    
+    // Combined dilate-erode operation with single buffer allocation
+    let mut buffer = vec![0u8; (width * height) as usize];
+    
+    // Dilate
     for _ in 0..size {
-        for y in 1..height - 1 {
-            for x in 1..width - 1 {
-                let mut max_val = 0u8;
-                for dy in -1i32..=1 {
-                    for dx in -1i32..=1 {
-                        let nx = (x as i32 + dx) as u32;
-                        let ny = (y as i32 + dy) as u32;
-                        if nx < width && ny < height {
-                            max_val = max_val.max(temp.get_pixel(nx, ny)[0]);
+        let img_data = img.as_raw();
+        buffer.par_chunks_mut(width as usize)
+            .enumerate()
+            .for_each(|(y, row)| {
+                if y > 0 && y < height as usize - 1 {
+                    for x in 1..width as usize - 1 {
+                        let mut max_val = 0u8;
+                        for dy in -1i32..=1 {
+                            for dx in -1i32..=1 {
+                                let nx = (x as i32 + dx) as usize;
+                                let ny = (y as i32 + dy) as usize;
+                                let idx = ny * width as usize + nx;
+                                max_val = max_val.max(img_data[idx]);
+                            }
                         }
+                        row[x] = max_val;
                     }
                 }
-                img.put_pixel(x, y, image::Luma([max_val]));
-            }
-        }
-        temp = img.clone();
+            });
+        
+        // Copy buffer back to image
+        img.as_mut().copy_from_slice(&buffer);
     }
-}
-
-// Simple morphological erosion
-fn erode(img: &mut GrayImage, size: u8) {
-    let (width, height) = img.dimensions();
-    let mut temp = img.clone();
-
+    
+    // Erode
     for _ in 0..size {
-        for y in 1..height - 1 {
-            for x in 1..width - 1 {
-                let mut min_val = 255u8;
-                for dy in -1i32..=1 {
-                    for dx in -1i32..=1 {
-                        let nx = (x as i32 + dx) as u32;
-                        let ny = (y as i32 + dy) as u32;
-                        if nx < width && ny < height {
-                            min_val = min_val.min(temp.get_pixel(nx, ny)[0]);
+        let img_data = img.as_raw();
+        buffer.par_chunks_mut(width as usize)
+            .enumerate()
+            .for_each(|(y, row)| {
+                if y > 0 && y < height as usize - 1 {
+                    for x in 1..width as usize - 1 {
+                        let mut min_val = 255u8;
+                        for dy in -1i32..=1 {
+                            for dx in -1i32..=1 {
+                                let nx = (x as i32 + dx) as usize;
+                                let ny = (y as i32 + dy) as usize;
+                                let idx = ny * width as usize + nx;
+                                min_val = min_val.min(img_data[idx]);
+                            }
                         }
+                        row[x] = min_val;
                     }
                 }
-                img.put_pixel(x, y, image::Luma([min_val]));
-            }
-        }
-        temp = img.clone();
+            });
+        
+        // Copy buffer back to image
+        img.as_mut().copy_from_slice(&buffer);
     }
+    
+    img
 }
 
-// Simple contour finding using connected components
-fn find_contours(img: &GrayImage) -> Vec<Vec<(u32, u32)>> {
+// Optimized contour finding with better memory management
+fn find_contours_optimized(img: &GrayImage) -> Vec<Vec<(u32, u32)>> {
     let (width, height) = img.dimensions();
-    let mut visited = vec![vec![false; width as usize]; height as usize];
+    let mut visited = vec![false; (width * height) as usize];
     let mut contours = Vec::new();
-
+    
+    let img_data = img.as_raw();
+    
     for y in 0..height {
         for x in 0..width {
-            if img.get_pixel(x, y)[0] > 128 && !visited[y as usize][x as usize] {
-                let mut contour = Vec::new();
-                flood_fill(img, &mut visited, x, y, &mut contour);
+            let idx = (y * width + x) as usize;
+            if img_data[idx] > 128 && !visited[idx] {
+                let contour = flood_fill_optimized(img_data, &mut visited, x, y, width, height);
                 if contour.len() > 10 {
-                    // Filter small contours
                     contours.push(contour);
                 }
             }
         }
     }
-
+    
     contours
 }
 
-// Flood fill to find connected components
-fn flood_fill(
-    img: &GrayImage,
-    visited: &mut [Vec<bool>],
+// Optimized flood fill with stack-based approach
+fn flood_fill_optimized(
+    img_data: &[u8],
+    visited: &mut [bool],
     start_x: u32,
     start_y: u32,
-    contour: &mut Vec<(u32, u32)>,
-) {
-    let (width, height) = img.dimensions();
-    let mut stack = vec![(start_x, start_y)];
-
+    width: u32,
+    height: u32,
+) -> Vec<(u32, u32)> {
+    let mut contour = Vec::with_capacity(1000); // Pre-allocate for typical contour size
+    let mut stack = Vec::with_capacity(1000);
+    stack.push((start_x, start_y));
+    
     while let Some((x, y)) = stack.pop() {
-        if x >= width
-            || y >= height
-            || visited[y as usize][x as usize]
-            || img.get_pixel(x, y)[0] <= 128
-        {
+        let idx = (y * width + x) as usize;
+        
+        if x >= width || y >= height || visited[idx] || img_data[idx] <= 128 {
             continue;
         }
-
-        visited[y as usize][x as usize] = true;
+        
+        visited[idx] = true;
         contour.push((x, y));
-
-        // Add neighbors to stack
+        
+        // Use direct indexing instead of conditional checks
         if x > 0 {
             stack.push((x - 1, y));
         }
@@ -209,6 +253,8 @@ fn flood_fill(
             stack.push((x, y + 1));
         }
     }
+    
+    contour
 }
 
 // #[allow(dead_code)]

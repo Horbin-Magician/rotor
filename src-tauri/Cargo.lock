@@ -4826,6 +4826,7 @@ dependencies = [
  "log",
  "notify",
  "objc",
+ "rayon",
  "serde",
  "serde_json",
  "sys-locale",

@@ -77,7 +77,6 @@ import {
   ErrorFilled as ErrorIcon,
 } from '@vicons/material'
 import { invoke } from '@tauri-apps/api/core'
-import { info } from '@tauri-apps/plugin-log'
 
 // Types
 interface Action {
@@ -253,10 +252,7 @@ onMounted(async () => {
     setTimeout(() => {
       // Check if the focus has really been lost at present
       getCurrentWindow().isFocused().then(focused => {
-        if (!focused) {
-          info('Window lost focus, hiding searcher')
-          hideWindow()
-        }
+        if (!focused) { hideWindow() }
       })
     }, 100)
   })

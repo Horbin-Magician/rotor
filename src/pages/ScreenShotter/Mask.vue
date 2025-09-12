@@ -383,18 +383,6 @@ onBeforeUnmount(() => {
 async function initializeScreenshot() {
   let imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
 
-  let try_times = 1
-  while (imgBuf.byteLength === 0) {
-    if (try_times > 20) { // Increased retry attempts
-      warn('Failed to capture screenshot after 20 attempts')
-      return false
-    }
-    // Shorter delay between retries for faster response
-    await new Promise(resolve => setTimeout(resolve, 20))
-    imgBuf = await invoke("get_screen_img", {label: appWindow.label})
-    try_times += 1
-  }
-
   // Create image data and bitmap asynchronously
   const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
   backImgBitmap = await createImageBitmap(imgData)

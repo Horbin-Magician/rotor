@@ -9,6 +9,29 @@ use crate::core::config::AppConfig;
 use crate::module::screen_shotter::{shotter_record::ShotterConfig, ScreenShotter};
 use crate::util::{img_util, sys_util};
 
+// Common functions
+async fn try_get_screen_img(label: &str) -> Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>> {
+    let mut try_times = 1;
+    while try_times <= 20 {
+        // Get the masks arc without holding any locks
+        let masks_arc = {
+            let mut app = Application::global().lock().unwrap();
+            app.get_module("screenshot")
+                .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+                .map(|screenshot| screenshot.masks.clone())
+        };
+        if let Some(masks_arc) = masks_arc {
+            let masks = masks_arc.lock().unwrap();
+            if let Some(m) = masks.get(label) {
+                return Some(m.clone());
+            }
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await; // Shorter delay between retries for faster response
+        try_times += 1;
+    }
+    None
+}
+
 // Command for mask window
 
 #[tauri::command]
@@ -20,23 +43,11 @@ pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc:
         }
     });
 
-    // Get the masks arc without holding any locks
-    let masks_arc = {
-        let mut app = Application::global().lock().unwrap();
-        app.get_module("screenshot")
-            .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-            .map(|screenshot| screenshot.masks.clone())
-    };
-
-    let image = if let Some(masks_arc) = masks_arc {
-        let masks = masks_arc.lock().unwrap();
-        masks.get(&label).map_or(Vec::new(), |img| img.to_vec())
-    } else {
-        log::error!("Failed to get screenshot module or masks");
-        Vec::new()
-    };
-
-    tauri::ipc::Response::new(image)
+    let image = try_get_screen_img(&label).await;
+    if let Some(image) = image {
+        return tauri::ipc::Response::new(image.to_vec());
+    }
+    tauri::ipc::Response::new(Vec::new())
 }
 
 #[tauri::command]
@@ -93,36 +104,16 @@ pub async fn get_screen_rects(
         }
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        // Detect more rects from screenshot
-        let masks_arc = {
-            let mut app = Application::global().lock().unwrap();
-            app.get_module("screenshot")
-                .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-                .map(|screenshot| screenshot.masks.clone())
-        };
-
-        let image = if let Some(masks_arc) = masks_arc {
-            let masks = masks_arc.lock().unwrap();
-            masks.get(&label).cloned()
-        } else {
-            None
-        };
-
-        if let Some(image) = image {
-            let rects2 = img_util::detect_rect(&image);
-            for rect in rects2 {
-                let x = (rect.0 as f64 / scale_factor) as i32 + mon_pos.x;
-                let y = (rect.1 as f64 / scale_factor) as i32 + mon_pos.y;
-                rects.push((
-                    x,
-                    y,
-                    -1,
-                    (rect.2 as f64 / scale_factor) as u32,
-                    (rect.3 as f64 / scale_factor) as u32,
-                ));
-            }
+    if let Some(image) = try_get_screen_img(&label).await {
+        let rects2 = img_util::detect_rect(&image);
+        for rect in rects2 {
+            rects.push((
+                (rect.0 as f64 / scale_factor) as i32 + mon_pos.x,
+                (rect.1 as f64 / scale_factor) as i32 + mon_pos.y,
+                -1,
+                (rect.2 as f64 / scale_factor) as u32,
+                (rect.3 as f64 / scale_factor) as u32,
+            ));
         }
     }
 
