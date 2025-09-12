@@ -171,7 +171,7 @@ import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
 import { UnlistenFn } from "@tauri-apps/api/event";
-import { warn } from "@tauri-apps/plugin-log";
+import { info, warn } from "@tauri-apps/plugin-log";
 
 enum State {
   Default,
@@ -284,6 +284,14 @@ interface PinConfig {
   minimized: boolean;
 }
 
+interface TextResult {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  text: string;
+}
+
 async function tryLoadScreenShot(id: number): Promise<boolean> {
   const pin_config = await invoke("get_pin_state", { id }) as PinConfig;
   if (!pin_config) {
@@ -348,6 +356,20 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
       appWindow.show()
       appWindow.setFocus()
       if (pin_config.minimized) appWindow.minimize()
+    }
+  })
+
+  stage?.toBlob({
+    pixelRatio: window.devicePixelRatio,
+    callback(blob) {
+      if(!blob) return
+      blob.arrayBuffer().then((imgBuf)=>{
+        invoke<TextResult[]>("img2text", { imgBuf: imgBuf }).then((textResults)=>{
+          textResults.forEach(result => {
+            info(`Detected Text: "${result.text}" at [${result.left}, ${result.top}, ${result.width}, ${result.height}]`);
+          });
+        });
+      })
     }
   })
 

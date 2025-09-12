@@ -1,5 +1,6 @@
 use image::DynamicImage;
 use log::warn;
+use tauri::path::BaseDirectory;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use xcap::Monitor;
@@ -7,6 +8,7 @@ use xcap::Monitor;
 use crate::core::application::Application;
 use crate::core::config::AppConfig;
 use crate::module::screen_shotter::{shotter_record::ShotterConfig, ScreenShotter};
+use crate::util::img_util::TextResult;
 use crate::util::{img_util, sys_util};
 
 // Common functions
@@ -338,4 +340,20 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     }
     drop(app_config);
     false
+}
+
+#[tauri::command]
+pub async fn img2text(img_buf: Vec<u8>, app: tauri::AppHandle) -> Vec<TextResult> {
+    let cursor = std::io::Cursor::new(img_buf);
+    if let Ok(img) = image::load(cursor, image::ImageFormat::Png) {
+        let model_path = app.path().resolve("assets/model", BaseDirectory::Resource);
+        if let Ok(path) = model_path {
+            return img_util::img2text(&path, &img);
+        } else {
+            log::error!("Failed to resolve model path");
+        }
+    } else {
+        log::error!("Failed to load image from buffer");
+    }
+    Vec::new()
 }

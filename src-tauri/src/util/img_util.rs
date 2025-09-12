@@ -1,5 +1,8 @@
-use image::{self, imageops::resize, GrayImage, RgbaImage};
+use std::path::Path;
+use image::{self, imageops::resize, DynamicImage, GrayImage, RgbaImage};
 use rayon::prelude::*;
+use rust_paddle_ocr::{Det, Rec};
+use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
@@ -84,7 +87,6 @@ fn rgb_to_gray_direct(img: &RgbaImage) -> GrayImage {
     gray
 }
 
-// TODO
 fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
     let (width, height) = img.dimensions();
     let mut result = GrayImage::new(width, height);
@@ -146,7 +148,6 @@ fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32
     result
 }
 
-// TODO
 fn morphological_close(mut img: GrayImage, size: u8) -> GrayImage {
     if size == 0 { return img; }
     
@@ -272,32 +273,37 @@ fn flood_fill(
     contour
 }
 
-// #[allow(dead_code)]
-// pub fn img2text(img: DynamicImage) {
-//     let userdata_path = file_util::get_userdata_path().unwrap();
-//     let model_path = userdata_path.join("models");
-//     let det_model_path = model_path.join("PP-OCRv5_mobile_det_fp16.mnn");
-//     let rec_model_path = model_path.join("PP-OCRv5_mobile_rec_fp16.mnn");
-//     let keys_path = model_path.join("ppocr_keys_v5.txt");
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TextResult {
+    pub left: i32,
+    pub top: i32,
+    pub width: u32,
+    pub height: u32,
+    pub text: String,
+}
 
-//     let mut det = Det::from_file(det_model_path).unwrap();
-//     let mut rec = Rec::from_file(rec_model_path, keys_path).unwrap();
+#[allow(dead_code)]
+pub fn img2text(model_path: &Path, img: &DynamicImage) -> Vec<TextResult> {
+    let det_model_path = model_path.join("PP-OCRv5_mobile_det_fp16.mnn");
+    let rec_model_path = model_path.join("PP-OCRv5_mobile_rec_fp16.mnn");
+    let keys_path = model_path.join("ppocr_keys_v5.txt");
 
-//     // let det = det
-//     //     .with_rect_border_size(12)  // PP-OCRv5 推荐参数
-//     //     .with_merge_boxes(false)    // PP-OCRv5 推荐参数
-//     //     .with_merge_threshold(1);   // PP-OCRv5 推荐参数
+    let mut det = Det::from_file(det_model_path).unwrap();
+    let mut rec = Rec::from_file(rec_model_path, keys_path).unwrap();
 
-//     // // 自定义识别参数（可选）
-//     // let rec = rec
-//     //     .with_min_score(0.6)
-//     //     .with_punct_min_score(0.1);
+    let rects = det.find_text_rect(&img).unwrap();
 
-//     let text_images = det.find_text_img(&img).unwrap();
-
-//     // 识别每个检测区域中的文本
-//     for text_img in text_images {
-//         let text = rec.predict_str(&text_img).unwrap();
-//         println!("识别的文本: {}", text);
-//     }
-// }
+    let mut text_results = Vec::new();
+    for rect in rects.iter() {
+        let text_img = img.crop_imm(rect.left() as u32, rect.top() as u32, rect.width(), rect.height());
+        let text = rec.predict_str(&text_img).unwrap();
+        text_results.push(TextResult {
+            left: rect.left(),
+            top: rect.top(),
+            width: rect.width(),
+            height: rect.height(),
+            text,
+        });
+    }
+    text_results
+}

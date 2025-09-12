@@ -57,6 +57,7 @@ pub fn run() {
             screen_shotter_cmd::new_cache_pin,
             screen_shotter_cmd::update_pin_state,
             screen_shotter_cmd::delete_pin_record,
+            screen_shotter_cmd::img2text,
             searcher_cmd::searcher_find,
             searcher_cmd::searcher_release,
             searcher_cmd::open_file,
