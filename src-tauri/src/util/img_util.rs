@@ -1,29 +1,26 @@
-use image::{self, imageops::resize, DynamicImage, GrayImage, RgbaImage};
+use image::{self, imageops::resize, GrayImage, RgbaImage};
 use rayon::prelude::*;
 
 #[allow(dead_code)]
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
-    let start_time = std::time::Instant::now();
+    let scale_factor = calculate_optimal_scale_factor(original_img.width(), original_img.height());
 
-    let scale_factor: u8 = 2;
     let small_original = resize(
         original_img,
-        original_img.width() / scale_factor as u32,
-        original_img.height() / scale_factor as u32,
-        image::imageops::FilterType::Nearest,
+        original_img.width() / scale_factor,
+        original_img.height() / scale_factor,
+        image::imageops::FilterType::Nearest, // the fastest filter
     );
 
-    let gray = DynamicImage::ImageRgba8(small_original).into_luma8();
-    let edge_image = canny_edge_detection_parallel(&gray, 10.0, 30.0);
-    
-    // Optimized morphological operations
-    let morph_size = 4 / scale_factor;
-    let processed_image = morphological_close_optimized(edge_image, morph_size);
+    let gray = rgb_to_gray_direct(&small_original);
+    let edge_image = canny_edge_detection(&gray, 10.0, 30.0);
 
-    let contours = find_contours_optimized(&processed_image);
+    // morphological operations
+    let morph_size = 4 / scale_factor;
+    let processed_image = morphological_close(edge_image, morph_size as u8);
 
     let min_size = (100 / scale_factor) as u32;
-    let scale_u32 = scale_factor as u32;
+    let contours = find_contours(&processed_image, min_size as usize);
 
     // Parallel processing of contours
     let res_rects: Vec<(u32, u32, u32, u32)> = contours
@@ -43,30 +40,52 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
             let width = rect_right - rect_left;
             let height = rect_bottom - rect_top;
 
-            if height < min_size || width < min_size {
-                return None;
-            }
+            if height < min_size || width < min_size { return None; }
 
             Some((
-                rect_left * scale_u32,
-                rect_top * scale_u32,
-                width * scale_u32,
-                height * scale_u32,
+                rect_left * scale_factor,
+                rect_top * scale_factor,
+                width * scale_factor,
+                height * scale_factor,
             ))
         })
         .collect();
 
-    println!(
-        "detect_rect found {} rects in {:?}",
-        res_rects.len(),
-        start_time.elapsed()
-    );
-
     res_rects
 }
 
-// Optimized Canny edge detection with parallel processing
-fn canny_edge_detection_parallel(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
+fn calculate_optimal_scale_factor(width: u32, height: u32) -> u32 {
+    let max_dimension = width.max(height);
+    match max_dimension {
+        0..=1000 => 1,      // 小图不缩放
+        1001..=2000 => 2,   // 中等图像2倍缩放
+        2001..=4000 => 3,   // 大图像3倍缩放
+        _ => 4,             // 超大图像4倍缩放
+    }
+}
+
+fn rgb_to_gray_direct(img: &RgbaImage) -> GrayImage {
+    let (width, height) = img.dimensions();
+    let mut gray = GrayImage::new(width, height);
+    
+    // 并行处理每一行
+    let gray_data: Vec<u8> = (0..height)
+        .into_par_iter()
+        .flat_map(|y| {
+            (0..width).map(|x| {
+                let pixel = img.get_pixel(x, y);
+                // 使用整数运算代替浮点数
+                ((pixel[0] as u32 * 299 + pixel[1] as u32 * 587 + pixel[2] as u32 * 114) / 1000) as u8
+            }).collect::<Vec<_>>()
+        })
+        .collect();
+    
+    gray.as_mut().copy_from_slice(&gray_data);
+    gray
+}
+
+// TODO
+fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
     let (width, height) = img.dimensions();
     let mut result = GrayImage::new(width, height);
     
@@ -127,11 +146,9 @@ fn canny_edge_detection_parallel(img: &GrayImage, low_threshold: f32, high_thres
     result
 }
 
-// Optimized morphological close operation (dilate then erode)
-fn morphological_close_optimized(mut img: GrayImage, size: u8) -> GrayImage {
-    if size == 0 {
-        return img;
-    }
+// TODO
+fn morphological_close(mut img: GrayImage, size: u8) -> GrayImage {
+    if size == 0 { return img; }
     
     let (width, height) = img.dimensions();
     
@@ -193,8 +210,7 @@ fn morphological_close_optimized(mut img: GrayImage, size: u8) -> GrayImage {
     img
 }
 
-// Optimized contour finding with better memory management
-fn find_contours_optimized(img: &GrayImage) -> Vec<Vec<(u32, u32)>> {
+fn find_contours(img: &GrayImage, min_size: usize) -> Vec<Vec<(u32, u32)>> {
     let (width, height) = img.dimensions();
     let mut visited = vec![false; (width * height) as usize];
     let mut contours = Vec::new();
@@ -205,8 +221,8 @@ fn find_contours_optimized(img: &GrayImage) -> Vec<Vec<(u32, u32)>> {
         for x in 0..width {
             let idx = (y * width + x) as usize;
             if img_data[idx] > 128 && !visited[idx] {
-                let contour = flood_fill_optimized(img_data, &mut visited, x, y, width, height);
-                if contour.len() > 10 {
+                let contour = flood_fill(img_data, &mut visited, x, y, width, height);
+                if contour.len() > min_size {
                     contours.push(contour);
                 }
             }
@@ -216,8 +232,7 @@ fn find_contours_optimized(img: &GrayImage) -> Vec<Vec<(u32, u32)>> {
     contours
 }
 
-// Optimized flood fill with stack-based approach
-fn flood_fill_optimized(
+fn flood_fill(
     img_data: &[u8],
     visited: &mut [bool],
     start_x: u32,
@@ -226,7 +241,7 @@ fn flood_fill_optimized(
     height: u32,
 ) -> Vec<(u32, u32)> {
     let mut contour = Vec::with_capacity(1000); // Pre-allocate for typical contour size
-    let mut stack = Vec::with_capacity(1000);
+    let mut stack = Vec::with_capacity(1000); // Pre-allocate for typical contour size
     stack.push((start_x, start_y));
     
     while let Some((x, y)) = stack.pop() {
@@ -243,13 +258,13 @@ fn flood_fill_optimized(
         if x > 0 {
             stack.push((x - 1, y));
         }
-        if x < width - 1 {
+        if x + 1 < width {
             stack.push((x + 1, y));
         }
         if y > 0 {
             stack.push((x, y - 1));
         }
-        if y < height - 1 {
+        if y + 1 < height {
             stack.push((x, y + 1));
         }
     }

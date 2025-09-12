@@ -108,8 +108,8 @@ pub async fn get_screen_rects(
         let rects2 = img_util::detect_rect(&image);
         for rect in rects2 {
             rects.push((
-                (rect.0 as f64 / scale_factor) as i32 + mon_pos.x,
-                (rect.1 as f64 / scale_factor) as i32 + mon_pos.y,
+                (rect.0 as f64 / scale_factor) as i32,
+                (rect.1 as f64 / scale_factor) as i32,
                 -1,
                 (rect.2 as f64 / scale_factor) as u32,
                 (rect.3 as f64 / scale_factor) as u32,
