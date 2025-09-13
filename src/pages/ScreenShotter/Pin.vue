@@ -30,12 +30,12 @@
          :key="'ocr-text-' + index"
          class="ocr-text-overlay"
          :style="{
-           left: (result.left / scale_factor * zoom_scale / 100) + 'px',
-           top: (result.top / scale_factor * zoom_scale / 100) + 'px',
-           width: (result.width / scale_factor * zoom_scale / 100) + 'px',
-           height: (result.height / scale_factor * zoom_scale / 100) + 'px',
-           fontSize: Math.max(10, Math.min(24, (result.height / scale_factor * zoom_scale / 100) * 0.8)) + 'px',
-           lineHeight: (result.height / scale_factor * zoom_scale / 100) + 'px'
+           left: (result.left / scale_factor / ocrZoomScale * zoom_scale) + 'px',
+           top: (result.top / scale_factor / ocrZoomScale * zoom_scale) + 'px',
+           width: (result.width / scale_factor / ocrZoomScale * zoom_scale) + 'px',
+           height: (result.height / scale_factor / ocrZoomScale * zoom_scale) + 'px',
+           fontSize: (result.height / scale_factor / ocrZoomScale * zoom_scale) * 0.70 + 'px',
+           lineHeight: (result.height / scale_factor / ocrZoomScale * zoom_scale) + 'px',
          }">
       <span class="ocr-text-content">{{ result.text }}</span>
     </div>
@@ -256,6 +256,7 @@ const textInputRef = ref<HTMLInputElement | null>(null);
 // OCR text results
 const ocrTextResults = ref<TextResult[]>([]);
 const isProcessingOcr = ref(false);
+let ocrZoomScale = 100; // Store the zoom scale when OCR was performed
 
 // Shortcut keys from configuration
 const shortcuts = ref({
@@ -438,22 +439,20 @@ function handleWheel(event: WheelEvent){
 }
 
 function handleKeyup(event: KeyboardEvent) {
-  if (state.value === State.Default) {
-    const key = event.key.toLowerCase();
-    
-    if (key === shortcuts.value.close.toLowerCase()) {
-      closeWindow();
-    } else if (key === shortcuts.value.copy.toLowerCase()) {
-      copyImage();
-    } else if (key === shortcuts.value.save.toLowerCase()) {
-      saveImage();
-    } else if (key === shortcuts.value.hide.toLowerCase()) {
-      minimizeWindow();
-    }
-  } else if (state.value === State.Drawing) {
-    if (event.key.toLowerCase() === shortcuts.value.close.toLowerCase()) {
+  const key = event.key.toLowerCase();
+  
+  if (key === shortcuts.value.close.toLowerCase()) {
+    if (state.value !== State.Default) {
       state.value = State.Default;
+    } else {
+      closeWindow();
     }
+  } else if (key === shortcuts.value.copy.toLowerCase()) {
+    copyImage();
+  } else if (key === shortcuts.value.save.toLowerCase()) {
+    saveImage();
+  } else if (key === shortcuts.value.hide.toLowerCase()) {
+    minimizeWindow();
   }
 }
 
@@ -516,6 +515,8 @@ async function imgToText() {
       state.value = State.OCR;
     } else {
       isProcessingOcr.value = true;
+      // Store the current zoom scale when performing OCR
+      ocrZoomScale = zoom_scale;
       stage.toBlob({
         pixelRatio: window.devicePixelRatio,
         callback(blob) {
