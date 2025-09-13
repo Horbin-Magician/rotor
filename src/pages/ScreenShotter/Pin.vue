@@ -228,7 +228,7 @@ const backImg = ref()
 const backImgRef = ref<ImageBitmap | null>(null)
 let backImgLayer: Konva.Layer | null = null
 let stage: Konva.Stage | null = null
-let scale_factor: number = 1
+const scale_factor = ref(1)
 
 const tips = ref("")
 const show_tips = ref(false)
@@ -334,12 +334,12 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     return false;
   }
   
-  scale_factor = window.devicePixelRatio;
+  scale_factor.value = window.devicePixelRatio;
 
   const img_width = pin_config.rect[2];
   const img_height = pin_config.rect[3];
-  const win_width = Math.round(img_width / scale_factor);
-  const win_height = Math.round(img_height / scale_factor);
+  const win_width = Math.round(img_width / scale_factor.value);
+  const win_height = Math.round(img_height / scale_factor.value);
 
   await appWindow.setSize(new LogicalSize(win_width, win_height))
   await appWindow.setPosition(new PhysicalPosition((
@@ -362,15 +362,15 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     x: 0,
     y: 0,
     image: backImg.value,
-    width: img_width / scale_factor,
-    height: img_height / scale_factor,
+    width: img_width / scale_factor.value,
+    height: img_height / scale_factor.value,
   });
   backImgLayer.add(konvaImage);
 
   stage = new Konva.Stage({
     container: 'stage', // id of container <div>
-    width: img_width / scale_factor,
-    height: img_height / scale_factor,
+    width: img_width / scale_factor.value,
+    height: img_height / scale_factor.value,
   });
   stage.add(backImgLayer); // add the layer to the stage
   
@@ -529,6 +529,7 @@ async function imgToText() {
               .then((textResults)=>{
                 ocrTextResults.value = textResults;
                 isProcessingOcr.value = false;
+                scale_factor.value = window.devicePixelRatio; // Update scale factor
                 state.value = State.OCR;
               })
               .catch((error) => {
@@ -567,8 +568,8 @@ async function zoomWindow(wheel_delta: number) {
 async function scaleWindow() {
   if (!stage || !backImg.value) return
   
-  const originalWidth = backImg.value.width / scale_factor
-  const originalHeight = backImg.value.height / scale_factor
+  const originalWidth = backImg.value.width / scale_factor.value
+  const originalHeight = backImg.value.height / scale_factor.value
   
   // Calculate new size based on zoom scale
   const newWidth = Math.round(originalWidth * zoom_scale / 100)

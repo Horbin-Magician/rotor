@@ -288,8 +288,12 @@ pub fn img2text(model_path: &Path, img: &DynamicImage) -> Vec<TextResult> {
     let rec_model_path = model_path.join("PP-OCRv5_mobile_rec_fp16.mnn");
     let keys_path = model_path.join("ppocr_keys_v5.txt");
 
-    let mut det = Det::from_file(det_model_path).unwrap();
-    let mut rec = Rec::from_file(rec_model_path, keys_path).unwrap();
+    let mut det = Det::from_file(det_model_path).unwrap()
+        .with_rect_border_size(12);
+
+    let mut rec = Rec::from_file(rec_model_path, keys_path).unwrap()
+        .with_min_score(0.8)
+        .with_punct_min_score(0.1);
 
     let rects = det.find_text_rect(&img).unwrap();
 
