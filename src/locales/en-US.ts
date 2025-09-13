@@ -32,6 +32,7 @@ export default {
     copyColorHint: 'Copy color (C)',
     // Pin window specific translations
     annotationMode: 'Annotation Mode',
+    ocrMode: 'OCR scan',
     minimize: 'Minimize',
     saveImage: 'Save Image',
     close: 'Close',

@@ -23,8 +23,23 @@
         autofocus
       />
     </div>
+    
+    <!-- OCR Text Overlays -->
+    <div v-for="(result, index) in ocrTextResults" 
+         v-show="state==State.OCR"
+         :key="'ocr-text-' + index"
+         class="ocr-text-overlay"
+         :style="{
+           left: (result.left / scale_factor * zoom_scale / 100) + 'px',
+           top: (result.top / scale_factor * zoom_scale / 100) + 'px',
+           width: (result.width / scale_factor * zoom_scale / 100) + 'px',
+           height: (result.height / scale_factor * zoom_scale / 100) + 'px',
+           fontSize: Math.max(10, Math.min(24, (result.height / scale_factor * zoom_scale / 100) * 0.8)) + 'px',
+           lineHeight: (result.height / scale_factor * zoom_scale / 100) + 'px'
+         }">
+      <span class="ocr-text-content">{{ result.text }}</span>
+    </div>
   </main>
-  
   <!-- Normal Toolbar -->
   <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible || state === State.Drawing }">
     <n-tooltip trigger="hover" placement="top" :delay="800">
@@ -37,6 +52,19 @@
       </template>
       {{ t('message.annotationMode') }}
     </n-tooltip>
+
+    <n-tooltip trigger="hover" placement="top" :delay="800">
+      <template #trigger>
+        <div class="toolbar-item" @click="imgToText" v-if="!isProcessingOcr" :class="{ 'active': state === State.OCR }">
+          <n-icon size="20">
+            <ScanText24Filled />
+          </n-icon>
+        </div>
+        <div class="toolbar-item" v-else> <n-spin :size="20" /> </div>
+      </template>
+      {{ t('message.ocrMode') }}
+    </n-tooltip>
+
     <div class="toolbar-divider"></div>
     <n-tooltip trigger="hover" placement="top" :delay="800">
       <template #trigger>
@@ -163,19 +191,21 @@ import {
 import { 
   ArrowDownLeft20Filled,
   TextT20Filled,
+  ScanText24Filled
 } from '@vicons/fluent';
-import { NTooltip, NIcon } from 'naive-ui';
+import { NTooltip, NIcon, NSpin } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
 import { UnlistenFn } from "@tauri-apps/api/event";
-import { info, warn } from "@tauri-apps/plugin-log";
+import { warn } from "@tauri-apps/plugin-log";
 
 enum State {
   Default,
-  Drawing
+  Drawing,
+  OCR
 }
 
 enum DrawState {
@@ -222,6 +252,10 @@ const showTextInput = ref(false);
 const textInputValue = ref('');
 const textInputPosition = ref({ x: 0, y: 0 });
 const textInputRef = ref<HTMLInputElement | null>(null);
+
+// OCR text results
+const ocrTextResults = ref<TextResult[]>([]);
+const isProcessingOcr = ref(false);
 
 // Shortcut keys from configuration
 const shortcuts = ref({
@@ -359,20 +393,6 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     }
   })
 
-  stage?.toBlob({
-    pixelRatio: window.devicePixelRatio,
-    callback(blob) {
-      if(!blob) return
-      blob.arrayBuffer().then((imgBuf)=>{
-        invoke<TextResult[]>("img2text", { imgBuf: imgBuf }).then((textResults)=>{
-          textResults.forEach(result => {
-            info(`Detected Text: "${result.text}" at [${result.left}, ${result.top}, ${result.width}, ${result.height}]`);
-          });
-        });
-      })
-    }
-  })
-
   return true
 }
 
@@ -383,7 +403,16 @@ async function handleMouseDown(event: MouseEvent) {
       startDrawing(event);
     }
   } else if (state.value === State.Default) {
-    if (event.button === 0) { // left button
+    if (event.button === 0) { // left button, not on OCR text
+      appWindow.startDragging();
+    }
+  } else if (state.value === State.OCR) {
+    // Check if clicking on OCR text overlay
+    const target = event.target as HTMLElement;
+    const isOcrText = target.classList.contains('ocr-text-content') || 
+                      target.closest('.ocr-text-overlay');
+
+    if (event.button === 0 && !isOcrText) { // left button, not on OCR text
       appWindow.startDragging();
     }
   }
@@ -477,6 +506,42 @@ async function copyImage() {
       })
     }
   })
+}
+
+async function imgToText() {
+  if (!stage || isProcessingOcr.value) return;
+  
+  if (state.value != State.OCR) {
+    if (ocrTextResults.value.length > 0) {
+      state.value = State.OCR;
+    } else {
+      isProcessingOcr.value = true;
+      stage.toBlob({
+        pixelRatio: window.devicePixelRatio,
+        callback(blob) {
+          if(!blob) {
+            isProcessingOcr.value = false;
+            return;
+          }
+          blob.arrayBuffer().then((imgBuf)=>{
+            invoke<TextResult[]>("img2text", { imgBuf: imgBuf })
+              .then((textResults)=>{
+                ocrTextResults.value = textResults;
+                isProcessingOcr.value = false;
+                state.value = State.OCR;
+              })
+              .catch((error) => {
+                console.error("OCR processing failed:", error);
+                isProcessingOcr.value = false;
+              });
+          })
+        }
+      })
+    }
+
+  } else {
+    state.value = State.Default;
+  }
 }
 
 async function zoomWindow(wheel_delta: number) {
@@ -943,5 +1008,24 @@ function cancelTextInput() {
   outline: none;
   color: var(--theme-text-primary);
   width: 100px;
+}
+
+.ocr-text-overlay {
+  position: absolute;
+  background-color: var(--theme-background);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  z-index: 500;
+  overflow: hidden;
+}
+
+.ocr-text-content {
+  color: var(--theme-text-primary);
+  text-align: left;
+  overflow: hidden;
+  width: 100%;
+  user-select: text;
+  -webkit-user-select: text;
 }
 </style>

@@ -32,6 +32,7 @@ export default {
     copyColorHint: '复制颜色(C)',
     // Pin window specific translations
     annotationMode: '标注模式',
+    ocrMode: 'OCR扫描',
     minimize: '最小化',
     saveImage: '保存图片',
     close: '关闭',
