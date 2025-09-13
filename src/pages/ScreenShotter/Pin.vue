@@ -42,136 +42,76 @@
   </main>
   <!-- Normal Toolbar -->
   <div class="toolbar" :class="{ 'toolbar-hidden': !toolbarVisible || state === State.Drawing }">
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="enterEditMode">
-          <n-icon size="20">
-            <EditOutlined />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.annotationMode') }}
-    </n-tooltip>
+    <div class="toolbar-item" :title="$t('message.annotationMode')" @click="enterEditMode">
+      <n-icon size="20">
+        <EditOutlined />
+      </n-icon>
+    </div>
 
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="imgToText" v-if="!isProcessingOcr" :class="{ 'active': state === State.OCR }">
-          <n-icon size="20">
-            <ScanText24Filled />
-          </n-icon>
-        </div>
-        <div class="toolbar-item" v-else> <n-spin :size="20" /> </div>
-      </template>
-      {{ t('message.ocrMode') }}
-    </n-tooltip>
+    <div class="toolbar-item" :title="$t('message.ocrMode')" @click="imgToText" v-if="!isProcessingOcr" :class="{ 'active': state === State.OCR }">
+      <n-icon size="20">
+        <ScanText24Filled />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" v-else> <n-spin :size="20" /> </div>
 
     <div class="toolbar-divider"></div>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="minimizeWindow">
-          <n-icon size="20">
-            <MinusFilled />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.minimize') }} ({{ shortcuts.hide }})
-    </n-tooltip>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="saveImage">
-          <n-icon size="20">
-            <SaveAltFilled />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.saveImage') }} ({{ shortcuts.save }})
-    </n-tooltip>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="closeWindow">
-          <n-icon size="20">
-            <CloseFilled />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.close') }} ({{ shortcuts.close }})
-    </n-tooltip>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="copyImage">
-          <n-icon size="20">
-            <ContentCopyRound />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.copyImage') }} ({{ shortcuts.copy }})
-    </n-tooltip>
+    <div class="toolbar-item" :title="`${$t('message.minimize')} (${shortcuts.hide})`" @click="minimizeWindow">
+      <n-icon size="20">
+        <MinusFilled />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" :title="`${$t('message.saveImage')} (${shortcuts.save})`" @click="saveImage">
+      <n-icon size="20">
+        <SaveAltFilled />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" :title="`${$t('message.close')} (${shortcuts.close})`" @click="closeWindow">
+      <n-icon size="20">
+        <CloseFilled />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" :title="`${$t('message.copyImage')} (${shortcuts.copy})`" @click="copyImage">
+      <n-icon size="20">
+        <ContentCopyRound />
+      </n-icon>
+    </div>
   </div>
 
   <!-- Drawing Toolbar -->
   <div class="toolbar drawing-toolbar" :class="{ 'toolbar-hidden': !toolbarVisible || state != State.Drawing }">
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="exitEditMode">
-          <n-icon size="20">
-            <ArrowBackIosRound />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.exitAnnotation') }} ({{ shortcuts.close }})
-    </n-tooltip>
+    <div class="toolbar-item" :title="`${$t('message.exitAnnotation')} (${shortcuts.close})`" @click="exitEditMode">
+      <n-icon size="20">
+        <ArrowBackIosRound />
+      </n-icon>
+    </div>
     <div class="toolbar-divider"></div>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="selectPenTool" :class="{ 'active': drawState === DrawState.Pen }">
-          <n-icon size="20">
-            <EditOutlined />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.penTool') }}
-    </n-tooltip>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="selectRectTool" :class="{ 'active': drawState === DrawState.Rect }">
-          <n-icon size="20">
-            <CropDinRound />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.rectangleTool') }}
-    </n-tooltip>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="selectArrowTool" :class="{ 'active': drawState === DrawState.Arrow }">
-          <n-icon size="20">
-            <ArrowDownLeft20Filled />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.arrowTool') }}
-    </n-tooltip>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="selectTextTool" :class="{ 'active': drawState === DrawState.Text }">
-          <n-icon size="20">
-            <TextT20Filled />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.textTool') }}
-    </n-tooltip>
+    <div class="toolbar-item" :title="$t('message.penTool')" @click="selectPenTool" :class="{ 'active': drawState === DrawState.Pen }">
+      <n-icon size="20">
+        <EditOutlined />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" :title="$t('message.rectangleTool')" @click="selectRectTool" :class="{ 'active': drawState === DrawState.Rect }">
+      <n-icon size="20">
+        <CropDinRound />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" :title="$t('message.arrowTool')" @click="selectArrowTool" :class="{ 'active': drawState === DrawState.Arrow }">
+      <n-icon size="20">
+        <ArrowDownLeft20Filled />
+      </n-icon>
+    </div>
+    <div class="toolbar-item" :title="$t('message.textTool')" @click="selectTextTool" :class="{ 'active': drawState === DrawState.Text }">
+      <n-icon size="20">
+        <TextT20Filled />
+      </n-icon>
+    </div>
     <div class="toolbar-divider"></div>
-    <n-tooltip trigger="hover" placement="top" :delay="800">
-      <template #trigger>
-        <div class="toolbar-item" @click="undoDrawing">
-          <n-icon size="20">
-            <UndoFilled />
-          </n-icon>
-        </div>
-      </template>
-      {{ t('message.undo') }}
-    </n-tooltip>
+    <div class="toolbar-item" :title="$t('message.undo')" @click="undoDrawing">
+      <n-icon size="20">
+        <UndoFilled />
+      </n-icon>
+    </div>
   </div>
 </template>
 
@@ -193,7 +133,7 @@ import {
   TextT20Filled,
   ScanText24Filled
 } from '@vicons/fluent';
-import { NTooltip, NIcon, NSpin } from 'naive-ui';
+import { NIcon, NSpin } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
