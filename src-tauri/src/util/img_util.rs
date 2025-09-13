@@ -1,21 +1,17 @@
 use std::path::Path;
-use image::{self, imageops::resize, DynamicImage, GrayImage, RgbaImage};
+use image::{self, DynamicImage, GrayImage, RgbaImage};
 use rayon::prelude::*;
 use rust_paddle_ocr::{Det, Rec};
 use serde::{Deserialize, Serialize};
+use fast_image_resize::{Resizer, ResizeOptions};
+use fast_image_resize::images::Image;
 
 #[allow(dead_code)]
-pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
+pub fn detect_rect(original_img: RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let scale_factor = calculate_optimal_scale_factor(original_img.width(), original_img.height());
+    let small_original = fast_resize(&original_img, scale_factor);
 
-    let small_original = resize(
-        original_img,
-        original_img.width() / scale_factor,
-        original_img.height() / scale_factor,
-        image::imageops::FilterType::Nearest, // the fastest filter
-    );
-
-    let gray = rgb_to_gray_direct(&small_original);
+    let gray = image_to_gray(&small_original);
     let edge_image = canny_edge_detection(&gray, 10.0, 30.0);
 
     // morphological operations
@@ -53,7 +49,7 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
             ))
         })
         .collect();
-
+    
     res_rects
 }
 
@@ -67,24 +63,47 @@ fn calculate_optimal_scale_factor(width: u32, height: u32) -> u32 {
     }
 }
 
-fn rgb_to_gray_direct(img: &RgbaImage) -> GrayImage {
-    let (width, height) = img.dimensions();
-    let mut gray = GrayImage::new(width, height);
+fn fast_resize(img: &RgbaImage, scale_factor: u32) -> Image {
+    let width = img.width() / scale_factor;
+    let height = img.height() / scale_factor;
+
+    let src_image = Image::from_vec_u8(
+        img.width(),
+        img.height(),
+        img.clone().into_raw(),
+        fast_image_resize::PixelType::U8x4,
+    ).unwrap();
+
+    let mut dst_image = Image::new(width, height, fast_image_resize::PixelType::U8x4);
+
+    let mut resizer = Resizer::new();
+    let resize_options = ResizeOptions::new()
+        .use_alpha(false)
+        .resize_alg(fast_image_resize::ResizeAlg::Nearest);
+    resizer.resize(&src_image, &mut dst_image, Some(&resize_options)).unwrap();
+
+    dst_image
+}
+
+fn image_to_gray(img: &Image) -> GrayImage {
+    let width = img.width();
+    let height = img.height();
+    let img_data = img.buffer();
     
-    // 并行处理每一行
     let gray_data: Vec<u8> = (0..height)
         .into_par_iter()
         .flat_map(|y| {
             (0..width).map(|x| {
-                let pixel = img.get_pixel(x, y);
+                let idx = ((y * width + x) * 4) as usize;
                 // 使用整数运算代替浮点数
-                ((pixel[0] as u32 * 299 + pixel[1] as u32 * 587 + pixel[2] as u32 * 114) / 1000) as u8
+                ((img_data[idx] as u32 * 299 + 
+                  img_data[idx + 1] as u32 * 587 + 
+                  img_data[idx + 2] as u32 * 114) / 1000) as u8
             }).collect::<Vec<_>>()
         })
         .collect();
     
-    gray.as_mut().copy_from_slice(&gray_data);
-    gray
+    GrayImage::from_raw(width, height, gray_data).unwrap()
 }
 
 fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
