@@ -147,24 +147,24 @@ pub async fn new_pin(
 ) {
     if let Some(monitor) = webview_window.current_monitor().ok().flatten() {
         let monitor_pos = monitor.position();
-        let Ok(offset_x_val) = offset_x.parse::<u32>() else {
+        let Ok(offset_x_val) = offset_x.parse::<f32>() else {
             log::error!("Failed to parse offset_x: {}", offset_x);
             return;
         };
-        let Ok(offset_y_val) = offset_y.parse::<u32>() else {
+        let Ok(offset_y_val) = offset_y.parse::<f32>() else {
             log::error!("Failed to parse offset_y: {}", offset_y);
             return;
         };
-        let Ok(width_val) = width.parse::<u32>() else {
+        let Ok(width_val) = width.parse::<f32>() else {
             log::error!("Failed to parse width: {}", width);
             return;
         };
-        let Ok(height_val) = height.parse::<u32>() else {
+        let Ok(height_val) = height.parse::<f32>() else {
             log::error!("Failed to parse height: {}", height);
             return;
         };
 
-        let rect = (offset_x_val, offset_y_val, width_val, height_val);
+        let rect = (offset_x_val as u32, offset_y_val as u32, width_val as u32, height_val as u32);
         let monitor_position = (monitor_pos.x, monitor_pos.y);
         let offset = (0, 0); // Default offset, can be adjusted later
 
