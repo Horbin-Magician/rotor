@@ -30,6 +30,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4RjBFRTQxNEU0NEJBMjAKUldRZ3VrUk9RZTd3Mk44akdOZXg5eTI1Y3RGYmlXNFVqM3Q2L0VBODF3UFN5Z1MvdkFQbHAxdm0K",
       "endpoints": [
+        "https://gitee.com/horbin/rotor/releases/download/latest/latest.json",
         "https://github.com/Horbin-Magician/rotor/releases/latest/download/latest.json"
       ]
     }
