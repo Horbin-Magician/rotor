@@ -1,0 +1,121 @@
+name: 'sync-to-gitee'
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published] # 只有当 release 发布时才触发
+
+jobs:
+  # Sync to Gitee after successful release
+  sync-to-gitee:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror to Gitee
+        uses: wearerequired/git-mirror-action@master
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.GITEE_SSH_PRIVATE_KEY }}
+        with:
+          source-repo: git@github.com:${{ github.repository }}.git
+          destination-repo: ${{ secrets.GITEE_REPO_URL }}
+
+      - name: Get release info
+        id: release_info
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          
+          # Get release info from GitHub API
+          RELEASE_INFO=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG_NAME")
+          
+          RELEASE_ID=$(echo "$RELEASE_INFO" | jq -r '.id')
+          RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
+          RELEASE_BODY=$(echo "$RELEASE_INFO" | jq -r '.body')
+          
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "release_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Download release assets
+        run: |
+          mkdir -p ./release-assets
+          
+          # Get all assets for this release
+          ASSETS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/${{ steps.release_info.outputs.release_id }}/assets")
+          
+          # Download each asset
+          echo "$ASSETS" | jq -r '.[].browser_download_url' | while read url; do
+            filename=$(basename "$url")
+            echo "Downloading $filename..."
+            curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -o "./release-assets/$filename" "$url"
+          done
+
+      - name: Modify latest.json for Gitee
+        run: |
+          # Check if latest.json exists and modify it
+          if [ -f "./release-assets/latest.json" ]; then
+            echo "Modifying latest.json to use Gitee URLs..."
+            
+            # Replace GitHub URLs with Gitee URLs in latest.json
+            sed -i.bak \
+              -e "s|https://github.com/${{ github.repository }}/releases/download/|https://gitee.com/${{ secrets.GITEE_OWNER }}/${{ secrets.GITEE_REPO }}/releases/download/|g" \
+              -e "s|https://api.github.com/repos/${{ github.repository }}/releases/|https://gitee.com/api/v5/repos/${{ secrets.GITEE_OWNER }}/${{ secrets.GITEE_REPO }}/releases/|g" \
+              "./release-assets/latest.json"
+            
+            # Show the changes made
+            echo "Original latest.json:"
+            cat "./release-assets/latest.json.bak"
+            echo ""
+            echo "Modified latest.json:"
+            cat "./release-assets/latest.json"
+            
+            # Remove backup file
+            rm "./release-assets/latest.json.bak"
+          else
+            echo "latest.json not found in release assets"
+          fi
+
+      - name: Create Gitee release
+        run: |
+          # Install gitee-release-cli or use curl to create release on Gitee
+          # Note: You'll need to set up Gitee API token in secrets
+          
+          # Create release on Gitee using API
+          curl -X POST "https://gitee.com/api/v5/repos/${{ secrets.GITEE_OWNER }}/${{ secrets.GITEE_REPO }}/releases" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "access_token": "${{ secrets.GITEE_ACCESS_TOKEN }}",
+              "tag_name": "${{ steps.release_info.outputs.tag_name }}",
+              "name": "${{ steps.release_info.outputs.release_name }}",
+              "body": "${{ steps.release_info.outputs.release_body }}",
+              "draft": false,
+              "prerelease": false
+            }'
+
+      - name: Upload assets to Gitee release
+        run: |
+          # Get the Gitee release ID
+          GITEE_RELEASE=$(curl -s "https://gitee.com/api/v5/repos/${{ secrets.GITEE_OWNER }}/${{ secrets.GITEE_REPO }}/releases/tags/${{ steps.release_info.outputs.tag_name }}?access_token=${{ secrets.GITEE_ACCESS_TOKEN }}")
+          GITEE_RELEASE_ID=$(echo "$GITEE_RELEASE" | jq -r '.id')
+          
+          # Upload each asset to Gitee
+          for file in ./release-assets/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "Uploading $filename to Gitee..."
+              
+              curl -X POST "https://gitee.com/api/v5/repos/${{ secrets.GITEE_OWNER }}/${{ secrets.GITEE_REPO }}/releases/$GITEE_RELEASE_ID/attach_files" \
+                -H "Content-Type: multipart/form-data" \
+                -F "access_token=${{ secrets.GITEE_ACCESS_TOKEN }}" \
+                -F "file=@$file"
+            fi
+          done
