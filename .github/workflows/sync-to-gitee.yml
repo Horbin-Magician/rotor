@@ -97,6 +97,7 @@ jobs:
             -d '{
               "access_token": "${{ secrets.GITEE_ACCESS_TOKEN }}",
               "tag_name": "${{ steps.release_info.outputs.tag_name }}",
+              "target_commitish": "master",
               "name": "${{ steps.release_info.outputs.release_name }}",
               "body": "${{ steps.release_info.outputs.release_body }}",
               "draft": false,
