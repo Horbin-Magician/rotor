@@ -26,7 +26,8 @@ jobs:
       - name: Get release info
         id: release_info
         run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
+          git fetch --tags
+          TAG_NAME=$(git describe --tags `git rev-list --tags --max-count=1`)
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           
           # Get release info from GitHub API
