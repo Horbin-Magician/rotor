@@ -56,7 +56,7 @@ I sincerely hope that you can provide quality code for this project.
 
 - [x] Optimize the user experience under the Windows OS;
 - [x] A brand new update system;
-- [ ] 🚧 OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
+- [x] OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
 - [ ] Word lookup and translation function;
 - [ ] Basic query-based AI dialogue function;
 - [ ] Plug-in system.
