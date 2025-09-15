@@ -53,8 +53,6 @@ jobs:
           ASSETS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/${{ steps.release_info.outputs.release_id }}/assets")
 
-          cat $ASSETS
-
           # Download each asset
           echo "$ASSETS" | jq -r '.[].browser_download_url' | while read url; do
             filename=$(basename "$url")
