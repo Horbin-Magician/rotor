@@ -142,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect, NModal, NCard, NProgress, useNotification, useThemeVars } from 'naive-ui'
+import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect, NModal, NCard, NProgress, useMessage, useThemeVars } from 'naive-ui'
 import { ref, watch, h } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
@@ -155,7 +155,7 @@ import { useTheme } from '../composables/useTheme';
 
 import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n()
-const notification = useNotification()
+const message = useMessage()
 const themeVars = useThemeVars()
 const { changeTheme } = useTheme()
 
@@ -267,40 +267,32 @@ function checkUpdate() {
 
   check(options).then(async (update) => {
     if (update) {
-      console.log(update)
-      info(`Update available: ${update.version}`)
       update_cache = update
       updateVersion.value = update.version
       showUpdateModal.value = true
     } else {
-      info("You're already on the latest version")
-      notification.info({
-        title: t('message.noUpdatesAvailable'),
-        content: t('message.latestVersion'),
-        duration: 3000
-      })
+      message.info(t('message.noUpdatesAvailable') + t('message.latestVersion'))
     }
   }).catch((err) => {
     error(`Failed to check for updates: ${err}`)
-    notification.error({
-      title: t('message.updateError'),
-      content: () => h('div', [
-        `${t('message.updateCheckFailed')}: ${err}. ${t('message.manualDownloadSuggestion')}: `,
+    const displayErr = String(err).length > 50
+      ? String(err).slice(0, 50) + '...'
+      : String(err);
+
+    message.error(() => h('div', [
+        `${t('message.updateCheckFailed')}: ${displayErr}. ${t('message.manualDownloadSuggestion')}: `,
         h('a', {
           href: '#',
           style: {
             color: '#007bff',
-            textDecoration: 'underline',
-            cursor: 'pointer'
+            textDecoration: 'none',
           },
           onClick: (e: Event) => {
             e.preventDefault()
             openGitHome()
           }
         }, 'https://github.com/Horbin-Magician/rotor')
-      ]),
-      duration: 5000
-    })
+      ]))
   }).finally(() => {
     isCheckingUpdate.value = false
   })
@@ -351,11 +343,7 @@ async function confirmUpdate() {
     error('Update object is invalid or missing downloadAndInstall method')
     showProgressModal.value = false
     isUpdating.value = false
-    notification.error({
-      title: t('message.updateError'),
-      content: 'Update object is invalid',
-      duration: 5000
-    })
+    message.error(`${t('message.updateError')}: Update object is invalid`)
   }
 }
 

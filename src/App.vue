@@ -1,14 +1,14 @@
 <template>
   <n-config-provider :theme="naiveTheme" :theme-overrides="themeOverrides">
-    <n-notification-provider placement="top">
+    <n-message-provider placement="top">
       <RouterView />
-    </n-notification-provider>
+    </n-message-provider>
   </n-config-provider>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { darkTheme, NConfigProvider, NNotificationProvider, GlobalThemeOverrides } from 'naive-ui'
+import { darkTheme, NConfigProvider, NMessageProvider, GlobalThemeOverrides } from 'naive-ui'
 import { useTheme } from './composables/useTheme'
 
 const { currentTheme, getColor } = useTheme()
