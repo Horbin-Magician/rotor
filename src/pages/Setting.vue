@@ -271,7 +271,7 @@ function checkUpdate() {
       updateVersion.value = update.version
       showUpdateModal.value = true
     } else {
-      message.info(t('message.noUpdatesAvailable') + t('message.latestVersion'))
+      message.info(t('message.noUpdatesAvailable') + ', ' + t('message.latestVersion'))
     }
   }).catch((err) => {
     error(`Failed to check for updates: ${err}`)
