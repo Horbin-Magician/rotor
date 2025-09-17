@@ -137,6 +137,7 @@ impl ScreenShotter {
             .resizable(false)
             .visible(false)
             .accept_first_mouse(true)
+            .shadow(false)
             .skip_taskbar(true);
 
             let window = win_builder.build()?;
