@@ -89,8 +89,8 @@ pub fn get_file_icon_data(file_path: &str) -> Option<String> {
         return None;
     }
 
-    // Get icon with 32x32 size
-    match get_file_icon(path, 32) {
+    // Get icon with 64x64 size
+    match get_file_icon(path, 64) {
         Ok(icon) => {
             // Convert Icon to Image
             match RgbaImage::from_raw(icon.width, icon.height, icon.pixels) {

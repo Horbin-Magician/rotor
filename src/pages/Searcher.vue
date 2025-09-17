@@ -386,6 +386,11 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.item-icon img {
+  width: 40px;
+  height: 40px;
+}
+
 .item-content {
   flex: 1;
   min-width: 0;
