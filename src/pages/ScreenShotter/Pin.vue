@@ -34,7 +34,7 @@
            top: (result.top / scale_factor / ocrZoomScale * zoom_scale) + 'px',
            width: (result.width / scale_factor / ocrZoomScale * zoom_scale) + 'px',
            height: (result.height / scale_factor / ocrZoomScale * zoom_scale) + 'px',
-           fontSize: (result.height / scale_factor / ocrZoomScale * zoom_scale) * 0.70 + 'px',
+           fontSize: (result.height / scale_factor / ocrZoomScale * zoom_scale) * 0.6 + 'px',
            lineHeight: (result.height / scale_factor / ocrZoomScale * zoom_scale) + 'px',
          }">
       <span class="ocr-text-content">{{ result.text }}</span>
