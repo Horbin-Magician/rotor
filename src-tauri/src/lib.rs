@@ -9,6 +9,8 @@ use tauri_plugin_autostart::MacosLauncher;
 use command::{config_cmd, screen_shotter_cmd, searcher_cmd};
 use core::application;
 
+use crate::util::file_util;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "windows")]
@@ -18,6 +20,10 @@ pub fn run() {
     }) {
         return;
     }
+
+    file_util::del_useless_files().unwrap_or_else(|e| {
+        log::error!("del_useless_files error: {:?}", e);
+    });
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())

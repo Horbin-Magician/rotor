@@ -350,17 +350,15 @@ impl Volume {
 
         if self.file_map.is_empty() {
             return Ok(());
-        };
-
-        let file_path = file_util::get_userdata_path();
-        if let Some(file_path) = file_path {
-            if !file_path.exists() {
-                fs::create_dir(&file_path)?;
-            }
-            let safe_drive = self.drive[1..].replace("/", "_");
-            let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
-            self.file_map.save(&file_name)?;
         }
+
+        let file_path = file_util::get_tmp_path();
+        if !file_path.exists() {
+            fs::create_dir(&file_path)?;
+        }
+        let safe_drive = self.drive[1..].replace("/", "_");
+        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
+        self.file_map.save(&file_name)?;
 
         #[cfg(debug_assertions)]
         log::info!(
@@ -379,12 +377,10 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_read", self.drive);
 
-        let file_path = file_util::get_userdata_path();
-        if let Some(file_path) = file_path {
-            let safe_drive = self.drive[1..].replace("/", "_");
-            let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
-            self.file_map.read(&file_name)?;
-        }
+        let file_path = file_util::get_tmp_path();
+        let safe_drive = self.drive[1..].replace("/", "_");
+        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
+        self.file_map.read(&file_name)?;
 
         #[cfg(debug_assertions)]
         log::info!(

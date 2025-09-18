@@ -8,22 +8,22 @@ use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::{env, fs};
 
-#[allow(dead_code)]
-pub fn file_exists(path: &str) -> bool {
-    fs::metadata(path).is_ok()
-}
-
-#[allow(dead_code)]
-pub fn get_app_path() -> std::path::PathBuf {
-    if let Ok(exe_path) = env::current_exe() {
-        let result = exe_path.parent().unwrap_or(std::path::Path::new("."));
-        result.to_path_buf()
-    } else {
-        std::path::Path::new(".").to_path_buf()
+pub fn del_useless_files() -> Result<(), Box<dyn std::error::Error>> {
+    let userdata_path = get_userdata_path().unwrap();
+    for entry in fs::read_dir(userdata_path)? {
+        let entry = entry?;
+        let entry_path = entry.path();
+        if entry_path.is_file() {
+            if let Some(ext) = entry_path.extension() {
+                if ext == "fd" { // TODO del this
+                    fs::remove_file(&entry_path)?;
+                }
+            }
+        }
     }
+    Ok(())
 }
 
-#[allow(dead_code)]
 pub fn get_tmp_path() -> std::path::PathBuf {
     env::temp_dir()
 }
