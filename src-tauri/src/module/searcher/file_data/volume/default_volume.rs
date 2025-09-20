@@ -167,7 +167,6 @@ impl Volume {
     // Enumerate the filesystem using walkdir. Store the file entries in the database.
     pub fn build_index(&mut self) {
         let sys_time = SystemTime::now();
-        log::info!("{} Begin Volume::build_index", self.drive);
 
         self.stop_watching();
         self.release_index_without_save();
@@ -205,10 +204,7 @@ impl Volume {
         }
 
         // Walk the directory tree using walkdir
-        let mut walkdir = WalkDir::new(&root_path).follow_links(false); // don't follow symbolic links to avoid infinite loops
-        if root_path == "/Applications" {
-            walkdir = walkdir.max_depth(1);
-        }
+        let walkdir = WalkDir::new(&root_path).follow_links(false); // don't follow symbolic links to avoid infinite loops
 
         let walker = walkdir
             .into_iter()
