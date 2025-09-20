@@ -20,11 +20,35 @@ use crate::util::i18n;
 #[cfg(target_os = "windows")]
 use crate::util::sys_util;
 
+#[derive(Debug, Clone, PartialEq)]
+struct MonitorConfig {
+    id: u32,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    scale_factor: f32,
+}
+
+impl MonitorConfig {
+    fn from_monitor(monitor: &Monitor) -> Result<Self, Box<dyn Error>> {
+        Ok(MonitorConfig {
+            id: monitor.id()?,
+            x: monitor.x()?,
+            y: monitor.y()?,
+            width: monitor.width()?,
+            height: monitor.height()?,
+            scale_factor: monitor.scale_factor()?,
+        })
+    }
+}
+
 pub struct ScreenShotter {
     app_hander: Option<tauri::AppHandle>,
     pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
     pub shotter_recort: shotter_record::ShotterRecord,
     max_pin_id: u32,
+    current_monitors: Vec<MonitorConfig>,
 }
 
 impl Module for ScreenShotter {
@@ -34,14 +58,19 @@ impl Module for ScreenShotter {
 
     fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
         self.app_hander = Some(app.clone());
+        
+        self.update_monitor_config()?; // Store initial monitor configuration
+        
         self.build_mask_windows()?; // Pre-build mask window for faster response
         self.restore_pin_wins();
         Ok(())
     }
 
     fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        self.check_and_rebuild_mask_windows()?; // Check if monitors have changed, if changed, rebuild mask windows
+
         let app_handle = match &self.app_hander {
-            Some(handle) => handle,
+            Some(handle) => handle.clone(),
             None => return Err("AppHandle not initialized".into()),
         };
 
@@ -116,10 +145,80 @@ impl ScreenShotter {
             masks: Arc::new(Mutex::new(HashMap::new())),
             shotter_recort: ShotterRecord::new(),
             max_pin_id: 0,
+            current_monitors: Vec::new(),
         })
     }
 
-    pub fn build_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
+    /// Check if monitors have changed compared to stored configuration
+    fn monitors_have_changed(&self) -> Result<bool, Box<dyn Error>> {
+        let current_monitors = Monitor::all()?;
+        
+        // If the number of monitors changed, definitely changed
+        if current_monitors.len() != self.current_monitors.len() {
+            return Ok(true);
+        }
+        
+        // Convert current monitors to our config format
+        let mut current_configs = Vec::new();
+        for monitor in current_monitors {
+            current_configs.push(MonitorConfig::from_monitor(&monitor)?);
+        }
+        
+        // Sort both vectors by monitor ID for comparison
+        let mut stored_configs = self.current_monitors.clone();
+        stored_configs.sort_by_key(|config| config.id);
+        current_configs.sort_by_key(|config| config.id);
+        
+        // Compare configurations
+        Ok(stored_configs != current_configs)
+    }
+    
+    /// Update stored monitor configuration with current monitors
+    fn update_monitor_config(&mut self) -> Result<(), Box<dyn Error>> {
+        let app_handle = match &self.app_hander {
+            Some(handle) => handle,
+            None => return Err("AppHandle not initialized".into()),
+        };
+
+        let old_monitors = self.current_monitors.clone();
+
+        let monitors = Monitor::all()?;
+        self.current_monitors.clear();
+        for monitor in monitors {
+            self.current_monitors.push(MonitorConfig::from_monitor(&monitor)?);
+        }
+
+        for old_monitor in old_monitors {
+            let mut if_del = true;
+            for new_monitor in &self.current_monitors {
+                if old_monitor.id == new_monitor.id {
+                    if_del = false;
+                    break;
+                }
+            }
+            if if_del {
+                let label = format!("ssmask-{}", old_monitor.id);
+                if let Some(window) = app_handle.get_webview_window(&label) {
+                    if let Err(e) = window.close() {
+                        log::warn!("Failed to close mask window {}: {}", label, e);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    
+    /// Check if monitors have changed, if changed, rebuild mask windows
+    fn check_and_rebuild_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.monitors_have_changed()? {
+            self.update_monitor_config()?; // Update monitor configuration
+            self.build_mask_windows()?; // Rebuild mask windows with new configuration
+        }
+        
+        Ok(())
+    }
+
+    fn build_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
             None => return Err("AppHandle not initialized".into()),
@@ -127,6 +226,11 @@ impl ScreenShotter {
 
         for monitor in Monitor::all()? {
             let label = format!("ssmask-{}", monitor.id()?);
+
+            let mask_window = app_handle.get_webview_window(&label);
+            if let Some(_) = mask_window {
+                continue; // Window already exists, skip creation
+            }
 
             let win_builder = WebviewWindowBuilder::new(
                 app_handle,
@@ -171,7 +275,7 @@ impl ScreenShotter {
         Ok(())
     }
 
-    pub fn build_pin_window(&self, id: Option<u32>, pos: Option<PhysicalPosition<i32>>) -> Result<(), Box<dyn Error>> {
+    fn build_pin_window(&self, id: Option<u32>, pos: Option<PhysicalPosition<i32>>) -> Result<(), Box<dyn Error>> {
         let app_handle = match &self.app_hander {
             Some(handle) => handle,
             None => return Err("AppHandle not initialized".into()),
