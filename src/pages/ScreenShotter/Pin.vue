@@ -406,6 +406,7 @@ function textKeyUp(event: KeyboardEvent) {
     event.preventDefault()
     cancelTextInput()
   }
+  event.stopPropagation()
 }
 
 function minimizeWindow() {
