@@ -13,6 +13,7 @@ pub struct FileView {
     pub path: String,
     pub filter: u32,
     pub rank: i8,
+    pub aliases: Vec<String>, // Store alias names for this file
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -37,13 +38,33 @@ impl FileMap {
     // insert a file to the database by index, file name and parent index
     #[allow(unused)]
     pub fn insert(&mut self, file_name: String, path: String) {
-        let filter = make_filter(&file_name);
+        let mut filter = make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
+        let mut aliases = Vec::new();
+
+        // Check if this is an app file and get translation names
+        if file_name.ends_with(".app") {
+            let app_path = std::path::Path::new(&path).join(&file_name);
+            let trans_names = file_util::get_app_trans_names(&app_path);
+            if let Ok(names) = trans_names {
+                if !names.is_empty() {
+                    let names: Vec<String> = names.values().cloned().collect(); // Create aliases from translation names
+                    for name in names {
+                        if file_name.contains(&name) == false {
+                            filter |= make_filter(&name);
+                            aliases.push(name);
+                        }
+                    }
+                }
+            }
+        }
+
         self.insert_simple(FileView {
             file_name,
             path,
             filter,
             rank,
+            aliases,
         });
     }
 
@@ -91,18 +112,42 @@ impl FileMap {
                 return (None, 0);
             }
             search_num += 1;
-            if (file.filter & query_filter) == query_filter
-                && match_str(&file.file_name, &query_lower)
-            {
+            
+            // Check if query matches file name or any of its aliases
+            let mut is_match = false;
+            let mut file_alias = None;
+            if (file.filter & query_filter) == query_filter {
+                // First check the original file name
+                if match_str(&file.file_name, &query_lower) {
+                    is_match = true;
+                } else {
+                    // Then check all aliases
+                    for alias in &file.aliases {
+                        if match_str(alias, &query_lower) {
+                            is_match = true;
+                            file_alias = Some(alias.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if is_match {
                 let full_path = format!("{}/{}", file.path, file.file_name);
                 let icon_data = file_util::get_file_icon_data(&full_path);
+                let mut file_name = if let Some(alias) = file_alias {
+                    alias
+                } else {
+                    file.file_name.clone()
+                };
 
                 result.push(SearchResultItem {
                     path: file.path.clone() + "/", // TODO del
-                    file_name: file.file_name.clone(),
+                    file_name,
                     rank: file.rank,
                     icon_data,
                 });
+
                 find_num += 1;
                 if find_num >= batch {
                     break;
@@ -125,6 +170,13 @@ impl FileMap {
             buf.write_all(file.path.as_bytes())?;
             buf.write_all(&file.filter.to_be_bytes())?;
             buf.write_all(&file.rank.to_be_bytes())?;
+            
+            // Save aliases count and aliases
+            buf.write_all(&(file.aliases.len() as u16).to_be_bytes())?;
+            for alias in &file.aliases {
+                buf.write_all(&(alias.len() as u16).to_be_bytes())?;
+                buf.write_all(alias.as_bytes())?;
+            }
         }
         save_file.write_all(&buf.to_vec())?;
 
@@ -174,12 +226,41 @@ impl FileMap {
             let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index + 1].try_into()?);
             ptr_index += 1;
 
+            // Read aliases count and aliases
+            let mut aliases = Vec::new();
+            if ptr_index + 2 <= file_data.len() {
+                let aliases_count = u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?);
+                ptr_index += 2;
+                
+                for _ in 0..aliases_count {
+                    if ptr_index + 2 > file_data.len() {
+                        return Err(
+                            io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
+                        );
+                    }
+                    let alias_len = u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?);
+                    ptr_index += 2;
+                    
+                    if ptr_index + (alias_len as usize) > file_data.len() {
+                        return Err(
+                            io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
+                        );
+                    }
+                    let alias = String::from_utf8(
+                        file_data[ptr_index..(ptr_index + alias_len as usize)].to_vec(),
+                    )?;
+                    ptr_index += alias_len as usize;
+                    aliases.push(alias);
+                }
+            }
+
             self.insert_simple(
                 FileView {
                     file_name,
                     path,
                     filter,
                     rank,
+                    aliases,
                 },
             );
         }

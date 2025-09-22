@@ -168,6 +168,7 @@ const backImg = ref()
 const backImgRef = ref<ImageBitmap | null>(null)
 let backImgLayer: Konva.Layer | null = null
 let stage: Konva.Stage | null = null
+const init_scale_factor = ref(1)
 const scale_factor = ref(1)
 
 const tips = ref("")
@@ -274,6 +275,7 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     return false;
   }
   
+  init_scale_factor.value = window.devicePixelRatio;
   scale_factor.value = window.devicePixelRatio;
 
   const img_width = pin_config.rect[2];
@@ -404,6 +406,7 @@ function textKeyUp(event: KeyboardEvent) {
     event.preventDefault()
     cancelTextInput()
   }
+  event.stopPropagation()
 }
 
 function minimizeWindow() {
@@ -508,8 +511,8 @@ async function zoomWindow(wheel_delta: number) {
 async function scaleWindow() {
   if (!stage || !backImg.value) return
   
-  const originalWidth = backImg.value.width / scale_factor.value
-  const originalHeight = backImg.value.height / scale_factor.value
+  const originalWidth = backImg.value.width / init_scale_factor.value
+  const originalHeight = backImg.value.height / init_scale_factor.value
   
   // Calculate new size based on zoom scale
   const newWidth = Math.round(originalWidth * zoom_scale / 100)
