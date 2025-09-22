@@ -382,7 +382,11 @@ function handleWheel(event: WheelEvent){
 
 function handleKeyup(event: KeyboardEvent) {
   const key = event.key.toLowerCase();
-  
+
+  if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
+    return;
+  }
+
   if (key === shortcuts.value.close.toLowerCase()) {
     if (state.value !== State.Default) {
       state.value = State.Default;
