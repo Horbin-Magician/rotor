@@ -16,9 +16,15 @@ use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
 
+use tokio::net::TcpListener;
+use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::accept_async;
+use futures_util::{StreamExt, SinkExt};
+
 use crate::util::i18n;
 #[cfg(target_os = "windows")]
 use crate::util::sys_util;
+use crate::command::screen_shotter_cmd::try_get_screen_img;
 
 #[derive(Debug, Clone, PartialEq)]
 struct MonitorConfig {
@@ -63,6 +69,11 @@ impl Module for ScreenShotter {
         
         self.build_mask_windows()?; // Pre-build mask window for faster response
         self.restore_pin_wins();
+
+        tauri::async_runtime::spawn(async move {
+            ScreenShotter::run_server().await;
+        });
+
         Ok(())
     }
 
@@ -147,6 +158,33 @@ impl ScreenShotter {
             max_pin_id: 0,
             current_monitors: Vec::new(),
         })
+    }
+
+    async fn run_server() {
+        let listener = TcpListener::bind("localhost:9001").await.expect("Failed to bind");
+        while let Ok((stream, _)) = listener.accept().await {
+            tauri::async_runtime::spawn(async move {
+                let ws_stream = accept_async(stream)
+                    .await
+                    .expect("Error during the websocket handshake occurred");
+
+                let (mut write, mut read) = ws_stream.split();
+
+                while let Some(msg) = read.next().await {
+                    match msg {
+                        Ok(msg) => {
+                            let label = msg.to_string();
+                            let image = try_get_screen_img(&label).await;
+                            write.send(Message::Binary(image.unwrap_or_default().to_vec().into())).await.expect("Failed to send message");
+                        }
+                        Err(e) => {
+                            log::error!("Error processing message: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
     }
 
     /// Check if monitors have changed compared to stored configuration

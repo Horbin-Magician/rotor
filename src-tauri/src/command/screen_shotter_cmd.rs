@@ -1,5 +1,4 @@
 use image::DynamicImage;
-use log::warn;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
@@ -12,7 +11,7 @@ use crate::util::img_util::TextResult;
 use crate::util::{img_util, sys_util};
 
 // Common functions
-async fn try_get_screen_img(label: &str) -> Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>> {
+pub async fn try_get_screen_img(label: &str) -> Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>> {
     let mut try_times = 1;
     while try_times <= 20 {
         // Get the masks arc without holding any locks
@@ -35,22 +34,6 @@ async fn try_get_screen_img(label: &str) -> Option<image::ImageBuffer<image::Rgb
 }
 
 // Command for mask window
-
-#[tauri::command]
-pub async fn get_screen_img(label: String, window: tauri::Window) -> tauri::ipc::Response {
-    // Set fullscreen asynchronously to avoid blocking
-    tokio::spawn(async move {
-        if let Err(e) = window.set_simple_fullscreen(true) {
-            warn!("Failed to set window to fullscreen: {}", e);
-        }
-    });
-
-    let image = try_get_screen_img(&label).await;
-    if let Some(image) = image {
-        return tauri::ipc::Response::new(image.to_vec());
-    }
-    tauri::ipc::Response::new(Vec::new())
-}
 
 #[tauri::command]
 pub async fn get_screen_rects(

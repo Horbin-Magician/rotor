@@ -43,6 +43,10 @@ import { warn } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
 
+const ws = new WebSocket('ws://localhost:9001') // TODO try other port if occupied
+ws.binaryType = 'arraybuffer';
+ws.onmessage = initializeScreenshot;
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null)
 let backImgBitmap: ImageBitmap | null = null
@@ -380,16 +384,15 @@ onBeforeUnmount(() => {
 });
 
 // Load the screenshot
-async function initializeScreenshot() {
-  let imgBuf: any = await invoke("get_screen_img", {label: appWindow.label})
-
-  // Create image data and bitmap asynchronously
-  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
+async function initializeScreenshot(event: any) {
+  const imgData = new ImageData(new Uint8ClampedArray(event.data), bacImgWidth, bacImgHeight);
   backImgBitmap = await createImageBitmap(imgData)
 
   // Draw the background image
   drawBackgroundImage()
-  return true
+
+  await appWindow.show()
+  changeCurrentMask() // Focus the current mask window
 }
 
 function hideWindow() {
@@ -425,16 +428,11 @@ async function initializeAutoRects() {
 
 { // Mount something
   onMounted(async () => {
-    listen('show-mask', async (_event) => {
-      // Parallelize initialization tasks for better performance
-      const [rectsPromise, screenshotPromise] = [
-        initializeAutoRects(),
-        initializeScreenshot()
-      ];
-      await Promise.all([rectsPromise, screenshotPromise]); // Wait for both to complete
+    appWindow.setSimpleFullscreen(true) // Enable simple fullscreen mode
 
-      await appWindow.show()
-      changeCurrentMask() // Focus the current mask window
+    listen('show-mask', async (_event) => {
+      initializeAutoRects()
+      ws.send(appWindow.label)
     });
     
     listen('hide-mask', async (_event) => {
