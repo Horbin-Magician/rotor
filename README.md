@@ -54,11 +54,12 @@ I sincerely hope that you can provide quality code for this project.
 
 ## Important to-do list
 
-- [x] Optimize the user experience under the Windows OS;
 - [x] A brand new update system;
 - [x] OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
-- [ ] Word lookup and translation function;
 - [ ] Basic query-based AI dialogue function;
+- [ ] Word lookup and translation function;
+- [ ] Screen recording function;
+- [ ] Long screenshot function;
 - [ ] Plug-in system.
 
 # License
