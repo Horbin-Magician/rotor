@@ -135,7 +135,7 @@ import {
 } from '@vicons/fluent';
 import { NIcon, NSpin } from 'naive-ui';
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, getAllWindows, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import Konva from "konva";
@@ -345,7 +345,7 @@ async function handleMouseDown(event: MouseEvent) {
     }
   } else if (state.value === State.Default) {
     if (event.button === 0) { // left button, not on OCR text
-      startDraggingWithSnap();
+      appWindow.startDragging(); // Start the regular dragging
     }
   } else if (state.value === State.OCR) {
     // Check if clicking on OCR text overlay
@@ -354,7 +354,7 @@ async function handleMouseDown(event: MouseEvent) {
                       target.closest('.ocr-text-overlay');
 
     if (event.button === 0 && !isOcrText) { // left button, not on OCR text
-      startDraggingWithSnap();
+      appWindow.startDragging(); // Start the regular dragging
     }
   }
 }
@@ -786,82 +786,6 @@ function cancelTextInput() {
   showTextInput.value = false;
   textInputValue.value = '';
   startPoint = null;
-}
-
-// Window snapping functionality (Pure Frontend Implementation)
-const SNAP_THRESHOLD = 15; // pixels
-let isDragging = false;
-
-async function startDraggingWithSnap() {
-  appWindow.startDragging(); // Start the regular dragging
-
-  {
-    isDragging = true;
-    const currentSize = await appWindow.outerSize(); // Get current window size
-
-    // Set up position monitoring during drag
-    const checkInterval = setInterval(async () => {
-      if (!isDragging) {
-        clearInterval(checkInterval);
-        return;
-      }
-      
-      try {
-        const newPos = await appWindow.outerPosition();
-        // Calculate snap position using frontend logic
-        const snapResult = await calculateSnapPosition(newPos.x, newPos.y, currentSize.width, currentSize.height);
-
-        if (snapResult.snapped) { // Apply snap position
-          await appWindow.setPosition(new PhysicalPosition(snapResult.x, snapResult.y));
-        }
-      } catch (error) {
-        console.error("Error during window snap calculation:", error);
-      }
-    }, 16); // ~60fps for smooth snapping
-    
-    // Listen for drag end
-    const stopDragging = () => {
-      isDragging = false;
-      clearInterval(checkInterval);
-      document.removeEventListener('mouseup', stopDragging);
-    };
-    document.addEventListener('mouseup', stopDragging);
-  }
-}
-
-// Pure frontend snap calculation
-async function calculateSnapPosition(windowX: number, windowY: number, windowWidth: number, windowHeight: number) {
-  let snapX = windowX;
-  let snapY = windowY;
-  let snapped = false;
-
-  for (const window of await getAllWindows()) {
-    const otherPos = await window.outerPosition();
-    const otherSize = await window.outerSize();
-
-    // Snap to left edge
-    if (Math.abs(windowX - (otherPos.x + otherSize.width)) <= SNAP_THRESHOLD) {
-      snapX = otherPos.x + otherSize.width;
-      snapped = true;
-    }
-    // Snap to right edge
-    if (Math.abs((windowX + windowWidth) - otherPos.x) <= SNAP_THRESHOLD) {
-      snapX = otherPos.x - windowWidth;
-      snapped = true;
-    }
-    // Snap to top edge
-    if (Math.abs(windowY - (otherPos.y + otherSize.height)) <= SNAP_THRESHOLD) {
-      snapY = otherPos.y + otherSize.height;
-      snapped = true;
-    }
-    // Snap to bottom edge
-    if (Math.abs((windowY + windowHeight) - otherPos.y) <= SNAP_THRESHOLD) {
-      snapY = otherPos.y - windowHeight;
-      snapped = true;
-    }
-  }
-    
-  return { x: snapX, y: snapY, snapped };
 }
 
 { // Mount something
