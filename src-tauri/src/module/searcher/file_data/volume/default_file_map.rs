@@ -135,17 +135,13 @@ impl FileMap {
             if is_match {
                 let full_path = format!("{}/{}", file.path, file.file_name);
                 let icon_data = file_util::get_file_icon_data(&full_path);
-                let mut file_name = if let Some(alias) = file_alias {
-                    alias
-                } else {
-                    file.file_name.clone()
-                };
 
                 result.push(SearchResultItem {
                     path: file.path.clone() + "/", // TODO del
-                    file_name,
+                    file_name: file.file_name.clone(),
                     rank: file.rank,
                     icon_data,
+                    alias: file_alias,
                 });
 
                 find_num += 1;

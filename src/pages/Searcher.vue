@@ -43,7 +43,7 @@
             />
           </div>
           <div class="item-content">
-            <div class="item-title">{{ item.title }}</div>
+            <div class="item-title">{{ item.alias || item.title }}</div>
             <div class="item-subtitle">{{ item.subtitle }}</div>
           </div>
           <div v-if="item.actions" class="item-actions">
@@ -90,6 +90,7 @@ interface SearchItem {
   type: ItemType
   actions?: Action[]
   icon_data?: string // Base64 encoded PNG data
+  alias?: string
 }
 
 type ItemType = 'app' | 'folder' | 'file' | 'settings'
@@ -242,6 +243,7 @@ interface SearchResultItem {
   file_name: string;
   rank: number;
   icon_data?: string;
+  alias?: string;
 }
 type UpdateResultPayload = [string, SearchResultItem[], boolean];
 
@@ -273,6 +275,7 @@ onMounted(async () => {
         subtitle: item.path,
         type: 'file' as ItemType,
         icon_data: item.icon_data,
+        alias: item.alias,
         actions: [
           { type: 'OpenAsAdmin', title: 'message.openAsAdminTip' },
           { type: 'OpenFolder', title: 'message.openFolderTip' }
