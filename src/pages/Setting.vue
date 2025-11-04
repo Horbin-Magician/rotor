@@ -150,7 +150,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
-import ShortcutInput from '../components/ShortcutInput.vue';
+import ShortcutInput from '../components/common/ShortcutInput.vue';
 import { useTheme } from '../composables/useTheme';
 
 import { useI18n } from 'vue-i18n'
