@@ -63,7 +63,7 @@ fn calculate_optimal_scale_factor(width: u32, height: u32) -> u32 {
     }
 }
 
-fn fast_resize(img: &RgbaImage, scale_factor: u32) -> Image {
+fn fast_resize(img: &'_ RgbaImage, scale_factor: u32) -> Image<'_> {
     let width = img.width() / scale_factor;
     let height = img.height() / scale_factor;
 
