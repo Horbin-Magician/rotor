@@ -110,6 +110,7 @@ impl FileMap {
                         file_name: file.file_name.clone(),
                         rank: file.rank,
                         icon_data,
+                        alias: None,
                     });
                     find_num += 1;
                     if find_num >= batch {
