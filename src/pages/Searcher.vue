@@ -44,7 +44,7 @@ interface SearchItem {
   alias?: string
 }
 
-type ItemType = 'app' | 'folder' | 'file' | 'settings'
+type ItemType = 'app' | 'file'
 
 // Constants
 const WINDOW_CONFIG = {
@@ -213,17 +213,21 @@ onMounted(async () => {
     if (filename !== searchQuery.value) return;
     if (!if_increase) searchResults.value = [];
     searchResults.value = searchResults.value.concat(
-      getSearchResults.map((item, _index) => ({
-        title: item.file_name,
-        subtitle: item.path,
-        type: 'file' as ItemType,
-        icon_data: item.icon_data,
-        alias: item.alias,
-        actions: [
-          { type: 'OpenAsAdmin', title: 'message.openAsAdminTip' },
-          { type: 'OpenFolder', title: 'message.openFolderTip' }
-        ]
-      }))
+      getSearchResults.map((item, _index) => {
+        const lower_file_name = item.file_name.toLowerCase();
+        const isApp = lower_file_name.endsWith('.app') || lower_file_name.endsWith('.exe');
+        return {
+          title: item.file_name,
+          subtitle: item.path,
+          type: (isApp ? 'app' : 'file') as ItemType,
+          icon_data: item.icon_data,
+          alias: item.alias,
+          actions: [
+            { type: 'OpenAsAdmin', title: 'message.openAsAdminTip' },
+            { type: 'OpenFolder', title: 'message.openFolderTip' }
+          ]
+        };
+      })
     );
     resizeWindow()
   });

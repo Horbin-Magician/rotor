@@ -13,7 +13,12 @@
       />
     </div>
     <div class="item-content">
-      <div class="item-title">{{ item.alias || item.title }}</div>
+      <div class="item-title">
+        <span class="title-text">{{ getDisplayTitle(item) }}</span>
+        <span :class="['type-tag', `type-tag-${item.type}`]">
+          {{ getTypeLabel(item.type) }}
+        </span>
+      </div>
       <div class="item-subtitle">{{ item.subtitle }}</div>
     </div>
     <div v-if="item.actions" class="item-actions">
@@ -55,7 +60,7 @@ export interface SearchItem {
   alias?: string
 }
 
-type ItemType = 'app' | 'folder' | 'file' | 'settings'
+type ItemType = 'app' | 'file'
 type ActionType = 'OpenAsAdmin' | 'OpenFolder'
 
 // Props
@@ -80,7 +85,29 @@ const ACTION_ICONS: Record<ActionType, any> = {
 } as const
 
 // Methods
+const getDisplayTitle = (item: SearchItem): string => {
+  const title = item.alias || item.title
+  
+  // If item type is 'app', remove file extension
+  if (item.type === 'app') {
+    const lastDotIndex = title.lastIndexOf('.')
+    if (lastDotIndex > 0) {
+      return title.substring(0, lastDotIndex)
+    }
+  }
+  
+  return title
+}
+
 const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || ErrorIcon
+
+const getTypeLabel = (type: ItemType): string => {
+  const labels: Record<ItemType, string> = {
+    app: 'APP',
+    file: 'FILE'
+  }
+  return labels[type] || type.toUpperCase()
+}
 
 const handleClick = () => {
   emit('click', props.item)
@@ -135,9 +162,36 @@ const handleMouseEnter = () => {
   font-weight: 500;
   color: var(--theme-text-primary);
   margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.title-text {
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 0px 6px;
+  border-radius: 10px;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
+}
+
+.type-tag-app {
+  background-color: #3b82f6;
+  color: #ffffff;
+}
+
+.type-tag-file {
+  background-color: #10b981;
+  color: #ffffff;
 }
 
 .item-subtitle {
