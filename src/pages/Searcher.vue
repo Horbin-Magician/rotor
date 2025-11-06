@@ -1,82 +1,33 @@
 <template>
   <div class="searcher-container">
     <!-- Search Input -->
-    <div class="search-input-container">
-      <div class="search-input-wrapper">
-        <n-icon size="24" class="search-icon">
-          <SearchIcon />
-        </n-icon>
-        <input
-          ref="searchInputRef"
-          v-model="searchQuery"
-          :placeholder="$t('message.searchPlaceholder')"
-          autofocus
-          @input="handleSearch"
-          @keydown="handleKeydown"
-          class="search-input"
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </div>
-    </div>
+    <SearchInput
+      ref="searchInputRef"
+      v-model="searchQuery"
+      :placeholder="$t('message.searchPlaceholder')"
+      @input="handleSearch"
+      @keydown="handleKeydown"
+    />
 
     <!-- Search Results -->
-    <div v-if="searchResults.length > 0" class="search-results-container">
-      <n-infinite-scroll
-        class="search-results"
-        @load="handleLoadMore"
-        :scrollbar-props="{ trigger: 'none' }"
-      >
-        <div
-          v-for="(item, index) in searchResults"
-          :key="`${item.subtitle}${item.title}`"
-          :class="['search-item', { selected: selectedIndex === index }]"
-          @click="clickItem(item)"
-          @mouseenter="selectedIndex = index"
-        >
-          <div class="item-icon">
-            <img 
-              v-if="item.icon_data" 
-              :src="`data:image/png;base64,${item.icon_data}`" 
-              alt="Icon"
-              loading="lazy"
-            />
-          </div>
-          <div class="item-content">
-            <div class="item-title">{{ item.alias || item.title }}</div>
-            <div class="item-subtitle">{{ item.subtitle }}</div>
-          </div>
-          <div v-if="item.actions" class="item-actions">
-            <div
-              v-for="action in item.actions"
-              :key="action.type"
-              class="item-action-btn"
-              :title="$t(action.title)"
-              @click.stop="handleActionClick(action, item)"
-            >
-              <n-icon size="20">
-                <component :is="getActionIcon(action.type)" />
-              </n-icon>
-            </div>
-          </div>
-        </div>
-      </n-infinite-scroll>
-    </div>
+    <SearchResultList
+      ref="searchResultListRef"
+      v-model="selectedIndex"
+      :items="searchResults"
+      @item-click="clickItem"
+      @action-click="handleActionClick"
+      @load-more="handleLoadMore"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { NIcon, NInfiniteScroll } from 'naive-ui'
 import { getCurrentWindow, PhysicalPosition, LogicalSize, primaryMonitor } from '@tauri-apps/api/window'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
-import {
-  SearchRound as SearchIcon,
-  AdminPanelSettingsFilled as OpenAsAdminIcon,
-  FolderCopyRound as OpenFolderIcon,
-  ErrorFilled as ErrorIcon,
-} from '@vicons/material'
 import { invoke } from '@tauri-apps/api/core'
+import SearchInput from '../components/searcher/SearchInput.vue'
+import SearchResultList from '../components/searcher/SearchResultList.vue'
 
 // Types
 interface Action {
@@ -94,7 +45,6 @@ interface SearchItem {
 }
 
 type ItemType = 'app' | 'folder' | 'file' | 'settings'
-type ActionType = 'OpenAsAdmin' | 'OpenFolder'
 
 // Constants
 const WINDOW_CONFIG = {
@@ -104,14 +54,10 @@ const WINDOW_CONFIG = {
   maxVisibleItems: 7
 } as const
 
-const ACTION_ICONS: Record<ActionType, any> = {
-  OpenAsAdmin: OpenAsAdminIcon,
-  OpenFolder: OpenFolderIcon
-} as const
-
 // State
 const appWindow = getCurrentWindow()
-const searchInputRef = ref<HTMLInputElement>()
+const searchInputRef = ref<InstanceType<typeof SearchInput>>()
+const searchResultListRef = ref<InstanceType<typeof SearchResultList>>()
 const searchQuery = ref('')
 const selectedIndex = ref(0)
 
@@ -119,9 +65,6 @@ let unlistenBlur: (() => void) | null = null
 let unlistenFocus: (() => void) | null = null
 
 const searchResults = ref<SearchItem[]>([])
-
-// Utils
-const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || ErrorIcon
 
 // Window management
 const resizeWindow = async () => {
@@ -305,150 +248,5 @@ onUnmounted(() => {
   box-sizing: border-box;
   overflow: hidden;
   background-color: var(--theme-background);
-}
-
-/* Search Input Styles */
-.search-input-container {
-  position: relative;
-  padding: 0 12px;
-  background-color: var(--theme-background);
-}
-
-.search-input-container::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 10px;
-  right: 10px;
-  height: 2px;
-  border-radius: 1px;
-  background-color: var(--theme-primary);
-}
-
-.search-input-wrapper {
-  display: flex;
-  align-items: center;
-  height: 50px;
-  gap: 8px;
-}
-
-.search-icon {
-  flex-shrink: 0;
-  color: var(--theme-text-secondary);
-}
-
-.search-input {
-  flex: 1;
-  height: 100%;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: 16px;
-  color: var(--theme-text-primary);
-  padding: 0;
-}
-
-.search-input::placeholder {
-  color: var(--theme-text-disabled);
-}
-
-/* Search Results Styles */
-.search-results-container {
-  flex: 1;
-  overflow: hidden;
-  position: relative;
-  background-color: var(--theme-background);
-}
-
-.search-results {
-  height: 100%;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  padding-right: 2px;
-}
-
-.search-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  transition: background-color 0.1s ease;
-  height: 60px;
-  position: relative;
-  overflow: hidden;
-}
-
-.search-item.selected {
-  background-color: var(--theme-primary-overlay);
-}
-
-.item-icon {
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.item-icon img {
-  width: 32px;
-  height: 32px;
-}
-
-.item-content {
-  flex: 1;
-  min-width: 0;
-  padding-right: 10px;
-  transition: padding-right 0.3s ease;
-}
-
-.item-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--theme-text-primary);
-  margin-bottom: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.item-subtitle {
-  font-size: 12px;
-  color: var(--theme-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.item-actions {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  transform: translateX(100%);
-  transition: transform 0.3s ease;
-  position: absolute;
-  right: 0;
-  top: 0;
-}
-
-.search-item:hover .item-actions {
-  transform: translateX(0);
-}
-
-.search-item:hover .item-content {
-  padding-right: 80px;
-}
-
-.item-action-btn {
-  width: 38px;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s ease;
-  cursor: pointer;
-}
-
-.item-action-btn:hover {
-  color: var(--theme-primary-hover);
 }
 </style>
