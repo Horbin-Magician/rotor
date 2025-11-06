@@ -22,6 +22,7 @@
     ]
   },
   "app": {
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:9001 ipc://localhost http://ipc.localhost; img-src 'self' data:;"
     }

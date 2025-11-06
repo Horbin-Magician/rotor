@@ -280,7 +280,8 @@ impl ScreenShotter {
             .visible(false)
             .accept_first_mouse(true)
             .shadow(false)
-            .skip_taskbar(true);
+            .skip_taskbar(true)
+            .transparent(true);
 
             let window = win_builder.build()?;
 
@@ -348,7 +349,8 @@ impl ScreenShotter {
             .resizable(false)
             .decorations(false)
             .position(x, y)
-            .visible(false);
+            .visible(false)
+            .transparent(true);
 
             #[cfg(target_os = "windows")]
             {

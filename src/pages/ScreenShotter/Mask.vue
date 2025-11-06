@@ -447,6 +447,13 @@ async function initializeAutoRects() {
 }
 </script>
 
+<style>
+/* Global styles for body element */
+body {
+  background-color: transparent !important;
+}
+</style>
+
 <style scoped>
 .container {
   position: relative;
