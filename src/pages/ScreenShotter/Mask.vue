@@ -118,7 +118,7 @@ function initializeCanvas() {
   if (!canvasRef.value) return
   
   mainCanvas = canvasRef.value
-  mainCtx = mainCanvas.getContext('2d', { alpha: false })
+  mainCtx = mainCanvas.getContext('2d', { alpha: false, desynchronized: true, willReadFrequently: true })
   
   if (!mainCtx) return
   
@@ -132,7 +132,7 @@ function initializeMagnifierCanvas() {
   if (!magnifierCanvasRef.value) return
   
   magnifierCanvas = magnifierCanvasRef.value
-  magnifierCtx = magnifierCanvas.getContext('2d', { alpha: false })
+  magnifierCtx = magnifierCanvas.getContext('2d', { alpha: false, desynchronized: true, willReadFrequently: true })
   
   if (!magnifierCtx) return
   
@@ -389,7 +389,9 @@ async function initializeScreenshot(event: any) {
   backImgBitmap = await createImageBitmap(imgData)
 
   // Draw the background image
-  drawBackgroundImage()
+  requestAnimationFrame(() => {
+    drawBackgroundImage()
+  })
 
   await appWindow.show()
   changeCurrentMask() // Focus the current mask window
