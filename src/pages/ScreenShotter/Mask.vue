@@ -132,7 +132,7 @@ function initializeMagnifierCanvas() {
   if (!magnifierCanvasRef.value) return
   
   magnifierCanvas = magnifierCanvasRef.value
-  magnifierCtx = magnifierCanvas.getContext('2d', { alpha: false, desynchronized: true, willReadFrequently: true })
+  magnifierCtx = magnifierCanvas.getContext('2d', { alpha: false, willReadFrequently: true })
   
   if (!magnifierCtx) return
   
