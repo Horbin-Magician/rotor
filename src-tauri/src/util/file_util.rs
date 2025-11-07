@@ -86,10 +86,11 @@ pub fn open_file(file_path: String) -> Result<(), Box<dyn Error>> {
 
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer.exe")
-            .arg(file_path)
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
-            .spawn()?;
+        let trimmed_path = file_path.trim_end_matches(&['/', '\\'][..]);
+            std::process::Command::new("explorer.exe")
+                .arg(trimmed_path)
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .spawn()?;
     }
 
     #[cfg(target_os = "macos")]
