@@ -4,42 +4,48 @@
         @mousemove="handleMouseMove" 
         @mouseout="handleMouseOut"
         @mouseup="handleMouseUp">
-    <canvas ref="canvasRef" id="main-canvas"
-      :style="{ width: windowWidth + 'px', height: windowHeight + 'px' }"
-      :width="bacImgWidth"
-      :height="bacImgHeight"
+    <ScreenCanvas
+      :window-width="windowWidth"
+      :window-height="windowHeight"
+      :bac-img-width="bacImgWidth"
+      :bac-img-height="bacImgHeight"
+      @canvas-ready="handleCanvasReady"
     />
     
-    <!-- Selection rectangle -->
-    <div class="selection-rect" :style="selectionStyle"></div>
+    <SelectionRect
+      :is-selecting="isSelecting"
+      :start-x="startX"
+      :start-y="startY"
+      :end-x="endX"
+      :end-y="endY"
+      :auto-select-rect="autoSelectRect"
+      :is-window-focused="isWindowFocused"
+    />
     
-    <!-- Magnifier -->
-    <div class="magnifier" :style="magnifierStyle">
-      <canvas ref="magnifierCanvasRef" class="magnifier-canvas" :width="magnifierSize" :height="magnifierSize"></canvas>
-      <div class="magnifier-crosshair" :style="{ width: magnifierSize + 'px', height: magnifierSize + 'px' }"></div>
-      <div class="magnifier-info">
-        <!-- Rect size info -->
-        <div class="magnifier-info-item"> {{ selectionWidth }} × {{ selectionHeight }} </div>
-        <!-- Point color info -->
-        <div class="magnifier-info-item">
-          <div class="color-preview" :style="{ backgroundColor: pixelColor }"></div>
-          <span>{{ pixelColor }}</span>
-        </div>
-        <div class="magnifier-info-item">
-          <span>{{ $t('message.copyColorHint') }}</span>
-        </div>
-      </div>
-    </div>
+    <Magnifier
+      :current-x="currentX"
+      :current-y="currentY"
+      :magnifier-size="magnifierSize"
+      :selection-width="selectionWidth"
+      :selection-height="selectionHeight"
+      :pixel-color="pixelColor"
+      :is-window-focused="isWindowFocused"
+      @canvas-ready="handleMagnifierCanvasReady"
+    />
   </main>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
 import { warn } from '@tauri-apps/plugin-log';
+
+import ScreenCanvas from "../../components/screenShotter/ScreenCanvas.vue";
+import SelectionRect from "../../components/screenShotter/SelectionRect.vue";
+import Magnifier from "../../components/screenShotter/Magnifier.vue";
 
 const appWindow = getCurrentWindow()
 
@@ -47,8 +53,6 @@ const ws = new WebSocket('ws://localhost:9001') // TODO try other port if occupi
 ws.binaryType = 'arraybuffer';
 ws.onmessage = initializeScreenshot;
 
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null)
 let backImgBitmap: ImageBitmap | null = null
 
 const windowWidth = window.screen.width
@@ -81,62 +85,15 @@ let mainCtx: CanvasRenderingContext2D | null = null
 let magnifierCanvas: HTMLCanvasElement | null = null
 let magnifierCtx: CanvasRenderingContext2D | null = null
 
-// Computed styles for selection rectangle
-const selectionStyle = computed(() => {
-  if (!isWindowFocused.value) {
-    return { display: 'none' }
-  }
-  
-  let left = -2, top = -2, width = 0, height = 0
-  if (isSelecting.value == true) {
-    width = Math.abs(endX.value - startX.value)
-    height = Math.abs(endY.value - startY.value)
-    if (width > 5 && height > 5) {
-      left = Math.min(startX.value, endX.value)
-      top = Math.min(startY.value, endY.value)
-    } else {
-      width = 0
-      height = 0
-    }
-  } else if (autoSelectRect.value) {
-    left = autoSelectRect.value.x
-    top = autoSelectRect.value.y
-    width = autoSelectRect.value.width
-    height = autoSelectRect.value.height
-  }
-
-  return {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${width}px`,
-    height: `${height}px`
-  }
-})
-
-// Initialize canvas
-function initializeCanvas() {
-  if (!canvasRef.value) return
-  
-  mainCanvas = canvasRef.value
-  mainCtx = mainCanvas.getContext('2d', { alpha: false, desynchronized: true, willReadFrequently: true })
-  
-  if (!mainCtx) return
-  
-  const dpr = window.devicePixelRatio
-  mainCtx.scale(dpr, dpr) // Scale context for high DPI
-  mainCtx.imageSmoothingEnabled = false // Optimize rendering
+// Handle canvas ready events
+function handleCanvasReady(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
+  mainCanvas = canvas
+  mainCtx = ctx
 }
 
-// Initialize magnifier canvas
-function initializeMagnifierCanvas() {
-  if (!magnifierCanvasRef.value) return
-  
-  magnifierCanvas = magnifierCanvasRef.value
-  magnifierCtx = magnifierCanvas.getContext('2d', { alpha: false, willReadFrequently: true })
-  
-  if (!magnifierCtx) return
-  
-  magnifierCtx.imageSmoothingEnabled = false
+function handleMagnifierCanvasReady(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
+  magnifierCanvas = canvas
+  magnifierCtx = ctx
 }
 
 // Draw background image
@@ -150,29 +107,6 @@ function drawBackgroundImage() {
     window.screen.width, window.screen.height
   )
 }
-
-// Computed styles for magnifier
-const mgnfHeight = magnifierSize + 50
-const mgnfOffset = 20
-const viewportWidth = window.screen.width
-const viewportHeight = window.screen.height
-const magnifierStyle = computed(() => {
-  if (!isWindowFocused.value) {
-    return { display: 'none' }
-  }
-  
-  let left = (currentX.value + magnifierSize > viewportWidth) ? 
-    currentX.value - magnifierSize : currentX.value;
-  let top = (currentY.value + mgnfOffset + mgnfHeight > viewportHeight) ? 
-    currentY.value - mgnfOffset - mgnfHeight : (currentY.value + mgnfOffset);
-
-  return {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${magnifierSize}px`,
-    height: `${mgnfHeight}px`
-  }
-})
 
 // Update magnifier
 const srcSize = magnifierSize / zoomFactor
@@ -373,8 +307,6 @@ onMounted(async () => {
   window.addEventListener('keyup', handleKeyup);
   window.addEventListener('focus', handleWindowFocus);
   window.addEventListener('blur', handleWindowBlur);
-  initializeCanvas()
-  initializeMagnifierCanvas()
 });
 
 onBeforeUnmount(() => {
@@ -460,83 +392,5 @@ body {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-}
-
-#main-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
-.selection-rect {
-  position: absolute;
-  border: 1px solid var(--theme-primary-pressed);
-  background-color: var(--theme-primary-overlay);
-  pointer-events: none;
-}
-
-.magnifier {
-  position: absolute;
-  border: 1px solid var(--theme-border-hover);
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 1000;
-  background-color: var(--theme-overlay);
-  display: flex;
-  flex-direction: column;
-}
-
-.magnifier-crosshair {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 1001;
-  border-bottom: 1px solid var(--theme-border-hover);
-}
-
-.magnifier-crosshair::before,
-.magnifier-crosshair::after {
-  content: '';
-  position: absolute;
-  background-color: var(--theme-primary);
-}
-
-.magnifier-crosshair::before {
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 1px;
-}
-
-.magnifier-crosshair::after {
-  top: 0;
-  left: 50%;
-  width: 1px;
-  height: 100%;
-}
-
-.magnifier-info {
-  padding: 4px;
-  color: var(--theme-text-primary);
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-}
-
-.magnifier-info-item {
-  width: 100%;
-  height: 14px;
-  align-items: center;
-  text-align: center;
-  display: flex;
-  justify-content: center;
-}
-
-.color-preview {
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
-  display: inline-block;
 }
 </style>
