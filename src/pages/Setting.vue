@@ -15,88 +15,33 @@
       <n-tab-pane class="tab-pane" name="Base" :tab="t('message.base')">
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
-            <div class="settings-card">
-              <div class="settings-card-title">{{ t('message.common') }}</div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.language') }}</span>
-                <n-select v-model:value="language" :options="languageOptions" />
-              </div>
-              
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.theme') }}</span>
-                <n-select v-model:value="theme" :options="themeOptions" />
-              </div>
-
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.powerBoot') }}</span>
-                <n-switch v-model:value="powerBoot" />
-              </div>
-
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.currentVersion') }}{{ currentVersion }}</span>
-                <n-button @click="checkUpdate" :loading="isCheckingUpdate" :disabled="isCheckingUpdate">
-                  {{ t('message.checkUpdate') }}
-                </n-button>
-              </div>
-            </div>
-            <div class="settings-card">
-              <div class="settings-card-title">{{ t('message.globalShortcuts') }}</div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.screenshot') }}</span>
-                <ShortcutInput v-model:shortcut="shortcutScreenshot" />
-              </div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.search') }}</span>
-                <ShortcutInput v-model:shortcut="shortcutSearch" />
-              </div>
-            </div>
+            <GeneralSettings 
+              v-model:language="language"
+              v-model:theme="theme"
+              v-model:power-boot="powerBoot"
+              v-model:shortcut-screenshot="shortcutScreenshot"
+              v-model:shortcut-search="shortcutSearch"
+              :current-version="currentVersion"
+              :is-checking-update="isCheckingUpdate"
+              @check-update="checkUpdate"
+            />
           </div>
         </n-scrollbar>
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Screen shotter" :tab="t('message.screenShotter')">
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
-            <div class="settings-card">
-              <div class="settings-card-title">{{ t('message.shortcuts') }}</div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.closePinwin') }}</span>
-                <ShortcutInput v-model:shortcut="shortcutPinwinClose"/>
-              </div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.savePinwin') }}</span>
-                <ShortcutInput v-model:shortcut="shortcutPinwinSave"/>
-              </div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.completePinwin') }}</span>
-                <ShortcutInput v-model:shortcut="shortcutPinwinCopy"/>
-              </div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.hidePinwin') }}</span>
-                <ShortcutInput v-model:shortcut="shortcutPinwinHide"/>
-              </div>
-            </div>
-            <div class="settings-card">
-              <div class="settings-card-title">{{ t('message.pinwin') }}</div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.defaultSavePath') }}</span>
-                <div class="path-selector">
-                  <n-input v-model:value="savePath" placeholder="" readonly />
-                  <n-button  @click="askSave">{{ t('message.browse') }}</n-button>
-                </div>
-              </div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.autoChangeSavePath') }}</span>
-                <n-switch v-model:value="ifAutoChangeSavePath" />
-              </div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.askSavePath') }}</span>
-                <n-switch v-model:value="ifAskSavePath" />
-              </div>
-              <div class="setting-item">
-                <span class="setting-label">{{ t('message.zoomDelta') }}</span>
-                <n-slider v-model:value="zoomDelta" :step="1" :max="10" :min="1" />
-              </div>
-            </div>
+            <PinwinSettings 
+              v-model:shortcut-pinwin-close="shortcutPinwinClose"
+              v-model:shortcut-pinwin-save="shortcutPinwinSave"
+              v-model:shortcut-pinwin-copy="shortcutPinwinCopy"
+              v-model:shortcut-pinwin-hide="shortcutPinwinHide"
+              v-model:save-path="savePath"
+              v-model:if-auto-change-save-path="ifAutoChangeSavePath"
+              v-model:if-ask-save-path="ifAskSavePath"
+              v-model:zoom-delta="zoomDelta"
+              @ask-save="askSave"
+            />
           </div>
         </n-scrollbar>
       </n-tab-pane>
@@ -106,43 +51,19 @@
   </div>
   <div class="drag-region"  data-tauri-drag-region></div>
 
-  <!-- Update Confirmation Modal -->
-  <n-modal v-model:show="showUpdateModal" preset="dialog" :title="t('message.updateAvailable')" style="width: 400px;">
-    <div class="update-modal-content">
-      <p>{{ t('message.newVersionAvailable') }} <strong>{{ updateVersion }}</strong> {{ t('message.isAvailable') }}</p>
-      <p>{{ t('message.installNow') }}</p>
-    </div>
-    <template #action>
-      <div class="modal-actions">
-        <n-button @click="cancelUpdate" class="cancel-btn">
-          {{ t('message.cancel') }}
-        </n-button>
-        <n-button type="primary" @click="confirmUpdate" class="confirm-btn">
-          {{ t('message.install') }}
-        </n-button>
-      </div>
-    </template>
-  </n-modal>
-
-  <!-- Update Progress Modal -->
-  <n-modal v-model:show="showProgressModal" :closable="false" :mask-closable="false">
-    <n-card style="width: 400px" :title="t('message.updatingApp')">
-      <div class="progress-content">
-        <n-progress 
-          type="line" 
-          :percentage="updateProgress" 
-          indicator-placement="inside"
-          :color="themeVars.primaryColor"
-          status="success"
-        />
-        <p class="progress-status">{{ updateStatus }}</p>
-      </div>
-    </n-card>
-  </n-modal>
+  <UpdateModals 
+    v-model:show-update-modal="showUpdateModal"
+    v-model:show-progress-modal="showProgressModal"
+    :update-version="updateVersion"
+    :update-progress="updateProgress"
+    :update-status="updateStatus"
+    @confirm-update="confirmUpdate"
+    @cancel-update="cancelUpdate"
+  />
 </template>
 
 <script setup lang="ts">
-import { NTabs, NTabPane, NScrollbar, NSlider, NSwitch, NButton, NInput, NSelect, NModal, NCard, NProgress, useMessage, useThemeVars } from 'naive-ui'
+import { NTabs, NTabPane, NScrollbar, useMessage } from 'naive-ui'
 import { ref, watch, h } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
@@ -150,13 +71,16 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
-import ShortcutInput from '../components/common/ShortcutInput.vue';
 import { useTheme } from '../composables/useTheme';
+
+// Import setting components
+import GeneralSettings from '../components/setting/GeneralSettings.vue'
+import PinwinSettings from '../components/setting/PinwinSettings.vue'
+import UpdateModals from '../components/setting/UpdateModals.vue'
 
 import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n()
 const message = useMessage()
-const themeVars = useThemeVars()
 const { changeTheme } = useTheme()
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -167,33 +91,6 @@ appWindow.isVisible().then( (visible)=>{
     appWindow.show()
     appWindow.setFocus()
   }
-})
-
-const languageOptions = ref([
-  { label: t('message.systemDefault'), value: 0 },
-  { label: t('message.chinese'), value: 1 },
-  { label: t('message.english'), value: 2 }
-])
-
-const themeOptions = ref([
-  { label: t('message.followSystem'), value: 0 },
-  { label: t('message.light'), value: 1 },
-  { label: t('message.dark'), value: 2 }
-])
-
-// Update options when language changes
-watch(locale, () => {
-  languageOptions.value = [
-    { label: t('message.systemDefault'), value: 0 },
-    { label: t('message.chinese'), value: 1 },
-    { label: t('message.english'), value: 2 }
-  ]
-  
-  themeOptions.value = [
-    { label: t('message.followSystem'), value: 0 },
-    { label: t('message.light'), value: 1 },
-    { label: t('message.dark'), value: 2 }
-  ]
 })
 
 // General settings
@@ -422,7 +319,6 @@ async function askSave() {
     savePath.value = path
   }
 }
-
 </script>
 
 
@@ -465,67 +361,11 @@ async function askSave() {
   padding-right: 20px;
 }
 
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 34px;
-  margin-bottom: 10px;
-  margin-left: 20px;
-}
-
-.setting-label {
-  min-width: 130px;
-}
-
-.settings-card-title {
-  font-weight: bold;
-  font-size: 16px;
-  height: 30px;
-  border-bottom: 1px solid gray;
-  margin-bottom: 10px;
-}
-
-.path-selector {
-  display: flex;
-  gap: 8px;
-  flex: 1;
-}
-
-.path-selector .n-input {
-  flex: 1;
-}
-
 .drag-region {
   position: absolute;
   left: 0;
   top: 0;
   width: 100%;
   height: 30px;
-}
-
-/* Update Modal Styles */
-.update-modal-content p {
-  margin: 6px 0;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.cancel-btn {
-  min-width: 80px;
-}
-
-.confirm-btn {
-  min-width: 80px;
-}
-
-.progress-status {
-  margin-top: 10px;
-  text-align: center;
-  color: #666;
 }
 </style>
