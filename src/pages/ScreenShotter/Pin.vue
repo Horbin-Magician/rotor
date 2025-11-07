@@ -916,7 +916,7 @@ body {
   padding: 4px;
   gap: 4px;
   z-index: 1000;
-  transition: transform 0.3s ease;
+  transition: transform 0.2s ease;
   opacity: 0.9;
 }
 
