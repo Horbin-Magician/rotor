@@ -215,7 +215,7 @@ onMounted(async () => {
     searchResults.value = searchResults.value.concat(
       getSearchResults.map((item, _index) => {
         const lower_file_name = item.file_name.toLowerCase();
-        const isApp = lower_file_name.endsWith('.app') || lower_file_name.endsWith('.exe');
+        const isApp = lower_file_name.endsWith('.app') || lower_file_name.endsWith('.exe') || lower_file_name.endsWith('.lnk');
         return {
           title: item.file_name,
           subtitle: item.path,
