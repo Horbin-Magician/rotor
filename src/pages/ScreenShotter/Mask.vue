@@ -43,9 +43,9 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
 import { warn } from '@tauri-apps/plugin-log';
 
-import ScreenCanvas from "../../components/screenShotter/ScreenCanvas.vue";
-import SelectionRect from "../../components/screenShotter/SelectionRect.vue";
-import Magnifier from "../../components/screenShotter/Magnifier.vue";
+import ScreenCanvas from "../../components/screenShotter/mask/ScreenCanvas.vue";
+import SelectionRect from "../../components/screenShotter/mask/SelectionRect.vue";
+import Magnifier from "../../components/screenShotter/mask/Magnifier.vue";
 
 const appWindow = getCurrentWindow()
 
