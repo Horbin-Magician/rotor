@@ -57,8 +57,11 @@ pub fn get_app_version() -> String {
 pub fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        
         std::process::Command::new("cmd")
             .args(["/C", "start", &url])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn()
             .map_err(|e| format!("Failed to open URL: {}", e))?;
     }
@@ -66,14 +69,6 @@ pub fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| format!("Failed to open URL: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
             .arg(&url)
             .spawn()
             .map_err(|e| format!("Failed to open URL: {}", e))?;
