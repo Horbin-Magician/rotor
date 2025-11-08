@@ -979,58 +979,83 @@ body {
 }
 
 .edge-glow-left {
-  content: '';
   position: absolute;
   top: 0;
   left: 0;
   width: 10px;
   height: 100%;
-  border-radius: 8px;
   pointer-events: none;
-  background: linear-gradient(to right, var(--theme-primary), rgba(255,0,0,0));
+  background: linear-gradient(to right, 
+    rgba(75, 160, 244, 0.8) 0%,
+    rgba(59, 130, 246, 0.4) 40%,
+    rgba(59, 130, 246, 0) 100%
+  );
   filter: blur(4px);
-  z-index: 2;
+  opacity: 0.9;
+  z-index: 10000;
+  animation: pulse-glow 1.5s ease-in-out infinite;
 }
 
 .edge-glow-right {
-  content: '';
   position: absolute;
   top: 0;
   right: 0;
   width: 10px;
   height: 100%;
-  border-radius: 8px;
   pointer-events: none;
-  background: linear-gradient(to left, var(--theme-primary), rgba(255,0,0,0));
+  background: linear-gradient(to left, 
+    rgba(59, 130, 246, 0.8) 0%,
+    rgba(59, 130, 246, 0.4) 40%,
+    rgba(59, 130, 246, 0) 100%
+  );
   filter: blur(4px);
-  z-index: 2;
+  opacity: 0.9;
+  z-index: 10000;
+  animation: pulse-glow 1.5s ease-in-out infinite;
 }
 
 .edge-glow-top {
-  content: '';
   position: absolute;
   left: 0;
   top: 0;
   width: 100%;
   height: 10px;
-  border-radius: 8px;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--theme-primary), rgba(255,0,0,0));
+  background: linear-gradient(to bottom, 
+    rgba(59, 130, 246, 0.8) 0%,
+    rgba(59, 130, 246, 0.4) 40%,
+    rgba(59, 130, 246, 0) 100%
+  );
   filter: blur(4px);
-  z-index: 2;
+  opacity: 0.9;
+  z-index: 10000;
+  animation: pulse-glow 1.5s ease-in-out infinite;
 }
 
 .edge-glow-bottom {
-  content: '';
   position: absolute;
   left: 0;
   bottom: 0;
   width: 100%;
   height: 10px;
-  border-radius: 8px;
   pointer-events: none;
-  background: linear-gradient(to top, var(--theme-primary), rgba(255,0,0,0));
+  background: linear-gradient(to top, 
+    rgba(59, 130, 246, 0.8) 0%,
+    rgba(59, 130, 246, 0.4) 40%,
+    rgba(59, 130, 246, 0) 100%
+  );
   filter: blur(4px);
-  z-index: 2;
+  opacity: 0.9;
+  z-index: 10000;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 </style>
