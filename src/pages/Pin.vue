@@ -97,9 +97,14 @@ interface OtherPinWindow {
 }
 
 interface EdgeSnap {
-  edge: 'left' | 'right' | 'top' | 'bottom';
-  targetX: number;
-  targetY: number;
+  horizontal: {
+    edge: 'left' | 'right' | null;
+    targetX: number | null;
+  };
+  vertical: {
+    edge: 'top' | 'bottom' | null;
+    targetY: number | null;
+  };
 }
 
 enum DrawState {
@@ -129,7 +134,10 @@ const edgeGlow = ref({
 // Snap configuration
 const SNAP_THRESHOLD = 20 // pixels
 let isDragging = false
-let potentialSnap: EdgeSnap | null = null
+let potentialSnap: EdgeSnap = {
+  horizontal: { edge: null, targetX: null },
+  vertical: { edge: null, targetY: null }
+}
 let dragCheckInterval: number | null = null
 
 const backImg = ref()
@@ -332,60 +340,61 @@ async function checkEdgeProximity() {
     
     const otherWindows = await getOtherPinWindows();
     
-    // Reset glow
+    // Reset glow and snap
     edgeGlow.value = {
       left: false,
       right: false,
       top: false,
       bottom: false
     };
-    potentialSnap = null;
+    potentialSnap = {
+      horizontal: { edge: null, targetX: null },
+      vertical: { edge: null, targetY: null }
+    };
     
     for (const other of otherWindows) {
-      // Check right edge of current to left edge of other
+      // Check horizontal edges (left/right)
+      // Right edge of current to left edge of other
       if (Math.abs((currentX + currentWidth) - other.x) < SNAP_THRESHOLD &&
           currentY < other.y + other.height &&
           currentY + currentHeight > other.y) {
         edgeGlow.value.right = true;
-        potentialSnap = {
+        potentialSnap.horizontal = {
           edge: 'right',
-          targetX: other.x - currentWidth,
-          targetY: currentY
+          targetX: other.x - currentWidth
         };
       }
       
-      // Check left edge of current to right edge of other
+      // Left edge of current to right edge of other
       if (Math.abs(currentX - (other.x + other.width)) < SNAP_THRESHOLD &&
           currentY < other.y + other.height &&
           currentY + currentHeight > other.y) {
         edgeGlow.value.left = true;
-        potentialSnap = {
+        potentialSnap.horizontal = {
           edge: 'left',
-          targetX: other.x + other.width,
-          targetY: currentY
+          targetX: other.x + other.width
         };
       }
       
-      // Check bottom edge of current to top edge of other
+      // Check vertical edges (top/bottom)
+      // Bottom edge of current to top edge of other
       if (Math.abs((currentY + currentHeight) - other.y) < SNAP_THRESHOLD &&
           currentX < other.x + other.width &&
           currentX + currentWidth > other.x) {
         edgeGlow.value.bottom = true;
-        potentialSnap = {
+        potentialSnap.vertical = {
           edge: 'bottom',
-          targetX: currentX,
           targetY: other.y - currentHeight
         };
       }
       
-      // Check top edge of current to bottom edge of other
+      // Top edge of current to bottom edge of other
       if (Math.abs(currentY - (other.y + other.height)) < SNAP_THRESHOLD &&
           currentX < other.x + other.width &&
           currentX + currentWidth > other.x) {
         edgeGlow.value.top = true;
-        potentialSnap = {
+        potentialSnap.vertical = {
           edge: 'top',
-          targetX: currentX,
           targetY: other.y + other.height
         };
       }
@@ -417,7 +426,10 @@ async function handleMouseDown(event: MouseEvent) {
 
 function startDragging() {
   isDragging = true;
-  potentialSnap = null;
+  potentialSnap = {
+    horizontal: { edge: null, targetX: null },
+    vertical: { edge: null, targetY: null }
+  };
   
   // Start checking for edge proximity while dragging
   dragCheckInterval = window.setInterval(checkEdgeProximity, 50);
@@ -434,17 +446,35 @@ async function endDragging() {
   }
   
   // Apply snap if there's a potential snap position
-  if (potentialSnap) {
+  // Get current position first
+  const currentPos = await appWindow.outerPosition();
+  let targetX = currentPos.x;
+  let targetY = currentPos.y;
+  
+  // Apply horizontal snap if exists
+  if (potentialSnap.horizontal.edge && potentialSnap.horizontal.targetX !== null) {
+    targetX = potentialSnap.horizontal.targetX;
+  }
+  
+  // Apply vertical snap if exists
+  if (potentialSnap.vertical.edge && potentialSnap.vertical.targetY !== null) {
+    targetY = potentialSnap.vertical.targetY;
+  }
+  
+  // Only set position if at least one edge snap is active
+  if (potentialSnap.horizontal.edge || potentialSnap.vertical.edge) {
     try {
-      await appWindow.setPosition(new PhysicalPosition(
-        potentialSnap.targetX,
-        potentialSnap.targetY
-      ));
+      await appWindow.setPosition(new PhysicalPosition(targetX, targetY));
     } catch (error) {
       console.error("Failed to snap window:", error);
     }
-    potentialSnap = null;
   }
+  
+  // Reset snap state
+  potentialSnap = {
+    horizontal: { edge: null, targetX: null },
+    vertical: { edge: null, targetY: null }
+  };
   
   // Clear glow
   setTimeout(() => {
