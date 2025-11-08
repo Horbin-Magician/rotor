@@ -58,6 +58,11 @@
     @select-text="selectTextTool"
     @undo="undoDrawing"
   />
+
+  <div v-if="edgeGlow.left" class="edge-glow-left"></div>
+  <div v-if="edgeGlow.right" class="edge-glow-right"></div>
+  <div v-if="edgeGlow.top" class="edge-glow-top"></div>
+  <div v-if="edgeGlow.bottom" class="edge-glow-bottom"></div>
 </template>
 
 <script setup lang="ts">
@@ -84,6 +89,19 @@ enum State {
   OCR
 }
 
+interface OtherPinWindow {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface EdgeSnap {
+  edge: 'left' | 'right' | 'top' | 'bottom';
+  targetX: number;
+  targetY: number;
+}
+
 enum DrawState {
   Pen,
   Rect,
@@ -99,6 +117,20 @@ let unlisten_show_pin: UnlistenFn;
 
 const state = ref(State.Default)
 const drawState = ref(DrawState.Pen)
+
+// Edge glow state
+const edgeGlow = ref({
+  left: false,
+  right: false,
+  top: false,
+  bottom: false
+})
+
+// Snap configuration
+const SNAP_THRESHOLD = 20 // pixels
+let isDragging = false
+let potentialSnap: EdgeSnap | null = null
+let dragCheckInterval: number | null = null
 
 const backImg = ref()
 const canvasRef = ref<InstanceType<typeof PinCanvas> | null>(null)
@@ -255,6 +287,114 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
   return true
 }
 
+async function getOtherPinWindows(): Promise<OtherPinWindow[]> {
+  const otherWindows: OtherPinWindow[] = [];
+  
+  try {
+    // Iterate through all possible pin windows to get their positions
+    for (let i = 1; i <= 100; i++) {
+      if (i === pin_id) continue;
+      
+      try {
+        const config = await invoke("get_pin_state", { id: i }) as PinConfig | null;
+        if (config) {
+          const x = config.monitor_pos[0] + config.rect[0] + config.offset[0];
+          const y = config.monitor_pos[1] + config.rect[1] + config.offset[1];
+          const width = Math.round(config.rect[2] * config.zoom_factor / 100);
+          const height = Math.round(config.rect[3] * config.zoom_factor / 100);
+          
+          otherWindows.push({ x, y, width, height });
+          console.log(`Found pin ${i} at (${x}, ${y}) size ${width}x${height}`);
+        }
+      } catch {
+        // Pin doesn't exist, continue
+      }
+    }
+    
+    console.log(`Total other pins found: ${otherWindows.length}`);
+  } catch (error) {
+    console.error("Failed to get other pin windows:", error);
+  }
+  
+  return otherWindows;
+}
+
+async function checkEdgeProximity() {
+  if (!isDragging) return;
+  
+  try {
+    const position = await appWindow.outerPosition();
+    const size = await appWindow.outerSize();
+    const currentX = position.x;
+    const currentY = position.y;
+    const currentWidth = size.width;
+    const currentHeight = size.height;
+    
+    const otherWindows = await getOtherPinWindows();
+    
+    // Reset glow
+    edgeGlow.value = {
+      left: false,
+      right: false,
+      top: false,
+      bottom: false
+    };
+    potentialSnap = null;
+    
+    for (const other of otherWindows) {
+      // Check right edge of current to left edge of other
+      if (Math.abs((currentX + currentWidth) - other.x) < SNAP_THRESHOLD &&
+          currentY < other.y + other.height &&
+          currentY + currentHeight > other.y) {
+        edgeGlow.value.right = true;
+        potentialSnap = {
+          edge: 'right',
+          targetX: other.x - currentWidth,
+          targetY: currentY
+        };
+      }
+      
+      // Check left edge of current to right edge of other
+      if (Math.abs(currentX - (other.x + other.width)) < SNAP_THRESHOLD &&
+          currentY < other.y + other.height &&
+          currentY + currentHeight > other.y) {
+        edgeGlow.value.left = true;
+        potentialSnap = {
+          edge: 'left',
+          targetX: other.x + other.width,
+          targetY: currentY
+        };
+      }
+      
+      // Check bottom edge of current to top edge of other
+      if (Math.abs((currentY + currentHeight) - other.y) < SNAP_THRESHOLD &&
+          currentX < other.x + other.width &&
+          currentX + currentWidth > other.x) {
+        edgeGlow.value.bottom = true;
+        potentialSnap = {
+          edge: 'bottom',
+          targetX: currentX,
+          targetY: other.y - currentHeight
+        };
+      }
+      
+      // Check top edge of current to bottom edge of other
+      if (Math.abs(currentY - (other.y + other.height)) < SNAP_THRESHOLD &&
+          currentX < other.x + other.width &&
+          currentX + currentWidth > other.x) {
+        edgeGlow.value.top = true;
+        potentialSnap = {
+          edge: 'top',
+          targetX: currentX,
+          targetY: other.y + other.height
+        };
+      }
+    }
+  } catch (error) {
+    console.error("Failed to check edge proximity:", error);
+  }
+}
+
 async function handleMouseDown(event: MouseEvent) {
   if (state.value === State.Drawing) {
     if (event.button === 0) {
@@ -262,7 +402,7 @@ async function handleMouseDown(event: MouseEvent) {
     }
   } else if (state.value === State.Default) {
     if (event.button === 0) {
-      appWindow.startDragging();
+      startDragging();
     }
   } else if (state.value === State.OCR) {
     const target = event.target as HTMLElement;
@@ -270,14 +410,61 @@ async function handleMouseDown(event: MouseEvent) {
                       target.closest('.ocr-text-overlay');
 
     if (event.button === 0 && !isOcrText) {
-      appWindow.startDragging();
+      startDragging();
     }
   }
 }
 
-function handleMouseUp(_event: MouseEvent) {
+function startDragging() {
+  isDragging = true;
+  potentialSnap = null;
+  
+  // Start checking for edge proximity while dragging
+  dragCheckInterval = window.setInterval(checkEdgeProximity, 50);
+  
+  appWindow.startDragging();
+}
+
+async function endDragging() {
+  isDragging = false;
+  
+  if (dragCheckInterval !== null) {
+    clearInterval(dragCheckInterval);
+    dragCheckInterval = null;
+  }
+  
+  // Apply snap if there's a potential snap position
+  if (potentialSnap) {
+    try {
+      await appWindow.setPosition(new PhysicalPosition(
+        potentialSnap.targetX,
+        potentialSnap.targetY
+      ));
+    } catch (error) {
+      console.error("Failed to snap window:", error);
+    }
+    potentialSnap = null;
+  }
+  
+  // Clear glow
+  setTimeout(() => {
+    edgeGlow.value = {
+      left: false,
+      right: false,
+      top: false,
+      bottom: false
+    };
+  }, 50);
+}
+
+async function handleMouseUp(_event: MouseEvent) {
   if (state.value === State.Drawing) {
     endDrawing();
+    return;
+  }
+  
+  if (isDragging) { // Handle snap-to-edge
+    endDragging();
   }
 }
 
@@ -758,5 +945,62 @@ body {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  transition: box-shadow 0.2s ease-in-out;
+}
+
+.edge-glow-left {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 100%;
+  border-radius: 8px;
+  pointer-events: none;
+  background: linear-gradient(to right, var(--theme-primary), rgba(255,0,0,0));
+  filter: blur(4px);
+  z-index: 2;
+}
+
+.edge-glow-right {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  border-radius: 8px;
+  pointer-events: none;
+  background: linear-gradient(to left, var(--theme-primary), rgba(255,0,0,0));
+  filter: blur(4px);
+  z-index: 2;
+}
+
+.edge-glow-top {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 10px;
+  border-radius: 8px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--theme-primary), rgba(255,0,0,0));
+  filter: blur(4px);
+  z-index: 2;
+}
+
+.edge-glow-bottom {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 10px;
+  border-radius: 8px;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--theme-primary), rgba(255,0,0,0));
+  filter: blur(4px);
+  z-index: 2;
 }
 </style>
