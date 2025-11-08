@@ -71,12 +71,12 @@ import Konva from "konva";
 import { UnlistenFn } from "@tauri-apps/api/event";
 import { warn } from "@tauri-apps/plugin-log";
 
-import PinCanvas from '../../components/screenShotter/pin/PinCanvas.vue';
-import PinTips from '../../components/screenShotter/pin/PinTips.vue';
-import PinTextInput from '../../components/screenShotter/pin/PinTextInput.vue';
-import PinOcrOverlay from '../../components/screenShotter/pin/PinOcrOverlay.vue';
-import PinToolbar from '../../components/screenShotter/pin/PinToolbar.vue';
-import PinDrawingToolbar from '../../components/screenShotter/pin/PinDrawingToolbar.vue';
+import PinCanvas from '../components/screenShotter/pin/PinCanvas.vue';
+import PinTips from '../components/screenShotter/pin/PinTips.vue';
+import PinTextInput from '../components/screenShotter/pin/PinTextInput.vue';
+import PinOcrOverlay from '../components/screenShotter/pin/PinOcrOverlay.vue';
+import PinToolbar from '../components/screenShotter/pin/PinToolbar.vue';
+import PinDrawingToolbar from '../components/screenShotter/pin/PinDrawingToolbar.vue';
 
 enum State {
   Default,

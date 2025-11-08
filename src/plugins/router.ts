@@ -7,11 +7,11 @@ const routes: RouteRecordRaw[] = [
   },
   { 
     path: '/ScreenShotter/Mask', 
-    component: () => import('../pages/ScreenShotter/Mask.vue') 
+    component: () => import('../pages/Mask.vue') 
   },
   { 
     path: '/ScreenShotter/Pin', 
-    component: () => import('../pages/ScreenShotter/Pin.vue') 
+    component: () => import('../pages/Pin.vue') 
   },
   { 
     path: '/Searcher', 
