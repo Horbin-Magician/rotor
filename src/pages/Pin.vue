@@ -136,7 +136,6 @@ let potentialSnap: EdgeSnap = {
   horizontal: { edge: null, targetX: null },
   vertical: { edge: null, targetY: null }
 }
-let dragCheckInterval: number | null = null
 
 const backImg = ref()
 const canvasRef = ref<InstanceType<typeof PinCanvas> | null>(null)
@@ -428,20 +427,11 @@ function startDragging() {
     horizontal: { edge: null, targetX: null },
     vertical: { edge: null, targetY: null }
   };
-  
-  // Start checking for edge proximity while dragging
-  dragCheckInterval = window.setInterval(checkEdgeProximity, 50);
-  
   appWindow.startDragging();
 }
 
 async function endDragging() {
   isDragging = false;
-  
-  if (dragCheckInterval !== null) {
-    clearInterval(dragCheckInterval);
-    dragCheckInterval = null;
-  }
   
   // Apply snap if there's a potential snap position
   // Get current position first
@@ -907,6 +897,13 @@ onMounted(async () => {
       } catch (error) {
         warn(`Failed to update pin state: ${error}`);
       }
+    }
+  });
+
+  // Listen to window move events while dragging
+  appWindow.onMoved(() => {
+    if (isDragging) {
+      checkEdgeProximity();
     }
   });
 
