@@ -49,10 +49,6 @@ import Magnifier from "../components/screenShotter/mask/Magnifier.vue";
 
 const appWindow = getCurrentWindow()
 
-const ws = new WebSocket('ws://localhost:9001') // TODO try other port if occupied
-ws.binaryType = 'arraybuffer';
-ws.onmessage = initializeScreenshot;
-
 let backImgBitmap: ImageBitmap | null = null
 
 const windowWidth = window.screen.width
@@ -82,7 +78,7 @@ const isWindowFocused = ref(true)
 
 let mainCanvas: HTMLCanvasElement | null = null
 let mainCtx: CanvasRenderingContext2D | null = null
-let magnifierCanvas: HTMLCanvasElement | null = null
+// let magnifierCanvas: HTMLCanvasElement | null = null
 let magnifierCtx: CanvasRenderingContext2D | null = null
 
 // Handle canvas ready events
@@ -91,8 +87,8 @@ function handleCanvasReady(canvas: HTMLCanvasElement, ctx: CanvasRenderingContex
   mainCtx = ctx
 }
 
-function handleMagnifierCanvasReady(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
-  magnifierCanvas = canvas
+function handleMagnifierCanvasReady(_canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
+  // magnifierCanvas = canvas
   magnifierCtx = ctx
 }
 
@@ -316,17 +312,15 @@ onBeforeUnmount(() => {
 });
 
 // Load the screenshot
-async function initializeScreenshot(event: any) {
-  const imgData = new ImageData(new Uint8ClampedArray(event.data), bacImgWidth, bacImgHeight);
+async function initializeScreenshot() {
+  let imgBuf: ArrayBuffer = await invoke("get_screen_img", {label: appWindow.label});
+  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight);
   backImgBitmap = await createImageBitmap(imgData)
 
   // Draw the background image
   requestAnimationFrame(() => {
     drawBackgroundImage()
   })
-
-  await appWindow.show()
-  changeCurrentMask() // Focus the current mask window
 }
 
 function hideWindow() {
@@ -366,7 +360,9 @@ async function initializeAutoRects() {
 
     listen('show-mask', async (_event) => {
       initializeAutoRects()
-      ws.send(appWindow.label)
+      await initializeScreenshot()
+      await appWindow.show()
+      changeCurrentMask() // Focus the current mask window
     });
     
     listen('hide-mask', async (_event) => {
