@@ -346,7 +346,6 @@ impl ScreenShotter {
             )
             .title(i18n::t("pinWindowName"))
             .always_on_top(true)
-            .resizable(false)
             .decorations(false)
             .position(x, y)
             .visible(false)
