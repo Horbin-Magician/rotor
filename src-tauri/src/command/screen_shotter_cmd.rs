@@ -34,18 +34,6 @@ pub async fn try_get_screen_img(label: &str) -> Option<image::ImageBuffer<image:
 }
 
 // Command for mask window
-
-#[tauri::command]
-pub async fn get_screen_img(label: String,) -> tauri::ipc::Response {
-    let img = try_get_screen_img(&label).await.map(DynamicImage::ImageRgba8);
-
-    if let Some(img) = img {
-        return tauri::ipc::Response::new(img.to_rgba8().to_vec());
-    }
-    
-    tauri::ipc::Response::new(vec![])
-}
-
 #[tauri::command]
 pub async fn get_screen_rects(
     label: String,

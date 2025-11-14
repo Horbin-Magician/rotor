@@ -49,6 +49,9 @@ import Magnifier from "../components/screenShotter/mask/Magnifier.vue";
 
 const appWindow = getCurrentWindow()
 
+const ws = new WebSocket('ws://localhost:9001') // TODO try other port if occupied
+ws.binaryType = 'arraybuffer';
+ws.onmessage = initializeScreenshot;
 let backImgBitmap: ImageBitmap | null = null
 
 const windowWidth = window.screen.width
@@ -312,15 +315,17 @@ onBeforeUnmount(() => {
 });
 
 // Load the screenshot
-async function initializeScreenshot() {
-  let imgBuf: ArrayBuffer = await invoke("get_screen_img", {label: appWindow.label});
-  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight);
+async function initializeScreenshot(event: any) {
+  const imgData = new ImageData(new Uint8ClampedArray(event.data), bacImgWidth, bacImgHeight);
   backImgBitmap = await createImageBitmap(imgData)
 
   // Draw the background image
   requestAnimationFrame(() => {
     drawBackgroundImage()
   })
+
+  await appWindow.show()
+  changeCurrentMask() // Focus the current mask window
 }
 
 function hideWindow() {
@@ -360,9 +365,7 @@ async function initializeAutoRects() {
 
     listen('show-mask', async (_event) => {
       initializeAutoRects()
-      await initializeScreenshot()
-      await appWindow.show()
-      changeCurrentMask() // Focus the current mask window
+      ws.send(appWindow.label)
     });
     
     listen('hide-mask', async (_event) => {
