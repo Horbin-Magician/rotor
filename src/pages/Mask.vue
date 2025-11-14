@@ -67,8 +67,8 @@ const startX = ref(0)
 const startY = ref(0)
 const endX = ref(0)
 const endY = ref(0)
-const currentX = ref(-999)
-const currentY = ref(-999)
+const currentX = ref(-9999)
+const currentY = ref(-9999)
 const autoSelectRect = ref<{x: number, y: number, width: number, height: number} | null>(null)
 
 // Magnifier state
