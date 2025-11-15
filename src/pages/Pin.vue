@@ -68,7 +68,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
-import Konva from "konva";
 import { UnlistenFn } from "@tauri-apps/api/event";
 import { warn } from "@tauri-apps/plugin-log";
 
@@ -147,15 +146,6 @@ const show_tips = ref(false)
 
 const toolbarVisible = ref(false)
 let hideTipTimeout: number | null = null;
-
-// Drawing state
-let currentPath: Konva.Line | null = null;
-let currentArrow: Konva.Arrow | null = null;
-let currentRect: Konva.Rect | null = null;
-let currentText: Konva.Text | null = null;
-let drawingHistory: any[] = [];
-let isDrawing = false;
-let startPoint: { x: number; y: number } | null = null;
 
 // Text input state
 const showTextInput = ref(false);
@@ -488,9 +478,10 @@ function handleMouseUp(_event: MouseEvent) {
   }
 }
 
-function handleMouseMove(event: MouseEvent) {
-  if (state.value === State.Drawing && isDrawing) {
-    continueDrawing(event);
+function handleMouseMove(_event: MouseEvent) {
+  if (state.value === State.Drawing) {
+    const mode = getActiveDrawTool();
+    canvasRef.value?.continueDrawing(mode);
   }
 }
 
@@ -685,155 +676,24 @@ function getActiveDrawTool(): 'pen' | 'rect' | 'arrow' | 'text' {
 }
 
 function startDrawing(event: MouseEvent) {
-  let stage = canvasRef.value?.getStage();
-  let drawingLayer = canvasRef.value?.getDrawingLayer();
-  if (!drawingLayer || !stage) return;
+  const mode = getActiveDrawTool();
   
-  const pos = stage.getPointerPosition();
-  if (!pos) return;
-
-  if (drawState.value === DrawState.Text) {
-    finishTextInput()
-    startTextInput(event, pos);
-    return;
-  }
-  
-  isDrawing = true;
-  const scaleRatio = zoomScale.value / 100;
-  startPoint = { x: pos.x / scaleRatio, y: pos.y / scaleRatio };
-
-  if (drawState.value === DrawState.Pen) {
-    currentPath = new Konva.Line({
-      stroke: '#ff0000',
-      strokeWidth: 3 / scaleRatio,
-      globalCompositeOperation: 'source-over',
-      lineCap: 'round',
-      lineJoin: 'round',
-      points: [pos.x / scaleRatio, pos.y / scaleRatio, pos.x / scaleRatio, pos.y / scaleRatio],
+  if (mode === 'text') {
+    finishTextInput();
+    canvasRef.value?.startDrawing(mode, (pos) => {
+      startTextInput(event, pos);
     });
-    drawingLayer.add(currentPath);
-  } else if (drawState.value === DrawState.Rect) {
-    currentRect = new Konva.Rect({
-      x: pos.x / scaleRatio,
-      y: pos.y / scaleRatio,
-      width: 0,
-      height: 0,
-      stroke: '#ff0000',
-      strokeWidth: 3 / scaleRatio,
-      fill: 'transparent',
-    });
-    drawingLayer.add(currentRect);
-  } else if (drawState.value === DrawState.Arrow) {
-    currentArrow = new Konva.Arrow({
-      points: [pos.x / scaleRatio, pos.y / scaleRatio, pos.x / scaleRatio, pos.y / scaleRatio],
-      stroke: '#ff0000',
-      strokeWidth: 3 / scaleRatio,
-      fill: '#ff0000',
-      pointerLength: 15 / scaleRatio,
-      pointerWidth: 15 / scaleRatio,
-    });
-    drawingLayer.add(currentArrow);
+  } else {
+    canvasRef.value?.startDrawing(mode);
   }
-}
-
-function continueDrawing(_event: MouseEvent) {
-  let stage = canvasRef.value?.getStage();
-  let drawingLayer = canvasRef.value?.getDrawingLayer();
-  if (!isDrawing || !stage) return;
-  
-  const pos = stage.getPointerPosition();
-  if (!pos) return;
-
-  const scaleRatio = zoomScale.value / 100;
-  const scaledX = pos.x / scaleRatio;
-  const scaledY = pos.y / scaleRatio;
-
-  if (drawState.value === DrawState.Pen && currentPath) {
-    const newPoints = currentPath.points().concat([scaledX, scaledY]);
-    currentPath.points(newPoints);
-  } else if (drawState.value === DrawState.Rect && currentRect && startPoint) {
-    const width = scaledX - startPoint.x;
-    const height = scaledY - startPoint.y;
-    
-    if (width < 0) {
-      currentRect.x(scaledX);
-      currentRect.width(Math.abs(width));
-    } else {
-      currentRect.x(startPoint.x);
-      currentRect.width(width);
-    }
-    
-    if (height < 0) {
-      currentRect.y(scaledY);
-      currentRect.height(Math.abs(height));
-    } else {
-      currentRect.y(startPoint.y);
-      currentRect.height(height);
-    }
-  } else if (drawState.value === DrawState.Arrow && currentArrow && startPoint) {
-    currentArrow.points([startPoint.x, startPoint.y, scaledX, scaledY]);
-  }
-  
-  drawingLayer?.batchDraw();
-}
-
-function smoothPoints(points: number[], alpha: number = 0.3): number[] {
-  const n = points.length;
-  if (n < 6) return points.slice();
-  const smoothed: number[] = [];
-
-  smoothed.push(points[0], points[1]);
-
-  for (let i = 2; i < n - 2; i += 2) {
-    const prevX = points[i - 2], prevY = points[i - 1];
-    const currX = points[i],   currY = points[i + 1];
-    const nextX = points[i + 2], nextY = points[i + 3];
-
-    const x = prevX * alpha + currX * (1 - 2 * alpha) + nextX * alpha;
-    const y = prevY * alpha + currY * (1 - 2 * alpha) + nextY * alpha;
-
-    smoothed.push(x, y);
-  }
-
-  smoothed.push(points[n - 2], points[n - 1]);
-
-  return smoothed;
 }
 
 function endDrawing() {
-  if (!isDrawing) return;
-  isDrawing = false;
-  
-  if (currentPath) {
-    const smoothedPoints = smoothPoints(currentPath.points());
-    currentPath.points(smoothedPoints);
-    drawingHistory.push(currentPath);
-  } else if (currentArrow) {
-    drawingHistory.push(currentArrow.clone());
-  } else if (currentRect) {
-    drawingHistory.push(currentRect.clone());
-  } else if (currentText) {
-    drawingHistory.push(currentText.clone());
-  }
-  
-  currentPath = null;
-  currentArrow = null;
-  currentRect = null;
-  currentText = null;
-  startPoint = null;
+  canvasRef.value?.endDrawing();
 }
 
 function undoDrawing() {
-  let drawingLayer = canvasRef.value?.getDrawingLayer();
-  if (!drawingLayer || drawingHistory.length === 0) return;
-  
-  drawingHistory.pop();
-  
-  const children = drawingLayer.getChildren();
-  if (children.length > 0) {
-    children[children.length - 1].destroy();
-    drawingLayer.batchDraw();
-  }
+  canvasRef.value?.undoDrawing();
 }
 
 function startTextInput(event: MouseEvent, stagePos: { x: number; y: number }) {
@@ -844,42 +704,28 @@ function startTextInput(event: MouseEvent, stagePos: { x: number; y: number }) {
   };
   
   const scaleRatio = zoomScale.value / 100;
-  startPoint = { x: stagePos.x / scaleRatio, y: stagePos.y / scaleRatio };
+  const point = { x: stagePos.x / scaleRatio, y: stagePos.y / scaleRatio };
+  canvasRef.value?.setStartPoint(point);
   
   showTextInput.value = true;
   textInputValue.value = '';
 }
 
 function finishTextInput() {
-  let drawingLayer = canvasRef.value?.getDrawingLayer();
-  if (!drawingLayer || !startPoint || !textInputValue.value.trim()) {
+  const startPoint = canvasRef.value?.getStartPoint();
+  if (!startPoint || !textInputValue.value.trim()) {
     cancelTextInput();
     return;
   }
 
-  const scaleRatio = zoomScale.value / 100;
-  currentText = new Konva.Text({
-    x: startPoint.x,
-    y: startPoint.y,
-    text: textInputValue.value,
-    fontSize: 16 / scaleRatio,
-    fill: '#ff0000',
-  });
-  
-  drawingLayer.add(currentText);
-  drawingLayer.batchDraw();
-  
-  drawingHistory.push(currentText.clone());
-  
+  canvasRef.value?.addText(textInputValue.value, startPoint);
   cancelTextInput();
-  currentText = null;
-  startPoint = null;
 }
 
 function cancelTextInput() {
   showTextInput.value = false;
   textInputValue.value = '';
-  startPoint = null;
+  canvasRef.value?.setStartPoint(null);
 }
 
 // do something on mounted
