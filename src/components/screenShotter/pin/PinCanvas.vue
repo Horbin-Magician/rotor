@@ -10,12 +10,7 @@ interface Props {
   zoomScale: number;
 }
 
-interface Emits {
-  (e: 'ready', stage: Konva.Stage, backImgLayer: Konva.Layer, drawingLayer: Konva.Layer): void;
-}
-
 const props = defineProps<Props>();
-const emit = defineEmits<Emits>();
 
 const stageContainer = ref<HTMLDivElement | null>(null);
 
@@ -23,45 +18,52 @@ let stage: Konva.Stage | null = null;
 let backImgLayer: Konva.Layer | null = null;
 let drawingLayer: Konva.Layer | null = null;
 
-function initStage(width: number, height: number, backImg: ImageBitmap, scaleFactor: number) {
+function initStage(
+  backImg: ImageBitmap,
+  crop: { x: number; y: number; width: number; height: number }
+) {
   if (!stageContainer.value) return;
 
-  // Create background layer
-  backImgLayer = new Konva.Layer();
+  // Add the image with proper crop and positioning
+  backImgLayer = new Konva.Layer(); // Create background layer with black background
   const konvaImage = new Konva.Image({
     x: 0,
     y: 0,
     image: backImg,
-    width: width / scaleFactor,
-    height: height / scaleFactor,
+    crop: {
+      x: crop.x,
+      y: crop.y,
+      width: crop.width,
+      height: crop.height,
+    },
+    width: window.innerWidth,
+    height: window.innerHeight,
   });
   backImgLayer.add(konvaImage);
 
-  // Create stage
+  // Create stage with crop dimensions
   stage = new Konva.Stage({
     container: 'stage',
-    width: width / scaleFactor,
-    height: height / scaleFactor,
+    width: window.innerWidth,
+    height: window.innerHeight,
   });
   stage.add(backImgLayer);
 
   // Create drawing layer
   drawingLayer = new Konva.Layer();
   stage.add(drawingLayer);
-
-  emit('ready', stage, backImgLayer, drawingLayer);
 }
 
-function updateSize(width: number, height: number) {
+function updateSize() {
   if (!stage || !backImgLayer) return;
 
-  stage.width(width);
-  stage.height(height);
-
+  stage.width(window.innerWidth);
+  stage.height(window.innerHeight);
+  
   const konvaImage = backImgLayer.findOne('Image') as Konva.Image;
   if (konvaImage) {
-    konvaImage.width(width);
-    konvaImage.height(height);
+    konvaImage.width(window.innerWidth);
+    konvaImage.height(window.innerHeight);
     backImgLayer.batchDraw();
   }
 
@@ -76,10 +78,6 @@ function getStage() {
   return stage;
 }
 
-function getBackImgLayer() {
-  return backImgLayer;
-}
-
 function getDrawingLayer() {
   return drawingLayer;
 }
@@ -88,7 +86,6 @@ defineExpose({
   initStage,
   updateSize,
   getStage,
-  getBackImgLayer,
   getDrawingLayer,
 });
 

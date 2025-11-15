@@ -9,6 +9,7 @@ use crate::util::file_util;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ShotterConfig {
     pub monitor_pos: (i32, i32),
+    pub monitor_size: (u32, u32),
     pub rect: (u32, u32, u32, u32),
     pub offset: (i32, i32),
     pub zoom_factor: u32,

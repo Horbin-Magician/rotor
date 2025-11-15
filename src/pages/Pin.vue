@@ -7,8 +7,7 @@
         @wheel="handleWheel">
     <PinCanvas 
       ref="canvasRef"
-      :zoom-scale="zoom_scale"
-      @ready="handleCanvasReady"
+      :zoom-scale="zoomScale"
     />
     
     <PinTips 
@@ -30,7 +29,7 @@
       :results="ocrTextResults"
       :scale-factor="scale_factor"
       :ocr-zoom-scale="ocrZoomScale"
-      :zoom-scale="zoom_scale"
+      :zoom-scale="zoomScale"
     />
   </main>
   
@@ -138,17 +137,14 @@ let potentialSnap: EdgeSnap = {
 }
 
 const backImg = ref()
+const cropRegion = ref({ x: 0, y: 0, width: 0, height: 0 })
 const canvasRef = ref<InstanceType<typeof PinCanvas> | null>(null)
-let backImgLayer: Konva.Layer | null = null
-let drawingLayer: Konva.Layer | null = null
-let stage: Konva.Stage | null = null
 const init_scale_factor = ref(1)
 const scale_factor = ref(1)
-
+const zoomScale = ref(100);
 const tips = ref("")
 const show_tips = ref(false)
 
-let zoom_scale = 100;
 const toolbarVisible = ref(false)
 let hideTipTimeout: number | null = null;
 
@@ -180,8 +176,8 @@ const shortcuts = ref({
 });
 
 // Minimum window dimensions to show toolbar
-const MIN_WIDTH_FOR_TOOLBAR = 140;
-const MIN_HEIGHT_FOR_TOOLBAR = 80;
+const MIN_WIDTH_FOR_TOOLBAR = 180;
+const MIN_HEIGHT_FOR_TOOLBAR = 40;
 
 // Load shortcuts from configuration
 async function loadShortcuts() {
@@ -219,6 +215,7 @@ function parseShortcutKey(shortcutStr: string): string {
 
 interface PinConfig {
   monitor_pos: [number, number],
+  monitor_size: [number, number],
   rect: [number, number, number, number];
   offset: [number, number],
   zoom_factor: number;
@@ -234,12 +231,6 @@ interface TextResult {
   text: string;
 }
 
-function handleCanvasReady(stageInstance: Konva.Stage, backImgLayerInstance: Konva.Layer, drawingLayerInstance: Konva.Layer) {
-  stage = stageInstance;
-  backImgLayer = backImgLayerInstance;
-  drawingLayer = drawingLayerInstance;
-}
-
 async function tryLoadScreenShot(id: number): Promise<boolean> {
   const pin_config = await invoke("get_pin_state", { id }) as PinConfig;
   if (!pin_config) {
@@ -249,12 +240,12 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
   
   init_scale_factor.value = window.devicePixelRatio;
   scale_factor.value = window.devicePixelRatio;
-
-  const img_width = pin_config.rect[2];
-  const img_height = pin_config.rect[3];
-  const win_width = Math.round(img_width / scale_factor.value);
-  const win_height = Math.round(img_height / scale_factor.value);
-
+  
+  const crop_width = pin_config.rect[2];
+  const crop_height = pin_config.rect[3];
+  const win_width = Math.round(crop_width / scale_factor.value);
+  const win_height = Math.round(crop_height / scale_factor.value);
+  
   await appWindow.setSize(new LogicalSize(win_width, win_height))
   await appWindow.setPosition(new PhysicalPosition((
     pin_config.monitor_pos[0] + pin_config.rect[0] + pin_config.offset[0] || 0),
@@ -262,24 +253,35 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
   ));
 
   try {
+    // Get the full monitor screenshot
     let imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
-    const imgData = new ImageData(new Uint8ClampedArray(imgBuf), img_width, img_height);
-    backImg.value = await createImageBitmap(imgData)
+    const full_monitor_width = pin_config.monitor_size[0];
+    const full_monitor_height = pin_config.monitor_size[1];
+    const fullImgData = new ImageData(new Uint8ClampedArray(imgBuf), full_monitor_width, full_monitor_height);
+    backImg.value = await createImageBitmap(fullImgData);
   } catch (error) {
     warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
     await invoke("delete_pin_record", { id: pin_id });
     return false;
   }
-
-  canvasRef.value?.initStage(img_width, img_height, backImg.value, scale_factor.value);
-
-  zoom_scale = pin_config.zoom_factor || 100;
+  
+  // Define crop region
+  cropRegion.value = {
+    x: pin_config.rect[0],
+    y: pin_config.rect[1],
+    width: crop_width,
+    height: crop_height
+  };
+  
+  canvasRef.value?.initStage(backImg.value, cropRegion.value);
+  
+  zoomScale.value = pin_config.zoom_factor || 100;
   await scaleWindow();
   await appWindow.setPosition(new PhysicalPosition((
     pin_config.monitor_pos[0] + pin_config.rect[0] + pin_config.offset[0] || 0),
     (pin_config.monitor_pos[1] + pin_config.rect[1] + pin_config.offset[1] || 0)
   ));
-  
+
   updateToolbarVisibility();
   appWindow.isVisible().then( (visible)=>{
     if(visible == false) {
@@ -475,7 +477,7 @@ async function endDragging() {
   }, 50);
 }
 
-async function handleMouseUp(_event: MouseEvent) {
+function handleMouseUp(_event: MouseEvent) {
   if (state.value === State.Drawing) {
     endDrawing();
     return;
@@ -533,7 +535,7 @@ async function closeWindow() {
 }
 
 async function saveImage() {
-  if (!stage) return;
+  const stage = canvasRef.value?.getStage()
   stage?.toBlob({
     pixelRatio: window.devicePixelRatio,
     callback(blob) {
@@ -548,6 +550,7 @@ async function saveImage() {
 }
 
 async function copyImage() {
+  const stage = canvasRef.value?.getStage()
   stage?.toBlob({
     pixelRatio: window.devicePixelRatio,
     callback(blob) {
@@ -561,6 +564,7 @@ async function copyImage() {
 }
 
 async function imgToText() {
+  const stage = canvasRef.value?.getStage()
   if (!stage || isProcessingOcr.value) return;
   
   if (state.value != State.OCR) {
@@ -568,7 +572,7 @@ async function imgToText() {
       state.value = State.OCR;
     } else {
       isProcessingOcr.value = true;
-      ocrZoomScale = zoom_scale;
+      ocrZoomScale = zoomScale.value;
       stage.toBlob({
         pixelRatio: window.devicePixelRatio,
         callback(blob) {
@@ -592,7 +596,6 @@ async function imgToText() {
         }
       })
     }
-
   } else {
     state.value = State.Default;
   }
@@ -602,15 +605,15 @@ async function zoomWindow(wheel_delta: number) {
   const zoom_delta: number = parseInt(await invoke("get_cfg", { k: "zoom_delta" }), 10);
 
   let delta = wheel_delta > 0 ? -zoom_delta : zoom_delta
-  zoom_scale += delta
-  zoom_scale = Math.max(5, Math.min(zoom_scale, 500))
-
-  tips.value = zoom_scale + "%"
-  if (hideTipTimeout) { clearTimeout(hideTipTimeout) }
-  show_tips.value = true
+  zoomScale.value += delta
+  zoomScale.value = Math.max(5, Math.min(zoomScale.value, 500))
   
   await scaleWindow()
 
+  // Show zoom tip
+  tips.value = zoomScale.value + "%"
+  if (hideTipTimeout) { clearTimeout(hideTipTimeout) }
+  show_tips.value = true
   hideTipTimeout = setTimeout(() => {
     show_tips.value = false
   }, 1000)
@@ -619,15 +622,14 @@ async function zoomWindow(wheel_delta: number) {
 async function scaleWindow() {
   if (!backImg.value) return
   
-  const originalWidth = backImg.value.width / init_scale_factor.value
-  const originalHeight = backImg.value.height / init_scale_factor.value
+  const logicalWidth = cropRegion.value.width / init_scale_factor.value
+  const logicalHeight = cropRegion.value.height / init_scale_factor.value
   
-  const newWidth = Math.round(originalWidth * zoom_scale / 100)
-  const newHeight = Math.round(originalHeight * zoom_scale / 100)
+  const newWidth = Math.round(logicalWidth * zoomScale.value / 100)
+  const newHeight = Math.round(logicalHeight * zoomScale.value / 100)
   
   await appWindow.setSize(new LogicalSize(newWidth, newHeight))
-  
-  canvasRef.value?.updateSize(newWidth, newHeight);
+  canvasRef.value?.updateSize()
 }
 
 function updateToolbarVisibility() {
@@ -643,7 +645,7 @@ function updateToolbarVisibility() {
   }
 }
 
-function handleWindowResize() {
+async function handleWindowResize() {
   updateToolbarVisibility()
 }
 
@@ -683,6 +685,8 @@ function getActiveDrawTool(): 'pen' | 'rect' | 'arrow' | 'text' {
 }
 
 function startDrawing(event: MouseEvent) {
+  let stage = canvasRef.value?.getStage();
+  let drawingLayer = canvasRef.value?.getDrawingLayer();
   if (!drawingLayer || !stage) return;
   
   const pos = stage.getPointerPosition();
@@ -695,7 +699,7 @@ function startDrawing(event: MouseEvent) {
   }
   
   isDrawing = true;
-  const scaleRatio = zoom_scale / 100;
+  const scaleRatio = zoomScale.value / 100;
   startPoint = { x: pos.x / scaleRatio, y: pos.y / scaleRatio };
 
   if (drawState.value === DrawState.Pen) {
@@ -733,12 +737,14 @@ function startDrawing(event: MouseEvent) {
 }
 
 function continueDrawing(_event: MouseEvent) {
+  let stage = canvasRef.value?.getStage();
+  let drawingLayer = canvasRef.value?.getDrawingLayer();
   if (!isDrawing || !stage) return;
   
   const pos = stage.getPointerPosition();
   if (!pos) return;
 
-  const scaleRatio = zoom_scale / 100;
+  const scaleRatio = zoomScale.value / 100;
   const scaledX = pos.x / scaleRatio;
   const scaledY = pos.y / scaleRatio;
 
@@ -818,6 +824,7 @@ function endDrawing() {
 }
 
 function undoDrawing() {
+  let drawingLayer = canvasRef.value?.getDrawingLayer();
   if (!drawingLayer || drawingHistory.length === 0) return;
   
   drawingHistory.pop();
@@ -836,7 +843,7 @@ function startTextInput(event: MouseEvent, stagePos: { x: number; y: number }) {
     y: event.clientY - rect.top
   };
   
-  const scaleRatio = zoom_scale / 100;
+  const scaleRatio = zoomScale.value / 100;
   startPoint = { x: stagePos.x / scaleRatio, y: stagePos.y / scaleRatio };
   
   showTextInput.value = true;
@@ -844,12 +851,13 @@ function startTextInput(event: MouseEvent, stagePos: { x: number; y: number }) {
 }
 
 function finishTextInput() {
+  let drawingLayer = canvasRef.value?.getDrawingLayer();
   if (!drawingLayer || !startPoint || !textInputValue.value.trim()) {
     cancelTextInput();
     return;
   }
 
-  const scaleRatio = zoom_scale / 100;
+  const scaleRatio = zoomScale.value / 100;
   currentText = new Konva.Text({
     x: startPoint.x,
     y: startPoint.y,
@@ -874,6 +882,7 @@ function cancelTextInput() {
   startPoint = null;
 }
 
+// do something on mounted
 onMounted(async () => {
   await loadShortcuts();
   
@@ -891,7 +900,7 @@ onMounted(async () => {
           id: pin_id, 
           x: position.x,
           y: position.y,
-          zoom: zoom_scale,
+          zoom: zoomScale.value,
           minimized: await appWindow.isMinimized()
         });
       } catch (error) {
@@ -900,8 +909,8 @@ onMounted(async () => {
     }
   });
 
-  // Listen to window move events while dragging
-  appWindow.onMoved(() => {
+  // Listen to window move events while dragging // TO DEL
+  appWindow.onMoved(async () => {
     if (isDragging) {
       checkEdgeProximity();
     }
@@ -952,6 +961,7 @@ onMounted(async () => {
   }
 });
 
+// do something before unmounted
 onBeforeUnmount(async () => {
   window.removeEventListener('keyup', handleKeyup)
   window.removeEventListener('resize', handleWindowResize)

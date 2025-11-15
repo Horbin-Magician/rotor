@@ -346,6 +346,7 @@ impl ScreenShotter {
             )
             .title(i18n::t("pinWindowName"))
             .always_on_top(true)
+            .resizable(false)
             .decorations(false)
             .position(x, y)
             .visible(false)
@@ -384,6 +385,7 @@ impl ScreenShotter {
     pub fn new_pin(
         &mut self,
         monitor_pos: (i32, i32),
+        monitor_size: (u32, u32),
         rect: (u32, u32, u32, u32),
         offset: (i32, i32),
         mask_label: String,
@@ -395,6 +397,7 @@ impl ScreenShotter {
 
         let config = ShotterConfig {
             monitor_pos,
+            monitor_size,
             rect,
             offset,
             zoom_factor: 100,
@@ -442,15 +445,8 @@ impl ScreenShotter {
                 };
 
                 if let Some(img) = image {
-                    let cropped_img = image::imageops::crop_imm(
-                        &img,
-                        record.rect.0,
-                        record.rect.1,
-                        record.rect.2,
-                        record.rect.3,
-                    )
-                    .to_image();
-                    let dyn_img = DynamicImage::ImageRgba8(cropped_img);
+                    // Return the full monitor screenshot instead of cropping
+                    let dyn_img = DynamicImage::ImageRgba8(img);
                     ShotterRecord::save_record_img(id, dyn_img.clone());
                     return Some(dyn_img);
                 }

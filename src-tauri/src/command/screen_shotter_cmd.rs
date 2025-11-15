@@ -129,6 +129,7 @@ pub async fn new_pin(
 ) {
     if let Some(monitor) = webview_window.current_monitor().ok().flatten() {
         let monitor_pos = monitor.position();
+        let monitor_size = monitor.size();
         let Ok(offset_x_val) = offset_x.parse::<f32>() else {
             log::error!("Failed to parse offset_x: {}", offset_x);
             return;
@@ -148,6 +149,7 @@ pub async fn new_pin(
 
         let rect = (offset_x_val as u32, offset_y_val as u32, width_val as u32, height_val as u32);
         let monitor_position = (monitor_pos.x, monitor_pos.y);
+        let monitor_size = (monitor_size.width, monitor_size.height);
         let offset = (0, 0); // Default offset, can be adjusted later
 
         let mut app = Application::global().lock().unwrap();
@@ -157,6 +159,7 @@ pub async fn new_pin(
                 screenshot
                     .new_pin(
                         monitor_position,
+                        monitor_size,
                         rect,
                         offset,
                         webview_window.label().to_string(),
