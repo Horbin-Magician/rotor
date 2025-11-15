@@ -85,13 +85,6 @@ enum State {
   OCR
 }
 
-interface OtherPinWindow {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 interface EdgeSnap {
   horizontal: {
     edge: 'left' | 'right' | null;
@@ -128,7 +121,6 @@ const edgeGlow = ref({
 })
 
 // Snap configuration
-const SNAP_THRESHOLD = 20 // pixels
 let isDragging = false
 let potentialSnap: EdgeSnap = {
   horizontal: { edge: null, targetX: null },
@@ -282,115 +274,6 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
   })
 
   return true
-}
-
-async function getOtherPinWindows(): Promise<OtherPinWindow[]> {
-  const otherWindows: OtherPinWindow[] = [];
-  
-  try {
-    // Iterate through all possible pin windows to get their positions
-    for (let i = 1; i <= 100; i++) {
-      if (i === pin_id) continue;
-      
-      try {
-        const config = await invoke("get_pin_state", { id: i }) as PinConfig | null;
-        if (config) {
-          const x = config.monitor_pos[0] + config.rect[0] + config.offset[0];
-          const y = config.monitor_pos[1] + config.rect[1] + config.offset[1];
-          const width = Math.round(config.rect[2] * config.zoom_factor / 100);
-          const height = Math.round(config.rect[3] * config.zoom_factor / 100);
-          
-          otherWindows.push({ x, y, width, height });
-          console.log(`Found pin ${i} at (${x}, ${y}) size ${width}x${height}`);
-        }
-      } catch {
-        // Pin doesn't exist, continue
-      }
-    }
-    
-    console.log(`Total other pins found: ${otherWindows.length}`);
-  } catch (error) {
-    console.error("Failed to get other pin windows:", error);
-  }
-  
-  return otherWindows;
-}
-
-async function checkEdgeProximity() {
-  if (!isDragging) return;
-  
-  try {
-    const position = await appWindow.outerPosition();
-    const size = await appWindow.outerSize();
-    const currentX = position.x;
-    const currentY = position.y;
-    const currentWidth = size.width;
-    const currentHeight = size.height;
-    
-    const otherWindows = await getOtherPinWindows();
-    
-    // Reset glow and snap
-    edgeGlow.value = {
-      left: false,
-      right: false,
-      top: false,
-      bottom: false
-    };
-    potentialSnap = {
-      horizontal: { edge: null, targetX: null },
-      vertical: { edge: null, targetY: null }
-    };
-    
-    for (const other of otherWindows) {
-      // Check horizontal edges (left/right)
-      // Right edge of current to left edge of other
-      if (Math.abs((currentX + currentWidth) - other.x) < SNAP_THRESHOLD &&
-          currentY < other.y + other.height &&
-          currentY + currentHeight > other.y) {
-        edgeGlow.value.right = true;
-        potentialSnap.horizontal = {
-          edge: 'right',
-          targetX: other.x - currentWidth
-        };
-      }
-      
-      // Left edge of current to right edge of other
-      if (Math.abs(currentX - (other.x + other.width)) < SNAP_THRESHOLD &&
-          currentY < other.y + other.height &&
-          currentY + currentHeight > other.y) {
-        edgeGlow.value.left = true;
-        potentialSnap.horizontal = {
-          edge: 'left',
-          targetX: other.x + other.width
-        };
-      }
-      
-      // Check vertical edges (top/bottom)
-      // Bottom edge of current to top edge of other
-      if (Math.abs((currentY + currentHeight) - other.y) < SNAP_THRESHOLD &&
-          currentX < other.x + other.width &&
-          currentX + currentWidth > other.x) {
-        edgeGlow.value.bottom = true;
-        potentialSnap.vertical = {
-          edge: 'bottom',
-          targetY: other.y - currentHeight
-        };
-      }
-      
-      // Top edge of current to bottom edge of other
-      if (Math.abs(currentY - (other.y + other.height)) < SNAP_THRESHOLD &&
-          currentX < other.x + other.width &&
-          currentX + currentWidth > other.x) {
-        edgeGlow.value.top = true;
-        potentialSnap.vertical = {
-          edge: 'top',
-          targetY: other.y + other.height
-        };
-      }
-    }
-  } catch (error) {
-    console.error("Failed to check edge proximity:", error);
-  }
 }
 
 async function handleMouseDown(event: MouseEvent) {
@@ -752,13 +635,6 @@ onMounted(async () => {
       } catch (error) {
         warn(`Failed to update pin state: ${error}`);
       }
-    }
-  });
-
-  // Listen to window move events while dragging // TO DEL
-  appWindow.onMoved(async () => {
-    if (isDragging) {
-      checkEdgeProximity();
     }
   });
 
