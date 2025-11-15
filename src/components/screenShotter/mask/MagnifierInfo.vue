@@ -1,11 +1,11 @@
 <template>
   <div class="magnifier-info">
     <!-- Rect size info -->
-    <div class="magnifier-info-item">{{ selectionWidth }} × {{ selectionHeight }}</div>
+    <div class="magnifier-info-item">{{ props.selectionWidth }} × {{ props.selectionHeight }}</div>
     <!-- Point color info -->
     <div class="magnifier-info-item">
-      <div class="color-preview" :style="{ backgroundColor: pixelColor }"></div>
-      <span>{{ pixelColor }}</span>
+      <div class="color-preview" :style="{ backgroundColor: props.pixelColor }"></div>
+      <span>{{ props.pixelColor }}</span>
     </div>
     <div class="magnifier-info-item">
       <span>{{ $t('message.copyColorHint') }}</span>

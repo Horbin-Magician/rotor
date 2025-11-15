@@ -2,9 +2,9 @@
   <canvas 
     ref="canvasRef" 
     id="main-canvas"
-    :style="{ width: windowWidth + 'px', height: windowHeight + 'px' }"
-    :width="bacImgWidth"
-    :height="bacImgHeight"
+    :style="{ width: props.windowWidth + 'px', height: props.windowHeight + 'px' }"
+    :width="props.bacImgWidth"
+    :height="props.bacImgHeight"
   />
 </template>
 
