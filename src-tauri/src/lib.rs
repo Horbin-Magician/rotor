@@ -6,7 +6,7 @@ mod util;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 
-use command::{config_cmd, screen_shotter_cmd, searcher_cmd};
+use command::{core_cmd, screen_shotter_cmd, searcher_cmd};
 use core::application;
 
 use crate::util::file_util;
@@ -54,11 +54,11 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
-            config_cmd::get_cfg,
-            config_cmd::get_all_cfg,
-            config_cmd::set_cfg,
-            config_cmd::get_app_version,
-            config_cmd::open_url,
+            core_cmd::get_cfg,
+            core_cmd::get_all_cfg,
+            core_cmd::set_cfg,
+            core_cmd::get_app_version,
+            core_cmd::open_url,
             screen_shotter_cmd::new_pin,
             screen_shotter_cmd::save_img,
             screen_shotter_cmd::get_screen_rects,

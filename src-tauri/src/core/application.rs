@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
+use tokio::net::TcpListener;
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
+use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::accept_async;
+use futures_util::{StreamExt, SinkExt};
 
 use crate::module::{self, Module};
+use crate::command::screen_shotter_cmd::try_get_screen_img;
 
 pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if event.state() == ShortcutState::Pressed {
@@ -27,6 +32,7 @@ pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: 
 pub struct Application {
     pub app: Option<AppHandle>,
     pub modules: HashMap<String, Box<dyn module::Module + Send + 'static>>,
+    pub ws_port: u16,
 }
 
 impl Application {
@@ -37,7 +43,7 @@ impl Application {
             modules.insert(module.flag().to_string(), module);
         }
 
-        Application { app: None, modules }
+        Application { app: None, modules, ws_port: 9001 }
     }
 
     pub fn global() -> &'static Mutex<Application> {
@@ -55,7 +61,56 @@ impl Application {
             }
         }
         self.app = Some(app);
+
+        tauri::async_runtime::spawn(async move {
+            Application::run_data_server().await;
+        });
+
         Ok(())
+    }
+
+    async fn run_data_server() {
+        // Try ports 9001-10000 until one is available
+        let port = 48137;
+        let listener = TcpListener::bind(format!("localhost:{}", port))
+            .await
+            .expect("Failed to bind port 48137");
+        
+        // Update the port in a separate scope to ensure MutexGuard is dropped before await
+        {
+            let mut rotor_app = Application::global()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            rotor_app.ws_port = port;
+        }
+        
+        while let Ok((stream, _)) = listener.accept().await {
+            tauri::async_runtime::spawn(async move {
+                let ws_stream = match accept_async(stream).await {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        log::error!("Error during the websocket handshake occurred: {}", e);
+                        return;
+                    }
+                };
+
+                let (mut write, mut read) = ws_stream.split();
+
+                while let Some(msg) = read.next().await {
+                    match msg {
+                        Ok(msg) => {
+                            let label = msg.to_string();
+                            let image = try_get_screen_img(&label).await;
+                            write.send(Message::Binary(image.unwrap_or_default().to_vec().into())).await.expect("Failed to send message");
+                        }
+                        Err(e) => {
+                            log::error!("Error processing message: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
     }
 
     pub fn get_module(&mut self, flag: &str) -> Option<&mut Box<dyn Module + Send + 'static>> {

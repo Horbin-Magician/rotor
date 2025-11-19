@@ -49,7 +49,7 @@ import Magnifier from "../components/screenShotter/mask/Magnifier.vue";
 
 const appWindow = getCurrentWindow()
 
-const ws = new WebSocket('ws://localhost:9001') // TODO try other port if occupied
+const ws = new WebSocket(`ws://localhost:48137`) // TODO: deal port being occupied
 ws.binaryType = 'arraybuffer';
 ws.onmessage = initializeScreenshot;
 let backImgBitmap: ImageBitmap | null = null
@@ -81,7 +81,6 @@ const isWindowFocused = ref(true)
 
 let mainCanvas: HTMLCanvasElement | null = null
 let mainCtx: CanvasRenderingContext2D | null = null
-// let magnifierCanvas: HTMLCanvasElement | null = null
 let magnifierCtx: CanvasRenderingContext2D | null = null
 
 // Handle canvas ready events

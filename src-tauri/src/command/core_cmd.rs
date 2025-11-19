@@ -1,5 +1,4 @@
 use std::str::FromStr;
-
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
