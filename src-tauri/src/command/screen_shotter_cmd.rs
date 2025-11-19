@@ -1,4 +1,3 @@
-use image::DynamicImage;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
@@ -199,26 +198,6 @@ pub async fn close_cache_pin() {
 }
 
 // Command for pin window
-
-#[tauri::command]
-pub async fn get_pin_img(id: String) -> tauri::ipc::Response {
-    let mut img: Option<DynamicImage> = None;
-
-    if let Some(ss) = Application::global().lock().unwrap()
-        .get_module("screenshot")
-        .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-    {
-        if let Ok(parsed_id) = id.parse::<u32>() {
-            img = ss.get_pin_img(parsed_id);
-        }
-    }
-
-    if let Some(img) = img {
-        return tauri::ipc::Response::new(img.to_rgba8().to_vec());
-    }
-
-    tauri::ipc::Response::new(vec![])
-}
 
 #[tauri::command]
 pub async fn get_pin_state(id: u32) -> Option<ShotterConfig> {

@@ -109,6 +109,9 @@ const appWindow = getCurrentWindow()
 const pin_id = Number.parseInt(appWindow.label.split('-')[1]);
 let unlisten_show_pin: UnlistenFn;
 
+const ws = new WebSocket(`ws://localhost:48137`) // TODO: deal port being occupied
+ws.binaryType = 'arraybuffer';
+
 const state = ref(State.Default)
 const drawState = ref(DrawState.Pen)
 
@@ -234,18 +237,38 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     (pin_config.monitor_pos[1] + pin_config.rect[1] + pin_config.offset[1] || 0)
   ));
 
-  try {
-    // Get the full monitor screenshot
-    let imgBuf: ArrayBuffer = await invoke("get_pin_img", {id: id.toString()});
-    const full_monitor_width = pin_config.monitor_size[0];
-    const full_monitor_height = pin_config.monitor_size[1];
-    const fullImgData = new ImageData(new Uint8ClampedArray(imgBuf), full_monitor_width, full_monitor_height);
-    backImg.value = await createImageBitmap(fullImgData);
-  } catch (error) {
-    warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
-    await invoke("delete_pin_record", { id: pin_id });
-    return false;
-  }
+  // Request image data via WebSocket
+  return new Promise<boolean>((resolve) => {
+    const handleMessage = async (event: MessageEvent) => {
+      try {
+        const imgBuf: ArrayBuffer = event.data;
+        const full_monitor_width = pin_config.monitor_size[0];
+        const full_monitor_height = pin_config.monitor_size[1];
+        const fullImgData = new ImageData(new Uint8ClampedArray(imgBuf), full_monitor_width, full_monitor_height);
+        backImg.value = await createImageBitmap(fullImgData);
+        
+        // Remove this one-time message handler
+        ws.removeEventListener('message', handleMessage);
+        
+        // Continue with initialization
+        await completeInitialization(pin_config);
+        resolve(true);
+      } catch (error) {
+        warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
+        await invoke("delete_pin_record", { id: pin_id });
+        ws.removeEventListener('message', handleMessage);
+        resolve(false);
+      }
+    };
+    
+    ws.addEventListener('message', handleMessage);
+    ws.send(pin_config.mask_label);
+  });
+}
+
+async function completeInitialization(pin_config: PinConfig) {
+  const crop_width = pin_config.rect[2];
+  const crop_height = pin_config.rect[3];
   
   // Define crop region
   cropRegion.value = {
@@ -272,8 +295,6 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
       if (pin_config.minimized) appWindow.minimize()
     }
   })
-
-  return true
 }
 
 async function handleMouseDown(event: MouseEvent) {
