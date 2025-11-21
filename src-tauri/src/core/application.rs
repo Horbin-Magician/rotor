@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
+use image::DynamicImage;
 use tokio::net::TcpListener;
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
@@ -8,6 +9,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::accept_async;
 use futures_util::{StreamExt, SinkExt};
 
+use crate::module::screen_shotter::ScreenShotter;
 use crate::module::{self, Module};
 use crate::command::screen_shotter_cmd::try_get_screen_img;
 
@@ -100,8 +102,24 @@ impl Application {
                     match msg {
                         Ok(msg) => {
                             let label = msg.to_string();
-                            let image = try_get_screen_img(&label).await;
-                            write.send(Message::Binary(image.unwrap_or_default().to_vec().into())).await.expect("Failed to send message");
+                            if label.starts_with("ssmask-") {
+                                let image = try_get_screen_img(&label).await;
+                                write.send(Message::Binary(image.unwrap_or_default().to_vec().into())).await.expect("Failed to send message");
+                            } else if label.starts_with("sspin-") {
+                                let mut img: Option<DynamicImage> = None;
+                                let id = label.trim_start_matches("sspin-");
+                                if let Some(ss) = Application::global().lock().unwrap()
+                                    .get_module("screenshot")
+                                    .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
+                                {
+                                    if let Ok(parsed_id) = id.parse::<u32>() {
+                                        img = ss.get_pin_img(parsed_id);
+                                    }
+                                }
+                                if let Some(img) = img {
+                                    write.send(Message::Binary(img.to_rgba8().to_vec().into())).await.expect("Failed to send message");
+                                }
+                            }
                         }
                         Err(e) => {
                             log::error!("Error processing message: {}", e);

@@ -262,7 +262,7 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     };
     
     ws.addEventListener('message', handleMessage);
-    ws.send(pin_config.mask_label);
+    ws.send(appWindow.label);
   });
 }
 
