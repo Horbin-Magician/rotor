@@ -45,7 +45,7 @@ impl Application {
             modules.insert(module.flag().to_string(), module);
         }
 
-        Application { app: None, modules, ws_port: 9001 }
+        Application { app: None, modules, ws_port: 10000 }
     }
 
     pub fn global() -> &'static Mutex<Application> {
@@ -72,18 +72,34 @@ impl Application {
     }
 
     async fn run_data_server() {
-        // Try ports 9001-10000 until one is available
-        let port = 48137;
-        let listener = TcpListener::bind(format!("localhost:{}", port))
-            .await
-            .expect("Failed to bind port 48137");
+        // Try ports from 48137 to 10000
+        let mut listener = None;
+        let mut bound_port = 10000;
+        
+        for port in 10000..=48137 {
+            println!("Attempting to bind to port {}", port);
+            match TcpListener::bind(format!("localhost:{}", port)).await {
+                Ok(l) => {
+                    bound_port = port;
+                    println!("Bound to port {}", port);
+                    listener = Some(l);
+                    log::info!("Successfully bound to port {}", port);
+                    break;
+                }
+                Err(e) => {
+                    log::debug!("Failed to bind port {}: {}", port, e);
+                }
+            }
+        }
+        
+        let listener = listener.expect("Failed to bind any port in range 48137-10000");
         
         // Update the port in a separate scope to ensure MutexGuard is dropped before await
         {
             let mut rotor_app = Application::global()
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            rotor_app.ws_port = port;
+            rotor_app.ws_port = bound_port;
         }
         
         while let Ok((stream, _)) = listener.accept().await {

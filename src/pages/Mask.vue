@@ -41,7 +41,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
-import { warn } from '@tauri-apps/plugin-log';
+import { info, warn } from '@tauri-apps/plugin-log';
 
 import ScreenCanvas from "../components/screenShotter/mask/ScreenCanvas.vue";
 import SelectionRect from "../components/screenShotter/mask/SelectionRect.vue";
@@ -49,10 +49,30 @@ import Magnifier from "../components/screenShotter/mask/Magnifier.vue";
 
 const appWindow = getCurrentWindow()
 
-const ws = new WebSocket(`ws://localhost:48137`) // TODO: deal port being occupied
-ws.binaryType = 'arraybuffer';
-ws.onmessage = initializeScreenshot;
+let ws: WebSocket | null = null
 let backImgBitmap: ImageBitmap | null = null
+
+// Initialize WebSocket connection with dynamic port
+async function initWebSocket() {
+  const port = await invoke<number>("get_ws_port")
+  return new Promise<void>((resolve, reject) => {
+    ws = new WebSocket(`ws://localhost:${port}`)
+    ws.binaryType = 'arraybuffer'
+    ws.onmessage = initializeScreenshot
+    
+    // 等待连接成功
+    ws.onopen = () => {
+      info('WebSocket connection established')
+      resolve()
+    }
+    
+    // 处理连接错误
+    ws.onerror = (error) => {
+      warn(`WebSocket connection error: ${error}`)
+      reject(error)
+    }
+  })
+}
 
 const windowWidth = window.screen.width
 const windowHeight = window.screen.height
@@ -363,8 +383,9 @@ async function initializeAutoRects() {
     appWindow.setSimpleFullscreen(true) // Enable simple fullscreen mode
 
     listen('show-mask', async (_event) => {
+      await initWebSocket() // Initialize WebSocket connection
       initializeAutoRects()
-      ws.send(appWindow.label)
+      ws?.send(appWindow.label)
     });
     
     listen('hide-mask', async (_event) => {

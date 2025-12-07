@@ -109,8 +109,14 @@ const appWindow = getCurrentWindow()
 const pin_id = Number.parseInt(appWindow.label.split('-')[1]);
 let unlisten_show_pin: UnlistenFn;
 
-const ws = new WebSocket(`ws://localhost:48137`) // TODO: deal port being occupied
-ws.binaryType = 'arraybuffer';
+let ws: WebSocket | null = null
+
+// Initialize WebSocket connection with dynamic port
+async function initWebSocket() {
+  const port = await invoke<number>("get_ws_port")
+  ws = new WebSocket(`ws://localhost:${port}`)
+  ws.binaryType = 'arraybuffer'
+}
 
 const state = ref(State.Default)
 const drawState = ref(DrawState.Pen)
@@ -239,6 +245,12 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
 
   // Request image data via WebSocket
   return new Promise<boolean>((resolve) => {
+    if (!ws) {
+      warn(`WebSocket not initialized for pin id ${id}`);
+      resolve(false);
+      return;
+    }
+    
     const handleMessage = async (event: MessageEvent) => {
       try {
         const imgBuf: ArrayBuffer = event.data;
@@ -248,7 +260,7 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
         backImg.value = await createImageBitmap(fullImgData);
         
         // Remove this one-time message handler
-        ws.removeEventListener('message', handleMessage);
+        ws?.removeEventListener('message', handleMessage);
         
         // Continue with initialization
         await completeInitialization(pin_config);
@@ -256,7 +268,7 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
       } catch (error) {
         warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
         await invoke("delete_pin_record", { id: pin_id });
-        ws.removeEventListener('message', handleMessage);
+        ws?.removeEventListener('message', handleMessage);
         resolve(false);
       }
     };
@@ -634,6 +646,7 @@ function cancelTextInput() {
 
 // do something on mounted
 onMounted(async () => {
+  await initWebSocket(); // Initialize WebSocket connection
   await loadShortcuts();
   
   window.addEventListener('keyup', handleKeyup);

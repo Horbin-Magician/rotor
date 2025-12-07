@@ -3,6 +3,7 @@ use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::core::config::{AppConfig, Config};
+use crate::core::application::Application;
 
 #[tauri::command]
 pub fn get_all_cfg() -> Config {
@@ -50,6 +51,11 @@ pub fn get_cfg(k: String) -> String {
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+pub fn get_ws_port() -> u16 {
+    Application::global().lock().unwrap().ws_port
 }
 
 #[tauri::command]
