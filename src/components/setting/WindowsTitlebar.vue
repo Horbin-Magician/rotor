@@ -53,7 +53,7 @@ function closeWindow() {
 
 .titlebar-button {
   width: 46px;
-  height: 32px;
+  height: 30px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -77,9 +77,5 @@ function closeWindow() {
 .titlebar-button.close-button:hover {
   background-color: #e81123;
   color: white;
-}
-
-.titlebar-button:active {
-  opacity: 0.8;
 }
 </style>
