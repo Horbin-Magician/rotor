@@ -87,6 +87,11 @@ impl Tray {
                                 .hidden_title(true)
                                 .title_bar_style(tauri::TitleBarStyle::Overlay);
                         }
+                        // disable decorations on Windows for custom titlebar
+                        #[cfg(target_os = "windows")]
+                        {
+                            win_builder = win_builder.decorations(false);
+                        }
 
                         let _window = win_builder.build().unwrap();
                     }

@@ -1,4 +1,5 @@
 <template>
+  <WindowsTitlebar v-if="isWindows" />
   <div class="tab-wrapper">
     <n-tabs
       placement = "left"
@@ -77,6 +78,7 @@ import { useTheme } from '../composables/useTheme';
 import GeneralSettings from '../components/setting/GeneralSettings.vue'
 import PinwinSettings from '../components/setting/PinwinSettings.vue'
 import UpdateModals from '../components/setting/UpdateModals.vue'
+import WindowsTitlebar from '../components/setting/WindowsTitlebar.vue'
 
 import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n()
@@ -85,7 +87,15 @@ const { changeTheme } = useTheme()
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { info, error } from '@tauri-apps/plugin-log';
+
 const appWindow = getCurrentWindow()
+const isWindows = ref(false)
+
+// Detect platform
+if (navigator.platform.startsWith('Win')) {
+  isWindows.value = true
+}
+
 appWindow.isVisible().then( (visible)=>{
   if(visible == false) {
     appWindow.show()
