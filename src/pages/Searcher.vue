@@ -5,18 +5,28 @@
       ref="searchInputRef"
       v-model="searchQuery"
       :placeholder="$t('message.searchPlaceholder')"
+      :is-ai-mode="isAiMode"
       @input="handleSearch"
       @keydown="handleKeydown"
+      @toggle-mode="toggleMode"
     />
 
-    <!-- Search Results -->
+    <!-- Search Results (Search Mode) -->
     <SearchResultList
-      ref="searchResultListRef"
+      v-if="!isAiMode"
       v-model="selectedIndex"
       :items="searchResults"
       @item-click="clickItem"
       @action-click="handleActionClick"
       @load-more="handleLoadMore"
+    />
+
+    <!-- AI Chat Messages (AI Mode) -->
+    <AiChatMessages
+      v-else
+      ref="aiChatMessagesRef"
+      :messages="chatMessages"
+      :is-loading="isLoading"
     />
   </div>
 </template>
@@ -28,6 +38,7 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import SearchInput from '../components/searcher/SearchInput.vue'
 import SearchResultList from '../components/searcher/SearchResultList.vue'
+import AiChatMessages, { type ChatMessage } from '../components/searcher/AiChatMessages.vue'
 
 // Types
 interface Action {
@@ -46,23 +57,47 @@ interface SearchItem {
 
 type ItemType = 'app' | 'file'
 
+// Stream event types from backend
+interface StreamEventContent {
+  type: 'Content'
+  content: string
+}
+
+interface StreamEventDone {
+  type: 'Done'
+}
+
+interface StreamEventError {
+  type: 'Error'
+  message: string
+}
+
+type StreamEvent = StreamEventContent | StreamEventDone | StreamEventError
+
 // Constants
 const WINDOW_CONFIG = {
   width: 500,
   itemHeight: 60,
   inputHeight: 50,
-  maxVisibleItems: 7
+  maxVisibleItems: 7,
+  aiHeight: 420,
 } as const
 
 // State
 const appWindow = getCurrentWindow()
 const searchInputRef = ref<InstanceType<typeof SearchInput>>()
-const searchResultListRef = ref<InstanceType<typeof SearchResultList>>()
+const aiChatMessagesRef = ref<InstanceType<typeof AiChatMessages>>()
 const searchQuery = ref('')
 const selectedIndex = ref(0)
 
+// AI Mode state
+const isAiMode = ref(false)
+const chatMessages = ref<ChatMessage[]>([])
+const isLoading = ref(false)
+
 let unlistenBlur: (() => void) | null = null
 let unlistenFocus: (() => void) | null = null
+let unlistenAiStream: UnlistenFn | null = null
 
 const searchResults = ref<SearchItem[]>([])
 
@@ -71,9 +106,17 @@ const resizeWindow = async () => {
   const currentSize = await appWindow.outerSize()
   let newHeight = WINDOW_CONFIG.inputHeight
 
-  if (searchQuery.value.trim() && searchResults.value.length > 0) {
-    const visibleItems = Math.min(searchResults.value.length, WINDOW_CONFIG.maxVisibleItems)
-    newHeight += visibleItems * WINDOW_CONFIG.itemHeight
+  if (isAiMode.value) {
+    // AI mode: show chat area
+    if (chatMessages.value.length > 0 || isLoading.value) {
+      newHeight += WINDOW_CONFIG.aiHeight
+    }
+  } else {
+    // Search mode
+    if (searchQuery.value.trim() && searchResults.value.length > 0) {
+      const visibleItems = Math.min(searchResults.value.length, WINDOW_CONFIG.maxVisibleItems)
+      newHeight += visibleItems * WINDOW_CONFIG.itemHeight
+    }
   }
 
   if (currentSize.height !== newHeight) {
@@ -91,13 +134,42 @@ const resizeWindow = async () => {
   await appWindow.setPosition(new PhysicalPosition(centerX, centerY))
 }
 
-// Event handlers
-const handleSearch = () => {
+// Toggle between search and AI mode
+const toggleMode = () => {
+  isAiMode.value = !isAiMode.value
+  searchQuery.value = ''
   selectedIndex.value = 0
+  
+  if (!isAiMode.value) {
+    // Switching to search mode
+    searchResults.value = []
+  }
+  
   nextTick(resizeWindow)
 }
 
+// Event handlers
+const handleSearch = () => {
+  if (!isAiMode.value) {
+    selectedIndex.value = 0
+    nextTick(resizeWindow)
+  }
+}
+
 const handleKeydown = (event: KeyboardEvent) => {
+  if (isAiMode.value) {
+    // AI mode key handling
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      sendAiMessage()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      hideWindow()
+    }
+    return
+  }
+
+  // Search mode key handling
   const maxIndex = searchResults.value.length - 1
   
   switch (event.key) {
@@ -122,6 +194,94 @@ const handleKeydown = (event: KeyboardEvent) => {
       hideWindow()
       break
   }
+}
+
+// AI Chat functions with streaming
+const sendAiMessage = async () => {
+  const message = searchQuery.value.trim()
+  if (!message || isLoading.value) return
+
+  // Add user message
+  chatMessages.value.push({
+    role: 'user',
+    content: message
+  })
+  
+  searchQuery.value = ''
+  isLoading.value = true
+  
+  await nextTick()
+  resizeWindow()
+  scrollChatToBottom()
+
+  try {
+    // Prepare messages for API (include conversation history)
+    const messages = chatMessages.value.map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }))
+
+    // Start streaming chat
+    await invoke('ai_chat_stream', { messages })
+    
+    // Add empty assistant message that will be filled by stream events
+    chatMessages.value.push({
+      role: 'assistant',
+      content: ''
+    })
+    
+    await nextTick()
+    resizeWindow()
+    scrollChatToBottom()
+  } catch (error) {
+    console.error('AI chat error:', error)
+    chatMessages.value.push({
+      role: 'assistant',
+      content: `Error: ${error}`
+    })
+    isLoading.value = false
+    await nextTick()
+    resizeWindow()
+    scrollChatToBottom()
+  }
+}
+
+// Handle stream events from backend
+const handleStreamEvent = (event: StreamEvent) => {
+  const lastMessage = chatMessages.value[chatMessages.value.length - 1]
+  
+  switch (event.type) {
+    case 'Content':
+      if (lastMessage && lastMessage.role === 'assistant') {
+        lastMessage.content += event.content
+        scrollChatToBottom()
+      }
+      break
+    case 'Done':
+      isLoading.value = false
+      scrollChatToBottom()
+      break
+    case 'Error':
+      if (lastMessage && lastMessage.role === 'assistant') {
+        if (lastMessage.content === '') {
+          lastMessage.content = `Error: ${event.message}`
+        } else {
+          lastMessage.content += `\n\nError: ${event.message}`
+        }
+      } else {
+        chatMessages.value.push({
+          role: 'assistant',
+          content: `Error: ${event.message}`
+        })
+      }
+      isLoading.value = false
+      scrollChatToBottom()
+      break
+  }
+}
+
+const scrollChatToBottom = () => {
+  aiChatMessagesRef.value?.scrollToBottom()
 }
 
 const scrollToSelected = () => {
@@ -165,6 +325,10 @@ const hideWindow = async () => {
   searchQuery.value = ''
   selectedIndex.value = 0
   searchResults.value = []
+  // Keep chat history for AI mode, but clear on hide
+  chatMessages.value = []
+  isAiMode.value = false
+  isLoading.value = false
   resizeWindow()
   await appWindow.hide()
   invoke("searcher_release")
@@ -175,7 +339,7 @@ const handleLoadMore = () => {
 }
 
 watch(searchQuery, (newVal, _oldVal) => {
-  if( newVal != "" ) {
+  if (!isAiMode.value && newVal != "") {
     invoke("searcher_find", { query: newVal });
   }
 });
@@ -205,6 +369,11 @@ onMounted(async () => {
   unlistenFocus = await listen('tauri://focus', () => {
     searchInputRef.value?.focus()
     resizeWindow()
+  })
+
+  // Listen for AI stream events
+  unlistenAiStream = await listen<StreamEvent>('ai-stream', (event) => {
+    handleStreamEvent(event.payload)
   })
 
   // Listen for search result updates
@@ -239,6 +408,7 @@ onUnmounted(() => {
   // clean listeners
   if (unlistenBlur) { unlistenBlur() }
   if (unlistenFocus) { unlistenFocus() }
+  if (unlistenAiStream) { unlistenAiStream() }
   if (unlisten_update_result) { unlisten_update_result() }
 })
 </script>

@@ -47,6 +47,8 @@ export default {
     searchPlaceholder: 'Enter the content you want to search...',
     openAsAdminTip: 'Open as admin',
     openFolderTip: 'Open folder',
+    // AI Chat
+    aiPlaceholder: 'Ask AI anything...',
     // Update related translations
     updateAvailable: 'Update Available',
     newVersionAvailable: 'A new version',

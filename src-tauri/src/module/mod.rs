@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod screen_shotter;
 pub mod searcher;
 pub mod tray;
@@ -19,7 +20,6 @@ pub fn get_all_modules() -> Vec<Box<dyn Module + Send>> {
     vec![
         Box::new(tray::Tray::new().unwrap()),
         Box::new(screen_shotter::ScreenShotter::new().unwrap()),
-        // #[cfg(target_os = "windows")]
         Box::new(searcher::Searcher::new().unwrap()),
     ]
 }

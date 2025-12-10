@@ -17,6 +17,8 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("if_ask_save_path".into(), "true".into()),
         ("zoom_delta".into(), "2".into()),
         ("current_workspace".into(), "0".into()),
+        ("ai_api_key".into(), "33b3bdc7-a53c-4cc9-b8ca-6567e5480855".into()),
+        ("ai_model".into(), "deepseek-v3-2-251201".into()),
         (
             "shortcut_search".into(),
             Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyF).to_string(),

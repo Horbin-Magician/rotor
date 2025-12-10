@@ -6,7 +6,7 @@ mod util;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 
-use command::{core_cmd, screen_shotter_cmd, searcher_cmd};
+use command::{ai_cmd, core_cmd, screen_shotter_cmd, searcher_cmd};
 use core::application;
 
 use crate::util::file_util;
@@ -74,6 +74,7 @@ pub fn run() {
             searcher_cmd::searcher_release,
             searcher_cmd::open_file,
             searcher_cmd::open_file_as_admin,
+            ai_cmd::ai_chat_stream,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
