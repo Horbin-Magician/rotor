@@ -127,6 +127,14 @@ defineExpose({
 .message-content.markdown-body {
   word-wrap: break-word;
   overflow-wrap: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.message-content.markdown-body::selection,
+.message-content.markdown-body :deep(*)::selection {
+  background-color: var(--theme-text-primary);
 }
 
 .message-content.markdown-body :deep(p) {
