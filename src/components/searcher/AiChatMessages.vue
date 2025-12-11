@@ -1,5 +1,5 @@
 <template>
-  <div class="ai-chat-container" ref="chatContainerRef">
+  <n-scrollbar ref="scrollbarRef">
     <div class="ai-messages">
       <div
         v-for="(msg, index) in messages"
@@ -17,11 +17,12 @@
         >|</span>
       </div>
     </div>
-  </div>
+  </n-scrollbar>
 </template>
 
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
+import { NScrollbar, ScrollbarInst } from 'naive-ui'
 import { marked } from 'marked'
 
 // Configure marked options
@@ -47,7 +48,7 @@ withDefaults(defineProps<Props>(), {
 })
 
 // Refs
-const chatContainerRef = ref<HTMLDivElement>()
+const scrollbarRef = ref<ScrollbarInst>()
 
 // Methods
 const parseMarkdown = (content: string): string => {
@@ -57,9 +58,7 @@ const parseMarkdown = (content: string): string => {
 
 const scrollToBottom = () => {
   nextTick(() => {
-    if (chatContainerRef.value) {
-      chatContainerRef.value.scrollTop = chatContainerRef.value.scrollHeight
-    }
+    scrollbarRef.value?.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: 'smooth' })
   })
 }
 
@@ -70,17 +69,9 @@ defineExpose({
 </script>
 
 <style scoped>
-.ai-chat-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .ai-messages {
   display: flex;
+  padding: 12px;
   flex-direction: column;
   gap: 8px;
 }
