@@ -56,7 +56,7 @@ I sincerely hope that you can provide quality code for this project.
 
 - [x] A brand new update system;
 - [x] OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
-- [ ] Basic query-based AI dialogue function;
+- [x] Basic query-based AI dialogue function;
 - [ ] Word lookup and translation function;
 - [ ] Screen recording function;
 - [ ] Long screenshot function;
@@ -67,4 +67,5 @@ I sincerely hope that you can provide quality code for this project.
 [MIT](https://opensource.org/licenses/MIT)
 
 Copyright (c) 2022-present, Horbin
+
 
