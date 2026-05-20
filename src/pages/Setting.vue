@@ -66,11 +66,11 @@
 <script setup lang="ts">
 import { NTabs, NTabPane, NScrollbar, useMessage } from 'naive-ui'
 import { ref, watch, h } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
 import { open } from '@tauri-apps/plugin-dialog';
 import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { getAllConfig, getAppVersion, openUrl, setConfig } from '../shared/api/core'
 
 import { useTheme } from '../composables/useTheme';
 
@@ -133,7 +133,7 @@ const isCheckingUpdate = ref(false)
 let update_cache: Update | null = null
 
 // Search settings
-invoke("get_all_cfg").then(async (config: any) => {
+getAllConfig().then(async (config) => {
   language.value = Number(config["language"])
   theme.value = Number(config["theme"])
   powerBoot.value = await isEnabled()
@@ -154,12 +154,12 @@ invoke("get_all_cfg").then(async (config: any) => {
 })
 
 // Get app version
-invoke("get_app_version").then((version: any) => {
+getAppVersion().then((version) => {
   currentVersion.value = version
 })
 
 function openGitHome() {
-  invoke("open_url", { url: "https://github.com/Horbin-Magician/rotor" })
+  openUrl("https://github.com/Horbin-Magician/rotor")
     .catch((error) => {
       console.error("Failed to open URL:", error)
     })
@@ -264,7 +264,7 @@ function updateSetting(key: string, value: any) {
   const stringValue = typeof value === 'boolean' ? value.toString() : String(value)
   
   // Invoke the set_cfg command to update the setting
-  invoke("set_cfg", { k: key, v: stringValue })
+  setConfig(key, stringValue)
     .catch((error) => {
       console.error(`Failed to update setting ${key}:`, error)
     })

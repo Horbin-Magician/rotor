@@ -24,18 +24,13 @@
 import { ref, nextTick } from 'vue'
 import { NScrollbar, ScrollbarInst } from 'naive-ui'
 import { marked } from 'marked'
+import type { ChatMessage } from '../../features/ai/types'
 
 // Configure marked options
 marked.setOptions({
   breaks: true,
   gfm: true
 })
-
-// Types
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
 
 // Props
 interface Props {

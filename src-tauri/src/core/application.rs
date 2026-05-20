@@ -1,17 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
-use image::DynamicImage;
-use tokio::net::TcpListener;
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
-use tokio_tungstenite::tungstenite::protocol::Message;
-use tokio_tungstenite::accept_async;
-use futures_util::{StreamExt, SinkExt};
 
-use crate::module::screen_shotter::ScreenShotter;
+use crate::core::data_server;
 use crate::module::{self, Module};
-use crate::command::screen_shotter_cmd::try_get_screen_img;
 
 pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if event.state() == ShortcutState::Pressed {
@@ -45,7 +39,11 @@ impl Application {
             modules.insert(module.flag().to_string(), module);
         }
 
-        Application { app: None, modules, ws_port: 10000 }
+        Application {
+            app: None,
+            modules,
+            ws_port: 10000,
+        }
     }
 
     pub fn global() -> &'static Mutex<Application> {
@@ -65,86 +63,10 @@ impl Application {
         self.app = Some(app);
 
         tauri::async_runtime::spawn(async move {
-            Application::run_data_server().await;
+            data_server::run().await;
         });
 
         Ok(())
-    }
-
-    async fn run_data_server() {
-        // Try ports from 48137 to 10000
-        let mut listener = None;
-        let mut bound_port = 10000;
-        
-        for port in 10000..=48137 {
-            println!("Attempting to bind to port {}", port);
-            match TcpListener::bind(format!("localhost:{}", port)).await {
-                Ok(l) => {
-                    bound_port = port;
-                    println!("Bound to port {}", port);
-                    listener = Some(l);
-                    log::info!("Successfully bound to port {}", port);
-                    break;
-                }
-                Err(e) => {
-                    log::debug!("Failed to bind port {}: {}", port, e);
-                }
-            }
-        }
-        
-        let listener = listener.expect("Failed to bind any port in range 48137-10000");
-        
-        // Update the port in a separate scope to ensure MutexGuard is dropped before await
-        {
-            let mut rotor_app = Application::global()
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            rotor_app.ws_port = bound_port;
-        }
-        
-        while let Ok((stream, _)) = listener.accept().await {
-            tauri::async_runtime::spawn(async move {
-                let ws_stream = match accept_async(stream).await {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        log::error!("Error during the websocket handshake occurred: {}", e);
-                        return;
-                    }
-                };
-
-                let (mut write, mut read) = ws_stream.split();
-
-                while let Some(msg) = read.next().await {
-                    match msg {
-                        Ok(msg) => {
-                            let label = msg.to_string();
-                            if label.starts_with("ssmask-") {
-                                let image = try_get_screen_img(&label).await;
-                                write.send(Message::Binary(image.unwrap_or_default().to_vec().into())).await.expect("Failed to send message");
-                            } else if label.starts_with("sspin-") {
-                                let mut img: Option<DynamicImage> = None;
-                                let id = label.trim_start_matches("sspin-");
-                                if let Some(ss) = Application::global().lock().unwrap()
-                                    .get_module("screenshot")
-                                    .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-                                {
-                                    if let Ok(parsed_id) = id.parse::<u32>() {
-                                        img = ss.get_pin_img(parsed_id);
-                                    }
-                                }
-                                if let Some(img) = img {
-                                    write.send(Message::Binary(img.to_rgba8().to_vec().into())).await.expect("Failed to send message");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Error processing message: {}", e);
-                            break;
-                        }
-                    }
-                }
-            });
-        }
     }
 
     pub fn get_module(&mut self, flag: &str) -> Option<&mut Box<dyn Module + Send + 'static>> {

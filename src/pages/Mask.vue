@@ -37,11 +37,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
 import { info, warn } from '@tauri-apps/plugin-log';
+import { connectDataSocket } from '../shared/api/dataSocket';
+import { changeCurrentMask as focusCurrentMask, closeCachePin, getScreenRects, newCachePin, newPin, type ScreenRect } from '../features/screenshot/api';
 
 import ScreenCanvas from "../components/screenShotter/mask/ScreenCanvas.vue";
 import SelectionRect from "../components/screenShotter/mask/SelectionRect.vue";
@@ -54,24 +55,13 @@ let backImgBitmap: ImageBitmap | null = null
 
 // Initialize WebSocket connection with dynamic port
 async function initWebSocket() {
-  const port = await invoke<number>("get_ws_port")
-  return new Promise<void>((resolve, reject) => {
-    ws = new WebSocket(`ws://localhost:${port}`)
-    ws.binaryType = 'arraybuffer'
-    ws.onmessage = initializeScreenshot
-    
-    // 等待连接成功
-    ws.onopen = () => {
-      info('WebSocket connection established')
-      resolve()
-    }
-    
-    // 处理连接错误
-    ws.onerror = (error) => {
-      warn(`WebSocket connection error: ${error}`)
-      reject(error)
-    }
-  })
+  try {
+    ws = await connectDataSocket({ onMessage: initializeScreenshot })
+    info('WebSocket connection established')
+  } catch (error) {
+    warn(`WebSocket connection error: ${error}`)
+    throw error
+  }
 }
 
 const windowWidth = window.screen.width
@@ -79,7 +69,7 @@ const windowHeight = window.screen.height
 const bacImgWidth = windowWidth * window.devicePixelRatio
 const bacImgHeight = windowHeight * window.devicePixelRatio
 
-let rects: [number, number, number, number, number][] = [];
+let rects: ScreenRect[] = [];
 
 // Selection state
 const isSelecting = ref(false)
@@ -198,11 +188,11 @@ function getPixelColor(x: number, y: number) {
 
 // Auto-selection functionality
 async function changeCurrentMask() {
-  invoke("change_current_mask")
+  focusCurrentMask()
 }
 
 async function updateAutoSelection(x: number, y: number) {
-  const minRect = rects.reduce((min: [number, number, number, number, number] | undefined, rect) => {
+  const minRect = rects.reduce((min: ScreenRect | undefined, rect) => {
     const [left, top, zindex, width, height] = rect;
     if (x > left && x < left + width && y > top && y < top + height) {
       if (!min) return rect;
@@ -248,7 +238,7 @@ function handleMouseDown(event: MouseEvent) {
   selectionWidth.value = 0
   selectionHeight.value = 0
 
-  invoke("new_cache_pin")
+  newCachePin()
 }
 
 function handleMouseMove(event: MouseEvent) {
@@ -286,14 +276,14 @@ async function handleMouseUp() {
     const y = Math.min(startY.value, endY.value) * scale_factor
     const width = Math.abs(endX.value - startX.value) * scale_factor
     const height = Math.abs(endY.value - startY.value) * scale_factor
-    invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
+    newPin({ offsetX: x, offsetY: y, width, height })
     hideWindow()
   } else if (autoSelectRect.value) {
     const x = autoSelectRect.value.x * scale_factor
     const y = autoSelectRect.value.y * scale_factor
     const width = autoSelectRect.value.width * scale_factor
     const height = autoSelectRect.value.height * scale_factor
-    invoke("new_pin", { offsetX: x.toString(), offsetY: y.toString(), width: width.toString(), height: height.toString() })
+    newPin({ offsetX: x, offsetY: y, width, height })
     hideWindow()
   }
   else {
@@ -306,7 +296,7 @@ async function handleMouseUp() {
 
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
-    invoke("close_cache_pin")
+    closeCachePin()
     hideWindow()
   } else if (event.key.toLowerCase() === 'c') {
     writeText(pixelColor.value)
@@ -331,6 +321,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
   window.removeEventListener('focus', handleWindowFocus);
   window.removeEventListener('blur', handleWindowBlur);
+  ws?.close();
+  ws = null;
 });
 
 // Load the screenshot
@@ -348,6 +340,9 @@ async function initializeScreenshot(event: any) {
 }
 
 function hideWindow() {
+  ws?.close()
+  ws = null
+
   appWindow.hide()
   emit('hide-mask') // Emit hide-mask event to notify other hide windows to close
   
@@ -375,17 +370,21 @@ function hideWindow() {
 
 // Load the rects
 async function initializeAutoRects() {
-  rects = await invoke("get_screen_rects", {label: appWindow.label})
+  rects = await getScreenRects(appWindow.label)
 }
 
 { // Mount something
   onMounted(async () => {
     appWindow.setSimpleFullscreen(true) // Enable simple fullscreen mode
 
-    listen('show-mask', async (_event) => {
-      await initWebSocket() // Initialize WebSocket connection
-      initializeAutoRects()
-      ws?.send(appWindow.label)
+  listen('show-mask', async (_event) => {
+      try {
+        await initWebSocket() // Initialize WebSocket connection
+        initializeAutoRects()
+        ws?.send(appWindow.label)
+      } catch (error) {
+        warn(`Failed to initialize screenshot websocket: ${error}`)
+      }
     });
     
     listen('hide-mask', async (_event) => {

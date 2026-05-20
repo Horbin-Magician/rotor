@@ -1,0 +1,90 @@
+import { ref, type Ref } from 'vue'
+import { openFile, openFileAsAdmin, searcherFind, searcherRelease } from '../api'
+import type { SearchAction, SearchItem, UpdateResultPayload } from '../types'
+
+function mapSearchItem(item: UpdateResultPayload[1][number]): SearchItem {
+  const lowerFileName = item.file_name.toLowerCase()
+  const isApp = lowerFileName.endsWith('.app') || lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk')
+
+  return {
+    title: item.file_name,
+    subtitle: item.path,
+    type: isApp ? 'app' : 'file',
+    icon_data: item.icon_data,
+    alias: item.alias,
+    actions: [
+      { type: 'OpenAsAdmin', title: 'message.openAsAdminTip' },
+      { type: 'OpenFolder', title: 'message.openFolderTip' },
+    ],
+  }
+}
+
+export function useFileSearch(searchQuery: Ref<string>, onHide: () => void, onResize: () => void | Promise<void>) {
+  const searchResults = ref<SearchItem[]>([])
+  const selectedIndex = ref(0)
+
+  const resetSearch = () => {
+    selectedIndex.value = 0
+    searchResults.value = []
+  }
+
+  const requestSearch = (query = searchQuery.value) => {
+    if (query) {
+      searcherFind(query)
+    }
+  }
+
+  const releaseSearch = () => {
+    searcherRelease()
+  }
+
+  const handleLoadMore = () => {
+    requestSearch()
+  }
+
+  const handleUpdateResult = async (payload: UpdateResultPayload) => {
+    const [filename, getSearchResults, ifIncrease] = payload
+    if (filename !== searchQuery.value) return
+
+    if (!ifIncrease) {
+      searchResults.value = []
+    }
+
+    searchResults.value = searchResults.value.concat(getSearchResults.map(mapSearchItem))
+    await onResize()
+  }
+
+  const clickItem = (item: SearchItem) => {
+    openFile(item.subtitle + item.title)
+    onHide()
+  }
+
+  const handleActionClick = (action: SearchAction, item: SearchItem) => {
+    const filePath = item.subtitle + item.title
+
+    switch (action.type) {
+      case 'OpenAsAdmin':
+        openFileAsAdmin(filePath).catch(err => console.error('Failed to open as admin:', err))
+        break
+      case 'OpenFolder':
+        openFile(item.subtitle).catch(err => console.error('Failed to open folder:', err))
+        break
+      default:
+        console.warn('Unknown action type:', action.type)
+    }
+
+    onHide()
+  }
+
+  return {
+    searchResults,
+    selectedIndex,
+    resetSearch,
+    requestSearch,
+    releaseSearch,
+    handleLoadMore,
+    handleUpdateResult,
+    clickItem,
+    handleActionClick,
+  }
+}

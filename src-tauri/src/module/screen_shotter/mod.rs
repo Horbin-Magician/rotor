@@ -426,11 +426,17 @@ impl ScreenShotter {
 
     pub fn restore_pin_wins(&mut self) {
         let mut max_id = 0u32;
+        let mut invalid_ids = Vec::new();
         let records = self.shotter_recort.get_records();
 
         if let Some(records) = records {
             for (id_str, record) in records {
                 if let Ok(id) = id_str.parse::<u32>() {
+                    if ShotterRecord::load_record_img(id).is_err() {
+                        invalid_ids.push(id);
+                        continue;
+                    }
+
                     max_id = max_id.max(id);
                     self.build_pin_window(
                         Some(id), 
@@ -442,6 +448,12 @@ impl ScreenShotter {
                         log::error!("Failed to restore pin window {}: {}", id, e);
                     });
                 }
+            }
+        }
+
+        for id in invalid_ids {
+            if let Err(e) = self.shotter_recort.del_shotter(id) {
+                log::warn!("Failed to remove invalid pin record {}: {}", id, e);
             }
         }
 

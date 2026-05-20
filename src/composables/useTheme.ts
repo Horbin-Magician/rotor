@@ -1,7 +1,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { generateCSSVariables, darkTheme, lightTheme, ThemeColors } from '../styles/theme'
 import { getCurrentWindow, Theme } from '@tauri-apps/api/window'
-import { invoke } from '@tauri-apps/api/core'
+import { getConfig } from '../shared/api/core'
 
 // global state
 const defaultTheme: Theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -20,7 +20,7 @@ if (typeof window !== 'undefined') {
 }
 
 async function get_theme_from_config(): Promise<Theme> {
-  const theme: string = await invoke("get_cfg", { k: "theme" });
+  const theme = await getConfig("theme");
   let res = numberToTheme(parseInt(theme));
   return res;
 }

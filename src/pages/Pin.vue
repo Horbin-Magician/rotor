@@ -64,12 +64,22 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useI18n } from 'vue-i18n';
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import { UnlistenFn } from "@tauri-apps/api/event";
 import { warn } from "@tauri-apps/plugin-log";
+import { getConfig } from '../shared/api/core';
+import { connectDataSocket } from '../shared/api/dataSocket';
+import {
+  deletePinRecord,
+  getPinState,
+  imageToText,
+  saveImage as saveScreenshotImage,
+  updatePinState,
+  type PinConfig,
+  type TextResult,
+} from '../features/screenshot/api';
 
 import PinCanvas from '../components/screenShotter/pin/PinCanvas.vue';
 import PinTips from '../components/screenShotter/pin/PinTips.vue';
@@ -113,9 +123,7 @@ let ws: WebSocket | null = null
 
 // Initialize WebSocket connection with dynamic port
 async function initWebSocket() {
-  const port = await invoke<number>("get_ws_port")
-  ws = new WebSocket(`ws://localhost:${port}`)
-  ws.binaryType = 'arraybuffer'
+  ws = await connectDataSocket()
 }
 
 const state = ref(State.Default)
@@ -173,10 +181,10 @@ const MIN_HEIGHT_FOR_TOOLBAR = 40;
 // Load shortcuts from configuration
 async function loadShortcuts() {
   try {
-    const saveShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_save" });
-    const closeShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_close" });
-    const copyShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_copy" });
-    const hideShortcut: string = await invoke("get_cfg", { k: "shortcut_pinwin_hide" });
+    const saveShortcut = await getConfig("shortcut_pinwin_save");
+    const closeShortcut = await getConfig("shortcut_pinwin_close");
+    const copyShortcut = await getConfig("shortcut_pinwin_copy");
+    const hideShortcut = await getConfig("shortcut_pinwin_hide");
     
     shortcuts.value = {
       save: parseShortcutKey(saveShortcut) || 's',
@@ -204,26 +212,17 @@ function parseShortcutKey(shortcutStr: string): string {
   return shortcutStr;
 }
 
-interface PinConfig {
-  monitor_pos: [number, number],
-  monitor_size: [number, number],
-  rect: [number, number, number, number];
-  offset: [number, number],
-  zoom_factor: number;
-  mask_label: string;
-  minimized: boolean;
-}
-
-interface TextResult {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  text: string;
-}
-
 async function tryLoadScreenShot(id: number): Promise<boolean> {
-  const pin_config = await invoke("get_pin_state", { id }) as PinConfig;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    try {
+      await initWebSocket()
+    } catch (error) {
+      warn(`WebSocket not ready for pin id ${id}: ${error}`)
+      return false
+    }
+  }
+
+  const pin_config = await getPinState(id);
   if (!pin_config) {
     warn(`No pin config found for id: ${id}`);
     return false;
@@ -245,36 +244,42 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
 
   // Request image data via WebSocket
   return new Promise<boolean>((resolve) => {
-    if (!ws) {
+    const socket = ws;
+    if (!socket) {
       warn(`WebSocket not initialized for pin id ${id}`);
       resolve(false);
       return;
     }
-    
+
     const handleMessage = async (event: MessageEvent) => {
       try {
         const imgBuf: ArrayBuffer = event.data;
+        if (imgBuf.byteLength === 0) {
+          throw new Error(`No image data returned for pin id ${id}`);
+        }
+
         const full_monitor_width = pin_config.monitor_size[0];
         const full_monitor_height = pin_config.monitor_size[1];
         const fullImgData = new ImageData(new Uint8ClampedArray(imgBuf), full_monitor_width, full_monitor_height);
         backImg.value = await createImageBitmap(fullImgData);
         
         // Remove this one-time message handler
-        ws?.removeEventListener('message', handleMessage);
+        socket.removeEventListener('message', handleMessage);
         
         // Continue with initialization
         await completeInitialization(pin_config);
         resolve(true);
       } catch (error) {
         warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
-        await invoke("delete_pin_record", { id: pin_id });
-        ws?.removeEventListener('message', handleMessage);
+        await deletePinRecord(pin_id);
+        socket.removeEventListener('message', handleMessage);
+        await appWindow.close();
         resolve(false);
       }
     };
     
-    ws.addEventListener('message', handleMessage);
-    ws.send(appWindow.label);
+    socket.addEventListener('message', handleMessage);
+    socket.send(appWindow.label);
   });
 }
 
@@ -434,7 +439,7 @@ function minimizeWindow() {
 
 async function closeWindow() {
   try {
-    await invoke("delete_pin_record", { id: pin_id });
+    await deletePinRecord(pin_id);
   } catch (error) {
     warn(`Failed to delete pin record ${pin_id}: ${error}`);
   }
@@ -448,7 +453,7 @@ async function saveImage() {
     callback(blob) {
       if(!blob) return
       blob.arrayBuffer().then((imgBuf)=>{
-        invoke("save_img", {imgBuf: imgBuf}).then((if_success)=>{
+        saveScreenshotImage(imgBuf).then((if_success)=>{
           if(if_success) closeWindow()
         })
       })
@@ -488,7 +493,7 @@ async function imgToText() {
             return;
           }
           blob.arrayBuffer().then((imgBuf)=>{
-            invoke<TextResult[]>("img2text", { imgBuf: imgBuf })
+            imageToText(imgBuf)
               .then((textResults)=>{
                 ocrTextResults.value = textResults;
                 isProcessingOcr.value = false;
@@ -509,7 +514,7 @@ async function imgToText() {
 }
 
 async function zoomWindow(wheel_delta: number) {
-  const zoom_delta: number = parseInt(await invoke("get_cfg", { k: "zoom_delta" }), 10);
+  const zoom_delta = parseInt(await getConfig("zoom_delta"), 10);
 
   let delta = wheel_delta > 0 ? -zoom_delta : zoom_delta
   zoomScale.value += delta
@@ -646,7 +651,12 @@ function cancelTextInput() {
 
 // do something on mounted
 onMounted(async () => {
-  await initWebSocket(); // Initialize WebSocket connection
+  try {
+    await initWebSocket(); // Initialize WebSocket connection
+  } catch (error) {
+    warn(`Failed to initialize websocket for pin ${pin_id}: ${error}`);
+  }
+
   await loadShortcuts();
   
   window.addEventListener('keyup', handleKeyup);
@@ -659,13 +669,7 @@ onMounted(async () => {
     if(!focused) {
       const position = await appWindow.outerPosition();
       try {
-        await invoke("update_pin_state", { 
-          id: pin_id, 
-          x: position.x,
-          y: position.y,
-          zoom: zoomScale.value,
-          minimized: await appWindow.isMinimized()
-        });
+        await updatePinState(pin_id, position.x, position.y, zoomScale.value, await appWindow.isMinimized());
       } catch (error) {
         warn(`Failed to update pin state: ${error}`);
       }
@@ -710,8 +714,8 @@ onMounted(async () => {
     let result = await tryLoadScreenShot(pin_id);
     if (!result) {
       unlisten_show_pin = await appWindow.listen('show-pin', async (_event) => {
-        await tryLoadScreenShot(pin_id);
-        if(unlisten_show_pin) { unlisten_show_pin() }
+        const loaded = await tryLoadScreenShot(pin_id);
+        if(loaded && unlisten_show_pin) { unlisten_show_pin() }
       });
     }
   }
@@ -721,6 +725,8 @@ onMounted(async () => {
 onBeforeUnmount(async () => {
   window.removeEventListener('keyup', handleKeyup)
   window.removeEventListener('resize', handleWindowResize)
+  ws?.close()
+  ws = null
 })
 </script>
 

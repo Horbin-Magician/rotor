@@ -1,7 +1,7 @@
 import { createI18n } from 'vue-i18n'
 import zhCN from '../locales/zh-CN'
 import enUS from '../locales/en-US'
-import { invoke } from '@tauri-apps/api/core'
+import { getAllConfig } from '../shared/api/core'
 
 // Function to determine initial locale
 function getInitialLocale(): 'zh-CN' | 'en-US' {
@@ -19,7 +19,7 @@ const i18n = createI18n({
 })
 
 // Load language setting from config and update locale
-invoke("get_all_cfg").then((config: any) => {
+getAllConfig().then((config) => {
   const languageSetting = Number(config["language"]) || 0
   if (languageSetting === 0) { // System default
     i18n.global.locale.value = getInitialLocale()
