@@ -1,4 +1,3 @@
-pub mod ai;
 pub mod screen_shotter;
 pub mod searcher;
 pub mod tray;

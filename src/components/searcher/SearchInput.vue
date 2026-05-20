@@ -2,13 +2,12 @@
   <div class="search-input-container">
     <div class="search-input-wrapper">
       <n-icon size="24" class="search-icon">
-        <SearchIcon v-if="!isAiMode" />
-        <AiIcon v-else />
+        <SearchIcon />
       </n-icon>
       <input
         ref="inputRef"
         v-model="query"
-        :placeholder="currentPlaceholder"
+        :placeholder="placeholder"
         autofocus
         @input="handleInput"
         @keydown="handleKeydown"
@@ -21,23 +20,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch } from 'vue'
 import { NIcon } from 'naive-ui'
-import { SearchRound as SearchIcon, SmartToyOutlined as AiIcon } from '@vicons/material'
-import { useI18n } from 'vue-i18n'
-
-const { t } = useI18n()
+import { SearchRound as SearchIcon } from '@vicons/material'
 
 // Props
 interface Props {
   modelValue: string
   placeholder?: string
-  isAiMode?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   placeholder: 'Search...',
-  isAiMode: false
 })
 
 // Emits
@@ -45,17 +39,11 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
   'input': []
   'keydown': [event: KeyboardEvent]
-  'toggle-mode': []
 }>()
 
 // State
 const inputRef = ref<HTMLInputElement>()
 const query = ref(props.modelValue)
-
-// Computed
-const currentPlaceholder = computed(() => {
-  return props.isAiMode ? t('message.aiPlaceholder') : props.placeholder
-})
 
 // Watch for external changes
 watch(() => props.modelValue, (newVal) => {
@@ -73,12 +61,6 @@ const handleInput = () => {
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
-  // Tab key to toggle mode
-  if (event.key === 'Tab') {
-    event.preventDefault()
-    emit('toggle-mode')
-    return
-  }
   emit('keydown', event)
 }
 

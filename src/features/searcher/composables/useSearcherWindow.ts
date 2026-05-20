@@ -6,13 +6,9 @@ const WINDOW_CONFIG = {
   itemHeight: 60,
   inputHeight: 50,
   maxVisibleItems: 7,
-  aiHeight: 420,
 } as const
 
 interface SearcherWindowState {
-  isAiMode: Ref<boolean>
-  chatCount: Ref<number>
-  isLoading: Ref<boolean>
   searchQuery: Ref<string>
   resultCount: Ref<number>
 }
@@ -24,11 +20,7 @@ export function useSearcherWindow(state: SearcherWindowState) {
     const currentSize = await appWindow.outerSize()
     let newHeight = WINDOW_CONFIG.inputHeight
 
-    if (state.isAiMode.value) {
-      if (state.chatCount.value > 0 || state.isLoading.value) {
-        newHeight += WINDOW_CONFIG.aiHeight
-      }
-    } else if (state.searchQuery.value.trim() && state.resultCount.value > 0) {
+    if (state.searchQuery.value.trim() && state.resultCount.value > 0) {
       const visibleItems = Math.min(state.resultCount.value, WINDOW_CONFIG.maxVisibleItems)
       newHeight += visibleItems * WINDOW_CONFIG.itemHeight
     }

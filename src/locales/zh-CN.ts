@@ -47,8 +47,6 @@ export default {
     searchPlaceholder: '输入你想要搜索的内容...',
     openAsAdminTip: '以管理员权限打开',
     openFolderTip: '打开文件所在目录',
-    // AI Chat
-    aiPlaceholder: '向AI提问...',
     // Update related translations
     updateAvailable: '有可用更新',
     newVersionAvailable: '新版本',
