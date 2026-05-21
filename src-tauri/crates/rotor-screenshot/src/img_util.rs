@@ -1,5 +1,3 @@
-use fast_image_resize::images::Image;
-use fast_image_resize::{ResizeOptions, Resizer};
 use image::{self, DynamicImage, GrayImage, RgbaImage};
 use rayon::prelude::*;
 use rust_paddle_ocr::{Det, Rec};
@@ -9,10 +7,10 @@ use std::path::Path;
 
 #[allow(dead_code)]
 pub fn detect_rect(original_img: RgbaImage) -> Vec<(u32, u32, u32, u32)> {
+    let original_width = original_img.width();
+    let original_height = original_img.height();
     let scale_factor = calculate_optimal_scale_factor(original_img.width(), original_img.height());
-    let small_original = fast_resize(&original_img, scale_factor);
-
-    let gray = image_to_gray(&small_original);
+    let gray = image_to_scaled_gray(&original_img, scale_factor);
     let edge_image = canny_edge_detection(&gray, 10.0, 30.0);
 
     let morph_size = cmp::max(1, 4 / scale_factor) as u8;
@@ -25,12 +23,12 @@ pub fn detect_rect(original_img: RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     rects
         .into_iter()
         .map(|(x, y, w, h)| {
-            (
-                x * scale_factor,
-                y * scale_factor,
-                w * scale_factor,
-                h * scale_factor,
-            )
+            let left = x * scale_factor;
+            let top = y * scale_factor;
+            let right = ((x + w) * scale_factor).min(original_width);
+            let bottom = ((y + h) * scale_factor).min(original_height);
+
+            (left, top, right - left, bottom - top)
         })
         .collect()
 }
@@ -45,54 +43,39 @@ fn calculate_optimal_scale_factor(width: u32, height: u32) -> u32 {
     }
 }
 
-fn fast_resize(img: &RgbaImage, scale_factor: u32) -> Image<'static> {
-    let dst_width = img.width() / scale_factor;
-    let dst_height = img.height() / scale_factor;
+fn image_to_scaled_gray(img: &RgbaImage, scale_factor: u32) -> GrayImage {
+    let src_width = img.width();
+    let src_height = img.height();
+    let dst_width = src_width.div_ceil(scale_factor);
+    let dst_height = src_height.div_ceil(scale_factor);
+    let img_data = img.as_raw();
 
-    let mut src_vec = img.as_raw().clone();
-    let src_image = Image::from_slice_u8(
-        img.width(),
-        img.height(),
-        src_vec.as_mut_slice(),
-        fast_image_resize::PixelType::U8x4,
-    )
-    .unwrap();
-
-    let mut dst_image = Image::new(dst_width, dst_height, fast_image_resize::PixelType::U8x4);
-
-    let mut resizer = Resizer::new();
-    let resize_options = ResizeOptions::new()
-        .use_alpha(false)
-        .resize_alg(fast_image_resize::ResizeAlg::Nearest);
-
-    resizer
-        .resize(&src_image, &mut dst_image, Some(&resize_options))
-        .unwrap();
-
-    dst_image
-}
-
-fn image_to_gray(img: &Image) -> GrayImage {
-    let width = img.width();
-    let height = img.height();
-    let img_data = img.buffer();
-
-    let mut gray_data = vec![0u8; (width * height) as usize];
+    let mut gray_data = vec![0u8; (dst_width * dst_height) as usize];
+    let src_width_usize = src_width as usize;
+    let scale_factor_usize = scale_factor as usize;
 
     gray_data
-        .par_chunks_mut(width as usize)
+        .par_chunks_mut(dst_width as usize)
         .enumerate()
-        .for_each(|(y, row)| {
-            let row_offset = y * width as usize * 4;
-            for x in 0..width as usize {
-                let p =
-                    unsafe { img_data.get_unchecked(row_offset + x * 4..row_offset + x * 4 + 3) };
-                // Y = 0.299R + 0.587G + 0.114B
-                row[x] = ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8;
+        .for_each(|(dst_y, row)| {
+            let src_y = (dst_y * scale_factor_usize).min(src_height as usize - 1);
+            let src_row_offset = src_y * src_width_usize * 4;
+
+            for (dst_x, gray) in row.iter_mut().enumerate() {
+                let src_x = (dst_x * scale_factor_usize).min(src_width_usize - 1);
+                let src_offset = src_row_offset + src_x * 4;
+
+                unsafe {
+                    let r = *img_data.get_unchecked(src_offset) as u32;
+                    let g = *img_data.get_unchecked(src_offset + 1) as u32;
+                    let b = *img_data.get_unchecked(src_offset + 2) as u32;
+                    // Y = 0.299R + 0.587G + 0.114B
+                    *gray = ((r * 299 + g * 587 + b * 114) / 1000) as u8;
+                }
             }
         });
 
-    GrayImage::from_raw(width, height, gray_data).unwrap()
+    GrayImage::from_raw(dst_width, dst_height, gray_data).unwrap()
 }
 
 fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
@@ -233,8 +216,11 @@ fn flood_fill_bbox(
     height: u32,
     min_size: u32,
 ) -> Option<(u32, u32, u32, u32)> {
+    let w_usize = width as usize;
+    let start_idx = start_y as usize * w_usize + start_x as usize;
     let mut stack = Vec::with_capacity(512);
-    stack.push((start_x, start_y));
+    stack.push(start_idx);
+    visited[start_idx] = true;
 
     let mut min_x = start_x;
     let mut max_x = start_x;
@@ -242,15 +228,9 @@ fn flood_fill_bbox(
     let mut max_y = start_y;
     let mut pixel_count = 0;
 
-    let w_usize = width as usize;
-
-    while let Some((x, y)) = stack.pop() {
-        let idx = (y * width + x) as usize;
-
-        if visited[idx] {
-            continue;
-        }
-        visited[idx] = true;
+    while let Some(idx) = stack.pop() {
+        let x = (idx % w_usize) as u32;
+        let y = (idx / w_usize) as u32;
 
         // 更新 Bbox
         if x < min_x {
@@ -272,28 +252,32 @@ fn flood_fill_bbox(
         if x + 1 < width {
             let n_idx = idx + 1;
             if !visited[n_idx] && img_data[n_idx] > 64 {
-                stack.push((x + 1, y));
+                visited[n_idx] = true;
+                stack.push(n_idx);
             }
         }
         // Left
         if x > 0 {
             let n_idx = idx - 1;
             if !visited[n_idx] && img_data[n_idx] > 64 {
-                stack.push((x - 1, y));
+                visited[n_idx] = true;
+                stack.push(n_idx);
             }
         }
         // Down
         if y + 1 < height {
             let n_idx = idx + w_usize;
             if !visited[n_idx] && img_data[n_idx] > 64 {
-                stack.push((x, y + 1));
+                visited[n_idx] = true;
+                stack.push(n_idx);
             }
         }
         // Up
         if y > 0 {
             let n_idx = idx - w_usize;
             if !visited[n_idx] && img_data[n_idx] > 64 {
-                stack.push((x, y - 1));
+                visited[n_idx] = true;
+                stack.push(n_idx);
             }
         }
     }

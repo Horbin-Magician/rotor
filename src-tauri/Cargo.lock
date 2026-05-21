@@ -5312,7 +5312,6 @@ name = "rotor-screenshot"
 version = "2.3.3"
 dependencies = [
  "cocoa",
- "fast_image_resize",
  "image",
  "log",
  "rayon",

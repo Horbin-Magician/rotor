@@ -92,7 +92,9 @@ pub async fn get_screen_rects(
     }
 
     if let Some(image) = try_get_screen_img(&label).await {
-        let rects2 = img_util::detect_rect(image);
+        let rects2 = tokio::task::spawn_blocking(move || img_util::detect_rect(image))
+            .await
+            .unwrap_or_default();
         for rect in rects2 {
             rects.push((
                 (rect.0 as f64 / scale_factor) as i32,
