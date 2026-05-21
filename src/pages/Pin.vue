@@ -207,9 +207,6 @@ const shortcuts = ref({
   hide: 'h'
 });
 
-// Minimum window dimensions to show toolbar
-const MIN_WIDTH_FOR_TOOLBAR = 180;
-const MIN_HEIGHT_FOR_TOOLBAR = 40;
 const RESIZE_HANDLE_SIZE = 8;
 const MIN_CROP_SIZE = 12;
 
@@ -538,7 +535,6 @@ async function startSelectionResize(event: MouseEvent, edges: ResizeEdges) {
   };
   isResizingSelection.value = true;
   resizeCursor.value = getResizeCursor(edges);
-  toolbarVisible.value = false;
 
   window.addEventListener('mousemove', handleSelectionResizeMove, true);
   window.addEventListener('mouseup', handleSelectionResizeEnd, true);
@@ -634,7 +630,6 @@ function startDragging() {
     horizontal: { edge: null, targetX: null },
     vertical: { edge: null, targetY: null }
   };
-  toolbarVisible.value = false;
   window.addEventListener('mouseup', handleDragMouseUp, true);
   appWindow.startDragging().catch((error) => {
     warn(`Failed to start dragging pin window: ${error}`);
@@ -871,6 +866,8 @@ async function zoomWindow(wheel_delta: number) {
   }, 1000)
 }
 
+let toolbarVisibilityCheckId = 0;
+
 async function scaleWindow() {
   if (!backImg.value) return
   
@@ -884,17 +881,24 @@ async function scaleWindow() {
   canvasRef.value?.updateSize()
 }
 
-function updateToolbarVisibility() {
-  const windowWidth = window.innerWidth
-  const windowHeight = window.innerHeight
-  
-  if (windowWidth < MIN_WIDTH_FOR_TOOLBAR || windowHeight < MIN_HEIGHT_FOR_TOOLBAR) {
-    toolbarVisible.value = false
-  } else {
-    appWindow.isFocused().then((focused) => {
-      toolbarVisible.value = focused
-    })
+function updateToolbarVisibility(focused?: boolean) {
+  toolbarVisibilityCheckId += 1;
+
+  if (typeof focused === 'boolean') {
+    toolbarVisible.value = focused;
+    return;
   }
+
+  const checkId = toolbarVisibilityCheckId;
+  appWindow.isFocused()
+    .then((focused) => {
+      if (checkId === toolbarVisibilityCheckId) {
+        toolbarVisible.value = focused
+      }
+    })
+    .catch((error) => {
+      warn(`Failed to update pin toolbar visibility: ${error}`);
+    });
 }
 
 async function handleWindowResize() {
@@ -1010,9 +1014,8 @@ onMounted(async () => {
   window.addEventListener('resize', handleWindowResize);
 
   unlistenFocusChanged = await appWindow.onFocusChanged(async (event) => {
-    updateToolbarVisibility();
-
     const focused = event.payload;
+    updateToolbarVisibility(focused);
     if(!focused) {
       await persistPinState();
     }
