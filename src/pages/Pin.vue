@@ -66,7 +66,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useI18n } from 'vue-i18n';
-import { getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalPosition, LogicalSize, monitorFromPoint, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import { UnlistenFn } from "@tauri-apps/api/event";
@@ -127,6 +127,7 @@ interface ResizeStartState {
   crop: CropRegion;
   windowPosition: PhysicalPosition;
   scaleFactor: number;
+  contentScaleFactor: number;
 }
 
 enum DrawState {
@@ -140,7 +141,9 @@ const { t } = useI18n()
 
 const appWindow = getCurrentWindow()
 const pin_id = Number.parseInt(appWindow.label.split('-')[1]);
-let unlisten_show_pin: UnlistenFn;
+let unlisten_show_pin: UnlistenFn | null = null;
+let unlistenFocusChanged: UnlistenFn | null = null;
+let unlistenScaleChanged: UnlistenFn | null = null;
 
 let ws: WebSocket | null = null
 
@@ -162,6 +165,7 @@ const edgeGlow = ref({
 
 // Snap configuration
 let isDragging = false
+let pendingDragViewportUpdate = false
 let potentialSnap: EdgeSnap = {
   horizontal: { edge: null, targetX: null },
   vertical: { edge: null, targetY: null }
@@ -243,6 +247,28 @@ function parseShortcutKey(shortcutStr: string): string {
   return shortcutStr;
 }
 
+async function getPinContentScaleFactor(pinConfig: PinConfig) {
+  const sourceX = pinConfig.monitor_pos[0] + pinConfig.rect[0];
+  const sourceY = pinConfig.monitor_pos[1] + pinConfig.rect[1];
+
+  try {
+    const monitor = await monitorFromPoint(sourceX, sourceY);
+    if (monitor?.scaleFactor) {
+      return monitor.scaleFactor;
+    }
+  } catch (error) {
+    warn(`Failed to read pin source monitor scale: ${error}`);
+  }
+
+  return window.devicePixelRatio || await appWindow.scaleFactor().catch(() => 1);
+}
+
+async function syncCurrentScaleFactor(scaleFactor?: number) {
+  const nextScaleFactor = scaleFactor ?? await appWindow.scaleFactor().catch(() => window.devicePixelRatio || 1);
+  scale_factor.value = nextScaleFactor || window.devicePixelRatio || 1;
+  return scale_factor.value;
+}
+
 async function tryLoadScreenShot(id: number): Promise<boolean> {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     try {
@@ -259,13 +285,13 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     return false;
   }
   
-  init_scale_factor.value = window.devicePixelRatio;
-  scale_factor.value = window.devicePixelRatio;
+  init_scale_factor.value = await getPinContentScaleFactor(pin_config);
+  await syncCurrentScaleFactor();
   
   const crop_width = pin_config.rect[2];
   const crop_height = pin_config.rect[3];
-  const win_width = Math.round(crop_width / scale_factor.value);
-  const win_height = Math.round(crop_height / scale_factor.value);
+  const win_width = Math.round(crop_width / init_scale_factor.value);
+  const win_height = Math.round(crop_height / init_scale_factor.value);
   
   await appWindow.setSize(new LogicalSize(win_width, win_height))
   await appWindow.setPosition(new PhysicalPosition((
@@ -405,14 +431,15 @@ function getLogicalSizeForCrop(crop: CropRegion, scaleFactor: number) {
 
 function getWindowPositionForCrop(crop: CropRegion, startState: ResizeStartState) {
   const zoomRatio = zoomScale.value / 100;
+  const physicalRatio = (startState.scaleFactor / startState.contentScaleFactor) * zoomRatio;
   let x = startState.windowPosition.x;
   let y = startState.windowPosition.y;
 
   if (startState.edges.horizontal === 'left') {
-    x += Math.round((crop.x - startState.crop.x) * zoomRatio);
+    x += Math.round((crop.x - startState.crop.x) * physicalRatio);
   }
   if (startState.edges.vertical === 'top') {
-    y += Math.round((crop.y - startState.crop.y) * zoomRatio);
+    y += Math.round((crop.y - startState.crop.y) * physicalRatio);
   }
 
   return { x, y };
@@ -422,8 +449,12 @@ function getResizedCrop(screenX: number, screenY: number, startState: ResizeStar
   const zoomRatio = zoomScale.value / 100;
   const sourceWidth = backImg.value?.width ?? startState.crop.x + startState.crop.width;
   const sourceHeight = backImg.value?.height ?? startState.crop.y + startState.crop.height;
-  const deltaX = Math.round(((screenX - startState.screenX) * startState.scaleFactor) / zoomRatio);
-  const deltaY = Math.round(((screenY - startState.screenY) * startState.scaleFactor) / zoomRatio);
+  const deltaX = Math.round(
+    (screenX - startState.screenX) * startState.contentScaleFactor / zoomRatio
+  );
+  const deltaY = Math.round(
+    (screenY - startState.screenY) * startState.contentScaleFactor / zoomRatio
+  );
 
   let left = startState.crop.x;
   let top = startState.crop.y;
@@ -454,7 +485,7 @@ async function applySelectionResize(screenX: number, screenY: number) {
   if (!resizeStartState || !backImg.value) return;
 
   const nextCrop = getResizedCrop(screenX, screenY, resizeStartState);
-  const nextSize = getLogicalSizeForCrop(nextCrop, resizeStartState.scaleFactor);
+  const nextSize = getLogicalSizeForCrop(nextCrop, resizeStartState.contentScaleFactor);
   const nextPosition = getWindowPositionForCrop(nextCrop, resizeStartState);
 
   cropRegion.value = nextCrop;
@@ -495,13 +526,15 @@ async function startSelectionResize(event: MouseEvent, edges: ResizeEdges) {
   event.stopPropagation();
 
   const position = await appWindow.outerPosition();
+  const currentScaleFactor = await syncCurrentScaleFactor();
   resizeStartState = {
     edges,
     screenX: event.screenX,
     screenY: event.screenY,
     crop: { ...cropRegion.value },
     windowPosition: position,
-    scaleFactor: await appWindow.scaleFactor(),
+    scaleFactor: currentScaleFactor,
+    contentScaleFactor: init_scale_factor.value,
   };
   isResizingSelection.value = true;
   resizeCursor.value = getResizeCursor(edges);
@@ -596,15 +629,27 @@ async function handleMouseDown(event: MouseEvent) {
 
 function startDragging() {
   isDragging = true;
+  pendingDragViewportUpdate = false;
   potentialSnap = {
     horizontal: { edge: null, targetX: null },
     vertical: { edge: null, targetY: null }
   };
-  appWindow.startDragging();
+  toolbarVisible.value = false;
+  window.addEventListener('mouseup', handleDragMouseUp, true);
+  appWindow.startDragging().catch((error) => {
+    warn(`Failed to start dragging pin window: ${error}`);
+    isDragging = false;
+    pendingDragViewportUpdate = false;
+    window.removeEventListener('mouseup', handleDragMouseUp, true);
+    updateToolbarVisibility();
+  });
 }
 
 async function endDragging() {
+  if (!isDragging) return;
+
   isDragging = false;
+  window.removeEventListener('mouseup', handleDragMouseUp, true);
   
   // Apply snap if there's a potential snap position
   // Get current position first
@@ -647,7 +692,21 @@ async function endDragging() {
     };
   }, 50);
 
+  if (pendingDragViewportUpdate) {
+    pendingDragViewportUpdate = false;
+    await syncCurrentScaleFactor();
+    await scaleWindow();
+  } else {
+    canvasRef.value?.updateSize();
+    updateToolbarVisibility();
+  }
+
   await persistPinState();
+}
+
+function handleDragMouseUp(_event: MouseEvent) {
+  if (!isDragging) return;
+  void endDragging();
 }
 
 function handleMouseUp(event: MouseEvent) {
@@ -680,6 +739,7 @@ function handleMouseMove(event: MouseEvent) {
 function handleMouseLeave(event: MouseEvent) {
   if (isResizingSelection.value) return;
   resizeCursor.value = 'default';
+  if (isDragging) return;
   handleMouseUp(event);
 }
 
@@ -725,8 +785,9 @@ async function closeWindow() {
 
 async function saveImage() {
   const stage = canvasRef.value?.getStage()
+  const pixelRatio = await syncCurrentScaleFactor()
   stage?.toBlob({
-    pixelRatio: window.devicePixelRatio,
+    pixelRatio,
     callback(blob) {
       if(!blob) return
       blob.arrayBuffer().then((imgBuf)=>{
@@ -740,8 +801,9 @@ async function saveImage() {
 
 async function copyImage() {
   const stage = canvasRef.value?.getStage()
+  const pixelRatio = await syncCurrentScaleFactor()
   stage?.toBlob({
-    pixelRatio: window.devicePixelRatio,
+    pixelRatio,
     callback(blob) {
       if(!blob) return
       blob.arrayBuffer().then((imgBuf)=>{
@@ -762,8 +824,9 @@ async function imgToText() {
     } else {
       isProcessingOcr.value = true;
       ocrZoomScale = zoomScale.value;
+      const pixelRatio = await syncCurrentScaleFactor();
       stage.toBlob({
-        pixelRatio: window.devicePixelRatio,
+        pixelRatio,
         callback(blob) {
           if(!blob) {
             isProcessingOcr.value = false;
@@ -774,7 +837,7 @@ async function imgToText() {
               .then((textResults)=>{
                 ocrTextResults.value = textResults;
                 isProcessingOcr.value = false;
-                scale_factor.value = window.devicePixelRatio;
+                scale_factor.value = pixelRatio;
                 state.value = State.OCR;
               })
               .catch((error) => {
@@ -835,6 +898,12 @@ function updateToolbarVisibility() {
 }
 
 async function handleWindowResize() {
+  if (isDragging) {
+    pendingDragViewportUpdate = true;
+    return;
+  }
+
+  await syncCurrentScaleFactor()
   canvasRef.value?.updateSize()
   updateToolbarVisibility()
 }
@@ -940,13 +1009,24 @@ onMounted(async () => {
   window.addEventListener('keyup', handleKeyup);
   window.addEventListener('resize', handleWindowResize);
 
-  appWindow.onFocusChanged(async (event) => {
+  unlistenFocusChanged = await appWindow.onFocusChanged(async (event) => {
     updateToolbarVisibility();
 
     const focused = event.payload;
     if(!focused) {
       await persistPinState();
     }
+  });
+
+  unlistenScaleChanged = await appWindow.onScaleChanged(async ({ payload }) => {
+    if (isDragging) {
+      pendingDragViewportUpdate = true;
+      return;
+    }
+
+    await syncCurrentScaleFactor(payload.scaleFactor);
+    await scaleWindow();
+    updateToolbarVisibility();
   });
 
   const menu = await Menu.new({
@@ -988,7 +1068,10 @@ onMounted(async () => {
     if (!result) {
       unlisten_show_pin = await appWindow.listen('show-pin', async (_event) => {
         const loaded = await tryLoadScreenShot(pin_id);
-        if(loaded && unlisten_show_pin) { unlisten_show_pin() }
+        if(loaded && unlisten_show_pin) {
+          unlisten_show_pin()
+          unlisten_show_pin = null
+        }
       });
     }
   }
@@ -1000,6 +1083,10 @@ onBeforeUnmount(async () => {
   window.removeEventListener('resize', handleWindowResize)
   window.removeEventListener('mousemove', handleSelectionResizeMove, true)
   window.removeEventListener('mouseup', handleSelectionResizeEnd, true)
+  window.removeEventListener('mouseup', handleDragMouseUp, true)
+  if (unlisten_show_pin) { unlisten_show_pin() }
+  if (unlistenFocusChanged) { unlistenFocusChanged() }
+  if (unlistenScaleChanged) { unlistenScaleChanged() }
   ws?.close()
   ws = null
 })
