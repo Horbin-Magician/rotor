@@ -1,0 +1,16 @@
+[package]
+name = "rotor-runtime"
+version = "2.3.3"
+edition = "2021"
+
+[dependencies]
+futures-util = "0.3.31"
+image = "0.25.6"
+log = "0.4.27"
+rotor-common = { path = "../rotor-common" }
+rotor-screenshot = { path = "../rotor-screenshot" }
+rotor-searcher = { path = "../rotor-searcher" }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.27.0"

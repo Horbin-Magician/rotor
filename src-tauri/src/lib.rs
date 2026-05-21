@@ -1,27 +1,21 @@
 mod command;
-mod core;
-mod module;
-mod util;
 
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 
 use command::{core_cmd, screen_shotter_cmd, searcher_cmd};
-use core::application;
-
-use crate::util::file_util;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "windows")]
-    if util::sys_util::run_as_admin().unwrap_or_else(|e| {
+    if rotor_platform::sys_util::run_as_admin().unwrap_or_else(|e| {
         log::error!("run_as_admin error: {:?}", e);
         true
     }) {
         return;
     }
 
-    file_util::del_useless_files().unwrap_or_else(|e| {
+    rotor_platform::file_util::del_useless_files().unwrap_or_else(|e| {
         log::error!("del_useless_files error: {:?}", e);
     });
 
@@ -32,8 +26,8 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Folder {
-                        path: file_util::get_userdata_path()
-                            .unwrap_or_else(|| { std::path::PathBuf::from("./") }),
+                        path: rotor_platform::file_util::get_userdata_path()
+                            .unwrap_or_else(|| std::path::PathBuf::from("./")),
                         file_name: Some("logs".to_string()),
                     },
                 ))
@@ -50,7 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(application::handle_global_hotkey_event)
+                .with_handler(rotor_runtime::handle_global_hotkey_event)
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
@@ -86,7 +80,7 @@ pub fn run() {
             panic!()
         });
 
-    application::Application::global()
+    rotor_runtime::Application::global()
         .lock()
         .unwrap()
         .init(app.app_handle().clone())

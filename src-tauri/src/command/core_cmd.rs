@@ -2,8 +2,8 @@ use std::str::FromStr;
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
-use crate::core::config::{AppConfig, Config};
-use crate::core::application::Application;
+use rotor_common::{AppConfig, Config};
+use rotor_runtime::Application;
 
 #[tauri::command]
 pub fn get_all_cfg() -> Config {
@@ -63,7 +63,7 @@ pub fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        
+
         std::process::Command::new("cmd")
             .args(["/C", "start", &url])
             .creation_flags(0x08000000) // CREATE_NO_WINDOW

@@ -3,29 +3,33 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use xcap::Monitor;
 
-use crate::core::application::Application;
-use crate::core::config::AppConfig;
-use crate::module::screen_shotter::{shotter_record::ShotterConfig, ScreenShotter};
-use crate::util::img_util::TextResult;
-use crate::util::{img_util, sys_util};
+use rotor_common::AppConfig;
+use rotor_platform::sys_util;
+use rotor_runtime::Application;
+use rotor_screenshot::img_util::{self, TextResult};
+use rotor_screenshot::shotter_record::ShotterConfig;
 
 // Common functions
-pub async fn try_get_screen_img(label: &str) -> Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>> {
+pub async fn try_get_screen_img(
+    label: &str,
+) -> Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>> {
     let mut try_times = 1;
     while try_times <= 20 {
         // Get the masks arc without holding any locks
         let masks_arc = {
-            let mut app = Application::global().lock().unwrap();
-            app.get_module("screenshot")
-                .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-                .map(|screenshot| screenshot.masks.clone())
+            Application::global()
+                .lock()
+                .unwrap()
+                .screenshot
+                .masks
+                .clone()
         };
-        if let Some(masks_arc) = masks_arc {
+        {
             let masks = masks_arc.lock().unwrap();
             if let Some(m) = masks.get(label) {
                 return Some(m.clone());
             }
-        };
+        }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await; // Shorter delay between retries for faster response
         try_times += 1;
     }
@@ -146,26 +150,28 @@ pub async fn new_pin(
             return;
         };
 
-        let rect = (offset_x_val as u32, offset_y_val as u32, width_val as u32, height_val as u32);
+        let rect = (
+            offset_x_val as u32,
+            offset_y_val as u32,
+            width_val as u32,
+            height_val as u32,
+        );
         let monitor_position = (monitor_pos.x, monitor_pos.y);
         let monitor_size = (monitor_size.width, monitor_size.height);
         let offset = (0, 0); // Default offset, can be adjusted later
 
-        let mut app = Application::global().lock().unwrap();
-        let screenshot = app.get_module("screenshot");
-        if let Some(s) = screenshot {
-            if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
-                screenshot
-                    .new_pin(
-                        monitor_position,
-                        monitor_size,
-                        rect,
-                        offset,
-                        webview_window.label().to_string(),
-                    )
-                    .unwrap();
-            }
-        }
+        Application::global()
+            .lock()
+            .unwrap()
+            .screenshot
+            .new_pin(
+                monitor_position,
+                monitor_size,
+                rect,
+                offset,
+                webview_window.label().to_string(),
+            )
+            .unwrap();
     } else {
         log::error!("Unable to get current monitor");
     }
@@ -174,75 +180,52 @@ pub async fn new_pin(
 #[tauri::command]
 pub async fn new_cache_pin(window: tauri::WebviewWindow) {
     let mut app = Application::global().lock().unwrap();
-    let screenshot = app.get_module("screenshot");
-
-    if let Some(s) = screenshot {
-        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
-            let _ = window.outer_position().map(|pos| {
-                screenshot.new_cache_pin(pos.x, pos.y).unwrap();
-            });
-        }
-    }
+    let _ = window.outer_position().map(|pos| {
+        app.screenshot.new_cache_pin(pos.x, pos.y).unwrap();
+    });
 }
 
 #[tauri::command]
 pub async fn close_cache_pin() {
-    let mut app = Application::global().lock().unwrap();
-    let screenshot = app.get_module("screenshot");
-
-    if let Some(s) = screenshot {
-        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
-            screenshot.close_cache_pin().unwrap();
-        }
-    }
+    Application::global()
+        .lock()
+        .unwrap()
+        .screenshot
+        .close_cache_pin()
+        .unwrap();
 }
 
 // Command for pin window
 
 #[tauri::command]
 pub async fn get_pin_state(id: u32) -> Option<ShotterConfig> {
-    let mut state: Option<ShotterConfig> = None;
-
-    if let Some(ss) = Application::global().lock().unwrap()
-        .get_module("screenshot")
-        .and_then(|s| s.as_any().downcast_ref::<ScreenShotter>())
-    {
-        state = ss.shotter_recort.get_record(id).cloned();
-    }
-
-    state
+    Application::global()
+        .lock()
+        .unwrap()
+        .screenshot
+        .shotter_recort
+        .get_record(id)
+        .cloned()
 }
 
 #[tauri::command]
 pub async fn update_pin_state(id: u32, x: i32, y: i32, zoom: u32, minimized: bool) {
     let mut app = Application::global().lock().unwrap();
-    let screenshot = app.get_module("screenshot");
-
-    if let Some(s) = screenshot {
-        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
-            if let Some(mut record) = screenshot.shotter_recort.get_record(id).cloned() {
-                record.minimized = minimized;
-                // Calculate new offset based on current position and monitor position
-                record.offset.0 = x - record.monitor_pos.0 - record.rect.0 as i32;
-                record.offset.1 = y - record.monitor_pos.1 - record.rect.1 as i32;
-                record.zoom_factor = zoom;
-                screenshot.update_shotter_record(id, record);
-            }
-        }
+    if let Some(mut record) = app.screenshot.shotter_recort.get_record(id).cloned() {
+        record.minimized = minimized;
+        // Calculate new offset based on current position and monitor position
+        record.offset.0 = x - record.monitor_pos.0 - record.rect.0 as i32;
+        record.offset.1 = y - record.monitor_pos.1 - record.rect.1 as i32;
+        record.zoom_factor = zoom;
+        app.screenshot.update_shotter_record(id, record);
     }
 }
 
 #[tauri::command]
 pub async fn delete_pin_record(id: u32) {
     let mut app = Application::global().lock().unwrap();
-    let screenshot = app.get_module("screenshot");
-
-    if let Some(s) = screenshot {
-        if let Some(screenshot) = s.as_any_mut().downcast_mut::<ScreenShotter>() {
-            if let Err(e) = screenshot.shotter_recort.del_shotter(id) {
-                log::error!("Failed to delete pin record {}: {}", id, e);
-            }
-        }
+    if let Err(e) = app.screenshot.shotter_recort.del_shotter(id) {
+        log::error!("Failed to delete pin record {}: {}", id, e);
     }
 }
 

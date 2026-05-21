@@ -5243,26 +5243,14 @@ dependencies = [
 name = "rotor"
 version = "2.3.3"
 dependencies = [
- "base64 0.22.1",
  "chrono",
- "cocoa",
- "core-foundation 0.9.4",
- "core-graphics 0.23.2",
- "encoding_rs",
- "fast_image_resize",
- "file_icon_provider",
- "futures-util",
- "fxhash",
  "image",
- "is-root",
  "log",
- "notify",
- "objc",
- "rayon",
- "rust-paddle-ocr",
- "serde",
+ "rotor-common",
+ "rotor-platform",
+ "rotor-runtime",
+ "rotor-screenshot",
  "serde_json",
- "sys-locale",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -5274,11 +5262,84 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tokio",
- "tokio-tungstenite",
+ "xcap",
+]
+
+[[package]]
+name = "rotor-common"
+version = "2.3.3"
+dependencies = [
+ "log",
+ "serde",
+ "sys-locale",
  "toml 0.8.23",
- "walkdir",
+]
+
+[[package]]
+name = "rotor-platform"
+version = "2.3.3"
+dependencies = [
+ "base64 0.22.1",
+ "core-graphics 0.23.2",
+ "encoding_rs",
+ "file_icon_provider",
+ "image",
+ "is-root",
+ "log",
+ "rotor-common",
  "windows 0.61.3",
  "xcap",
+]
+
+[[package]]
+name = "rotor-runtime"
+version = "2.3.3"
+dependencies = [
+ "futures-util",
+ "image",
+ "log",
+ "rotor-common",
+ "rotor-screenshot",
+ "rotor-searcher",
+ "tauri",
+ "tauri-plugin-global-shortcut",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "rotor-screenshot"
+version = "2.3.3"
+dependencies = [
+ "cocoa",
+ "fast_image_resize",
+ "image",
+ "log",
+ "rayon",
+ "rotor-common",
+ "rotor-platform",
+ "rust-paddle-ocr",
+ "serde",
+ "tauri",
+ "tauri-plugin-global-shortcut",
+ "toml 0.8.23",
+ "xcap",
+]
+
+[[package]]
+name = "rotor-searcher"
+version = "2.3.3"
+dependencies = [
+ "fxhash",
+ "log",
+ "notify",
+ "rotor-common",
+ "rotor-platform",
+ "serde",
+ "tauri",
+ "tauri-plugin-global-shortcut",
+ "walkdir",
+ "windows 0.61.3",
 ]
 
 [[package]]

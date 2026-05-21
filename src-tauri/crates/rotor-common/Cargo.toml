@@ -1,0 +1,10 @@
+[package]
+name = "rotor-common"
+version = "2.3.3"
+edition = "2021"
+
+[dependencies]
+log = "0.4.27"
+serde = { version = "1", features = ["derive"] }
+sys-locale = "0.3.2"
+toml = "0.8.23"
