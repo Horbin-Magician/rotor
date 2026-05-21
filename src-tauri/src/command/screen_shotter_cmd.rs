@@ -224,6 +224,34 @@ pub async fn update_pin_state(id: u32, x: i32, y: i32, zoom: u32, minimized: boo
 }
 
 #[tauri::command]
+pub async fn update_pin_selection(
+    id: u32,
+    rect_x: u32,
+    rect_y: u32,
+    width: u32,
+    height: u32,
+    window_x: i32,
+    window_y: i32,
+    zoom: u32,
+    minimized: bool,
+) {
+    if width == 0 || height == 0 {
+        log::warn!("Ignoring empty pin selection update for {}", id);
+        return;
+    }
+
+    let mut app = Application::global().lock().unwrap();
+    if let Some(mut record) = app.screenshot.shotter_recort.get_record(id).cloned() {
+        record.rect = (rect_x, rect_y, width, height);
+        record.offset.0 = window_x - record.monitor_pos.0 - rect_x as i32;
+        record.offset.1 = window_y - record.monitor_pos.1 - rect_y as i32;
+        record.zoom_factor = zoom;
+        record.minimized = minimized;
+        app.screenshot.update_shotter_record(id, record);
+    }
+}
+
+#[tauri::command]
 pub async fn delete_pin_record(id: u32) {
     let mut app = Application::global().lock().unwrap();
     if let Err(e) = app.screenshot.shotter_recort.del_shotter(id) {

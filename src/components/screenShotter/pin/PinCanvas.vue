@@ -12,6 +12,13 @@ interface Props {
 
 const props = defineProps<Props>();
 
+interface CropRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const stageContainer = ref<HTMLDivElement | null>(null);
 
 let stage: Konva.Stage | null = null;
@@ -31,7 +38,7 @@ type DrawMode = 'pen' | 'rect' | 'arrow' | 'text';
 
 function initStage(
   backImg: ImageBitmap,
-  crop: { x: number; y: number; width: number; height: number }
+  crop: CropRegion
 ) {
   if (!stageContainer.value) return;
 
@@ -63,6 +70,21 @@ function initStage(
   // Create drawing layer
   drawingLayer = new Konva.Layer();
   stage.add(drawingLayer);
+}
+
+function updateCrop(crop: CropRegion) {
+  if (!backImgLayer) return;
+
+  const konvaImage = backImgLayer.findOne('Image') as Konva.Image;
+  if (!konvaImage) return;
+
+  konvaImage.crop({
+    x: crop.x,
+    y: crop.y,
+    width: crop.width,
+    height: crop.height,
+  });
+  backImgLayer.batchDraw();
 }
 
 function updateSize() {
@@ -306,6 +328,7 @@ function setStartPoint(point: { x: number; y: number } | null) {
 
 defineExpose({
   initStage,
+  updateCrop,
   updateSize,
   getStage,
   getDrawingLayer,

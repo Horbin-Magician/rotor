@@ -60,6 +60,30 @@ export function updatePinState(id: number, x: number, y: number, zoom: number, m
   return invoke<void>('update_pin_state', { id, x, y, zoom, minimized })
 }
 
+export function updatePinSelection(
+  id: number,
+  rectX: number,
+  rectY: number,
+  width: number,
+  height: number,
+  windowX: number,
+  windowY: number,
+  zoom: number,
+  minimized: boolean,
+) {
+  return invoke<void>('update_pin_selection', {
+    id,
+    rectX,
+    rectY,
+    width,
+    height,
+    windowX,
+    windowY,
+    zoom,
+    minimized,
+  })
+}
+
 export function deletePinRecord(id: number) {
   return invoke<void>('delete_pin_record', { id })
 }

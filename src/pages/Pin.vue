@@ -1,9 +1,11 @@
 <template>
   <main class="container" 
+        :class="{ 'resizing-selection': isResizingSelection }"
+        :style="{ cursor: resizeCursor }"
         @mousedown="handleMouseDown"
         @mouseup="handleMouseUp"
         @mousemove="handleMouseMove"
-        @mouseout="handleMouseUp"
+        @mouseleave="handleMouseLeave"
         @wheel="handleWheel">
     <PinCanvas 
       ref="canvasRef"
@@ -76,7 +78,7 @@ import {
   getPinState,
   imageToText,
   saveImage as saveScreenshotImage,
-  updatePinState,
+  updatePinSelection,
   type PinConfig,
   type TextResult,
 } from '../features/screenshot/api';
@@ -104,6 +106,27 @@ interface EdgeSnap {
     edge: 'top' | 'bottom' | null;
     targetY: number | null;
   };
+}
+
+interface ResizeEdges {
+  horizontal: 'left' | 'right' | null;
+  vertical: 'top' | 'bottom' | null;
+}
+
+interface CropRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ResizeStartState {
+  edges: ResizeEdges;
+  screenX: number;
+  screenY: number;
+  crop: CropRegion;
+  windowPosition: PhysicalPosition;
+  scaleFactor: number;
 }
 
 enum DrawState {
@@ -144,8 +167,14 @@ let potentialSnap: EdgeSnap = {
   vertical: { edge: null, targetY: null }
 }
 
-const backImg = ref()
-const cropRegion = ref({ x: 0, y: 0, width: 0, height: 0 })
+const resizeCursor = ref('default')
+const isResizingSelection = ref(false)
+let resizeStartState: ResizeStartState | null = null
+let pendingResizePoint: { screenX: number; screenY: number } | null = null
+let resizeApplyPromise: Promise<void> | null = null
+
+const backImg = ref<ImageBitmap | null>(null)
+const cropRegion = ref<CropRegion>({ x: 0, y: 0, width: 0, height: 0 })
 const canvasRef = ref<InstanceType<typeof PinCanvas> | null>(null)
 const init_scale_factor = ref(1)
 const scale_factor = ref(1)
@@ -177,6 +206,8 @@ const shortcuts = ref({
 // Minimum window dimensions to show toolbar
 const MIN_WIDTH_FOR_TOOLBAR = 180;
 const MIN_HEIGHT_FOR_TOOLBAR = 40;
+const RESIZE_HANDLE_SIZE = 8;
+const MIN_CROP_SIZE = 12;
 
 // Load shortcuts from configuration
 async function loadShortcuts() {
@@ -295,6 +326,7 @@ async function completeInitialization(pin_config: PinConfig) {
     height: crop_height
   };
   
+  if (!backImg.value) return;
   canvasRef.value?.initStage(backImg.value, cropRegion.value);
   
   zoomScale.value = pin_config.zoom_factor || 100;
@@ -314,6 +346,224 @@ async function completeInitialization(pin_config: PinConfig) {
   })
 }
 
+function clamp(value: number, min: number, max: number) {
+  if (max < min) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+function getResizeEdges(event: MouseEvent): ResizeEdges | null {
+  if (!backImg.value || cropRegion.value.width <= 0 || cropRegion.value.height <= 0) {
+    return null;
+  }
+
+  const left = event.clientX <= RESIZE_HANDLE_SIZE;
+  const right = event.clientX >= window.innerWidth - RESIZE_HANDLE_SIZE;
+  const top = event.clientY <= RESIZE_HANDLE_SIZE;
+  const bottom = event.clientY >= window.innerHeight - RESIZE_HANDLE_SIZE;
+
+  const horizontal = left ? 'left' : right ? 'right' : null;
+  const vertical = top ? 'top' : bottom ? 'bottom' : null;
+
+  if (!horizontal && !vertical) return null;
+  return { horizontal, vertical };
+}
+
+function getResizeCursor(edges: ResizeEdges | null) {
+  if (!edges) return 'default';
+
+  if (
+    (edges.horizontal === 'left' && edges.vertical === 'top') ||
+    (edges.horizontal === 'right' && edges.vertical === 'bottom')
+  ) {
+    return 'nwse-resize';
+  }
+
+  if (
+    (edges.horizontal === 'right' && edges.vertical === 'top') ||
+    (edges.horizontal === 'left' && edges.vertical === 'bottom')
+  ) {
+    return 'nesw-resize';
+  }
+
+  if (edges.horizontal) return 'ew-resize';
+  if (edges.vertical) return 'ns-resize';
+  return 'default';
+}
+
+function updateResizeCursor(event: MouseEvent) {
+  if (state.value === State.Drawing || isDragging || isResizingSelection.value) return;
+  resizeCursor.value = getResizeCursor(getResizeEdges(event));
+}
+
+function getLogicalSizeForCrop(crop: CropRegion, scaleFactor: number) {
+  const zoomRatio = zoomScale.value / 100;
+  return {
+    width: Math.max(1, Math.round((crop.width / scaleFactor) * zoomRatio)),
+    height: Math.max(1, Math.round((crop.height / scaleFactor) * zoomRatio)),
+  };
+}
+
+function getWindowPositionForCrop(crop: CropRegion, startState: ResizeStartState) {
+  const zoomRatio = zoomScale.value / 100;
+  let x = startState.windowPosition.x;
+  let y = startState.windowPosition.y;
+
+  if (startState.edges.horizontal === 'left') {
+    x += Math.round((crop.x - startState.crop.x) * zoomRatio);
+  }
+  if (startState.edges.vertical === 'top') {
+    y += Math.round((crop.y - startState.crop.y) * zoomRatio);
+  }
+
+  return { x, y };
+}
+
+function getResizedCrop(screenX: number, screenY: number, startState: ResizeStartState): CropRegion {
+  const zoomRatio = zoomScale.value / 100;
+  const sourceWidth = backImg.value?.width ?? startState.crop.x + startState.crop.width;
+  const sourceHeight = backImg.value?.height ?? startState.crop.y + startState.crop.height;
+  const deltaX = Math.round(((screenX - startState.screenX) * startState.scaleFactor) / zoomRatio);
+  const deltaY = Math.round(((screenY - startState.screenY) * startState.scaleFactor) / zoomRatio);
+
+  let left = startState.crop.x;
+  let top = startState.crop.y;
+  let right = startState.crop.x + startState.crop.width;
+  let bottom = startState.crop.y + startState.crop.height;
+
+  if (startState.edges.horizontal === 'left') {
+    left = clamp(startState.crop.x + deltaX, 0, right - MIN_CROP_SIZE);
+  } else if (startState.edges.horizontal === 'right') {
+    right = clamp(right + deltaX, left + MIN_CROP_SIZE, sourceWidth);
+  }
+
+  if (startState.edges.vertical === 'top') {
+    top = clamp(startState.crop.y + deltaY, 0, bottom - MIN_CROP_SIZE);
+  } else if (startState.edges.vertical === 'bottom') {
+    bottom = clamp(bottom + deltaY, top + MIN_CROP_SIZE, sourceHeight);
+  }
+
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+async function applySelectionResize(screenX: number, screenY: number) {
+  if (!resizeStartState || !backImg.value) return;
+
+  const nextCrop = getResizedCrop(screenX, screenY, resizeStartState);
+  const nextSize = getLogicalSizeForCrop(nextCrop, resizeStartState.scaleFactor);
+  const nextPosition = getWindowPositionForCrop(nextCrop, resizeStartState);
+
+  cropRegion.value = nextCrop;
+  canvasRef.value?.updateCrop(nextCrop);
+
+  await appWindow.setSize(new LogicalSize(nextSize.width, nextSize.height));
+  if (
+    resizeStartState.edges.horizontal === 'left' ||
+    resizeStartState.edges.vertical === 'top'
+  ) {
+    await appWindow.setPosition(new PhysicalPosition(nextPosition.x, nextPosition.y));
+  }
+  canvasRef.value?.updateSize();
+}
+
+async function flushSelectionResize() {
+  while (pendingResizePoint && isResizingSelection.value) {
+    const point = pendingResizePoint;
+    pendingResizePoint = null;
+    await applySelectionResize(point.screenX, point.screenY);
+  }
+}
+
+function queueSelectionResize(screenX: number, screenY: number) {
+  pendingResizePoint = { screenX, screenY };
+  if (!resizeApplyPromise) {
+    resizeApplyPromise = flushSelectionResize().finally(() => {
+      resizeApplyPromise = null;
+      if (pendingResizePoint && isResizingSelection.value) {
+        queueSelectionResize(pendingResizePoint.screenX, pendingResizePoint.screenY);
+      }
+    });
+  }
+}
+
+async function startSelectionResize(event: MouseEvent, edges: ResizeEdges) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const position = await appWindow.outerPosition();
+  resizeStartState = {
+    edges,
+    screenX: event.screenX,
+    screenY: event.screenY,
+    crop: { ...cropRegion.value },
+    windowPosition: position,
+    scaleFactor: await appWindow.scaleFactor(),
+  };
+  isResizingSelection.value = true;
+  resizeCursor.value = getResizeCursor(edges);
+  toolbarVisible.value = false;
+
+  window.addEventListener('mousemove', handleSelectionResizeMove, true);
+  window.addEventListener('mouseup', handleSelectionResizeEnd, true);
+}
+
+function handleSelectionResizeMove(event: MouseEvent) {
+  if (!isResizingSelection.value) return;
+  event.preventDefault();
+  queueSelectionResize(event.screenX, event.screenY);
+}
+
+async function handleSelectionResizeEnd(event?: MouseEvent) {
+  if (!isResizingSelection.value) return;
+  event?.preventDefault();
+
+  window.removeEventListener('mousemove', handleSelectionResizeMove, true);
+  window.removeEventListener('mouseup', handleSelectionResizeEnd, true);
+
+  if (event) {
+    queueSelectionResize(event.screenX, event.screenY);
+  }
+  if (resizeApplyPromise) {
+    await resizeApplyPromise;
+  }
+
+  const startState = resizeStartState;
+  isResizingSelection.value = false;
+  resizeStartState = null;
+  pendingResizePoint = null;
+  resizeCursor.value = 'default';
+  updateToolbarVisibility();
+
+  if (startState) {
+    await persistPinState();
+  }
+}
+
+async function persistPinState() {
+  if (cropRegion.value.width <= 0 || cropRegion.value.height <= 0) return;
+
+  const position = await appWindow.outerPosition();
+  try {
+    await updatePinSelection(
+      pin_id,
+      Math.round(cropRegion.value.x),
+      Math.round(cropRegion.value.y),
+      Math.round(cropRegion.value.width),
+      Math.round(cropRegion.value.height),
+      position.x,
+      position.y,
+      Math.round(zoomScale.value),
+      await appWindow.isMinimized(),
+    );
+  } catch (error) {
+    warn(`Failed to update pin state: ${error}`);
+  }
+}
+
 async function handleMouseDown(event: MouseEvent) {
   if (state.value === State.Drawing) {
     if (event.button === 0) {
@@ -321,7 +571,12 @@ async function handleMouseDown(event: MouseEvent) {
     }
   } else if (state.value === State.Default) {
     if (event.button === 0) {
-      startDragging();
+      const resizeEdges = getResizeEdges(event);
+      if (resizeEdges) {
+        await startSelectionResize(event, resizeEdges);
+      } else {
+        startDragging();
+      }
     }
   } else if (state.value === State.OCR) {
     const target = event.target as HTMLElement;
@@ -329,7 +584,12 @@ async function handleMouseDown(event: MouseEvent) {
                       target.closest('.ocr-text-overlay');
 
     if (event.button === 0 && !isOcrText) {
-      startDragging();
+      const resizeEdges = getResizeEdges(event);
+      if (resizeEdges) {
+        await startSelectionResize(event, resizeEdges);
+      } else {
+        startDragging();
+      }
     }
   }
 }
@@ -386,9 +646,16 @@ async function endDragging() {
       bottom: false
     };
   }, 50);
+
+  await persistPinState();
 }
 
-function handleMouseUp(_event: MouseEvent) {
+function handleMouseUp(event: MouseEvent) {
+  if (isResizingSelection.value) {
+    event.preventDefault();
+    return;
+  }
+
   if (state.value === State.Drawing) {
     endDrawing();
     return;
@@ -399,11 +666,21 @@ function handleMouseUp(_event: MouseEvent) {
   }
 }
 
-function handleMouseMove(_event: MouseEvent) {
+function handleMouseMove(event: MouseEvent) {
+  if (isResizingSelection.value) return;
+
   if (state.value === State.Drawing) {
     const mode = getActiveDrawTool();
     canvasRef.value?.continueDrawing(mode);
+  } else if (state.value === State.Default || state.value === State.OCR) {
+    updateResizeCursor(event);
   }
+}
+
+function handleMouseLeave(event: MouseEvent) {
+  if (isResizingSelection.value) return;
+  resizeCursor.value = 'default';
+  handleMouseUp(event);
 }
 
 function handleWheel(event: WheelEvent){
@@ -558,6 +835,7 @@ function updateToolbarVisibility() {
 }
 
 async function handleWindowResize() {
+  canvasRef.value?.updateSize()
   updateToolbarVisibility()
 }
 
@@ -667,12 +945,7 @@ onMounted(async () => {
 
     const focused = event.payload;
     if(!focused) {
-      const position = await appWindow.outerPosition();
-      try {
-        await updatePinState(pin_id, position.x, position.y, zoomScale.value, await appWindow.isMinimized());
-      } catch (error) {
-        warn(`Failed to update pin state: ${error}`);
-      }
+      await persistPinState();
     }
   });
 
@@ -725,6 +998,8 @@ onMounted(async () => {
 onBeforeUnmount(async () => {
   window.removeEventListener('keyup', handleKeyup)
   window.removeEventListener('resize', handleWindowResize)
+  window.removeEventListener('mousemove', handleSelectionResizeMove, true)
+  window.removeEventListener('mouseup', handleSelectionResizeEnd, true)
   ws?.close()
   ws = null
 })
@@ -743,5 +1018,9 @@ body {
   width: 100vw;
   overflow: hidden;
   transition: box-shadow 0.2s ease-in-out;
+}
+
+.container.resizing-selection {
+  box-shadow: inset 0 0 0 1px var(--theme-primary-pressed);
 }
 </style>
