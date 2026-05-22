@@ -2,7 +2,7 @@
   <div
     :class="['search-item', { selected: isSelected }]"
     @click="handleClick"
-    @mouseenter="handleMouseEnter"
+    @pointermove="handlePointerMove"
   >
     <div class="item-icon">
       <img 
@@ -75,7 +75,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   'click': [item: SearchItem]
   'action-click': [action: Action, item: SearchItem]
-  'mouse-enter': []
+  'pointer-move': [event: PointerEvent]
 }>()
 
 // Constants
@@ -117,8 +117,8 @@ const handleActionClick = (action: Action) => {
   emit('action-click', action, props.item)
 }
 
-const handleMouseEnter = () => {
-  emit('mouse-enter')
+const handlePointerMove = (event: PointerEvent) => {
+  emit('pointer-move', event)
 }
 </script>
 

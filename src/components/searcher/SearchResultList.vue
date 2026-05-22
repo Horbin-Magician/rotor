@@ -12,7 +12,7 @@
         :is-selected="selectedIndex === index"
         @click="handleItemClick"
         @action-click="handleActionClick"
-        @mouse-enter="selectedIndex = index"
+        @pointer-move="handlePointerMove(index, $event)"
       />
     </n-infinite-scroll>
   </div>
@@ -67,6 +67,13 @@ const handleItemClick = (item: SearchItem) => {
 
 const handleActionClick = (action: Action, item: SearchItem) => {
   emit('action-click', action, item)
+}
+
+const handlePointerMove = (index: number, event: PointerEvent) => {
+  if (event.movementX === 0 && event.movementY === 0) return
+  if (selectedIndex.value === index) return
+
+  selectedIndex.value = index
 }
 
 const handleLoadMore = () => {
