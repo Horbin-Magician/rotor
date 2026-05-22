@@ -13,7 +13,6 @@ use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
 
 use rotor_common::{i18n, AppConfig};
-#[cfg(target_os = "windows")]
 use rotor_platform::sys_util;
 
 #[cfg(target_os = "macos")]
@@ -54,6 +53,53 @@ fn prepare_macos_overlay_window(window: &WebviewWindow) -> tauri::Result<()> {
 #[cfg(target_os = "macos")]
 pub fn raise_macos_overlay_window(window: &WebviewWindow) -> tauri::Result<()> {
     update_macos_overlay_window(window, true)
+}
+
+pub fn focus_mask_window_at_cursor(app_handle: &tauri::AppHandle) {
+    let cursor_position = match sys_util::get_cursor_position() {
+        Ok(position) => position,
+        Err(err) => {
+            log::warn!("Failed to get cursor position for mask focus: {err}");
+            return;
+        }
+    };
+
+    let monitor = match Monitor::from_point(cursor_position.0, cursor_position.1) {
+        Ok(monitor) => monitor,
+        Err(err) => {
+            log::warn!(
+                "Failed to locate monitor at cursor ({}, {}): {err}",
+                cursor_position.0,
+                cursor_position.1
+            );
+            return;
+        }
+    };
+
+    let monitor_id = match monitor.id() {
+        Ok(id) => id,
+        Err(err) => {
+            log::warn!("Failed to get monitor id for mask focus: {err}");
+            return;
+        }
+    };
+
+    let label = format!("ssmask-{monitor_id}");
+    let Some(window) = app_handle.get_webview_window(&label) else {
+        log::debug!("Mask window {label} is not available for focus");
+        return;
+    };
+
+    if let Err(err) = window.set_focus() {
+        log::warn!("Failed to focus mask window {label}: {err}");
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(err) = raise_macos_overlay_window(&window) {
+            log::warn!("Failed to raise macOS screenshot overlay window {label}: {err}");
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

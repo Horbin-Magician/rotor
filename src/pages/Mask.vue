@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
 import { info, warn } from '@tauri-apps/plugin-log';
@@ -188,7 +188,7 @@ function getPixelColor(x: number, y: number) {
 
 // Auto-selection functionality
 async function changeCurrentMask() {
-  focusCurrentMask()
+  await focusCurrentMask()
 }
 
 async function updateAutoSelection(x: number, y: number) {
@@ -225,6 +225,47 @@ async function updateAutoSelection(x: number, y: number) {
   }
 }
 
+function applyPointerPosition(x: number, y: number) {
+  currentX.value = x
+  currentY.value = y
+
+  if (isSelecting.value) {
+    endX.value = x
+    endY.value = y
+    
+    // Update selection dimensions
+    selectionWidth.value = Math.abs(endX.value - startX.value)
+    selectionHeight.value = Math.abs(endY.value - startY.value)
+  }
+  if(isSelecting.value == false) {
+    updateAutoSelection(x, y)
+  }
+  updateMagnifier(x, y)
+  getPixelColor(x, y)
+}
+
+async function syncCursorPosition() {
+  try {
+    const [cursor, windowPosition, scaleFactor] = await Promise.all([
+      cursorPosition(),
+      appWindow.outerPosition(),
+      appWindow.scaleFactor(),
+    ])
+    const x = (cursor.x - windowPosition.x) / scaleFactor
+    const y = (cursor.y - windowPosition.y) / scaleFactor
+
+    if (x < 0 || y < 0 || x > windowWidth || y > windowHeight) {
+      return false
+    }
+
+    applyPointerPosition(x, y)
+    return true
+  } catch (error) {
+    warn(`Failed to sync cursor position: ${error}`)
+    return false
+  }
+}
+
 // Mouse event handlers
 function handleMouseDown(event: MouseEvent) {
   // Start selection
@@ -242,26 +283,11 @@ function handleMouseDown(event: MouseEvent) {
 }
 
 function handleMouseMove(event: MouseEvent) {
-  currentX.value = event.clientX
-  currentY.value = event.clientY
-  
-  if (isSelecting.value) {
-    endX.value = event.clientX
-    endY.value = event.clientY
-    
-    // Update selection dimensions
-    selectionWidth.value = Math.abs(endX.value - startX.value)
-    selectionHeight.value = Math.abs(endY.value - startY.value)
-  }
-  if(isSelecting.value == false) {
-    updateAutoSelection(event.clientX, event.clientY)
-  }
-  updateMagnifier(event.clientX, event.clientY)
-  getPixelColor(event.clientX, event.clientY)
+  applyPointerPosition(event.clientX, event.clientY)
 }
 
 function handleMouseOut(_event: MouseEvent) {
-  changeCurrentMask()
+  void changeCurrentMask()
 }
 
 async function handleMouseUp() {
@@ -336,7 +362,11 @@ async function initializeScreenshot(event: any) {
   })
 
   await appWindow.show()
-  changeCurrentMask() // Focus the current mask window
+  const isCursorInCurrentWindow = await syncCursorPosition()
+  if (isCursorInCurrentWindow) {
+    await appWindow.setFocus()
+  }
+  await changeCurrentMask() // Focus the current mask window
 }
 
 function hideWindow() {

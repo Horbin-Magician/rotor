@@ -43,7 +43,7 @@ const viewportWidth = window.screen.width;
 const viewportHeight = window.screen.height;
 
 const magnifierStyle = computed(() => {
-  if (!props.isWindowFocused) {
+  if (!props.isWindowFocused || props.currentX < 0 || props.currentY < 0) {
     return { display: 'none' };
   }
   

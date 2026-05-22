@@ -1,7 +1,6 @@
 use tauri::path::BaseDirectory;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
-use xcap::Monitor;
 
 use rotor_common::AppConfig;
 use rotor_platform::sys_util;
@@ -111,24 +110,7 @@ pub async fn get_screen_rects(
 
 #[tauri::command]
 pub async fn change_current_mask(handle: tauri::AppHandle) {
-    // Get current cursor position
-    let cursor_position = sys_util::get_cursor_position().unwrap();
-
-    // Find which monitor contains the cursor
-    if let Ok(monitor) = Monitor::from_point(cursor_position.0, cursor_position.1) {
-        let label = format!("ssmask-{}", monitor.id().unwrap_or_default());
-        let window = handle.get_webview_window(&label);
-        if let Some(window) = window {
-            let _ = window.set_focus();
-
-            #[cfg(target_os = "macos")]
-            {
-                if let Err(err) = rotor_screenshot::raise_macos_overlay_window(&window) {
-                    log::warn!("Failed to raise macOS screenshot overlay window: {err}");
-                }
-            }
-        }
-    }
+    rotor_screenshot::focus_mask_window_at_cursor(&handle);
 }
 
 #[tauri::command]
