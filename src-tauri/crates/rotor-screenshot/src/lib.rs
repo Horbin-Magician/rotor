@@ -8,13 +8,53 @@ use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
 
 use rotor_common::{i18n, AppConfig};
 #[cfg(target_os = "windows")]
 use rotor_platform::sys_util;
+
+#[cfg(target_os = "macos")]
+fn update_macos_overlay_window(window: &WebviewWindow, order_front: bool) -> tauri::Result<()> {
+    use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
+    use cocoa::base::id;
+    use cocoa::foundation::NSInteger;
+
+    const NS_SCREEN_SAVER_WINDOW_LEVEL: NSInteger = 1000;
+
+    let ns_window = window.ns_window()? as usize;
+    window.run_on_main_thread(move || {
+        let ns_window = ns_window as id;
+        if ns_window.is_null() {
+            return;
+        }
+
+        unsafe {
+            ns_window.setLevel_(NS_SCREEN_SAVER_WINDOW_LEVEL);
+            ns_window.setCollectionBehavior_(
+                ns_window.collectionBehavior()
+                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary,
+            );
+
+            if order_front {
+                ns_window.orderFrontRegardless();
+            }
+        }
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_macos_overlay_window(window: &WebviewWindow) -> tauri::Result<()> {
+    update_macos_overlay_window(window, false)
+}
+
+#[cfg(target_os = "macos")]
+pub fn raise_macos_overlay_window(window: &WebviewWindow) -> tauri::Result<()> {
+    update_macos_overlay_window(window, true)
+}
 
 #[derive(Debug, Clone, PartialEq)]
 struct MonitorConfig {
@@ -254,12 +294,7 @@ impl ScreenShotter {
 
             #[cfg(target_os = "macos")]
             {
-                use cocoa::appkit::{NSMainMenuWindowLevel, NSWindow};
-                use cocoa::base::id;
-                let ns_window = window.ns_window().unwrap() as id;
-                unsafe {
-                    ns_window.setLevel_((NSMainMenuWindowLevel + 1) as i64);
-                }
+                prepare_macos_overlay_window(&window)?;
             }
 
             window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {

@@ -120,6 +120,13 @@ pub async fn change_current_mask(handle: tauri::AppHandle) {
         let window = handle.get_webview_window(&label);
         if let Some(window) = window {
             let _ = window.set_focus();
+
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(err) = rotor_screenshot::raise_macos_overlay_window(&window) {
+                    log::warn!("Failed to raise macOS screenshot overlay window: {err}");
+                }
+            }
         }
     }
 }
