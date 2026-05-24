@@ -33,6 +33,17 @@
       :ocr-zoom-scale="ocrZoomScale"
       :zoom-scale="zoomScale"
     />
+
+    <div v-if="canResizeSelection" class="resize-handles">
+      <div class="resize-handle resize-top-left" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.topLeft)" />
+      <div class="resize-handle resize-top-right" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.topRight)" />
+      <div class="resize-handle resize-bottom-left" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.bottomLeft)" />
+      <div class="resize-handle resize-bottom-right" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.bottomRight)" />
+      <div class="resize-handle resize-left" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.left)" />
+      <div class="resize-handle resize-right" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.right)" />
+      <div class="resize-handle resize-top" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.top)" />
+      <div class="resize-handle resize-bottom" @mousedown.stop.prevent="startSelectionResizeFromHandle($event, resizeHandleEdges.bottom)" />
+    </div>
   </main>
   
   <PinToolbar 
@@ -64,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useI18n } from 'vue-i18n';
 import { getCurrentWindow, LogicalPosition, LogicalSize, monitorFromPoint, PhysicalPosition } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
@@ -209,6 +220,23 @@ const shortcuts = ref({
 
 const RESIZE_HANDLE_SIZE = 8;
 const MIN_CROP_SIZE = 12;
+const resizeHandleEdges = {
+  topLeft: { horizontal: 'left', vertical: 'top' },
+  topRight: { horizontal: 'right', vertical: 'top' },
+  bottomLeft: { horizontal: 'left', vertical: 'bottom' },
+  bottomRight: { horizontal: 'right', vertical: 'bottom' },
+  left: { horizontal: 'left', vertical: null },
+  right: { horizontal: 'right', vertical: null },
+  top: { horizontal: null, vertical: 'top' },
+  bottom: { horizontal: null, vertical: 'bottom' },
+} satisfies Record<string, ResizeEdges>;
+
+const canResizeSelection = computed(() =>
+  state.value !== State.Drawing &&
+  !!backImg.value &&
+  cropRegion.value.width > 0 &&
+  cropRegion.value.height > 0
+);
 
 // Load shortcuts from configuration
 async function loadShortcuts() {
@@ -538,6 +566,11 @@ async function startSelectionResize(event: MouseEvent, edges: ResizeEdges) {
 
   window.addEventListener('mousemove', handleSelectionResizeMove, true);
   window.addEventListener('mouseup', handleSelectionResizeEnd, true);
+}
+
+async function startSelectionResizeFromHandle(event: MouseEvent, edges: ResizeEdges) {
+  if (!canResizeSelection.value || event.button !== 0) return;
+  await startSelectionResize(event, edges);
 }
 
 function handleSelectionResizeMove(event: MouseEvent) {
@@ -1112,5 +1145,82 @@ body {
 
 .container.resizing-selection {
   box-shadow: inset 0 0 0 1px var(--theme-primary-pressed);
+}
+
+.resize-handles {
+  position: absolute;
+  inset: 0;
+  z-index: 400;
+  pointer-events: none;
+}
+
+.resize-handle {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.resize-left,
+.resize-right {
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.resize-left {
+  left: 0;
+}
+
+.resize-right {
+  right: 0;
+}
+
+.resize-top,
+.resize-bottom {
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.resize-top {
+  top: 0;
+}
+
+.resize-bottom {
+  bottom: 0;
+}
+
+.resize-top-left,
+.resize-top-right,
+.resize-bottom-left,
+.resize-bottom-right {
+  width: 12px;
+  height: 12px;
+  z-index: 1;
+}
+
+.resize-top-left {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.resize-top-right {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.resize-bottom-left {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.resize-bottom-right {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
 }
 </style>
