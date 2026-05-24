@@ -19,6 +19,11 @@ interface CropRegion {
   height: number;
 }
 
+interface CanvasSize {
+  width: number;
+  height: number;
+}
+
 const stageContainer = ref<HTMLDivElement | null>(null);
 
 let stage: Konva.Stage | null = null;
@@ -72,18 +77,24 @@ function initStage(
   stage.add(drawingLayer);
 }
 
-function updateCrop(crop: CropRegion) {
-  if (!backImgLayer) return;
+function updateCrop(crop: CropRegion, size?: CanvasSize) {
+  if (!stage || !backImgLayer) return;
 
   const konvaImage = backImgLayer.findOne('Image') as Konva.Image;
   if (!konvaImage) return;
 
+  const nextWidth = size?.width ?? stage.width();
+  const nextHeight = size?.height ?? stage.height();
+  stage.width(nextWidth);
+  stage.height(nextHeight);
   konvaImage.crop({
     x: crop.x,
     y: crop.y,
     width: crop.width,
     height: crop.height,
   });
+  konvaImage.width(nextWidth);
+  konvaImage.height(nextHeight);
   backImgLayer.batchDraw();
 }
 

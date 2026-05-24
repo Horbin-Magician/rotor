@@ -141,6 +141,17 @@ interface ResizeStartState {
   contentScaleFactor: number;
 }
 
+interface ResizeWindowState {
+  size: {
+    width: number;
+    height: number;
+  };
+  position: {
+    x: number;
+    y: number;
+  } | null;
+}
+
 enum DrawState {
   Pen,
   Rect,
@@ -185,7 +196,8 @@ let potentialSnap: EdgeSnap = {
 const resizeCursor = ref('default')
 const isResizingSelection = ref(false)
 let resizeStartState: ResizeStartState | null = null
-let pendingResizePoint: { screenX: number; screenY: number } | null = null
+let pendingResizeWindowState: ResizeWindowState | null = null
+let resizeFrameId: number | null = null
 let resizeApplyPromise: Promise<void> | null = null
 
 const backImg = ref<ImageBitmap | null>(null)
@@ -506,59 +518,41 @@ function getResizedCrop(screenX: number, screenY: number, startState: ResizeStar
   };
 }
 
-async function applySelectionResize(screenX: number, screenY: number) {
+function getResizeWindowState(crop: CropRegion, startState: ResizeStartState): ResizeWindowState {
+  const nextSize = getLogicalSizeForCrop(crop, startState.contentScaleFactor);
+  const nextPosition = getWindowPositionForCrop(crop, startState);
+  const shouldMove =
+    startState.edges.horizontal === 'left' ||
+    startState.edges.vertical === 'top';
+
+  return {
+    size: nextSize,
+    position: shouldMove ? nextPosition : null,
+  };
+}
+
+function applySelectionResize(screenX: number, screenY: number) {
   if (!resizeStartState || !backImg.value) return;
 
   const nextCrop = getResizedCrop(screenX, screenY, resizeStartState);
-  const nextSize = getLogicalSizeForCrop(nextCrop, resizeStartState.contentScaleFactor);
-  const nextPosition = getWindowPositionForCrop(nextCrop, resizeStartState);
-
+  const nextWindowState = getResizeWindowState(nextCrop, resizeStartState);
   cropRegion.value = nextCrop;
-  canvasRef.value?.updateCrop(nextCrop);
-
-  await appWindow.setSize(new LogicalSize(nextSize.width, nextSize.height));
-  if (
-    resizeStartState.edges.horizontal === 'left' ||
-    resizeStartState.edges.vertical === 'top'
-  ) {
-    await appWindow.setPosition(new PhysicalPosition(nextPosition.x, nextPosition.y));
-  }
-  canvasRef.value?.updateSize();
-}
-
-async function flushSelectionResize() {
-  while (pendingResizePoint && isResizingSelection.value) {
-    const point = pendingResizePoint;
-    pendingResizePoint = null;
-    await applySelectionResize(point.screenX, point.screenY);
-  }
-}
-
-function queueSelectionResize(screenX: number, screenY: number) {
-  pendingResizePoint = { screenX, screenY };
-  if (!resizeApplyPromise) {
-    resizeApplyPromise = flushSelectionResize().finally(() => {
-      resizeApplyPromise = null;
-      if (pendingResizePoint && isResizingSelection.value) {
-        queueSelectionResize(pendingResizePoint.screenX, pendingResizePoint.screenY);
-      }
-    });
-  }
+  canvasRef.value?.updateCrop(nextCrop, nextWindowState.size);
+  pendingResizeWindowState = nextWindowState;
+  requestResizeWindowApply();
 }
 
 async function startSelectionResize(event: MouseEvent, edges: ResizeEdges) {
   event.preventDefault();
   event.stopPropagation();
 
-  const position = await appWindow.outerPosition();
-  const currentScaleFactor = await syncCurrentScaleFactor();
   resizeStartState = {
     edges,
     screenX: event.screenX,
     screenY: event.screenY,
     crop: { ...cropRegion.value },
-    windowPosition: position,
-    scaleFactor: currentScaleFactor,
+    windowPosition: await appWindow.outerPosition(),
+    scaleFactor: await syncCurrentScaleFactor(),
     contentScaleFactor: init_scale_factor.value,
   };
   isResizingSelection.value = true;
@@ -576,7 +570,43 @@ async function startSelectionResizeFromHandle(event: MouseEvent, edges: ResizeEd
 function handleSelectionResizeMove(event: MouseEvent) {
   if (!isResizingSelection.value) return;
   event.preventDefault();
-  queueSelectionResize(event.screenX, event.screenY);
+  applySelectionResize(event.screenX, event.screenY);
+}
+
+async function flushResizeWindowApply() {
+  if (!pendingResizeWindowState) return;
+
+  const nextState = pendingResizeWindowState;
+  pendingResizeWindowState = null;
+  const resizeTasks: Promise<void>[] = [
+    appWindow.setSize(new LogicalSize(nextState.size.width, nextState.size.height)),
+  ];
+
+  if (nextState.position) {
+    resizeTasks.push(appWindow.setPosition(new PhysicalPosition(nextState.position.x, nextState.position.y)));
+  }
+
+  try {
+    await Promise.all(resizeTasks);
+  } catch (error) {
+    warn(`Failed to apply pin selection resize: ${error}`);
+  }
+}
+
+function requestResizeWindowApply() {
+  if (resizeFrameId !== null) return;
+
+  resizeFrameId = requestAnimationFrame(() => {
+    resizeFrameId = null;
+    if (!resizeApplyPromise) {
+      resizeApplyPromise = flushResizeWindowApply().finally(() => {
+        resizeApplyPromise = null;
+        if (pendingResizeWindowState) {
+          requestResizeWindowApply();
+        }
+      });
+    }
+  });
 }
 
 async function handleSelectionResizeEnd(event?: MouseEvent) {
@@ -585,19 +615,26 @@ async function handleSelectionResizeEnd(event?: MouseEvent) {
 
   window.removeEventListener('mousemove', handleSelectionResizeMove, true);
   window.removeEventListener('mouseup', handleSelectionResizeEnd, true);
-
+  const startState = resizeStartState;
   if (event) {
-    queueSelectionResize(event.screenX, event.screenY);
+    applySelectionResize(event.screenX, event.screenY);
   }
   if (resizeApplyPromise) {
     await resizeApplyPromise;
   }
+  if (resizeFrameId !== null) {
+    cancelAnimationFrame(resizeFrameId);
+    resizeFrameId = null;
+  }
+  if (pendingResizeWindowState) {
+    await flushResizeWindowApply();
+  }
 
-  const startState = resizeStartState;
   isResizingSelection.value = false;
   resizeStartState = null;
-  pendingResizePoint = null;
+  pendingResizeWindowState = null;
   resizeCursor.value = 'default';
+  canvasRef.value?.updateSize();
   updateToolbarVisibility();
 
   if (startState) {
@@ -754,7 +791,12 @@ function handleMouseUp(event: MouseEvent) {
 }
 
 function handleMouseMove(event: MouseEvent) {
-  if (isResizingSelection.value) return;
+  if (isResizingSelection.value) {
+    if (event.buttons === 0) {
+      void handleSelectionResizeEnd(event);
+    }
+    return;
+  }
 
   if (state.value === State.Drawing) {
     const mode = getActiveDrawTool();
@@ -937,6 +979,10 @@ function updateToolbarVisibility(focused?: boolean) {
 async function handleWindowResize() {
   if (isDragging) {
     pendingDragViewportUpdate = true;
+    return;
+  }
+
+  if (isResizingSelection.value) {
     return;
   }
 
