@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::ffi::{c_void, CString};
 use std::sync::mpsc;
-#[allow(unused_imports)]
+#[cfg(debug_assertions)]
 use std::time::SystemTime;
 use std::{fs, io};
 use windows::Win32::Foundation;
@@ -11,7 +11,6 @@ use windows::Win32::System::{Ioctl, IO};
 
 use super::ntfs_file_map::FileMap;
 use super::SearchResultItem;
-#[allow(unused_imports)]
 use rotor_platform::file_util;
 
 pub struct Volume {

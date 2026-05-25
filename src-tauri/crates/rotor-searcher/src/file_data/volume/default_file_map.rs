@@ -7,7 +7,6 @@ use std::sync::mpsc::Receiver;
 use super::SearchResultItem;
 use rotor_platform::file_util;
 
-#[allow(unused)]
 pub struct FileView {
     pub file_name: String,
     pub path: String,
@@ -22,13 +21,11 @@ pub struct FileKey {
     pub full_name: String,
 }
 
-#[allow(unused)]
 pub struct FileMap {
     main_map: BTreeMap<FileKey, FileView>,
 }
 
 impl FileMap {
-    #[allow(unused)]
     pub fn new() -> FileMap {
         FileMap {
             main_map: BTreeMap::new(),
@@ -36,7 +33,6 @@ impl FileMap {
     }
 
     // insert a file to the database by index, file name and parent index
-    #[allow(unused)]
     pub fn insert(&mut self, file_name: String, path: String) {
         let mut filter = make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
@@ -50,7 +46,7 @@ impl FileMap {
                 if !names.is_empty() {
                     let names: Vec<String> = names.values().cloned().collect(); // Create aliases from translation names
                     for name in names {
-                        if file_name.contains(&name) == false {
+                        if !file_name.contains(&name) {
                             filter |= make_filter(&name);
                             aliases.push(name);
                         }
@@ -69,7 +65,6 @@ impl FileMap {
     }
 
     // insert a file to the database by index and file struct
-    #[allow(unused)]
     fn insert_simple(&mut self, file: FileView) {
         let full_name = format!("{}/{}", file.path, file.file_name);
         let key = FileKey {
@@ -80,7 +75,6 @@ impl FileMap {
     }
 
     // remove item by FileView
-    #[allow(unused)]
     pub fn remove(&mut self, file_name: String, path: String) {
         let full_name = format!("{}/{}", path, file_name);
         let rank = Self::get_file_rank(&file_name);
@@ -89,7 +83,6 @@ impl FileMap {
     }
 
     // search for files by query
-    #[allow(unused)]
     pub fn search(
         &self,
         query: &str,
@@ -134,7 +127,7 @@ impl FileMap {
                 let icon_data = file_util::get_file_icon_data(&full_path);
 
                 result.push(SearchResultItem {
-                    path: file.path.clone() + "/", // TODO del
+                    path: format!("{}/", file.path),
                     file_name: file.file_name.clone(),
                     rank: file.rank,
                     icon_data,
@@ -151,12 +144,11 @@ impl FileMap {
         (Some(result), search_num)
     }
 
-    #[allow(unused)]
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
         let mut save_file = fs::File::create(path)?;
 
         let mut buf = Vec::new();
-        for (file_key, file) in self.iter() {
+        for (_, file) in self.iter() {
             buf.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
             buf.write_all(file.file_name.as_bytes())?;
             buf.write_all(&(file.path.len() as u16).to_be_bytes())?;
@@ -176,7 +168,6 @@ impl FileMap {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
         let file_data = fs::read(path)?;
 
@@ -265,20 +256,12 @@ impl FileMap {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn clear(&mut self) {
         self.main_map.clear();
     }
 
-    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.main_map.is_empty()
-    }
-
-    // get a File by index
-    #[allow(unused)]
-    fn get(&self, key: FileKey) -> Option<&FileView> {
-        return self.main_map.get(&key);
     }
 
     fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, FileView> {

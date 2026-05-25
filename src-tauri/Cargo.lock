@@ -5250,6 +5250,7 @@ dependencies = [
  "rotor-platform",
  "rotor-runtime",
  "rotor-screenshot",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",
@@ -5262,7 +5263,6 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tokio",
- "xcap",
 ]
 
 [[package]]

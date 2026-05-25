@@ -73,6 +73,12 @@ impl I18n {
     }
 }
 
+impl Default for I18n {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 static I18N_INSTANCE: LazyLock<Mutex<I18n>> = LazyLock::new(|| Mutex::new(I18n::new()));
 
 pub fn t(key: &str) -> String {

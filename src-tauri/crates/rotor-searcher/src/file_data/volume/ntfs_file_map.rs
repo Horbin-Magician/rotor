@@ -7,7 +7,6 @@ use std::sync::mpsc::Receiver;
 use super::SearchResultItem;
 use rotor_platform::file_util;
 
-#[allow(unused)]
 pub struct FileView {
     pub parent_index: u64,
     pub file_name: String,
@@ -21,7 +20,6 @@ pub struct FileKey {
     pub index: u64,
 }
 
-#[allow(unused)]
 pub struct FileMap {
     pub start_usn: i64,
     main_map: BTreeMap<FileKey, FileView>,
@@ -29,7 +27,6 @@ pub struct FileMap {
 }
 
 impl FileMap {
-    #[allow(unused)]
     pub fn new() -> FileMap {
         FileMap {
             start_usn: 0,
@@ -39,7 +36,6 @@ impl FileMap {
     }
 
     // insert a file to the database by index, file name and parent index
-    #[allow(unused)]
     pub fn insert(&mut self, index: u64, file_name: String, parent_index: u64) {
         let filter = make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
@@ -55,7 +51,6 @@ impl FileMap {
     }
 
     // insert a file to the database by index and file struct
-    #[allow(unused)]
     fn insert_simple(&mut self, index: u64, file: FileView) {
         let key = FileKey {
             rank: file.rank,
@@ -66,7 +61,6 @@ impl FileMap {
     }
 
     // remove item
-    #[allow(unused)]
     pub fn remove(&mut self, index: &u64) {
         if self.rank_map.contains_key(index) {
             let file_key = FileKey {
@@ -79,7 +73,6 @@ impl FileMap {
     }
 
     // search for files by query
-    #[allow(unused)]
     pub fn search(
         &self,
         query: &str,
@@ -123,7 +116,6 @@ impl FileMap {
         (Some(result), search_num)
     }
 
-    #[allow(unused)]
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
         let mut save_file = fs::File::create(path)?;
 
@@ -142,7 +134,6 @@ impl FileMap {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
         let file_data = fs::read(path)?;
 
@@ -197,13 +188,11 @@ impl FileMap {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn clear(&mut self) {
         self.main_map.clear();
         self.rank_map.clear();
     }
 
-    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.main_map.is_empty()
     }

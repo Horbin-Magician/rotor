@@ -1,5 +1,3 @@
-use xcap;
-
 #[cfg(target_os = "windows")]
 mod win_imports {
     pub use is_root::is_root;

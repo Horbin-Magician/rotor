@@ -5,18 +5,17 @@ use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::path::Path;
 
-#[allow(dead_code)]
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let original_width = original_img.width();
     let original_height = original_img.height();
     let scale_factor = calculate_optimal_scale_factor(original_img.width(), original_img.height());
-    let gray = image_to_scaled_gray(&original_img, scale_factor);
+    let gray = image_to_scaled_gray(original_img, scale_factor);
     let edge_image = canny_edge_detection(&gray, 10.0, 30.0);
 
     let morph_size = cmp::max(1, 4 / scale_factor) as u8;
     let processed_image = morphological_close(edge_image, morph_size);
 
-    let min_size = (100 / scale_factor) as u32;
+    let min_size = 100 / scale_factor;
     let rects = find_bounding_boxes(&processed_image, min_size);
 
     // 6. Rescale back
@@ -92,7 +91,7 @@ fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32
         .enumerate()
         .for_each(|(y, row)| {
             if y > 0 && y < (height as usize - 1) {
-                for x in 1..(width_usize - 1) {
+                for (x, pixel) in row.iter_mut().enumerate().take(width_usize - 1).skip(1) {
                     let idx = |dx: i32, dy: i32| -> usize {
                         (y as i32 + dy) as usize * width_usize + (x as i32 + dx) as usize
                     };
@@ -116,7 +115,7 @@ fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32
 
                         let mag_sq = gx * gx + gy * gy;
 
-                        row[x] = if mag_sq > high_sq {
+                        *pixel = if mag_sq > high_sq {
                             255
                         } else if mag_sq > low_sq {
                             128
@@ -156,10 +155,8 @@ fn morphological_close(img: GrayImage, size: u8) -> GrayImage {
                                 if neighbor > val {
                                     val = neighbor;
                                 }
-                            } else {
-                                if neighbor < val {
-                                    val = neighbor;
-                                }
+                            } else if neighbor < val {
+                                val = neighbor;
                             }
                         }
                     }
@@ -302,7 +299,6 @@ pub struct TextResult {
     pub text: String,
 }
 
-#[allow(dead_code)]
 pub fn img2text(
     model_path: &Path,
     img: &DynamicImage,

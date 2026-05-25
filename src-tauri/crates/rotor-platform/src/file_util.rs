@@ -17,7 +17,6 @@ pub fn del_useless_files() -> Result<(), Box<dyn std::error::Error>> {
         if entry_path.is_file() {
             if let Some(ext) = entry_path.extension() {
                 if ext == "fd" {
-                    // TODO del this
                     fs::remove_file(&entry_path)?;
                 }
             }

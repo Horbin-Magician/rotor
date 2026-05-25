@@ -72,15 +72,17 @@ export function updatePinSelection(
   minimized: boolean,
 ) {
   return invoke<void>('update_pin_selection', {
-    id,
-    rectX,
-    rectY,
-    width,
-    height,
-    windowX,
-    windowY,
-    zoom,
-    minimized,
+    selection: {
+      id,
+      rectX,
+      rectY,
+      width,
+      height,
+      windowX,
+      windowY,
+      zoom,
+      minimized,
+    },
   })
 }
 

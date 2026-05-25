@@ -17,6 +17,20 @@ struct SaveImageConfig {
     ask_save_path: bool,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinSelectionUpdate {
+    id: u32,
+    rect_x: u32,
+    rect_y: u32,
+    width: u32,
+    height: u32,
+    window_x: i32,
+    window_y: i32,
+    zoom: u32,
+    minimized: bool,
+}
+
 fn lock_app() -> std::sync::MutexGuard<'static, Application> {
     Application::global()
         .lock()
@@ -195,31 +209,26 @@ pub async fn update_pin_state(id: u32, x: i32, y: i32, zoom: u32, minimized: boo
 }
 
 #[tauri::command]
-pub async fn update_pin_selection(
-    id: u32,
-    rect_x: u32,
-    rect_y: u32,
-    width: u32,
-    height: u32,
-    window_x: i32,
-    window_y: i32,
-    zoom: u32,
-    minimized: bool,
-) {
-    if width == 0 || height == 0 {
-        log::warn!("Ignoring empty pin selection update for {}", id);
+pub async fn update_pin_selection(selection: PinSelectionUpdate) {
+    if selection.width == 0 || selection.height == 0 {
+        log::warn!("Ignoring empty pin selection update for {}", selection.id);
         return;
     }
 
     let mut app = lock_app();
-    if let Some(mut record) = app.screenshot.get_pin_record(id) {
-        record.rect = (rect_x, rect_y, width, height);
-        record.offset.0 = window_x - record.monitor_pos.0 - rect_x as i32;
-        record.offset.1 = window_y - record.monitor_pos.1 - rect_y as i32;
-        record.zoom_factor = zoom;
-        record.minimized = minimized;
-        if let Err(error) = app.screenshot.update_shotter_record(id, record) {
-            log::error!("Failed to update pin selection {id}: {error}");
+    if let Some(mut record) = app.screenshot.get_pin_record(selection.id) {
+        record.rect = (
+            selection.rect_x,
+            selection.rect_y,
+            selection.width,
+            selection.height,
+        );
+        record.offset.0 = selection.window_x - record.monitor_pos.0 - selection.rect_x as i32;
+        record.offset.1 = selection.window_y - record.monitor_pos.1 - selection.rect_y as i32;
+        record.zoom_factor = selection.zoom;
+        record.minimized = selection.minimized;
+        if let Err(error) = app.screenshot.update_shotter_record(selection.id, record) {
+            log::error!("Failed to update pin selection {}: {error}", selection.id);
         }
     }
 }
@@ -243,10 +252,10 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
             save_path: app_config.get("save_path").cloned().unwrap_or_default(),
             auto_update_save_path: app_config
                 .get("if_auto_change_save_path")
-                .map_or(true, |value| value == "true"),
+                .is_none_or(|value| value == "true"),
             ask_save_path: app_config
                 .get("if_ask_save_path")
-                .map_or(true, |value| value == "true"),
+                .is_none_or(|value| value == "true"),
         }
     };
 

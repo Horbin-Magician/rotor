@@ -183,3 +183,9 @@ impl ShotterRecord {
             })
     }
 }
+
+impl Default for ShotterRecord {
+    fn default() -> Self {
+        Self::new()
+    }
+}
