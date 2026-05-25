@@ -1,59 +1,22 @@
+mod capture_cache;
 pub mod img_util;
+mod monitor;
+mod platform;
 pub mod shotter_record;
 
+use crate::capture_cache::CaptureCache;
+use crate::monitor::{capture_all, current_configs, mask_label, sorted_configs, MonitorConfig};
+use crate::platform::{disable_window_animation, prepare_overlay_window, raise_overlay_window};
 use crate::shotter_record::{ShotterConfig, ShotterRecord};
 use image::{DynamicImage, RgbaImage};
-use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
-use std::sync::Arc;
-use std::sync::Mutex;
-use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
 
 use rotor_common::{i18n, AppConfig};
 use rotor_platform::sys_util;
-
-#[cfg(target_os = "macos")]
-fn update_macos_overlay_window(window: &WebviewWindow, order_front: bool) -> tauri::Result<()> {
-    use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
-    use cocoa::base::id;
-    use cocoa::foundation::NSInteger;
-
-    const NS_SCREEN_SAVER_WINDOW_LEVEL: NSInteger = 1000;
-
-    let ns_window = window.ns_window()? as usize;
-    window.run_on_main_thread(move || {
-        let ns_window = ns_window as id;
-        if ns_window.is_null() {
-            return;
-        }
-
-        unsafe {
-            ns_window.setLevel_(NS_SCREEN_SAVER_WINDOW_LEVEL);
-            ns_window.setCollectionBehavior_(
-                ns_window.collectionBehavior()
-                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
-                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary,
-            );
-
-            if order_front {
-                ns_window.orderFrontRegardless();
-            }
-        }
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn prepare_macos_overlay_window(window: &WebviewWindow) -> tauri::Result<()> {
-    update_macos_overlay_window(window, false)
-}
-
-#[cfg(target_os = "macos")]
-pub fn raise_macos_overlay_window(window: &WebviewWindow) -> tauri::Result<()> {
-    update_macos_overlay_window(window, true)
-}
 
 pub fn focus_mask_window_at_cursor(app_handle: &tauri::AppHandle) {
     let cursor_position = match sys_util::get_cursor_position() {
@@ -84,7 +47,7 @@ pub fn focus_mask_window_at_cursor(app_handle: &tauri::AppHandle) {
         }
     };
 
-    let label = format!("ssmask-{monitor_id}");
+    let label = mask_label(monitor_id);
     let Some(window) = app_handle.get_webview_window(&label) else {
         log::debug!("Mask window {label} is not available for focus");
         return;
@@ -94,41 +57,15 @@ pub fn focus_mask_window_at_cursor(app_handle: &tauri::AppHandle) {
         log::warn!("Failed to focus mask window {label}: {err}");
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(err) = raise_macos_overlay_window(&window) {
-            log::warn!("Failed to raise macOS screenshot overlay window {label}: {err}");
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct MonitorConfig {
-    id: u32,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    scale_factor: f32,
-}
-
-impl MonitorConfig {
-    fn from_monitor(monitor: &Monitor) -> Result<Self, Box<dyn Error>> {
-        Ok(MonitorConfig {
-            id: monitor.id()?,
-            x: monitor.x()?,
-            y: monitor.y()?,
-            width: monitor.width()?,
-            height: monitor.height()?,
-            scale_factor: monitor.scale_factor()?,
-        })
+    if let Err(err) = raise_overlay_window(&window) {
+        log::warn!("Failed to raise screenshot overlay window {label}: {err}");
     }
 }
 
 pub struct ScreenShotter {
-    app_hander: Option<tauri::AppHandle>,
-    pub masks: Arc<Mutex<HashMap<String, RgbaImage>>>,
-    pub shotter_recort: shotter_record::ShotterRecord,
+    app_handle: Option<tauri::AppHandle>,
+    capture_cache: CaptureCache,
+    shotter_record: ShotterRecord,
     max_pin_id: u32,
     current_monitors: Vec<MonitorConfig>,
 }
@@ -138,291 +75,72 @@ impl ScreenShotter {
         "screenshot"
     }
 
-    pub fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
-        self.app_hander = Some(app.clone());
-
-        self.update_monitor_config()?; // Store initial monitor configuration
-
-        self.build_mask_windows()?; // Pre-build mask window for faster response
-        self.restore_pin_wins();
-
-        Ok(())
-    }
-
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        self.check_and_rebuild_mask_windows()?; // Check if monitors have changed, if changed, rebuild mask windows
-
-        let app_handle = match &self.app_hander {
-            Some(handle) => handle.clone(),
-            None => return Err("AppHandle not initialized".into()),
-        };
-
-        let mut mask = self.masks.lock().unwrap();
-        mask.clear();
-        drop(mask);
-
-        // Capture screen
-        #[cfg(target_os = "windows")]
-        for monitor in Monitor::all()? {
-            let masks_clone = Arc::clone(&self.masks);
-            let pos_x = monitor.x()?;
-            let pox_y = monitor.y()?;
-            tauri::async_runtime::spawn(async move {
-                let monitor = Monitor::from_point(pos_x, pox_y);
-                if let Ok(monitor) = monitor {
-                    if let Ok(img) = monitor.capture_image() {
-                        let label = format!("ssmask-{}", monitor.id().unwrap());
-                        let mut masks = masks_clone.lock().unwrap();
-                        masks.insert(label.clone(), img);
-                    } else {
-                        log::error!(
-                            "Failed to capture image for monitor at ({}, {})",
-                            pos_x,
-                            pox_y
-                        );
-                    }
-                } else {
-                    log::error!("Failed to get monitor from point ({}, {})", pos_x, pox_y);
-                }
-            });
-        }
-
-        #[cfg(target_os = "macos")]
-        for monitor in Monitor::all()? {
-            let masks_clone = Arc::clone(&self.masks);
-            tauri::async_runtime::spawn(async move {
-                if let Ok(img) = monitor.capture_image() {
-                    let label = format!("ssmask-{}", monitor.id().unwrap());
-                    let mut masks = masks_clone.lock().unwrap();
-                    masks.insert(label.clone(), img);
-                } else {
-                    log::error!(
-                        "Failed to capture image for monitor id {}",
-                        monitor.id().unwrap_or_default()
-                    );
-                }
-            });
-        }
-
-        app_handle.emit("show-mask", ()).unwrap();
-
-        Ok(())
-    }
-
-    pub fn get_shortcut(&self) -> Option<Shortcut> {
-        let app_config = AppConfig::global().lock().unwrap();
-        let shortcut = app_config.get("shortcut_screenshot").cloned();
-        drop(app_config);
-        if let Some(shortcut_str) = shortcut {
-            return Some(Shortcut::from_str(&shortcut_str).unwrap());
-        }
-        None
-    }
-
-    pub fn new() -> Result<ScreenShotter, Box<dyn Error>> {
-        Ok(ScreenShotter {
-            app_hander: None,
-            masks: Arc::new(Mutex::new(HashMap::new())),
-            shotter_recort: ShotterRecord::new(),
+    pub fn new() -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            app_handle: None,
+            capture_cache: CaptureCache::new(),
+            shotter_record: ShotterRecord::new(),
             max_pin_id: 0,
             current_monitors: Vec::new(),
         })
     }
 
-    /// Check if monitors have changed compared to stored configuration
-    fn monitors_have_changed(&self) -> Result<bool, Box<dyn Error>> {
-        let current_monitors = Monitor::all()?;
-
-        // If the number of monitors changed, definitely changed
-        if current_monitors.len() != self.current_monitors.len() {
-            return Ok(true);
-        }
-
-        // Convert current monitors to our config format
-        let mut current_configs = Vec::new();
-        for monitor in current_monitors {
-            current_configs.push(MonitorConfig::from_monitor(&monitor)?);
-        }
-
-        // Sort both vectors by monitor ID for comparison
-        let mut stored_configs = self.current_monitors.clone();
-        stored_configs.sort_by_key(|config| config.id);
-        current_configs.sort_by_key(|config| config.id);
-
-        // Compare configurations
-        Ok(stored_configs != current_configs)
-    }
-
-    /// Update stored monitor configuration with current monitors
-    fn update_monitor_config(&mut self) -> Result<(), Box<dyn Error>> {
-        let app_handle = match &self.app_hander {
-            Some(handle) => handle,
-            None => return Err("AppHandle not initialized".into()),
-        };
-
-        let old_monitors = self.current_monitors.clone();
-
-        let monitors = Monitor::all()?;
-        self.current_monitors.clear();
-        for monitor in monitors {
-            self.current_monitors
-                .push(MonitorConfig::from_monitor(&monitor)?);
-        }
-
-        for old_monitor in old_monitors {
-            let mut if_del = true;
-            for new_monitor in &self.current_monitors {
-                if old_monitor.id == new_monitor.id {
-                    if_del = false;
-                    break;
-                }
-            }
-            if if_del {
-                let label = format!("ssmask-{}", old_monitor.id);
-                if let Some(window) = app_handle.get_webview_window(&label) {
-                    if let Err(e) = window.close() {
-                        log::warn!("Failed to close mask window {}: {}", label, e);
-                    }
-                }
-            }
-        }
+    pub fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
+        self.app_handle = Some(app.clone());
+        self.update_monitor_config()?;
+        self.build_mask_windows()?;
+        self.restore_pin_wins();
         Ok(())
     }
 
-    /// Check if monitors have changed, if changed, rebuild mask windows
-    fn check_and_rebuild_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
-        if self.monitors_have_changed()? {
-            self.update_monitor_config()?; // Update monitor configuration
-            self.build_mask_windows()?; // Rebuild mask windows with new configuration
+    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        self.check_and_rebuild_mask_windows()?;
+        self.capture_cache.clear();
+
+        let captures = capture_all(Monitor::all()?);
+        if captures.is_empty() {
+            return Err("No screenshot images captured".into());
         }
 
+        self.capture_cache.replace_all(captures);
+        self.app_handle()?.emit("show-mask", ())?;
         Ok(())
     }
 
-    fn build_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
-        let app_handle = match &self.app_hander {
-            Some(handle) => handle,
-            None => return Err("AppHandle not initialized".into()),
-        };
+    pub fn get_shortcut(&self) -> Option<Shortcut> {
+        let app_config = AppConfig::global()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let shortcut = app_config.get("shortcut_screenshot")?.clone();
+        drop(app_config);
 
-        for monitor in Monitor::all()? {
-            let label = format!("ssmask-{}", monitor.id()?);
-
-            let mask_window = app_handle.get_webview_window(&label);
-            if let Some(_) = mask_window {
-                continue; // Window already exists, skip creation
+        match Shortcut::from_str(&shortcut) {
+            Ok(shortcut) => Some(shortcut),
+            Err(error) => {
+                log::warn!("Invalid screenshot shortcut `{shortcut}`: {error}");
+                None
             }
-
-            let win_builder = WebviewWindowBuilder::new(
-                app_handle,
-                &label,
-                WebviewUrl::App("ScreenShotter/Mask".into()),
-            )
-            .always_on_top(true)
-            .resizable(false)
-            .visible(false)
-            .accept_first_mouse(true)
-            .shadow(false)
-            .skip_taskbar(true)
-            .transparent(true);
-
-            let window = win_builder.build()?;
-
-            #[cfg(target_os = "windows")]
-            {
-                window
-                    .hwnd()
-                    .map(|hwnd| {
-                        sys_util::forbid_window_animation(hwnd);
-                    })
-                    .ok();
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                prepare_macos_overlay_window(&window)?;
-            }
-
-            window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                x: monitor.x()?,
-                y: monitor.y()?,
-            }))?;
         }
-
-        Ok(())
     }
 
-    fn build_pin_window(
-        &self,
-        id: Option<u32>,
-        pos: Option<PhysicalPosition<i32>>,
+    pub fn get_capture(&self, label: &str) -> Option<RgbaImage> {
+        self.capture_cache.get(label)
+    }
+
+    pub fn get_pin_record(&self, id: u32) -> Option<ShotterConfig> {
+        self.shotter_record.get_record(id).cloned()
+    }
+
+    pub fn update_shotter_record(
+        &mut self,
+        id: u32,
+        config: ShotterConfig,
     ) -> Result<(), Box<dyn Error>> {
-        let app_handle = match &self.app_hander {
-            Some(handle) => handle,
-            None => return Err("AppHandle not initialized".into()),
-        };
+        self.shotter_record.update_shotter(id, config)
+    }
 
-        let set_id = if let Some(id) = id {
-            id
-        } else {
-            self.max_pin_id
-        };
-        let label = format!("sspin-{}", set_id);
-
-        let mut x = 0.0;
-        let mut y = 0.0;
-        if let Some(pos) = pos {
-            if let Ok(monitor) = xcap::Monitor::from_point(pos.x, pos.y) {
-                let scale_factor = monitor.scale_factor()?;
-                x = pos.x as f64 / scale_factor as f64;
-                y = pos.y as f64 / scale_factor as f64;
-            }
-        }
-
-        // Only create the window if it doesn't already exist
-        if app_handle.get_webview_window(&label).is_none() {
-            let win_builder = WebviewWindowBuilder::new(
-                app_handle,
-                &label,
-                WebviewUrl::App("ScreenShotter/Pin".into()),
-            )
-            .title(i18n::t("pinWindowName"))
-            .always_on_top(true)
-            .resizable(false)
-            .decorations(false)
-            .position(x, y)
-            .visible(false)
-            .transparent(true);
-
-            #[cfg(target_os = "windows")]
-            {
-                let window = win_builder.build()?;
-                window
-                    .hwnd()
-                    .map(|hwnd| {
-                        sys_util::forbid_window_animation(hwnd);
-                    })
-                    .ok();
-
-                if let Some(pos) = pos {
-                    // just fix the focus influenced by the order of window creation
-                    if let Ok(monitor) = xcap::Monitor::from_point(pos.x, pos.y) {
-                        let label = format!("ssmask-{}", monitor.id().unwrap_or_default());
-                        let window = app_handle.get_webview_window(&label);
-                        if let Some(window) = window {
-                            let _ = window.set_focus();
-                        }
-                    }
-                }
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                let _window = win_builder.build()?;
-            }
-        }
-
-        Ok(())
+    pub fn delete_pin_record(&mut self, id: u32) -> Result<(), Box<dyn Error>> {
+        self.shotter_record.del_shotter(id)
     }
 
     pub fn new_pin(
@@ -433,11 +151,6 @@ impl ScreenShotter {
         offset: (i32, i32),
         mask_label: String,
     ) -> Result<(), Box<dyn Error>> {
-        let app_handle = match &self.app_hander {
-            Some(handle) => handle.clone(),
-            None => return Err("AppHandle not initialized".into()),
-        };
-
         let config = ShotterConfig {
             monitor_pos,
             monitor_size,
@@ -447,97 +160,255 @@ impl ScreenShotter {
             mask_label,
             minimized: false,
         };
-        self.update_shotter_record(self.max_pin_id, config);
 
-        let pin_label = format!("sspin-{}", self.max_pin_id);
-        app_handle.emit_to(&pin_label, "show-pin", ()).unwrap();
-        self.max_pin_id += 1;
-
+        let pin_id = self.max_pin_id;
+        self.build_pin_window(
+            Some(pin_id),
+            Some(PhysicalPosition {
+                x: monitor_pos.0 + rect.0 as i32 + offset.0,
+                y: monitor_pos.1 + rect.1 as i32 + offset.1,
+            }),
+        )?;
+        self.update_shotter_record(pin_id, config)?;
+        let pin_label = format!("sspin-{pin_id}");
+        self.app_handle()?.emit_to(&pin_label, "show-pin", ())?;
+        self.max_pin_id = self.max_pin_id.saturating_add(1);
         Ok(())
     }
 
     pub fn new_cache_pin(&mut self, x: i32, y: i32) -> Result<(), Box<dyn Error>> {
-        self.build_pin_window(None, Some(PhysicalPosition { x, y }))?;
-        Ok(())
+        self.build_pin_window(None, Some(PhysicalPosition { x, y }))
     }
 
     pub fn close_cache_pin(&mut self) -> Result<(), Box<dyn Error>> {
-        let app_handle = match &self.app_hander {
-            Some(handle) => handle,
-            None => return Err("AppHandle not initialized".into()),
-        };
-
         let pin_label = format!("sspin-{}", self.max_pin_id);
-        let pin_win = app_handle.get_webview_window(&pin_label);
-        if let Some(win) = pin_win {
-            win.close().unwrap();
+        if let Some(win) = self.app_handle()?.get_webview_window(&pin_label) {
+            if let Err(error) = win.close() {
+                log::warn!("Failed to close cache pin window {pin_label}: {error}");
+            }
         }
-
         Ok(())
     }
 
     pub fn get_pin_img(&self, id: u32) -> Option<DynamicImage> {
         if let Ok(img) = ShotterRecord::load_record_img(id) {
             return Some(img);
-        } else {
-            let record = self.shotter_recort.get_record(id);
-            if let Some(record) = record {
-                let image = {
-                    let masks = self.masks.lock().unwrap();
-                    masks.get(&record.mask_label).cloned()
-                };
-
-                if let Some(img) = image {
-                    // Return the full monitor screenshot instead of cropping
-                    let dyn_img = DynamicImage::ImageRgba8(img);
-                    ShotterRecord::save_record_img(id, dyn_img.clone());
-                    return Some(dyn_img);
-                }
-            }
         }
-        None
-    }
 
-    pub fn update_shotter_record(&mut self, id: u32, config: ShotterConfig) {
-        if let Err(e) = self.shotter_recort.update_shotter(id, config) {
-            log::error!("Failed to update shotter record {}: {}", id, e);
-        }
+        let record = self.shotter_record.get_record(id)?;
+        let img = self.capture_cache.get(&record.mask_label)?;
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        ShotterRecord::save_record_img(id, dyn_img.clone());
+        Some(dyn_img)
     }
 
     pub fn restore_pin_wins(&mut self) {
         let mut max_id = 0u32;
         let mut invalid_ids = Vec::new();
-        let records = self.shotter_recort.get_records();
+        let records = self
+            .shotter_record
+            .get_records()
+            .cloned()
+            .unwrap_or_default();
 
-        if let Some(records) = records {
-            for (id_str, record) in records {
-                if let Ok(id) = id_str.parse::<u32>() {
-                    if ShotterRecord::load_record_img(id).is_err() {
-                        invalid_ids.push(id);
-                        continue;
-                    }
+        for (id_str, record) in records {
+            let Ok(id) = id_str.parse::<u32>() else {
+                continue;
+            };
 
-                    max_id = max_id.max(id);
-                    self.build_pin_window(
-                        Some(id),
-                        Some(PhysicalPosition {
-                            x: record.monitor_pos.0,
-                            y: record.monitor_pos.1,
-                        }),
-                    )
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to restore pin window {}: {}", id, e);
-                    });
-                }
+            if ShotterRecord::load_record_img(id).is_err() {
+                invalid_ids.push(id);
+                continue;
+            }
+
+            max_id = max_id.max(id);
+            if let Err(error) = self.build_pin_window(
+                Some(id),
+                Some(PhysicalPosition {
+                    x: record.monitor_pos.0,
+                    y: record.monitor_pos.1,
+                }),
+            ) {
+                log::error!("Failed to restore pin window {id}: {error}");
             }
         }
 
         for id in invalid_ids {
-            if let Err(e) = self.shotter_recort.del_shotter(id) {
-                log::warn!("Failed to remove invalid pin record {}: {}", id, e);
+            if let Err(error) = self.shotter_record.del_shotter(id) {
+                log::warn!("Failed to remove invalid pin record {id}: {error}");
             }
         }
 
-        self.max_pin_id = max_id + 1; // Update max_pin_id to ensure new pins don't conflict with restored ones
+        self.max_pin_id = max_id.saturating_add(1);
+    }
+
+    fn app_handle(&self) -> Result<&tauri::AppHandle, Box<dyn Error>> {
+        self.app_handle
+            .as_ref()
+            .ok_or_else(|| Box::<dyn Error>::from("AppHandle not initialized"))
+    }
+
+    fn monitors_have_changed(&self) -> Result<bool, Box<dyn Error>> {
+        let current = sorted_configs(current_configs()?);
+        let stored = sorted_configs(self.current_monitors.clone());
+        Ok(current != stored)
+    }
+
+    fn update_monitor_config(&mut self) -> Result<(), Box<dyn Error>> {
+        let old_monitors = self.current_monitors.clone();
+        let new_monitors = current_configs()?;
+
+        for old_monitor in old_monitors {
+            if new_monitors
+                .iter()
+                .any(|new_monitor| new_monitor.id == old_monitor.id)
+            {
+                continue;
+            }
+
+            let label = mask_label(old_monitor.id);
+            if let Some(window) = self.app_handle()?.get_webview_window(&label) {
+                if let Err(error) = window.close() {
+                    log::warn!("Failed to close mask window {label}: {error}");
+                }
+            }
+        }
+
+        self.current_monitors = new_monitors;
+        Ok(())
+    }
+
+    fn check_and_rebuild_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.monitors_have_changed()? {
+            self.update_monitor_config()?;
+        }
+        self.build_mask_windows()
+    }
+
+    fn build_mask_windows(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.current_monitors.is_empty() {
+            self.update_monitor_config()?;
+        }
+
+        let app_handle = self.app_handle()?;
+        for monitor in &self.current_monitors {
+            let label = mask_label(monitor.id);
+            let position = tauri::Position::Physical(tauri::PhysicalPosition {
+                x: monitor.x,
+                y: monitor.y,
+            });
+
+            if let Some(window) = app_handle.get_webview_window(&label) {
+                if let Err(error) = window.set_position(position) {
+                    log::warn!("Failed to update mask window {label} position: {error}");
+                }
+                continue;
+            }
+
+            let window = WebviewWindowBuilder::new(
+                app_handle,
+                &label,
+                WebviewUrl::App("ScreenShotter/Mask".into()),
+            )
+            .always_on_top(true)
+            .resizable(false)
+            .visible(false)
+            .accept_first_mouse(true)
+            .shadow(false)
+            .skip_taskbar(true)
+            .transparent(true)
+            .build()?;
+
+            disable_window_animation(&window);
+            prepare_overlay_window(&window)?;
+            window.set_position(position)?;
+        }
+
+        Ok(())
+    }
+
+    fn build_pin_window(
+        &self,
+        id: Option<u32>,
+        pos: Option<PhysicalPosition<i32>>,
+    ) -> Result<(), Box<dyn Error>> {
+        let app_handle = self.app_handle()?;
+        let set_id = id.unwrap_or(self.max_pin_id);
+        let label = format!("sspin-{set_id}");
+
+        if app_handle.get_webview_window(&label).is_some() {
+            return Ok(());
+        }
+
+        let (x, y) = get_logical_position(pos)?;
+        let window = WebviewWindowBuilder::new(
+            app_handle,
+            &label,
+            WebviewUrl::App("ScreenShotter/Pin".into()),
+        )
+        .title(i18n::t("pinWindowName"))
+        .always_on_top(true)
+        .resizable(false)
+        .decorations(false)
+        .position(x, y)
+        .visible(false)
+        .transparent(true)
+        .build()?;
+
+        disable_window_animation(&window);
+        refocus_mask_after_pin_build(app_handle, pos);
+        Ok(())
+    }
+}
+
+fn get_logical_position(pos: Option<PhysicalPosition<i32>>) -> Result<(f64, f64), Box<dyn Error>> {
+    let Some(pos) = pos else {
+        return Ok((0.0, 0.0));
+    };
+
+    let Ok(monitor) = Monitor::from_point(pos.x, pos.y) else {
+        log::warn!(
+            "Failed to locate monitor at ({}, {}) for pin window position",
+            pos.x,
+            pos.y
+        );
+        return Ok((0.0, 0.0));
+    };
+
+    let scale_factor = match monitor.scale_factor() {
+        Ok(scale_factor) => f64::from(scale_factor),
+        Err(error) => {
+            log::warn!("Failed to get monitor scale factor for pin window position: {error}");
+            return Ok((0.0, 0.0));
+        }
+    };
+
+    Ok((pos.x as f64 / scale_factor, pos.y as f64 / scale_factor))
+}
+
+fn refocus_mask_after_pin_build(app_handle: &tauri::AppHandle, pos: Option<PhysicalPosition<i32>>) {
+    #[cfg(target_os = "windows")]
+    {
+        let Some(pos) = pos else {
+            return;
+        };
+
+        let Ok(monitor) = Monitor::from_point(pos.x, pos.y) else {
+            return;
+        };
+
+        let Ok(monitor_id) = monitor.id() else {
+            return;
+        };
+
+        if let Some(window) = app_handle.get_webview_window(&mask_label(monitor_id)) {
+            let _ = window.set_focus();
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app_handle;
+        let _ = pos;
     }
 }

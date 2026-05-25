@@ -72,3 +72,50 @@ export async function connectDataSocket(options: DataSocketOptions = {}) {
 
   throw lastError instanceof Error ? lastError : new Error('Failed to connect data WebSocket')
 }
+
+export function requestDataSocketBytes(socket: WebSocket, label: string, timeoutMs = 1500) {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    if (socket.readyState !== WebSocket.OPEN) {
+      reject(new Error('WebSocket is not open'))
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      cleanup()
+      reject(new Error(`Timed out waiting for data: ${label}`))
+    }, timeoutMs)
+
+    const cleanup = () => {
+      window.clearTimeout(timer)
+      socket.removeEventListener('message', handleMessage)
+      socket.removeEventListener('error', handleError)
+      socket.removeEventListener('close', handleClose)
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      cleanup()
+      if (event.data instanceof ArrayBuffer) {
+        resolve(event.data)
+      } else if (event.data instanceof Blob) {
+        event.data.arrayBuffer().then(resolve, reject)
+      } else {
+        reject(new Error(`Unexpected data response type for ${label}`))
+      }
+    }
+
+    const handleError = () => {
+      cleanup()
+      reject(new Error(`WebSocket data request failed: ${label}`))
+    }
+
+    const handleClose = () => {
+      cleanup()
+      reject(new Error(`WebSocket closed while waiting for data: ${label}`))
+    }
+
+    socket.addEventListener('message', handleMessage)
+    socket.addEventListener('error', handleError)
+    socket.addEventListener('close', handleClose)
+    socket.send(label)
+  })
+}

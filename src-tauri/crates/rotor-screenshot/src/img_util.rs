@@ -303,21 +303,21 @@ pub struct TextResult {
 }
 
 #[allow(dead_code)]
-pub fn img2text(model_path: &Path, img: &DynamicImage) -> Vec<TextResult> {
+pub fn img2text(
+    model_path: &Path,
+    img: &DynamicImage,
+) -> Result<Vec<TextResult>, Box<dyn std::error::Error>> {
     let det_model_path = model_path.join("PP-OCRv5_mobile_det_fp16.mnn");
     let rec_model_path = model_path.join("PP-OCRv5_mobile_rec_fp16.mnn");
     let keys_path = model_path.join("ppocr_keys_v5.txt");
 
-    let mut det = Det::from_file(det_model_path)
-        .unwrap()
-        .with_rect_border_size(12);
+    let mut det = Det::from_file(det_model_path)?.with_rect_border_size(12);
 
-    let mut rec = Rec::from_file(rec_model_path, keys_path)
-        .unwrap()
+    let mut rec = Rec::from_file(rec_model_path, keys_path)?
         .with_min_score(0.8)
         .with_punct_min_score(0.1);
 
-    let rects = det.find_text_rect(&img).unwrap();
+    let rects = det.find_text_rect(img)?;
 
     let mut text_results = Vec::new();
     for rect in rects.iter() {
@@ -327,7 +327,7 @@ pub fn img2text(model_path: &Path, img: &DynamicImage) -> Vec<TextResult> {
             rect.width(),
             rect.height(),
         );
-        let text = rec.predict_str(&text_img).unwrap();
+        let text = rec.predict_str(&text_img)?;
         text_results.push(TextResult {
             left: rect.left(),
             top: rect.top(),
@@ -336,5 +336,5 @@ pub fn img2text(model_path: &Path, img: &DynamicImage) -> Vec<TextResult> {
             text,
         });
     }
-    text_results
+    Ok(text_results)
 }

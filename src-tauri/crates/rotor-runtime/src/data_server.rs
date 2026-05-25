@@ -1,31 +1,21 @@
 use futures_util::{SinkExt, StreamExt};
 use image::{DynamicImage, RgbaImage};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::application::Application;
 
-async fn try_get_screen_img(label: &str) -> Option<RgbaImage> {
-    let mut try_times = 1;
-    while try_times <= 20 {
-        {
-            let masks_arc = Application::global()
-                .lock()
-                .unwrap()
-                .screenshot
-                .masks
-                .clone();
-            let masks = masks_arc.lock().unwrap();
-            if let Some(image) = masks.get(label) {
-                return Some(image.clone());
-            }
-        }
+const IMAGE_RETRY_COUNT: usize = 20;
+const IMAGE_RETRY_DELAY: Duration = Duration::from_millis(20);
 
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        try_times += 1;
-    }
-    None
+fn get_screen_img(label: &str) -> Option<RgbaImage> {
+    Application::global()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .screenshot
+        .get_capture(label)
 }
 
 fn get_pin_img(label: &str) -> Option<DynamicImage> {
@@ -34,22 +24,34 @@ fn get_pin_img(label: &str) -> Option<DynamicImage> {
 
     Application::global()
         .lock()
-        .unwrap()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .screenshot
         .get_pin_img(parsed_id)
 }
 
-async fn try_get_pin_img(label: &str) -> Option<DynamicImage> {
-    let mut try_times = 1;
-    while try_times <= 20 {
-        if let Some(image) = get_pin_img(label) {
+async fn retry_image<T, F>(mut load: F) -> Option<T>
+where
+    F: FnMut() -> Option<T>,
+{
+    for attempt in 0..IMAGE_RETRY_COUNT {
+        if let Some(image) = load() {
             return Some(image);
         }
 
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        try_times += 1;
+        if attempt + 1 < IMAGE_RETRY_COUNT {
+            tokio::time::sleep(IMAGE_RETRY_DELAY).await;
+        }
     }
+
     None
+}
+
+async fn try_get_screen_img(label: &str) -> Option<RgbaImage> {
+    retry_image(|| get_screen_img(label)).await
+}
+
+async fn try_get_pin_img(label: &str) -> Option<DynamicImage> {
+    retry_image(|| get_pin_img(label)).await
 }
 
 async fn handle_data_request(label: String) -> Option<Vec<u8>> {

@@ -1,7 +1,8 @@
 use image::{self, DynamicImage};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::{collections::HashMap, fs};
+use std::path::PathBuf;
+use std::{collections::HashMap, fs, io};
 use toml;
 
 use rotor_platform::file_util;
@@ -44,47 +45,64 @@ pub struct ShotterRecord {
 }
 
 impl ShotterRecord {
-    fn get_root_path() -> std::path::PathBuf {
-        let root_path = file_util::get_userdata_path().unwrap().join("shotter");
-        if !root_path.exists() {
-            fs::create_dir_all(&root_path)
-                .unwrap_or_else(|e| panic!("[ERROR] ShotterRecord create dir: {:?}", e));
-        }
-        root_path
+    fn get_root_path() -> Result<PathBuf, Box<dyn Error>> {
+        let root_path = file_util::get_userdata_path()
+            .ok_or_else(|| io::Error::other("Unable to resolve user data path"))?
+            .join("shotter");
+        fs::create_dir_all(&root_path)?;
+        Ok(root_path)
     }
 
-    fn get_img_path(id: u32) -> std::path::PathBuf {
-        let space_path = ShotterRecord::get_root_path().join(DEFAULT_SPACE_ID);
-        if !space_path.exists() {
-            fs::create_dir_all(&space_path)
-                .unwrap_or_else(|e| panic!("[ERROR] ShotterRecord create dir: {:?}", e));
-        }
-        space_path.join(format!("{}.png", id))
+    fn get_img_path(id: u32) -> Result<PathBuf, Box<dyn Error>> {
+        let space_path = ShotterRecord::get_root_path()?.join(DEFAULT_SPACE_ID);
+        fs::create_dir_all(&space_path)?;
+        Ok(space_path.join(format!("{}.png", id)))
     }
 
     fn del_record_img(id: u32) -> Result<(), Box<dyn Error>> {
-        let img_path = ShotterRecord::get_img_path(id);
-        fs::remove_file(&img_path)?;
+        let img_path = ShotterRecord::get_img_path(id)?;
+        match fs::remove_file(&img_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(Box::new(error)),
+        }
         Ok(())
     }
 
     pub fn save_record_img(id: u32, img: DynamicImage) {
         std::thread::spawn(move || {
-            let path = ShotterRecord::get_img_path(id);
-            img.save(path)
-                .unwrap_or_else(|e| log::error!("Failed to save image: {}", e));
+            let path = match ShotterRecord::get_img_path(id) {
+                Ok(path) => path,
+                Err(error) => {
+                    log::error!("Failed to resolve record image path: {error}");
+                    return;
+                }
+            };
+
+            if let Err(error) = img.save(path) {
+                log::error!("Failed to save image: {error}");
+            }
         });
     }
 
     pub fn load_record_img(id: u32) -> Result<DynamicImage, Box<dyn Error>> {
-        let img_path = ShotterRecord::get_img_path(id);
+        let img_path = ShotterRecord::get_img_path(id)?;
         let img = image::open(img_path)?;
         Ok(img)
     }
 
     pub fn new() -> ShotterRecord {
-        let root_path = ShotterRecord::get_root_path();
-        let record_path = root_path.join("record.toml");
+        let record_path = match ShotterRecord::get_root_path() {
+            Ok(root_path) => root_path.join("record.toml"),
+            Err(error) => {
+                log::error!("Failed to initialize shotter record path: {error}");
+                return ShotterRecord {
+                    record: Record {
+                        workspaces: HashMap::new(),
+                    },
+                };
+            }
+        };
 
         let record_str = fs::read_to_string(&record_path).unwrap_or_else(|_| String::new());
 
@@ -107,7 +125,7 @@ impl ShotterRecord {
     }
 
     fn save(&self) -> Result<(), Box<dyn Error>> {
-        let path = ShotterRecord::get_root_path().join("record.toml");
+        let path = ShotterRecord::get_root_path()?.join("record.toml");
         let config_str = toml::to_string_pretty(&self.record)?;
         fs::write(path, config_str)?;
         Ok(())

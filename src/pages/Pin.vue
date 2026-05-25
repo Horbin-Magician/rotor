@@ -83,7 +83,7 @@ import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import { UnlistenFn } from "@tauri-apps/api/event";
 import { warn } from "@tauri-apps/plugin-log";
 import { getConfig } from '../shared/api/core';
-import { connectDataSocket } from '../shared/api/dataSocket';
+import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket';
 import {
   deletePinRecord,
   getPinState,
@@ -336,45 +336,30 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     (pin_config.monitor_pos[1] + pin_config.rect[1] + pin_config.offset[1] || 0)
   ));
 
-  // Request image data via WebSocket
-  return new Promise<boolean>((resolve) => {
-    const socket = ws;
-    if (!socket) {
-      warn(`WebSocket not initialized for pin id ${id}`);
-      resolve(false);
-      return;
+  const socket = ws;
+  if (!socket) {
+    warn(`WebSocket not initialized for pin id ${id}`);
+    return false;
+  }
+
+  try {
+    const imgBuf = await requestDataSocketBytes(socket, appWindow.label)
+    if (imgBuf.byteLength === 0) {
+      throw new Error(`No image data returned for pin id ${id}`);
     }
 
-    const handleMessage = async (event: MessageEvent) => {
-      try {
-        const imgBuf: ArrayBuffer = event.data;
-        if (imgBuf.byteLength === 0) {
-          throw new Error(`No image data returned for pin id ${id}`);
-        }
-
-        const full_monitor_width = pin_config.monitor_size[0];
-        const full_monitor_height = pin_config.monitor_size[1];
-        const fullImgData = new ImageData(new Uint8ClampedArray(imgBuf), full_monitor_width, full_monitor_height);
-        backImg.value = await createImageBitmap(fullImgData);
-        
-        // Remove this one-time message handler
-        socket.removeEventListener('message', handleMessage);
-        
-        // Continue with initialization
-        await completeInitialization(pin_config);
-        resolve(true);
-      } catch (error) {
-        warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
-        await deletePinRecord(pin_id);
-        socket.removeEventListener('message', handleMessage);
-        await appWindow.close();
-        resolve(false);
-      }
-    };
-    
-    socket.addEventListener('message', handleMessage);
-    socket.send(appWindow.label);
-  });
+    const full_monitor_width = pin_config.monitor_size[0];
+    const full_monitor_height = pin_config.monitor_size[1];
+    const fullImgData = new ImageData(new Uint8ClampedArray(imgBuf), full_monitor_width, full_monitor_height);
+    backImg.value = await createImageBitmap(fullImgData);
+    await completeInitialization(pin_config);
+    return true;
+  } catch (error) {
+    warn(`Failed to create image bitmap for pin id ${id}: ${error}`);
+    await deletePinRecord(pin_id);
+    await appWindow.close();
+    return false;
+  }
 }
 
 async function completeInitialization(pin_config: PinConfig) {

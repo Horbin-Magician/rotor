@@ -41,7 +41,7 @@ import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit } from '@tauri-apps/api/event';
 import { info, warn } from '@tauri-apps/plugin-log';
-import { connectDataSocket } from '../shared/api/dataSocket';
+import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket';
 import { changeCurrentMask as focusCurrentMask, closeCachePin, getScreenRects, newCachePin, newPin, type ScreenRect } from '../features/screenshot/api';
 
 import ScreenCanvas from "../components/screenShotter/mask/ScreenCanvas.vue";
@@ -53,10 +53,9 @@ const appWindow = getCurrentWindow()
 let ws: WebSocket | null = null
 let backImgBitmap: ImageBitmap | null = null
 
-// Initialize WebSocket connection with dynamic port
 async function initWebSocket() {
   try {
-    ws = await connectDataSocket({ onMessage: initializeScreenshot })
+    ws = await connectDataSocket()
     info('WebSocket connection established')
   } catch (error) {
     warn(`WebSocket connection error: ${error}`)
@@ -352,8 +351,12 @@ onBeforeUnmount(() => {
 });
 
 // Load the screenshot
-async function initializeScreenshot(event: any) {
-  const imgData = new ImageData(new Uint8ClampedArray(event.data), bacImgWidth, bacImgHeight);
+async function initializeScreenshot(imgBuf: ArrayBuffer) {
+  if (imgBuf.byteLength === 0) {
+    throw new Error(`No image data returned for mask ${appWindow.label}`)
+  }
+
+  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight);
   backImgBitmap = await createImageBitmap(imgData)
 
   // Draw the background image
@@ -410,8 +413,12 @@ async function initializeAutoRects() {
   listen('show-mask', async (_event) => {
       try {
         await initWebSocket() // Initialize WebSocket connection
-        initializeAutoRects()
-        ws?.send(appWindow.label)
+        void initializeAutoRects()
+        if (!ws) {
+          throw new Error('WebSocket did not initialize')
+        }
+        const imgBuf = await requestDataSocketBytes(ws, appWindow.label)
+        await initializeScreenshot(imgBuf)
       } catch (error) {
         warn(`Failed to initialize screenshot websocket: ${error}`)
       }

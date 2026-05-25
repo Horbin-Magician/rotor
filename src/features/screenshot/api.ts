@@ -41,10 +41,10 @@ export function closeCachePin() {
 
 export function newPin(input: NewPinInput) {
   return invoke<void>('new_pin', {
-    offsetX: input.offsetX.toString(),
-    offsetY: input.offsetY.toString(),
-    width: input.width.toString(),
-    height: input.height.toString(),
+    offsetX: input.offsetX,
+    offsetY: input.offsetY,
+    width: input.width,
+    height: input.height,
   })
 }
 
