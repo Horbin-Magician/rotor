@@ -1,4 +1,8 @@
-use std::sync::{LazyLock, Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{LazyLock, Mutex},
+    time::{Duration, Instant},
+};
 
 use rotor_screenshot::ScreenShotter;
 use rotor_searcher::{file_data::SearchResultItem, Searcher};
@@ -8,15 +12,31 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, S
 use crate::data_server;
 use crate::tray::Tray;
 
-pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
-    if event.state() == ShortcutState::Pressed {
-        let mut rotor_app = INSTANCE
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+const SHORTCUT_TRIGGER_DEBOUNCE: Duration = Duration::from_millis(500);
+const PRESSED_SHORTCUT_STALE_AFTER: Duration = Duration::from_secs(3);
 
+pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
+    let mut rotor_app = INSTANCE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let shortcut_id = shortcut.id();
+    if event.state() == ShortcutState::Released {
+        rotor_app.pressed_shortcuts.remove(&shortcut_id);
+        return;
+    }
+
+    if event.state() == ShortcutState::Pressed {
+        if rotor_app.should_ignore_shortcut_press(shortcut_id, shortcut) {
+            return;
+        }
+
+        let mut handled = false;
         if let Some(module_shortcut) = rotor_app.screenshot.get_shortcut() {
             if module_shortcut == *shortcut {
-                rotor_app.screenshot.run().unwrap_or_else(|e| {
+                let result = rotor_app.screenshot.run();
+                rotor_app.finish_shortcut_trigger(shortcut_id);
+                result.unwrap_or_else(|e| {
                     let flag = rotor_app.screenshot.flag();
                     log::error!("Module {flag} run error: {e}")
                 });
@@ -26,11 +46,18 @@ pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: 
 
         if let Some(module_shortcut) = rotor_app.searcher.get_shortcut() {
             if module_shortcut == *shortcut {
-                rotor_app.searcher.run().unwrap_or_else(|e| {
+                let result = rotor_app.searcher.run();
+                rotor_app.finish_shortcut_trigger(shortcut_id);
+                result.unwrap_or_else(|e| {
                     let flag = rotor_app.searcher.flag();
                     log::error!("Module {flag} run error: {e}")
                 });
+                handled = true;
             }
+        }
+
+        if !handled {
+            rotor_app.pressed_shortcuts.remove(&shortcut_id);
         }
     }
 }
@@ -41,6 +68,8 @@ pub struct Application {
     pub screenshot: ScreenShotter,
     pub searcher: Searcher,
     pub ws_port: u16,
+    pressed_shortcuts: HashSet<u32>,
+    last_shortcut_triggers: HashMap<u32, Instant>,
 }
 
 impl Application {
@@ -51,6 +80,8 @@ impl Application {
             screenshot: ScreenShotter::new().unwrap(),
             searcher: Searcher::new(Application::update_search_result).unwrap(),
             ws_port: 10000,
+            pressed_shortcuts: HashSet::new(),
+            last_shortcut_triggers: HashMap::new(),
         }
     }
 
@@ -103,6 +134,44 @@ impl Application {
                 )
                 .unwrap();
         }
+    }
+
+    fn should_ignore_shortcut_press(&mut self, shortcut_id: u32, shortcut: &Shortcut) -> bool {
+        let now = Instant::now();
+
+        if self.pressed_shortcuts.contains(&shortcut_id) {
+            if self
+                .last_shortcut_triggers
+                .get(&shortcut_id)
+                .is_some_and(|last_trigger| {
+                    now.duration_since(*last_trigger) < PRESSED_SHORTCUT_STALE_AFTER
+                })
+            {
+                log::debug!("Ignoring repeated global shortcut press: {shortcut}");
+                return true;
+            }
+
+            self.pressed_shortcuts.remove(&shortcut_id);
+        }
+
+        if self
+            .last_shortcut_triggers
+            .get(&shortcut_id)
+            .is_some_and(|last_trigger| {
+                now.duration_since(*last_trigger) < SHORTCUT_TRIGGER_DEBOUNCE
+            })
+        {
+            log::debug!("Ignoring debounced global shortcut press: {shortcut}");
+            return true;
+        }
+
+        self.pressed_shortcuts.insert(shortcut_id);
+        false
+    }
+
+    fn finish_shortcut_trigger(&mut self, shortcut_id: u32) {
+        self.last_shortcut_triggers
+            .insert(shortcut_id, Instant::now());
     }
 }
 
