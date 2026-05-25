@@ -1,3 +1,6 @@
+use image::ImageFormat;
+use std::io::Cursor;
+use std::path::PathBuf;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
@@ -7,6 +10,12 @@ use rotor_platform::sys_util;
 use rotor_runtime::Application;
 use rotor_screenshot::img_util::{self, TextResult};
 use rotor_screenshot::shotter_record::ShotterConfig;
+
+struct SaveImageConfig {
+    save_path: String,
+    auto_update_save_path: bool,
+    ask_save_path: bool,
+}
 
 fn lock_app() -> std::sync::MutexGuard<'static, Application> {
     Application::global()
@@ -84,7 +93,7 @@ pub async fn get_screen_rects(
     };
 
     if let Some(image) = image {
-        let rects2 = tokio::task::spawn_blocking(move || img_util::detect_rect(image))
+        let rects2 = tokio::task::spawn_blocking(move || img_util::detect_rect(&image))
             .await
             .unwrap_or_default();
         for rect in rects2 {
@@ -224,87 +233,112 @@ pub async fn delete_pin_record(id: u32) {
 
 #[tauri::command]
 pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
-    let (save_path, if_auto_change, if_ask_path) = {
+    let config = {
         let Ok(app_config) = AppConfig::global().lock() else {
             log::error!("Failed to acquire config lock");
             return false;
         };
 
-        (
-            app_config.get("save_path").cloned().unwrap_or_default(),
-            app_config
+        SaveImageConfig {
+            save_path: app_config.get("save_path").cloned().unwrap_or_default(),
+            auto_update_save_path: app_config
                 .get("if_auto_change_save_path")
-                .cloned()
-                .unwrap_or("true".to_string()),
-            app_config
+                .map_or(true, |value| value == "true"),
+            ask_save_path: app_config
                 .get("if_ask_save_path")
-                .cloned()
-                .unwrap_or("true".to_string()),
-        )
+                .map_or(true, |value| value == "true"),
+        }
     };
 
     let file_name = chrono::Local::now()
         .format("Rotor_%Y-%m-%d-%H-%M-%S.png")
         .to_string();
 
-    let file_path: Option<std::path::PathBuf> = if (if_ask_path == "true") || (save_path.is_empty())
-    {
+    let file_path = if config.ask_save_path || config.save_path.is_empty() {
         app.dialog()
             .file()
-            .set_directory(save_path)
+            .set_directory(&config.save_path)
             .add_filter("PNG", &["png"])
             .set_file_name(file_name)
             .blocking_save_file()
             .and_then(|v| v.into_path().ok())
     } else {
-        Some(std::path::PathBuf::from(save_path).join(file_name))
+        Some(PathBuf::from(&config.save_path).join(file_name))
     };
 
     if let Some(file_path) = file_path {
-        if if_auto_change == "true" {
-            if let Some(parent) = file_path.parent() {
-                match AppConfig::global().lock() {
-                    Ok(mut app_config) => {
-                        if let Err(e) = app_config.set(
-                            "save_path".to_string(),
-                            parent.to_string_lossy().to_string(),
-                        ) {
-                            log::warn!("Failed to update save path: {}", e);
-                        }
-                    }
-                    Err(error) => {
-                        log::warn!("Failed to acquire config lock for save path update: {error}");
-                    }
-                }
-            }
+        if !is_png(&img_buf) {
+            log::error!("Refusing to save non-PNG screenshot data");
+            return false;
         }
-        let cursor = std::io::Cursor::new(img_buf);
-        if let Ok(img) = image::load(cursor, image::ImageFormat::Png) {
-            if let Err(e) = img.save(&file_path) {
-                log::error!("Failed to save image: {}", e);
-                return false;
-            }
-            return true;
+
+        if config.auto_update_save_path {
+            update_save_path_from_file(&file_path);
         }
+
+        if let Err(error) = std::fs::write(&file_path, &img_buf) {
+            log::error!("Failed to save image: {error}");
+            return false;
+        }
+
+        return true;
     }
     false
 }
 
+fn is_png(bytes: &[u8]) -> bool {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    bytes.starts_with(PNG_SIGNATURE)
+}
+
+fn update_save_path_from_file(file_path: &std::path::Path) {
+    let Some(parent) = file_path.parent() else {
+        return;
+    };
+
+    match AppConfig::global().lock() {
+        Ok(mut app_config) => {
+            if let Err(error) = app_config.set(
+                "save_path".to_string(),
+                parent.to_string_lossy().to_string(),
+            ) {
+                log::warn!("Failed to update save path: {error}");
+            }
+        }
+        Err(error) => {
+            log::warn!("Failed to acquire config lock for save path update: {error}");
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn img2text(img_buf: Vec<u8>, app: tauri::AppHandle) -> Vec<TextResult> {
-    let cursor = std::io::Cursor::new(img_buf);
-    if let Ok(img) = image::load(cursor, image::ImageFormat::Png) {
-        let model_path = app.path().resolve("assets/model", BaseDirectory::Resource);
-        if let Ok(path) = model_path {
-            return img_util::img2text(&path, &img).unwrap_or_else(|error| {
-                log::error!("Failed to run OCR: {error}");
-                Vec::new()
-            });
-        } else {
-            log::error!("Failed to resolve model path");
+    let model_path = match app.path().resolve("assets/model", BaseDirectory::Resource) {
+        Ok(path) => path,
+        Err(error) => {
+            log::error!("Failed to resolve model path: {error}");
+            return Vec::new();
         }
-    } else {
-        log::error!("Failed to load image from buffer");
-    }
-    Vec::new()
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let cursor = Cursor::new(img_buf);
+        let img = match image::load(cursor, ImageFormat::Png) {
+            Ok(img) => img,
+            Err(error) => {
+                log::error!("Failed to load image from buffer: {error}");
+                return Vec::new();
+            }
+        };
+
+        img_util::img2text(&model_path, &img).unwrap_or_else(|error| {
+            log::error!("Failed to run OCR: {error}");
+            Vec::new()
+        })
+    })
+    .await
+    .unwrap_or_else(|error| {
+        log::error!("OCR task failed: {error}");
+        Vec::new()
+    })
 }

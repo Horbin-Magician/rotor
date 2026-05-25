@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Clone, Default)]
 pub struct CaptureCache {
-    images: Arc<Mutex<HashMap<String, RgbaImage>>>,
+    images: Arc<Mutex<HashMap<String, Arc<RgbaImage>>>>,
 }
 
 impl CaptureCache {
@@ -17,14 +17,17 @@ impl CaptureCache {
     }
 
     pub fn replace_all(&self, images: HashMap<String, RgbaImage>) {
-        *self.lock_images() = images;
+        *self.lock_images() = images
+            .into_iter()
+            .map(|(label, image)| (label, Arc::new(image)))
+            .collect();
     }
 
-    pub fn get(&self, label: &str) -> Option<RgbaImage> {
+    pub fn get(&self, label: &str) -> Option<Arc<RgbaImage>> {
         self.lock_images().get(label).cloned()
     }
 
-    fn lock_images(&self) -> MutexGuard<'_, HashMap<String, RgbaImage>> {
+    fn lock_images(&self) -> MutexGuard<'_, HashMap<String, Arc<RgbaImage>>> {
         self.images
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())

@@ -6,7 +6,7 @@ use std::cmp;
 use std::path::Path;
 
 #[allow(dead_code)]
-pub fn detect_rect(original_img: RgbaImage) -> Vec<(u32, u32, u32, u32)> {
+pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let original_width = original_img.width();
     let original_height = original_img.height();
     let scale_factor = calculate_optimal_scale_factor(original_img.width(), original_img.height());

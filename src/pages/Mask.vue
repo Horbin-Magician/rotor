@@ -39,7 +39,7 @@
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { listen, emit } from '@tauri-apps/api/event';
+import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event';
 import { info, warn } from '@tauri-apps/plugin-log';
 import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket';
 import { changeCurrentMask as focusCurrentMask, closeCachePin, getScreenRects, newCachePin, newPin, type ScreenRect } from '../features/screenshot/api';
@@ -52,9 +52,14 @@ const appWindow = getCurrentWindow()
 
 let ws: WebSocket | null = null
 let backImgBitmap: ImageBitmap | null = null
+let unlistenShowMask: UnlistenFn | null = null
+let unlistenHideMask: UnlistenFn | null = null
+let screenshotRequestId = 0
 
 async function initWebSocket() {
   try {
+    ws?.close()
+    ws = null
     ws = await connectDataSocket()
     info('WebSocket connection established')
   } catch (error) {
@@ -190,7 +195,7 @@ async function changeCurrentMask() {
   await focusCurrentMask()
 }
 
-async function updateAutoSelection(x: number, y: number) {
+function updateAutoSelection(x: number, y: number) {
   const minRect = rects.reduce((min: ScreenRect | undefined, rect) => {
     const [left, top, zindex, width, height] = rect;
     if (x > left && x < left + width && y > top && y < top + height) {
@@ -346,6 +351,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
   window.removeEventListener('focus', handleWindowFocus);
   window.removeEventListener('blur', handleWindowBlur);
+  if (unlistenShowMask) { unlistenShowMask(); unlistenShowMask = null }
+  if (unlistenHideMask) { unlistenHideMask(); unlistenHideMask = null }
   ws?.close();
   ws = null;
 });
@@ -373,6 +380,7 @@ async function initializeScreenshot(imgBuf: ArrayBuffer) {
 }
 
 function hideWindow() {
+  screenshotRequestId += 1
   ws?.close()
   ws = null
 
@@ -402,36 +410,48 @@ function hideWindow() {
 }
 
 // Load the rects
-async function initializeAutoRects() {
-  rects = await getScreenRects(appWindow.label)
+async function initializeAutoRects(requestId: number) {
+  const nextRects = await getScreenRects(appWindow.label)
+  if (requestId === screenshotRequestId) {
+    rects = nextRects
+  }
 }
 
-{ // Mount something
-  onMounted(async () => {
-    appWindow.setSimpleFullscreen(true) // Enable simple fullscreen mode
+onMounted(async () => {
+  appWindow.setSimpleFullscreen(true) // Enable simple fullscreen mode
 
-  listen('show-mask', async (_event) => {
-      try {
-        await initWebSocket() // Initialize WebSocket connection
-        void initializeAutoRects()
-        if (!ws) {
-          throw new Error('WebSocket did not initialize')
+  unlistenShowMask = await listen('show-mask', async (_event) => {
+    const requestId = screenshotRequestId + 1
+    screenshotRequestId = requestId
+
+    try {
+      await initWebSocket() // Initialize WebSocket connection
+      const rectsPromise = initializeAutoRects(requestId).catch((error) => {
+        if (requestId === screenshotRequestId) {
+          warn(`Failed to initialize screenshot rects: ${error}`)
         }
-        const imgBuf = await requestDataSocketBytes(ws, appWindow.label)
-        await initializeScreenshot(imgBuf)
-      } catch (error) {
+      })
+      if (!ws) {
+        throw new Error('WebSocket did not initialize')
+      }
+      const imgBuf = await requestDataSocketBytes(ws, appWindow.label)
+      if (requestId !== screenshotRequestId) return
+      await initializeScreenshot(imgBuf)
+      await rectsPromise
+    } catch (error) {
+      if (requestId === screenshotRequestId) {
         warn(`Failed to initialize screenshot websocket: ${error}`)
       }
-    });
-    
-    listen('hide-mask', async (_event) => {
-      const visible = await appWindow.isVisible();
-      if (visible) {
-        hideWindow()
-      }
-    });
+    }
   });
-}
+
+  unlistenHideMask = await listen('hide-mask', async (_event) => {
+    const visible = await appWindow.isVisible();
+    if (visible) {
+      hideWindow()
+    }
+  });
+});
 </script>
 
 <style>

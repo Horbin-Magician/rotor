@@ -1,5 +1,6 @@
 use futures_util::{SinkExt, StreamExt};
 use image::{DynamicImage, RgbaImage};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
@@ -10,7 +11,7 @@ use crate::application::Application;
 const IMAGE_RETRY_COUNT: usize = 20;
 const IMAGE_RETRY_DELAY: Duration = Duration::from_millis(20);
 
-fn get_screen_img(label: &str) -> Option<RgbaImage> {
+fn get_screen_img(label: &str) -> Option<Arc<RgbaImage>> {
     Application::global()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -46,7 +47,7 @@ where
     None
 }
 
-async fn try_get_screen_img(label: &str) -> Option<RgbaImage> {
+async fn try_get_screen_img(label: &str) -> Option<Arc<RgbaImage>> {
     retry_image(|| get_screen_img(label)).await
 }
 
@@ -59,8 +60,8 @@ async fn handle_data_request(label: String) -> Option<Vec<u8>> {
         return Some(
             try_get_screen_img(&label)
                 .await
-                .unwrap_or_default()
-                .to_vec(),
+                .map(|image| image.as_raw().clone())
+                .unwrap_or_default(),
         );
     }
 

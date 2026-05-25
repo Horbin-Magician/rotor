@@ -2,7 +2,7 @@ use image::{self, DynamicImage};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::PathBuf;
-use std::{collections::HashMap, fs, io};
+use std::{collections::HashMap, fs, io, thread};
 use toml;
 
 use rotor_platform::file_util;
@@ -69,8 +69,8 @@ impl ShotterRecord {
         Ok(())
     }
 
-    pub fn save_record_img(id: u32, img: DynamicImage) {
-        std::thread::spawn(move || {
+    pub fn save_record_img(id: u32, img: DynamicImage) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
             let path = match ShotterRecord::get_img_path(id) {
                 Ok(path) => path,
                 Err(error) => {
@@ -82,7 +82,7 @@ impl ShotterRecord {
             if let Err(error) = img.save(path) {
                 log::error!("Failed to save image: {error}");
             }
-        });
+        })
     }
 
     pub fn load_record_img(id: u32) -> Result<DynamicImage, Box<dyn Error>> {
@@ -106,20 +106,25 @@ impl ShotterRecord {
 
         let record_str = fs::read_to_string(&record_path).unwrap_or_else(|_| String::new());
 
-        let record = match toml::from_str::<Record>(&record_str) {
+        let mut record = match toml::from_str::<Record>(&record_str) {
             Ok(record) => record,
             Err(e) => {
                 log::warn!("Failed to parse config file, creating default: {:?}", e);
                 let default_record = Record {
                     workspaces: HashMap::new(),
                 };
-                // Try to save the default config
                 if let Ok(config_str) = toml::to_string_pretty(&default_record) {
                     let _ = fs::write(&record_path, config_str);
                 }
                 default_record
             }
         };
+        record
+            .workspaces
+            .entry(DEFAULT_SPACE_ID.to_string())
+            .or_insert_with(|| WorkSpace {
+                shotters: HashMap::new(),
+            });
 
         ShotterRecord { record }
     }
@@ -136,42 +141,45 @@ impl ShotterRecord {
         id: u32,
         shotter: ShotterConfig,
     ) -> Result<(), Box<dyn Error>> {
-        if let Some(workspace) = self.record.workspaces.get_mut(DEFAULT_SPACE_ID) {
-            workspace.shotters.insert(id.to_string(), shotter);
-        } else {
-            let mut workspace = WorkSpace {
-                shotters: HashMap::new(),
-            };
-            workspace.shotters.insert(id.to_string(), shotter);
-            self.record
-                .workspaces
-                .insert(DEFAULT_SPACE_ID.to_string(), workspace);
-        }
+        self.default_workspace_mut()
+            .shotters
+            .insert(id.to_string(), shotter);
         self.save()?;
         Ok(())
     }
 
     pub fn del_shotter(&mut self, id: u32) -> Result<(), Box<dyn Error>> {
-        if let Some(workspace) = self.record.workspaces.get_mut(DEFAULT_SPACE_ID) {
-            let _ = ShotterRecord::del_record_img(id);
-            workspace.shotters.remove(&id.to_string());
-            self.save()?;
-            return Ok(());
+        if let Err(error) = ShotterRecord::del_record_img(id) {
+            log::warn!("Failed to delete pin image {id}: {error}");
         }
-        Err(Box::new(std::io::Error::other("No such workspace")))
+        self.default_workspace_mut()
+            .shotters
+            .remove(&id.to_string());
+        self.save()?;
+        Ok(())
     }
 
     pub fn get_record(&self, id: u32) -> Option<&ShotterConfig> {
-        if let Some(workspace) = self.record.workspaces.get(DEFAULT_SPACE_ID) {
-            return workspace.shotters.get(&id.to_string());
-        }
-        None
+        self.default_workspace().shotters.get(&id.to_string())
     }
 
-    pub fn get_records(&self) -> Option<&HashMap<String, ShotterConfig>> {
-        if let Some(workspace) = self.record.workspaces.get(DEFAULT_SPACE_ID) {
-            return Some(&workspace.shotters);
-        }
-        None
+    pub fn get_records(&self) -> &HashMap<String, ShotterConfig> {
+        &self.default_workspace().shotters
+    }
+
+    fn default_workspace(&self) -> &WorkSpace {
+        self.record
+            .workspaces
+            .get(DEFAULT_SPACE_ID)
+            .expect("default shotter workspace must exist")
+    }
+
+    fn default_workspace_mut(&mut self) -> &mut WorkSpace {
+        self.record
+            .workspaces
+            .entry(DEFAULT_SPACE_ID.to_string())
+            .or_insert_with(|| WorkSpace {
+                shotters: HashMap::new(),
+            })
     }
 }

@@ -11,6 +11,7 @@ use crate::shotter_record::{ShotterConfig, ShotterRecord};
 use image::{DynamicImage, RgbaImage};
 use std::error::Error;
 use std::str::FromStr;
+use std::sync::Arc;
 use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
@@ -123,7 +124,7 @@ impl ScreenShotter {
         }
     }
 
-    pub fn get_capture(&self, label: &str) -> Option<RgbaImage> {
+    pub fn get_capture(&self, label: &str) -> Option<Arc<RgbaImage>> {
         self.capture_cache.get(label)
     }
 
@@ -197,19 +198,15 @@ impl ScreenShotter {
 
         let record = self.shotter_record.get_record(id)?;
         let img = self.capture_cache.get(&record.mask_label)?;
-        let dyn_img = DynamicImage::ImageRgba8(img);
-        ShotterRecord::save_record_img(id, dyn_img.clone());
+        let dyn_img = DynamicImage::ImageRgba8(img.as_ref().clone());
+        let _save_task = ShotterRecord::save_record_img(id, dyn_img.clone());
         Some(dyn_img)
     }
 
     pub fn restore_pin_wins(&mut self) {
         let mut max_id = 0u32;
         let mut invalid_ids = Vec::new();
-        let records = self
-            .shotter_record
-            .get_records()
-            .cloned()
-            .unwrap_or_default();
+        let records = self.shotter_record.get_records().clone();
 
         for (id_str, record) in records {
             let Ok(id) = id_str.parse::<u32>() else {
@@ -222,13 +219,12 @@ impl ScreenShotter {
             }
 
             max_id = max_id.max(id);
-            if let Err(error) = self.build_pin_window(
-                Some(id),
-                Some(PhysicalPosition {
-                    x: record.monitor_pos.0,
-                    y: record.monitor_pos.1,
-                }),
-            ) {
+            let position = PhysicalPosition {
+                x: record.monitor_pos.0 + record.rect.0 as i32 + record.offset.0,
+                y: record.monitor_pos.1 + record.rect.1 as i32 + record.offset.1,
+            };
+
+            if let Err(error) = self.build_pin_window(Some(id), Some(position)) {
                 log::error!("Failed to restore pin window {id}: {error}");
             }
         }
