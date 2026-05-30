@@ -2,6 +2,7 @@ use image::{self, DynamicImage};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::{collections::HashMap, fs, io, thread};
 use toml;
 
@@ -39,6 +40,7 @@ fn default_workspace() -> HashMap<String, WorkSpace> {
 }
 
 const DEFAULT_SPACE_ID: &str = "default";
+static EMPTY_SHOTTERS: LazyLock<HashMap<String, ShotterConfig>> = LazyLock::new(HashMap::new);
 
 pub struct ShotterRecord {
     record: Record,
@@ -160,18 +162,19 @@ impl ShotterRecord {
     }
 
     pub fn get_record(&self, id: u32) -> Option<&ShotterConfig> {
-        self.default_workspace().shotters.get(&id.to_string())
+        self.record
+            .workspaces
+            .get(DEFAULT_SPACE_ID)?
+            .shotters
+            .get(&id.to_string())
     }
 
     pub fn get_records(&self) -> &HashMap<String, ShotterConfig> {
-        &self.default_workspace().shotters
-    }
-
-    fn default_workspace(&self) -> &WorkSpace {
         self.record
             .workspaces
             .get(DEFAULT_SPACE_ID)
-            .expect("default shotter workspace must exist")
+            .map(|workspace| &workspace.shotters)
+            .unwrap_or(&EMPTY_SHOTTERS)
     }
 
     fn default_workspace_mut(&mut self) -> &mut WorkSpace {

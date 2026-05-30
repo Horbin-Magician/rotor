@@ -42,16 +42,22 @@ impl Searcher {
     }
 
     pub fn get_shortcut(&self) -> Option<Shortcut> {
-        let app_config = AppConfig::global().lock().unwrap();
+        let app_config = AppConfig::lock_global();
         let shortcut = app_config.get("shortcut_search").cloned();
         drop(app_config);
         if let Some(shortcut_str) = shortcut {
-            return Some(Shortcut::from_str(&shortcut_str).unwrap());
+            match Shortcut::from_str(&shortcut_str) {
+                Ok(shortcut) => return Some(shortcut),
+                Err(error) => {
+                    log::warn!("Invalid search shortcut `{shortcut_str}`: {error}");
+                    return None;
+                }
+            }
         }
         None
     }
 
-    pub fn new<F>(find_result_callback: F) -> Result<Searcher, Box<dyn Error>>
+    pub fn new<F>(find_result_callback: F) -> Searcher
     where
         F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
     {
@@ -61,10 +67,10 @@ impl Searcher {
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Init);
 
-        Ok(Searcher {
+        Searcher {
             app_hander: None,
             searcher_msg_sender,
-        })
+        }
     }
 
     fn build_window(&self) -> Result<(), Box<dyn Error>> {

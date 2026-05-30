@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{LazyLock, Mutex},
+    sync::{LazyLock, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -16,9 +16,7 @@ const SHORTCUT_TRIGGER_DEBOUNCE: Duration = Duration::from_millis(500);
 const PRESSED_SHORTCUT_STALE_AFTER: Duration = Duration::from_secs(3);
 
 pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
-    let mut rotor_app = INSTANCE
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut rotor_app = Application::lock_global();
 
     let shortcut_id = shortcut.id();
     if event.state() == ShortcutState::Released {
@@ -76,9 +74,9 @@ impl Application {
     fn new() -> Application {
         Application {
             app: None,
-            tray: Tray::new().unwrap(),
-            screenshot: ScreenShotter::new().unwrap(),
-            searcher: Searcher::new(Application::update_search_result).unwrap(),
+            tray: Tray::new(),
+            screenshot: ScreenShotter::new(),
+            searcher: Searcher::new(Application::update_search_result),
             ws_port: 10000,
             pressed_shortcuts: HashSet::new(),
             last_shortcut_triggers: HashMap::new(),
@@ -89,26 +87,39 @@ impl Application {
         &INSTANCE
     }
 
+    pub fn lock_global() -> MutexGuard<'static, Application> {
+        INSTANCE.lock().unwrap_or_else(|poisoned| {
+            log::error!("Application lock poisoned; recovering inner state");
+            poisoned.into_inner()
+        })
+    }
+
     pub fn init(&mut self, app: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-        self.tray.init(&app).unwrap_or_else(|e| {
+        if let Err(e) = self.tray.init(&app) {
             let flag = self.tray.flag();
             log::error!("Module {flag} init error: {e}");
-        });
-
-        self.screenshot.init(&app).unwrap_or_else(|e| {
-            let flag = self.screenshot.flag();
-            log::error!("Module {flag} init error: {e}");
-        });
-        if let Some(shortcut) = self.screenshot.get_shortcut() {
-            app.global_shortcut().register(shortcut)?;
         }
 
-        self.searcher.init(&app).unwrap_or_else(|e| {
+        if let Err(e) = self.screenshot.init(&app) {
+            let flag = self.screenshot.flag();
+            log::error!("Module {flag} init error: {e}");
+        }
+        if let Some(shortcut) = self.screenshot.get_shortcut() {
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                let flag = self.screenshot.flag();
+                log::error!("Module {flag} shortcut registration error: {e}");
+            }
+        }
+
+        if let Err(e) = self.searcher.init(&app) {
             let flag = self.searcher.flag();
             log::error!("Module {flag} init error: {e}");
-        });
+        }
         if let Some(shortcut) = self.searcher.get_shortcut() {
-            app.global_shortcut().register(shortcut)?;
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                let flag = self.searcher.flag();
+                log::error!("Module {flag} shortcut registration error: {e}");
+            }
         }
         self.app = Some(app);
 
@@ -124,15 +135,19 @@ impl Application {
         update_result: Vec<SearchResultItem>,
         if_increase: bool,
     ) {
-        let app = Application::global().lock().unwrap();
-        if let Some(app_handle) = &app.app {
-            app_handle
-                .emit_to(
-                    "searcher",
-                    "update_result",
-                    (filename, update_result, if_increase),
-                )
-                .unwrap();
+        let app_handle = {
+            let app = Application::lock_global();
+            app.app.clone()
+        };
+
+        if let Some(app_handle) = app_handle {
+            if let Err(e) = app_handle.emit_to(
+                "searcher",
+                "update_result",
+                (filename, update_result, if_increase),
+            ) {
+                log::warn!("Failed to emit search result update: {e}");
+            }
         }
     }
 

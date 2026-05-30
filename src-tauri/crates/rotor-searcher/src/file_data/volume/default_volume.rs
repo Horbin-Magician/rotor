@@ -194,7 +194,9 @@ impl Volume {
         }
 
         fn is_ignored(entry: &DirEntry) -> bool {
-            let file_name = entry.file_name().to_str().unwrap().to_lowercase();
+            let Some(file_name) = entry.file_name().to_str().map(|name| name.to_lowercase()) else {
+                return false;
+            };
             if file_name.starts_with(".") {
                 return true;
             }

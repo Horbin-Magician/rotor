@@ -12,22 +12,14 @@ const IMAGE_RETRY_COUNT: usize = 20;
 const IMAGE_RETRY_DELAY: Duration = Duration::from_millis(20);
 
 fn get_screen_img(label: &str) -> Option<Arc<RgbaImage>> {
-    Application::global()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .screenshot
-        .get_capture(label)
+    Application::lock_global().screenshot.get_capture(label)
 }
 
 fn get_pin_img(label: &str) -> Option<DynamicImage> {
     let id = label.trim_start_matches("sspin-");
     let parsed_id = id.parse::<u32>().ok()?;
 
-    Application::global()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .screenshot
-        .get_pin_img(parsed_id)
+    Application::lock_global().screenshot.get_pin_img(parsed_id)
 }
 
 async fn retry_image<T, F>(mut load: F) -> Option<T>
@@ -95,44 +87,53 @@ pub async fn run() {
         }
     }
 
-    let listener = listener.expect("Failed to bind any data server port in range 10000-48137");
+    let Some(listener) = listener else {
+        log::error!("Failed to bind any data server port in range 10000-48137");
+        return;
+    };
 
     {
-        let mut rotor_app = Application::global()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut rotor_app = Application::lock_global();
         rotor_app.ws_port = bound_port;
     }
 
-    while let Ok((stream, _)) = listener.accept().await {
-        tauri::async_runtime::spawn(async move {
-            let ws_stream = match accept_async(stream).await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    log::error!("Error during the websocket handshake occurred: {}", e);
-                    return;
-                }
-            };
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                tauri::async_runtime::spawn(async move {
+                    let ws_stream = match accept_async(stream).await {
+                        Ok(stream) => stream,
+                        Err(e) => {
+                            log::error!("Error during the websocket handshake occurred: {}", e);
+                            return;
+                        }
+                    };
 
-            let (mut write, mut read) = ws_stream.split();
+                    let (mut write, mut read) = ws_stream.split();
 
-            while let Some(msg) = read.next().await {
-                match msg {
-                    Ok(msg) => {
-                        let label = msg.to_string();
-                        if let Some(data) = handle_data_request(label).await {
-                            if let Err(e) = write.send(Message::Binary(data.into())).await {
-                                log::error!("Failed to send websocket data: {}", e);
+                    while let Some(msg) = read.next().await {
+                        match msg {
+                            Ok(msg) => {
+                                let label = msg.to_string();
+                                if let Some(data) = handle_data_request(label).await {
+                                    if let Err(e) = write.send(Message::Binary(data.into())).await {
+                                        log::error!("Failed to send websocket data: {}", e);
+                                        break;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Error processing websocket message: {}", e);
                                 break;
                             }
                         }
                     }
-                    Err(e) => {
-                        log::error!("Error processing websocket message: {}", e);
-                        break;
-                    }
-                }
+                });
             }
-        });
+            Err(e) => {
+                log::error!("Failed to accept websocket connection: {}", e);
+                break;
+            }
+        }
     }
 }

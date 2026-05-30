@@ -214,7 +214,10 @@ impl FileData {
         {
             self.vols.clear();
 
-            self.vols.push(std::env::var("HOME").unwrap());
+            match std::env::var("HOME") {
+                Ok(home) => self.vols.push(home),
+                Err(error) => log::warn!("Failed to read HOME for search volumes: {error}"),
+            }
             self.vols.push("/Applications".to_string());
             self.vols.push("/System/Applications".to_string());
 

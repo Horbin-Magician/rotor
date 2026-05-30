@@ -32,9 +32,7 @@ pub struct PinSelectionUpdate {
 }
 
 fn lock_app() -> std::sync::MutexGuard<'static, Application> {
-    Application::global()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    Application::lock_global()
 }
 
 // Command for mask window
@@ -243,10 +241,7 @@ pub async fn delete_pin_record(id: u32) {
 #[tauri::command]
 pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
     let config = {
-        let Ok(app_config) = AppConfig::global().lock() else {
-            log::error!("Failed to acquire config lock");
-            return false;
-        };
+        let app_config = AppConfig::lock_global();
 
         SaveImageConfig {
             save_path: app_config.get("save_path").cloned().unwrap_or_default(),
@@ -305,18 +300,12 @@ fn update_save_path_from_file(file_path: &std::path::Path) {
         return;
     };
 
-    match AppConfig::global().lock() {
-        Ok(mut app_config) => {
-            if let Err(error) = app_config.set(
-                "save_path".to_string(),
-                parent.to_string_lossy().to_string(),
-            ) {
-                log::warn!("Failed to update save path: {error}");
-            }
-        }
-        Err(error) => {
-            log::warn!("Failed to acquire config lock for save path update: {error}");
-        }
+    let mut app_config = AppConfig::lock_global();
+    if let Err(error) = app_config.set(
+        "save_path".to_string(),
+        parent.to_string_lossy().to_string(),
+    ) {
+        log::warn!("Failed to update save path: {error}");
     }
 }
 

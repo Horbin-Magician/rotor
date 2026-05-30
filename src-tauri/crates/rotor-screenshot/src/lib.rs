@@ -76,14 +76,14 @@ impl ScreenShotter {
         "screenshot"
     }
 
-    pub fn new() -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
+    pub fn new() -> Self {
+        Self {
             app_handle: None,
             capture_cache: CaptureCache::new(),
             shotter_record: ShotterRecord::new(),
             max_pin_id: 0,
             current_monitors: Vec::new(),
-        })
+        }
     }
 
     pub fn init(&mut self, app: &tauri::AppHandle) -> Result<(), Box<dyn Error>> {
@@ -109,9 +109,7 @@ impl ScreenShotter {
     }
 
     pub fn get_shortcut(&self) -> Option<Shortcut> {
-        let app_config = AppConfig::global()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let app_config = AppConfig::lock_global();
         let shortcut = app_config.get("shortcut_screenshot")?.clone();
         drop(app_config);
 

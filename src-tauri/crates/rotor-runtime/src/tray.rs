@@ -24,8 +24,8 @@ impl Tray {
         Ok(())
     }
 
-    pub fn new() -> Result<Tray, Box<dyn Error>> {
-        Ok(Tray {})
+    pub fn new() -> Tray {
+        Tray {}
     }
 
     fn set_system_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -39,7 +39,7 @@ impl Tray {
             "assets/icons/128x128.png",
             tauri::path::BaseDirectory::Resource,
         )?;
-        let icon = tauri::image::Image::from_path(icon_path).unwrap();
+        let icon = tauri::image::Image::from_path(icon_path)?;
         let setting_i = MenuItem::with_id(app, "setting", i18n::t("setting"), true, None::<&str>)?;
         let quit_i = MenuItem::with_id(app, "quit", i18n::t("quit"), true, None::<&str>)?;
         let menu = Menu::with_items(app, &[&setting_i, &quit_i])?;
@@ -51,8 +51,12 @@ impl Tray {
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "setting" => {
                     if let Some(win) = app.get_webview_window("setting") {
-                        win.show().unwrap();
-                        win.set_focus().unwrap();
+                        if let Err(error) = win.show() {
+                            log::error!("Failed to show setting window: {error}");
+                        }
+                        if let Err(error) = win.set_focus() {
+                            log::error!("Failed to focus setting window: {error}");
+                        }
                     } else {
                         let mut win_builder =
                             WebviewWindowBuilder::new(app, "setting", WebviewUrl::default())
@@ -74,7 +78,9 @@ impl Tray {
                             win_builder = win_builder.decorations(false);
                         }
 
-                        let _window = win_builder.build().unwrap();
+                        if let Err(error) = win_builder.build() {
+                            log::error!("Failed to build setting window: {error}");
+                        }
                     }
                 }
                 "quit" => {

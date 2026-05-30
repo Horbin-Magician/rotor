@@ -51,7 +51,7 @@ impl I18n {
     }
 
     fn get_current_language(&self) -> String {
-        let config = AppConfig::global().lock().unwrap();
+        let config = AppConfig::lock_global();
         let language_setting = config.get("language").unwrap_or(&"0".to_string()).clone();
         match language_setting.as_str() {
             "1" => "zh-CN".to_string(),
@@ -82,5 +82,11 @@ impl Default for I18n {
 static I18N_INSTANCE: LazyLock<Mutex<I18n>> = LazyLock::new(|| Mutex::new(I18n::new()));
 
 pub fn t(key: &str) -> String {
-    I18N_INSTANCE.lock().unwrap().t(key)
+    I18N_INSTANCE
+        .lock()
+        .unwrap_or_else(|poisoned| {
+            log::error!("I18n lock poisoned; recovering inner state");
+            poisoned.into_inner()
+        })
+        .t(key)
 }

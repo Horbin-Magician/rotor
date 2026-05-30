@@ -74,7 +74,10 @@ fn image_to_scaled_gray(img: &RgbaImage, scale_factor: u32) -> GrayImage {
             }
         });
 
-    GrayImage::from_raw(dst_width, dst_height, gray_data).unwrap()
+    GrayImage::from_raw(dst_width, dst_height, gray_data).unwrap_or_else(|| {
+        log::error!("Failed to create grayscale image from resized buffer");
+        GrayImage::new(dst_width, dst_height)
+    })
 }
 
 fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
@@ -179,7 +182,10 @@ fn morphological_close(img: GrayImage, size: u8) -> GrayImage {
         std::mem::swap(&mut current_buf, &mut next_buf);
     }
 
-    GrayImage::from_raw(width, height, current_buf).unwrap()
+    GrayImage::from_raw(width, height, current_buf).unwrap_or_else(|| {
+        log::error!("Failed to create grayscale image from morph buffer");
+        GrayImage::new(width, height)
+    })
 }
 
 fn find_bounding_boxes(img: &GrayImage, min_size: u32) -> Vec<(u32, u32, u32, u32)> {

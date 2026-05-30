@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::{collections::HashMap, fs};
 
 use crate::file_path;
@@ -61,6 +61,13 @@ impl AppConfig {
 
     pub fn global() -> &'static Mutex<AppConfig> {
         &INSTANCE
+    }
+
+    pub fn lock_global() -> MutexGuard<'static, AppConfig> {
+        INSTANCE.lock().unwrap_or_else(|poisoned| {
+            log::error!("AppConfig lock poisoned; recovering inner state");
+            poisoned.into_inner()
+        })
     }
 
     pub fn set(&mut self, k: String, v: String) -> Result<(), Box<dyn Error>> {

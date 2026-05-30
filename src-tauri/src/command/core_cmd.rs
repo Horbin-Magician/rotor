@@ -7,14 +7,14 @@ use rotor_runtime::Application;
 
 #[tauri::command]
 pub fn get_all_cfg() -> Config {
-    AppConfig::global().lock().unwrap().get_all()
+    AppConfig::lock_global().get_all()
 }
 
 #[tauri::command]
 pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
     let tokens = k.split('_').collect::<Vec<&str>>();
     {
-        let mut app_config = AppConfig::global().lock().unwrap();
+        let mut app_config = AppConfig::lock_global();
         let old_value = app_config.get(&k).cloned();
         if tokens[0] == "shortcut" {
             if let Ok(shortcut) = Shortcut::from_str(&v) {
@@ -61,7 +61,7 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
 
 #[tauri::command]
 pub fn get_cfg(k: String) -> String {
-    if let Some(config) = AppConfig::global().lock().unwrap().get(&k) {
+    if let Some(config) = AppConfig::lock_global().get(&k) {
         return config.clone();
     }
     "".to_string()
@@ -74,7 +74,7 @@ pub fn get_app_version() -> String {
 
 #[tauri::command]
 pub fn get_ws_port() -> u16 {
-    Application::global().lock().unwrap().ws_port
+    Application::lock_global().ws_port
 }
 
 #[tauri::command]

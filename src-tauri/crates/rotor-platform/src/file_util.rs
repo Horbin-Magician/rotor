@@ -10,7 +10,15 @@ use std::os::windows::process::CommandExt;
 use std::path::Path;
 
 pub fn del_useless_files() -> Result<(), Box<dyn std::error::Error>> {
-    let userdata_path = get_userdata_path().unwrap();
+    let Some(userdata_path) = get_userdata_path() else {
+        log::warn!("Unable to resolve user data path; skipping cleanup");
+        return Ok(());
+    };
+
+    if !userdata_path.exists() {
+        return Ok(());
+    }
+
     for entry in fs::read_dir(userdata_path)? {
         let entry = entry?;
         let entry_path = entry.path();

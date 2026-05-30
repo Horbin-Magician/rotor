@@ -19,7 +19,7 @@ pub fn run() {
         log::error!("del_useless_files error: {:?}", e);
     });
 
-    let app = tauri::Builder::default()
+    let app = match tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(
@@ -76,26 +76,26 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .unwrap_or_else(|e| {
+    {
+        Ok(app) => app,
+        Err(e) => {
             log::error!("Build tauri::application error: {e}");
-            panic!()
-        });
+            return;
+        }
+    };
 
-    rotor_runtime::Application::global()
-        .lock()
-        .unwrap()
-        .init(app.app_handle().clone())
-        .unwrap_or_else(|e| {
-            log::error!("Error while init rotor application: {e}");
-            panic!()
-        });
+    if let Err(e) = rotor_runtime::Application::lock_global().init(app.app_handle().clone()) {
+        log::error!("Error while init rotor application: {e}");
+    }
 
     app.run(|app, event| {
         if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
             if code.is_none() {
                 api.prevent_exit();
                 for (_label, window) in app.webview_windows() {
-                    window.close().unwrap();
+                    if let Err(e) = window.close() {
+                        log::warn!("Failed to close window during exit request: {e}");
+                    }
                 }
             }
         }

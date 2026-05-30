@@ -2,12 +2,12 @@ use rotor_runtime::Application;
 
 #[tauri::command]
 pub async fn searcher_find(query: String) {
-    Application::global().lock().unwrap().searcher.find(query);
+    Application::lock_global().searcher.find(query);
 }
 
 #[tauri::command]
 pub async fn searcher_release() {
-    Application::global().lock().unwrap().searcher.release();
+    Application::lock_global().searcher.release();
 }
 
 #[tauri::command]
