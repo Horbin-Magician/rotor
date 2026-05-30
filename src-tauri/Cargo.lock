@@ -5241,7 +5241,7 @@ dependencies = [
 
 [[package]]
 name = "rotor"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "chrono",
  "image",
@@ -5277,7 +5277,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-platform"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "base64 0.22.1",
  "core-graphics 0.23.2",
@@ -5293,7 +5293,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-runtime"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "futures-util",
  "image",
@@ -5311,7 +5311,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-screenshot"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "cocoa",
  "image",
@@ -5329,7 +5329,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-searcher"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "fxhash",
  "log",
