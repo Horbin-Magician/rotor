@@ -123,11 +123,15 @@ impl FileMap {
             }
 
             if is_match {
-                let full_path = format!("{}/{}", file.path, file.file_name);
+                let full_path = std::path::Path::new(&file.path)
+                    .join(&file.file_name)
+                    .to_string_lossy()
+                    .into_owned();
                 let icon_data = file_util::get_file_icon_data(&full_path);
 
                 result.push(SearchResultItem {
-                    path: format!("{}/", file.path),
+                    path: file.path.clone(),
+                    file_path: full_path,
                     file_name: file.file_name.clone(),
                     rank: file.rank,
                     icon_data,

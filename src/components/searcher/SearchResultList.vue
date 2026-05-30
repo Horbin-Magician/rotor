@@ -7,7 +7,7 @@
     >
       <SearchResultItem
         v-for="(item, index) in items"
-        :key="`${item.subtitle}${item.title}`"
+        :key="item.file_path"
         :item="item"
         :is-selected="selectedIndex === index"
         @click="handleItemClick"

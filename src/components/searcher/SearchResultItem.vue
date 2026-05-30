@@ -54,6 +54,7 @@ interface Action {
 export interface SearchItem {
   title: string
   subtitle: string
+  file_path: string
   type: ItemType
   actions?: Action[]
   icon_data?: string

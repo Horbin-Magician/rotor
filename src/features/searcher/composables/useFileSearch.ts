@@ -9,6 +9,7 @@ function mapSearchItem(item: UpdateResultPayload[1][number]): SearchItem {
   return {
     title: item.file_name,
     subtitle: item.path,
+    file_path: item.file_path,
     type: isApp ? 'app' : 'file',
     icon_data: item.icon_data,
     alias: item.alias,
@@ -55,16 +56,14 @@ export function useFileSearch(searchQuery: Ref<string>, onHide: () => void, onRe
   }
 
   const clickItem = (item: SearchItem) => {
-    openFile(item.subtitle + item.title)
+    openFile(item.file_path)
     onHide()
   }
 
   const handleActionClick = (action: SearchAction, item: SearchItem) => {
-    const filePath = item.subtitle + item.title
-
     switch (action.type) {
       case 'OpenAsAdmin':
-        openFileAsAdmin(filePath).catch(err => console.error('Failed to open as admin:', err))
+        openFileAsAdmin(item.file_path).catch(err => console.error('Failed to open as admin:', err))
         break
       case 'OpenFolder':
         openFile(item.subtitle).catch(err => console.error('Failed to open folder:', err))
