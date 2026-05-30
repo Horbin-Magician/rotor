@@ -44,11 +44,49 @@ pub(crate) fn sorted_configs(mut configs: Vec<MonitorConfig>) -> Vec<MonitorConf
 }
 
 pub(crate) fn capture_all(monitors: Vec<Monitor>) -> HashMap<String, RgbaImage> {
+    capture_all_inner(monitors)
+}
+
+#[cfg(target_os = "windows")]
+fn capture_all_inner(monitors: Vec<Monitor>) -> HashMap<String, RgbaImage> {
+    let handles = monitors
+        .into_iter()
+        .filter_map(|monitor| {
+            let x = match monitor.x() {
+                Ok(x) => x,
+                Err(error) => {
+                    log::error!("Failed to get monitor x coordinate before capture: {error}");
+                    return None;
+                }
+            };
+            let y = match monitor.y() {
+                Ok(y) => y,
+                Err(error) => {
+                    log::error!("Failed to get monitor y coordinate before capture: {error}");
+                    return None;
+                }
+            };
+
+            Some(thread::spawn(move || capture_monitor_at_point(x, y)))
+        })
+        .collect::<Vec<_>>();
+
+    collect_captures(handles)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn capture_all_inner(monitors: Vec<Monitor>) -> HashMap<String, RgbaImage> {
     let handles = monitors
         .into_iter()
         .map(|monitor| thread::spawn(move || capture_monitor(monitor)))
         .collect::<Vec<_>>();
 
+    collect_captures(handles)
+}
+
+fn collect_captures(
+    handles: Vec<thread::JoinHandle<Result<(String, RgbaImage), String>>>,
+) -> HashMap<String, RgbaImage> {
     let mut captures = HashMap::new();
     for handle in handles {
         match handle.join() {
@@ -68,9 +106,7 @@ pub(crate) fn capture_all(monitors: Vec<Monitor>) -> HashMap<String, RgbaImage> 
 }
 
 #[cfg(target_os = "windows")]
-fn capture_monitor(monitor: Monitor) -> Result<(String, RgbaImage), String> {
-    let x = monitor.x().map_err(|error| error.to_string())?;
-    let y = monitor.y().map_err(|error| error.to_string())?;
+fn capture_monitor_at_point(x: i32, y: i32) -> Result<(String, RgbaImage), String> {
     let monitor = Monitor::from_point(x, y).map_err(|error| {
         format!("failed to refresh monitor at ({x}, {y}) before capture: {error}")
     })?;
