@@ -5301,6 +5301,8 @@ dependencies = [
  "rotor-common",
  "rotor-screenshot",
  "rotor-searcher",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-plugin-global-shortcut",
  "tokio",

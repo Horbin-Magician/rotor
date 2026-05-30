@@ -10,6 +10,8 @@ log = "0.4.27"
 rotor-common = { path = "../rotor-common" }
 rotor-screenshot = { path = "../rotor-screenshot" }
 rotor-searcher = { path = "../rotor-searcher" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tokio = { version = "1", features = ["full"] }

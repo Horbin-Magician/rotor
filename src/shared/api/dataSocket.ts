@@ -6,7 +6,139 @@ interface DataSocketOptions {
   retryDelayMs?: number
 }
 
+interface DataSocketErrorResponse {
+  requestId: number
+  ok: false
+  error: string
+}
+
+interface PendingDataRequest {
+  label: string
+  timer: number
+  resolve: (data: ArrayBuffer) => void
+  reject: (error: Error) => void
+}
+
+interface DataSocketState {
+  nextRequestId: number
+  pending: Map<number, PendingDataRequest>
+}
+
+const RESPONSE_HEADER_BYTES = 4
+const MAX_REQUEST_ID = 0xFFFFFFFF
+const socketStates = new WeakMap<WebSocket, DataSocketState>()
+
 const delay = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms))
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isDataSocketErrorResponse(value: unknown): value is DataSocketErrorResponse {
+  return isRecord(value) &&
+    typeof value.requestId === 'number' &&
+    value.ok === false &&
+    typeof value.error === 'string'
+}
+
+function allocateRequestId(state: DataSocketState) {
+  let requestId = state.nextRequestId
+
+  while (state.pending.has(requestId)) {
+    requestId = requestId >= MAX_REQUEST_ID ? 1 : requestId + 1
+  }
+
+  state.nextRequestId = requestId >= MAX_REQUEST_ID ? 1 : requestId + 1
+  return requestId
+}
+
+function settlePending(
+  state: DataSocketState,
+  requestId: number,
+  settle: (request: PendingDataRequest) => void
+) {
+  const request = state.pending.get(requestId)
+  if (!request) return
+
+  state.pending.delete(requestId)
+  window.clearTimeout(request.timer)
+  settle(request)
+}
+
+function rejectPendingRequests(state: DataSocketState, error: Error) {
+  state.pending.forEach((request) => {
+    window.clearTimeout(request.timer)
+    request.reject(error)
+  })
+  state.pending.clear()
+}
+
+async function getMessageBuffer(data: MessageEvent['data']) {
+  if (data instanceof ArrayBuffer) return data
+  if (data instanceof Blob) return data.arrayBuffer()
+  return null
+}
+
+async function handleDataSocketMessage(state: DataSocketState, event: MessageEvent) {
+  if (typeof event.data === 'string') {
+    let response: unknown
+    try {
+      response = JSON.parse(event.data)
+    } catch {
+      rejectPendingRequests(state, new Error(`Unexpected websocket response: ${event.data}`))
+      return
+    }
+
+    if (isDataSocketErrorResponse(response)) {
+      settlePending(state, response.requestId, request => {
+        request.reject(new Error(response.error))
+      })
+      return
+    }
+
+    rejectPendingRequests(state, new Error('Unexpected websocket response payload'))
+    return
+  }
+
+  const buffer = await getMessageBuffer(event.data)
+  if (!buffer) {
+    rejectPendingRequests(state, new Error('Unexpected websocket response type'))
+    return
+  }
+
+  if (buffer.byteLength < RESPONSE_HEADER_BYTES) {
+    rejectPendingRequests(state, new Error('Invalid websocket data response'))
+    return
+  }
+
+  const requestId = new DataView(buffer, 0, RESPONSE_HEADER_BYTES).getUint32(0)
+  settlePending(state, requestId, request => {
+    request.resolve(buffer.slice(RESPONSE_HEADER_BYTES))
+  })
+}
+
+function getDataSocketState(socket: WebSocket) {
+  let state = socketStates.get(socket)
+  if (state) return state
+
+  state = {
+    nextRequestId: 1,
+    pending: new Map()
+  }
+
+  socket.addEventListener('message', event => {
+    void handleDataSocketMessage(state, event)
+  })
+  socket.addEventListener('error', () => {
+    rejectPendingRequests(state, new Error('WebSocket data request failed'))
+  })
+  socket.addEventListener('close', () => {
+    rejectPendingRequests(state, new Error('WebSocket closed while waiting for data'))
+  })
+
+  socketStates.set(socket, state)
+  return state
+}
 
 function waitForOpen(socket: WebSocket) {
   return new Promise<void>((resolve, reject) => {
@@ -80,42 +212,26 @@ export function requestDataSocketBytes(socket: WebSocket, label: string, timeout
       return
     }
 
+    const state = getDataSocketState(socket)
+    const requestId = allocateRequestId(state)
     const timer = window.setTimeout(() => {
-      cleanup()
+      state.pending.delete(requestId)
       reject(new Error(`Timed out waiting for data: ${label}`))
     }, timeoutMs)
 
-    const cleanup = () => {
+    state.pending.set(requestId, {
+      label,
+      timer,
+      resolve,
+      reject
+    })
+
+    try {
+      socket.send(JSON.stringify({ requestId, label }))
+    } catch (error) {
+      state.pending.delete(requestId)
       window.clearTimeout(timer)
-      socket.removeEventListener('message', handleMessage)
-      socket.removeEventListener('error', handleError)
-      socket.removeEventListener('close', handleClose)
+      reject(error instanceof Error ? error : new Error(`WebSocket data request failed: ${label}`))
     }
-
-    const handleMessage = (event: MessageEvent) => {
-      cleanup()
-      if (event.data instanceof ArrayBuffer) {
-        resolve(event.data)
-      } else if (event.data instanceof Blob) {
-        event.data.arrayBuffer().then(resolve, reject)
-      } else {
-        reject(new Error(`Unexpected data response type for ${label}`))
-      }
-    }
-
-    const handleError = () => {
-      cleanup()
-      reject(new Error(`WebSocket data request failed: ${label}`))
-    }
-
-    const handleClose = () => {
-      cleanup()
-      reject(new Error(`WebSocket closed while waiting for data: ${label}`))
-    }
-
-    socket.addEventListener('message', handleMessage)
-    socket.addEventListener('error', handleError)
-    socket.addEventListener('close', handleClose)
-    socket.send(label)
   })
 }
