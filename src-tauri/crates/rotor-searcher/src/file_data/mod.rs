@@ -1,8 +1,12 @@
 mod volume;
 
 use std::collections::VecDeque;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc, Mutex,
+};
 use std::thread;
+use std::time::{Duration, Instant};
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem;
 
@@ -21,6 +25,9 @@ pub enum SearcherMessage {
     Release,
 }
 
+const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
+const SEARCH_CANCEL_DRAIN_TIMEOUT: Duration = Duration::from_millis(200);
+
 #[derive(Debug)]
 enum FileState {
     Unbuild,
@@ -30,7 +37,74 @@ enum FileState {
 
 struct VolumePack {
     volume: Arc<Mutex<Volume>>,
-    stop_sender: mpsc::Sender<()>,
+    find_sender: mpsc::Sender<VolumeFindTask>,
+}
+
+struct VolumeFindTask {
+    filename: String,
+    batch: u8,
+    cancel: Arc<AtomicBool>,
+    result_sender: mpsc::Sender<Option<Vec<SearchResultItem>>>,
+}
+
+struct SearchTask {
+    cancel: Arc<AtomicBool>,
+    result_receiver: mpsc::Receiver<Option<Vec<SearchResultItem>>>,
+    pending: usize,
+}
+
+impl SearchTask {
+    fn dispatch(volume_packs: &[VolumePack], filename: String, batch: u8) -> SearchTask {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (result_sender, result_receiver) = mpsc::channel::<Option<Vec<SearchResultItem>>>();
+        let mut pending = 0;
+
+        for VolumePack { find_sender, .. } in volume_packs {
+            let task = VolumeFindTask {
+                filename: filename.clone(),
+                batch,
+                cancel: cancel.clone(),
+                result_sender: result_sender.clone(),
+            };
+
+            if find_sender.send(task).is_err() {
+                log::error!("Dispatch search task failed");
+                continue;
+            }
+            pending += 1;
+        }
+
+        SearchTask {
+            cancel,
+            result_receiver,
+            pending,
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    fn drain_cancelled(&mut self) {
+        let deadline = Instant::now() + SEARCH_CANCEL_DRAIN_TIMEOUT;
+        while self.pending > 0 {
+            let now = Instant::now();
+            if now >= deadline {
+                break;
+            }
+
+            let timeout = std::cmp::min(SEARCH_WAIT_TIMEOUT, deadline - now);
+            match self.result_receiver.recv_timeout(timeout) {
+                Ok(_) => {
+                    self.pending -= 1;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 pub struct SearchResult {
@@ -42,7 +116,6 @@ pub struct FileData {
     vols: Vec<String>,
     finding_name: String,
     finding_result: SearchResult,
-    waiting_finder: u8,
     volume_packs: Vec<VolumePack>,
     state: FileState,
     show_num: usize,
@@ -63,7 +136,6 @@ impl FileData {
                 items: Vec::new(),
                 query: String::new(),
             },
-            waiting_finder: 0,
             state: FileState::Unbuild,
             show_num: 20,
             batch: 20,
@@ -189,55 +261,44 @@ impl FileData {
             return reply;
         }
 
-        self.waiting_finder = self.volume_packs.len() as u8;
-        let (find_result_sender, find_result_receiver) =
-            mpsc::channel::<Option<Vec<SearchResultItem>>>();
-        for VolumePack { volume, .. } in &mut self.volume_packs {
-            let find_result_sender: mpsc::Sender<Option<Vec<SearchResultItem>>> =
-                find_result_sender.clone();
-            let batch = self.batch;
-            let volume = volume.clone();
-            let filename = filename.clone();
-            thread::spawn(move || {
-                let mut volume = volume
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                volume.find(filename, batch, find_result_sender);
-            });
-        }
+        let mut task = SearchTask::dispatch(&self.volume_packs, filename.clone(), self.batch);
 
-        // begin loop
-        loop {
+        while task.pending > 0 {
             if let Ok(searcher_msg) = msg_reciever.try_recv() {
-                for volume_pack in &mut self.volume_packs {
-                    let _ = volume_pack.stop_sender.send(());
-                }
+                task.cancel();
+                task.drain_cancelled();
+                self.finding_result.items.clear();
                 reply = Some(searcher_msg);
                 break;
             }
 
-            if let Ok(op_result) = find_result_receiver.try_recv() {
-                if let Some(mut result) = op_result {
-                    self.finding_result.items.append(&mut result);
-                    self.waiting_finder -= 1;
-                    if self.waiting_finder != 0 {
-                        continue;
+            match task.result_receiver.recv_timeout(SEARCH_WAIT_TIMEOUT) {
+                Ok(op_result) => {
+                    task.pending -= 1;
+                    if let Some(mut result) = op_result {
+                        self.finding_result.items.append(&mut result);
                     }
-
-                    self.finding_result
-                        .items
-                        .sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
-                    let return_result = if self.finding_result.items.len() > self.show_num {
-                        let max = std::cmp::min(self.finding_result.items.len(), need_num);
-                        self.finding_result.items[self.show_num..max].to_vec()
-                    } else {
-                        vec![]
-                    };
-                    self.find_result(filename, return_result, if_increase);
                 }
-                break;
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
             }
         }
+
+        if reply.is_none() {
+            self.finding_result
+                .items
+                .sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
+            let return_result = if self.finding_result.items.len() > self.show_num {
+                let max = std::cmp::min(self.finding_result.items.len(), need_num);
+                self.finding_result.items[self.show_num..max].to_vec()
+            } else {
+                vec![]
+            };
+            self.find_result(filename, return_result, if_increase);
+        }
+
         reply
     }
 
@@ -249,12 +310,27 @@ impl FileData {
             .vols
             .iter()
             .map(|c| {
-                let (stop_sender, stop_receiver) = mpsc::channel::<()>();
+                let (find_sender, find_receiver) = mpsc::channel::<VolumeFindTask>();
 
-                let volume = Arc::new(Mutex::new(Volume::new(c.clone(), stop_receiver)));
+                let volume = Arc::new(Mutex::new(Volume::new(c.clone())));
                 self.volume_packs.push(VolumePack {
                     volume: volume.clone(),
-                    stop_sender,
+                    find_sender,
+                });
+
+                let worker_volume = volume.clone();
+                thread::spawn(move || {
+                    while let Ok(task) = find_receiver.recv() {
+                        if task.cancel.load(Ordering::Relaxed) {
+                            let _ = task.result_sender.send(None);
+                            continue;
+                        }
+
+                        worker_volume
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .find(task.filename, task.batch, task.cancel, task.result_sender);
+                    }
                 });
 
                 thread::spawn(move || {

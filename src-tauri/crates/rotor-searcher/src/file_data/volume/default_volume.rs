@@ -1,7 +1,10 @@
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
-use std::sync::mpsc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc,
+};
 use std::time::SystemTime;
 use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
@@ -19,7 +22,6 @@ enum FileAction {
 pub struct Volume {
     pub drive: String,
     file_map: FileMap,
-    stop_receiver: mpsc::Receiver<()>,
     last_query: String,
     last_search_num: usize,
     watcher: Option<RecommendedWatcher>,
@@ -27,11 +29,10 @@ pub struct Volume {
 }
 
 impl Volume {
-    pub fn new(drive: String, stop_receiver: mpsc::Receiver<()>) -> Volume {
+    pub fn new(drive: String) -> Volume {
         Volume {
             drive,
             file_map: FileMap::new(),
-            stop_receiver,
             last_query: String::new(),
             last_search_num: 0,
             watcher: None,
@@ -166,6 +167,10 @@ impl Volume {
 
     // Enumerate the filesystem using walkdir. Store the file entries in the database.
     pub fn build_index(&mut self) {
+        self.build_index_with_cancel(None);
+    }
+
+    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) {
         let sys_time = SystemTime::now();
 
         self.stop_watching();
@@ -212,8 +217,10 @@ impl Volume {
             .filter_map(|e| e.ok()); // skit no permission
 
         for entry in walker {
-            // Check if we should stop (user requested cancellation)
-            if self.stop_receiver.try_recv().is_ok() {
+            if cancel
+                .map(|cancel| cancel.load(Ordering::Relaxed))
+                .unwrap_or(false)
+            {
                 log::info!("{} Volume::build_index cancelled by user", self.drive);
                 return;
             }
@@ -257,6 +264,7 @@ impl Volume {
         &mut self,
         query: String,
         batch: u8,
+        cancel: Arc<AtomicBool>,
         sender: mpsc::Sender<Option<Vec<SearchResultItem>>>,
     ) {
         #[cfg(debug_assertions)]
@@ -265,7 +273,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::Find {query}", self.drive);
 
-        if query.is_empty() {
+        if query.is_empty() || cancel.load(Ordering::Relaxed) {
             let _ = sender.send(None);
             return;
         }
@@ -278,14 +286,13 @@ impl Volume {
         if self.file_map.is_empty() {
             self.serialization_read().unwrap_or_else(|e| {
                 log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
-                self.build_index();
+                self.build_index_with_cancel(Some(&cancel));
             });
         };
 
-        while self.stop_receiver.try_recv().is_ok() {} // clear channel before find
         let (result, search_num) =
             self.file_map
-                .search(&query, self.last_search_num, batch, &self.stop_receiver);
+                .search(&query, self.last_search_num, batch, &cancel);
 
         #[cfg(debug_assertions)]
         log::info!(
@@ -294,7 +301,14 @@ impl Volume {
             sys_time.elapsed().unwrap_or_default().as_millis()
         );
 
-        self.last_search_num += search_num;
+        if cancel.load(Ordering::Relaxed) {
+            let _ = sender.send(None);
+            return;
+        }
+
+        if result.is_some() {
+            self.last_search_num += search_num;
+        }
 
         let _ = sender.send(result);
     }

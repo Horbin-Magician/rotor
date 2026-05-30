@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 use std::io::{self, Write};
-use std::sync::mpsc::Receiver;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::SearchResultItem;
 use rotor_platform::file_util;
@@ -88,7 +88,7 @@ impl FileMap {
         query: &str,
         last_search_num: usize,
         batch: u8,
-        stop_receiver: &Receiver<()>,
+        cancel: &AtomicBool,
     ) -> (Option<Vec<SearchResultItem>>, usize) {
         let mut result = Vec::new();
         let mut find_num = 0;
@@ -98,7 +98,7 @@ impl FileMap {
 
         let file_map_iter = self.iter().rev().skip(last_search_num);
         for (_, file) in file_map_iter {
-            if stop_receiver.try_recv().is_ok() {
+            if cancel.load(Ordering::Relaxed) {
                 return (None, 0);
             }
             search_num += 1;

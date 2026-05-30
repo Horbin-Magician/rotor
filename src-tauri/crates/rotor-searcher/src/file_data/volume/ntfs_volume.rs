@@ -1,6 +1,9 @@
 use std::error::Error;
 use std::ffi::{c_void, CString};
-use std::sync::mpsc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc,
+};
 #[cfg(debug_assertions)]
 use std::time::SystemTime;
 use std::{fs, io};
@@ -18,13 +21,12 @@ pub struct Volume {
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     file_map: FileMap,
-    stop_receiver: mpsc::Receiver<()>,
     last_query: String,
     last_search_num: usize,
 }
 
 impl Volume {
-    pub fn new(drive: String, stop_receiver: mpsc::Receiver<()>) -> Volume {
+    pub fn new(drive: String) -> Volume {
         Volume {
             drive,
             drive_frn: 0x5000000000005,
@@ -38,7 +40,6 @@ impl Volume {
                 MaximumSize: 0x0,
                 AllocationDelta: 0x0,
             },
-            stop_receiver,
             last_query: String::new(),
             last_search_num: 0,
         }
@@ -74,6 +75,10 @@ impl Volume {
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
     pub fn build_index(&mut self) {
+        self.build_index_with_cancel(None);
+    }
+
+    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
@@ -130,6 +135,15 @@ impl Volume {
                 let data_end = data.as_ptr() as usize + cb as usize;
 
                 while (record_ptr as usize) < data_end {
+                    if cancel
+                        .map(|cancel| cancel.load(Ordering::Relaxed))
+                        .unwrap_or(false)
+                    {
+                        log::info!("{} Volume::build_index cancelled by user", self.drive);
+                        Self::close_drive(h_vol);
+                        return;
+                    }
+
                     let record = &*record_ptr;
 
                     let file_name_begin_ptr =
@@ -187,6 +201,7 @@ impl Volume {
         &mut self,
         query: String,
         batch: u8,
+        cancel: Arc<AtomicBool>,
         sender: mpsc::Sender<Option<Vec<SearchResultItem>>>,
     ) {
         #[cfg(debug_assertions)]
@@ -195,7 +210,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::Find {query}", self.drive);
 
-        if query.is_empty() {
+        if query.is_empty() || cancel.load(Ordering::Relaxed) {
             let _ = sender.send(None);
             return;
         }
@@ -208,14 +223,13 @@ impl Volume {
         if self.file_map.is_empty() {
             self.serialization_read().unwrap_or_else(|e| {
                 log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
-                self.build_index();
+                self.build_index_with_cancel(Some(&cancel));
             });
         };
 
-        while self.stop_receiver.try_recv().is_ok() {} // clear channel before find
         let (result, search_num) =
             self.file_map
-                .search(&query, self.last_search_num, batch, &self.stop_receiver);
+                .search(&query, self.last_search_num, batch, &cancel);
 
         #[cfg(debug_assertions)]
         log::info!(
@@ -224,7 +238,14 @@ impl Volume {
             sys_time.elapsed().unwrap_or_default().as_millis()
         );
 
-        self.last_search_num += search_num;
+        if cancel.load(Ordering::Relaxed) {
+            let _ = sender.send(None);
+            return;
+        }
+
+        if result.is_some() {
+            self.last_search_num += search_num;
+        }
 
         let _ = sender.send(result);
     }
