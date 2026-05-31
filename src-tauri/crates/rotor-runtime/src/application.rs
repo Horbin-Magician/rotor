@@ -142,14 +142,6 @@ impl Application {
                     message: "Simulated shortcut conflict".to_string(),
                 });
         }
-        if std::env::var("ROTOR_SIMULATE_SHORTCUT_CONFLICT").as_deref() == Ok("1") {
-            self.shortcut_registration_notices
-                .push(ShortcutRegistrationNotice {
-                    key: "shortcut_screenshot".to_string(),
-                    shortcut: "Ctrl+Shift+Y".to_string(),
-                    message: "Simulated shortcut conflict".to_string(),
-                });
-        }
         if let Some(shortcut_notice) = self.shortcut_registration_notices.first().cloned() {
             Tray::show_setting_window(&app, Some(shortcut_notice));
         }
