@@ -26,11 +26,11 @@
 
   <div class="settings-card">
     <div class="settings-card-title">{{ t('message.globalShortcuts') }}</div>
-    <div class="setting-item">
+    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_screenshot' }">
       <span class="setting-label">{{ t('message.screenshot') }}</span>
       <ShortcutInput v-model:shortcut="shortcutScreenshot" />
     </div>
-    <div class="setting-item">
+    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_search' }">
       <span class="setting-label">{{ t('message.search') }}</span>
       <ShortcutInput v-model:shortcut="shortcutSearch" />
     </div>
@@ -49,9 +49,12 @@ const { t, locale } = useI18n()
 interface Props {
   currentVersion: string
   isCheckingUpdate: boolean
+  highlightedSetting?: string
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  highlightedSetting: ''
+})
 
 // Emits
 const emit = defineEmits<{
@@ -124,5 +127,16 @@ function handleCheckUpdate() {
 
 .setting-label {
   min-width: 130px;
+}
+
+.setting-item-conflict {
+  color: #d03050;
+}
+
+.setting-item-conflict :deep(.n-input) {
+  --n-border: 1px solid #d03050 !important;
+  --n-border-hover: 1px solid #d03050 !important;
+  --n-border-focus: 1px solid #d03050 !important;
+  --n-box-shadow-focus: 0 0 0 2px rgba(208, 48, 80, 0.18) !important;
 }
 </style>

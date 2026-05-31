@@ -6,6 +6,7 @@ use std::{
 
 use rotor_screenshot::ScreenShotter;
 use rotor_searcher::{file_data::SearchResultItem, Searcher};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
@@ -14,6 +15,14 @@ use crate::tray::Tray;
 
 const SHORTCUT_TRIGGER_DEBOUNCE: Duration = Duration::from_millis(500);
 const PRESSED_SHORTCUT_STALE_AFTER: Duration = Duration::from_secs(3);
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutRegistrationNotice {
+    pub key: String,
+    pub shortcut: String,
+    pub message: String,
+}
 
 pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     let mut rotor_app = Application::lock_global();
@@ -68,6 +77,7 @@ pub struct Application {
     pub ws_port: u16,
     pressed_shortcuts: HashSet<u32>,
     last_shortcut_triggers: HashMap<u32, Instant>,
+    shortcut_registration_notices: Vec<ShortcutRegistrationNotice>,
 }
 
 impl Application {
@@ -80,6 +90,7 @@ impl Application {
             ws_port: 10000,
             pressed_shortcuts: HashSet::new(),
             last_shortcut_triggers: HashMap::new(),
+            shortcut_registration_notices: Vec::new(),
         }
     }
 
@@ -108,6 +119,7 @@ impl Application {
             if let Err(e) = app.global_shortcut().register(shortcut) {
                 let flag = self.screenshot.flag();
                 log::error!("Module {flag} shortcut registration error: {e}");
+                self.notify_shortcut_registration_error("shortcut_screenshot", shortcut, e);
             }
         }
 
@@ -119,8 +131,29 @@ impl Application {
             if let Err(e) = app.global_shortcut().register(shortcut) {
                 let flag = self.searcher.flag();
                 log::error!("Module {flag} shortcut registration error: {e}");
+                self.notify_shortcut_registration_error("shortcut_search", shortcut, e);
             }
         }
+        if std::env::var("ROTOR_SIMULATE_SHORTCUT_CONFLICT").as_deref() == Ok("1") {
+            self.shortcut_registration_notices
+                .push(ShortcutRegistrationNotice {
+                    key: "shortcut_screenshot".to_string(),
+                    shortcut: "Ctrl+Shift+Y".to_string(),
+                    message: "Simulated shortcut conflict".to_string(),
+                });
+        }
+        if std::env::var("ROTOR_SIMULATE_SHORTCUT_CONFLICT").as_deref() == Ok("1") {
+            self.shortcut_registration_notices
+                .push(ShortcutRegistrationNotice {
+                    key: "shortcut_screenshot".to_string(),
+                    shortcut: "Ctrl+Shift+Y".to_string(),
+                    message: "Simulated shortcut conflict".to_string(),
+                });
+        }
+        if let Some(shortcut_notice) = self.shortcut_registration_notices.first().cloned() {
+            Tray::show_setting_window(&app, Some(shortcut_notice));
+        }
+
         self.app = Some(app);
 
         tauri::async_runtime::spawn(async move {
@@ -187,6 +220,31 @@ impl Application {
     fn finish_shortcut_trigger(&mut self, shortcut_id: u32) {
         self.last_shortcut_triggers
             .insert(shortcut_id, Instant::now());
+    }
+
+    pub fn take_shortcut_registration_notices(&mut self) -> Vec<ShortcutRegistrationNotice> {
+        std::mem::take(&mut self.shortcut_registration_notices)
+    }
+
+    fn notify_shortcut_registration_error(
+        &mut self,
+        key: &str,
+        shortcut: Shortcut,
+        error: tauri_plugin_global_shortcut::Error,
+    ) {
+        let notice = ShortcutRegistrationNotice {
+            key: key.to_string(),
+            shortcut: shortcut.to_string(),
+            message: error.to_string(),
+        };
+
+        self.shortcut_registration_notices.push(notice.clone());
+
+        let Some(app) = self.app.as_ref() else {
+            return;
+        };
+
+        Tray::show_setting_window(app, Some(notice));
     }
 }
 

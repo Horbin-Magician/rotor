@@ -64,6 +64,8 @@ export default {
     downloading: 'Downloading',
     updateCompleted: 'Update completed, restarting...',
     updateCheckFailed: 'Failed to check for updates',
-    manualDownloadSuggestion: 'Please try to manually download the latest version from the project page'
+    manualDownloadSuggestion: 'Please try to manually download the latest version from the project page',
+    shortcutConflictPrefix: 'Shortcut conflict. Please update ',
+    settingUpdateFailed: 'Failed to update setting'
   }
 }

@@ -11,52 +11,81 @@ pub fn get_all_cfg() -> Config {
 }
 
 #[tauri::command]
-pub fn set_cfg(k: String, mut v: String, app: AppHandle) {
+pub fn set_cfg(k: String, mut v: String, app: AppHandle) -> Result<(), String> {
     let tokens = k.split('_').collect::<Vec<&str>>();
     {
         let mut app_config = AppConfig::lock_global();
         let old_value = app_config.get(&k).cloned();
         if tokens[0] == "shortcut" {
-            if let Ok(shortcut) = Shortcut::from_str(&v) {
-                v = shortcut.to_string();
-                if old_value
-                    .as_deref()
-                    .and_then(|old_shortcut| Shortcut::from_str(old_shortcut).ok())
-                    .is_some_and(|old_shortcut| old_shortcut == shortcut)
-                {
-                    return;
-                }
+            match Shortcut::from_str(&v) {
+                Ok(shortcut) => {
+                    v = shortcut.to_string();
+                    if old_value
+                        .as_deref()
+                        .and_then(|old_shortcut| Shortcut::from_str(old_shortcut).ok())
+                        .is_some_and(|old_shortcut| old_shortcut == shortcut)
+                    {
+                        return Ok(());
+                    }
 
-                if tokens.len() == 2 {
-                    if let Some(old_shortcut) = old_value.clone() {
-                        match Shortcut::from_str(&old_shortcut) {
-                            Ok(old_shortcut) => {
+                    if tokens.len() == 2 {
+                        let old_shortcut =
+                            old_value
+                                .as_deref()
+                                .and_then(|old_shortcut| match Shortcut::from_str(old_shortcut) {
+                                    Ok(old_shortcut) => Some(old_shortcut),
+                                    Err(error) => {
+                                        log::warn!(
+                                            "Invalid old shortcut `{old_shortcut}`: {error}"
+                                        );
+                                        None
+                                    }
+                                });
+
+                        if let Some(old_shortcut) = old_shortcut {
+                            app.global_shortcut()
+                                .unregister(old_shortcut)
+                                .unwrap_or_else(|e| {
+                                    log::error!("Failed to unregister old shortcut: {e}");
+                                });
+                        }
+
+                        if let Err(error) = app.global_shortcut().register(shortcut) {
+                            log::error!("Failed to register new shortcut `{shortcut}`: {error}");
+
+                            if let Some(old_shortcut) = old_shortcut {
                                 app.global_shortcut()
-                                    .unregister(old_shortcut)
-                                    .unwrap_or_else(|e| {
-                                        log::error!("Failed to unregister old shortcut: {e}");
+                                    .register(old_shortcut)
+                                    .unwrap_or_else(|rollback_error| {
+                                        log::error!(
+                                            "Failed to restore old shortcut `{old_shortcut}`: {rollback_error}"
+                                        );
                                     });
                             }
-                            Err(error) => {
-                                log::warn!("Invalid old shortcut `{old_shortcut}`: {error}");
-                            }
+
+                            return Err(format!(
+                                "Shortcut `{shortcut}` is unavailable or already in use: {error}"
+                            ));
                         }
                     }
-                    app.global_shortcut()
-                        .register(shortcut)
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to register new shortcut: {e}");
-                        });
+                }
+                Err(error) => {
+                    if tokens.len() == 2 {
+                        return Err(format!("Invalid shortcut `{v}`: {error}"));
+                    }
                 }
             }
         }
         if old_value.as_deref() == Some(v.as_str()) {
-            return;
+            return Ok(());
         }
-        app_config.set(k, v).unwrap_or_else(|e| {
-            log::error!("Command set_cfg error: {e}");
-        });
+        app_config.set(k, v).map_err(|e| {
+            let error = format!("Command set_cfg error: {e}");
+            log::error!("{error}");
+            error
+        })?;
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -75,6 +104,11 @@ pub fn get_app_version() -> String {
 #[tauri::command]
 pub fn get_ws_port() -> u16 {
     Application::lock_global().ws_port
+}
+
+#[tauri::command]
+pub fn take_shortcut_registration_notices() -> Vec<rotor_runtime::ShortcutRegistrationNotice> {
+    Application::lock_global().take_shortcut_registration_notices()
 }
 
 #[tauri::command]

@@ -64,6 +64,8 @@ export default {
     downloading: '正在下载',
     updateCompleted: '更新完成，正在重启...',
     updateCheckFailed: '检查更新失败',
-    manualDownloadSuggestion: '请尝试从项目页面手动下载最新版本'
+    manualDownloadSuggestion: '请尝试从项目页面手动下载最新版本',
+    shortcutConflictPrefix: '快捷键冲突，请重新设置 ',
+    settingUpdateFailed: '设置更新失败'
   }
 }

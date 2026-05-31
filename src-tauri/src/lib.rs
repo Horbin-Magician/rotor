@@ -53,6 +53,7 @@ pub fn run() {
             core_cmd::set_cfg,
             core_cmd::get_app_version,
             core_cmd::get_ws_port,
+            core_cmd::take_shortcut_registration_notices,
             core_cmd::open_url,
             screen_shotter_cmd::new_pin,
             screen_shotter_cmd::save_img,

@@ -2,6 +2,7 @@
   <WindowsTitlebar v-if="isWindows" />
   <div class="tab-wrapper">
     <n-tabs
+      v-model:value="activeTab"
       placement = "left"
       size = "large"
       type = "line"
@@ -22,6 +23,7 @@
               v-model:power-boot="powerBoot"
               v-model:shortcut-screenshot="shortcutScreenshot"
               v-model:shortcut-search="shortcutSearch"
+              :highlighted-setting="highlightedSetting"
               :current-version="currentVersion"
               :is-checking-update="isCheckingUpdate"
               @check-update="checkUpdate"
@@ -37,6 +39,7 @@
               v-model:shortcut-pinwin-save="shortcutPinwinSave"
               v-model:shortcut-pinwin-copy="shortcutPinwinCopy"
               v-model:shortcut-pinwin-hide="shortcutPinwinHide"
+              :highlighted-setting="highlightedSetting"
               v-model:save-path="savePath"
               v-model:if-auto-change-save-path="ifAutoChangeSavePath"
               v-model:if-ask-save-path="ifAskSavePath"
@@ -65,12 +68,21 @@
 
 <script setup lang="ts">
 import { NTabs, NTabPane, NScrollbar, useMessage } from 'naive-ui'
-import { ref, watch, h } from 'vue'
+import { onMounted, onUnmounted, ref, watch, h } from 'vue'
+import type { Ref } from 'vue'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
 import { open } from '@tauri-apps/plugin-dialog';
 import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
-import { getAllConfig, getAppVersion, openUrl, setConfig } from '../shared/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import {
+  getAllConfig,
+  getAppVersion,
+  openUrl,
+  setConfig,
+  takeShortcutRegistrationNotices,
+  type ShortcutRegistrationNotice,
+} from '../shared/api/core'
 
 import { useTheme } from '../composables/useTheme';
 
@@ -90,6 +102,21 @@ import { info, error } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
 const isWindows = ref(false)
+const activeTab = ref('Base')
+const highlightedSetting = ref('')
+const hasLoadedConfig = ref(false)
+let unlistenShortcutConflict: UnlistenFn | null = null
+let highlightTimer: number | null = null
+let isRevertingSetting = false
+
+const shortcutTabByKey: Record<string, string> = {
+  shortcut_screenshot: 'Base',
+  shortcut_search: 'Base',
+  shortcut_pinwin_close: 'Screen shotter',
+  shortcut_pinwin_save: 'Screen shotter',
+  shortcut_pinwin_copy: 'Screen shotter',
+  shortcut_pinwin_hide: 'Screen shotter',
+}
 
 // Detect platform
 if (navigator.platform.startsWith('Win')) {
@@ -151,6 +178,8 @@ getAllConfig().then(async (config) => {
   ifAutoChangeSavePath.value = config["if_auto_change_save_path"] === "false" ? false : true
   ifAskSavePath.value = config["if_ask_save_path"] === "false" ? false : true
   zoomDelta.value = Number(config["zoom_delta"])
+}).finally(() => {
+  hasLoadedConfig.value = true
 })
 
 // Get app version
@@ -258,27 +287,108 @@ function cancelUpdate() {
   showUpdateModal.value = false
 }
 
+function settingDisplayName(key: string) {
+  const displayNames: Record<string, string> = {
+    shortcut_screenshot: t('message.screenshot'),
+    shortcut_search: t('message.search'),
+    shortcut_pinwin_close: t('message.closePinwin'),
+    shortcut_pinwin_save: t('message.savePinwin'),
+    shortcut_pinwin_copy: t('message.completePinwin'),
+    shortcut_pinwin_hide: t('message.hidePinwin'),
+  }
+
+  return displayNames[key] ?? key
+}
+
+function showShortcutConflict(notice: ShortcutRegistrationNotice) {
+  const targetTab = shortcutTabByKey[notice.key]
+
+  if (targetTab) {
+    activeTab.value = targetTab
+  }
+
+  highlightedSetting.value = notice.key
+
+  if (highlightTimer !== null) {
+    window.clearTimeout(highlightTimer)
+  }
+
+  highlightTimer = window.setTimeout(() => {
+    highlightedSetting.value = ''
+    highlightTimer = null
+  }, 6000)
+
+  const details = notice.message ? ` ${notice.message}` : ''
+  message.error(
+    `${t('message.shortcutConflictPrefix')}${settingDisplayName(notice.key)}: ${notice.shortcut}.${details}`,
+    { duration: 6000 }
+  )
+}
+
 // Function to update a setting in the backend
-function updateSetting(key: string, value: any) {
+async function updateSetting(key: string, value: any) {
   // Convert the value to string as required by the backend
   const stringValue = typeof value === 'boolean' ? value.toString() : String(value)
   
   // Invoke the set_cfg command to update the setting
-  setConfig(key, stringValue)
-    .catch((error) => {
-      console.error(`Failed to update setting ${key}:`, error)
-    })
+  await setConfig(key, stringValue)
 }
 
 // Helper function to create watchers for settings
-function createSettingWatcher(ref: any, key: string, callback?: (value: any) => void) {
-  watch(ref, (newValue) => {
-    updateSetting(key, newValue)
-    if (callback) {
-      callback(newValue)
+function createSettingWatcher<T>(settingRef: Ref<T>, key: string, callback?: (value: T) => void) {
+  watch(settingRef, async (newValue, oldValue) => {
+    if (!hasLoadedConfig.value || isRevertingSetting) {
+      return
+    }
+
+    try {
+      await updateSetting(key, newValue)
+      if (callback) {
+        callback(newValue)
+      }
+    } catch (err) {
+      console.error(`Failed to update setting ${key}:`, err)
+      isRevertingSetting = true
+      settingRef.value = oldValue
+      isRevertingSetting = false
+
+      if (key.startsWith('shortcut_')) {
+        showShortcutConflict({
+          key,
+          shortcut: String(newValue),
+          message: String(err),
+        })
+      } else {
+        message.error(`${t('message.settingUpdateFailed')}: ${settingDisplayName(key)}`)
+      }
     }
   })
 }
+
+onMounted(async () => {
+  unlistenShortcutConflict = await listen<ShortcutRegistrationNotice>(
+    'shortcut-registration-conflict',
+    (event) => showShortcutConflict(event.payload)
+  )
+
+  takeShortcutRegistrationNotices()
+    .then((notices) => {
+      notices.forEach(showShortcutConflict)
+    })
+    .catch((err) => {
+      console.error('Failed to take shortcut registration notices:', err)
+    })
+})
+
+onUnmounted(() => {
+  if (unlistenShortcutConflict) {
+    unlistenShortcutConflict()
+  }
+
+  if (highlightTimer !== null) {
+    window.clearTimeout(highlightTimer)
+  }
+})
 
 // Watch for changes in settings and update them in the backend
 createSettingWatcher(language, "language", (newValue) => {

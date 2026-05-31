@@ -23,19 +23,19 @@
   </div>
   <div class="settings-card">
     <div class="settings-card-title">{{ t('message.shortcuts') }}</div>
-    <div class="setting-item">
+    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_close' }">
       <span class="setting-label">{{ t('message.closePinwin') }}</span>
       <ShortcutInput v-model:shortcut="shortcutPinwinClose"/>
     </div>
-    <div class="setting-item">
+    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_save' }">
       <span class="setting-label">{{ t('message.savePinwin') }}</span>
       <ShortcutInput v-model:shortcut="shortcutPinwinSave"/>
     </div>
-    <div class="setting-item">
+    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_copy' }">
       <span class="setting-label">{{ t('message.completePinwin') }}</span>
       <ShortcutInput v-model:shortcut="shortcutPinwinCopy"/>
     </div>
-    <div class="setting-item">
+    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_hide' }">
       <span class="setting-label">{{ t('message.hidePinwin') }}</span>
       <ShortcutInput v-model:shortcut="shortcutPinwinHide"/>
     </div>
@@ -48,6 +48,12 @@ import { useI18n } from 'vue-i18n'
 import ShortcutInput from '../common/ShortcutInput.vue'
 
 const { t } = useI18n()
+
+withDefaults(defineProps<{
+  highlightedSetting?: string
+}>(), {
+  highlightedSetting: ''
+})
 
 // Models
 const shortcutPinwinClose = defineModel<string>('shortcutPinwinClose', { required: true })
@@ -103,5 +109,16 @@ function handleAskSave() {
 
 .path-selector .n-input {
   flex: 1;
+}
+
+.setting-item-conflict {
+  color: #d03050;
+}
+
+.setting-item-conflict :deep(.n-input) {
+  --n-border: 1px solid #d03050 !important;
+  --n-border-hover: 1px solid #d03050 !important;
+  --n-border-focus: 1px solid #d03050 !important;
+  --n-box-shadow-focus: 0 0 0 2px rgba(208, 48, 80, 0.18) !important;
 }
 </style>

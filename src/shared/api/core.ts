@@ -2,6 +2,12 @@ import { invoke } from '@tauri-apps/api/core'
 
 export type AppConfig = Record<string, string>
 
+export interface ShortcutRegistrationNotice {
+  key: string
+  shortcut: string
+  message: string
+}
+
 export function getAllConfig() {
   return invoke<AppConfig>('get_all_cfg')
 }
@@ -12,6 +18,10 @@ export function getConfig(key: string) {
 
 export function setConfig(key: string, value: string) {
   return invoke<void>('set_cfg', { k: key, v: value })
+}
+
+export function takeShortcutRegistrationNotices() {
+  return invoke<ShortcutRegistrationNotice[]>('take_shortcut_registration_notices')
 }
 
 export function getAppVersion() {
