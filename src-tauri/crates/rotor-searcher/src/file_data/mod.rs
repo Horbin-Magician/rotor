@@ -264,6 +264,10 @@ impl FileData {
         if_increase: bool,
     ) {
         self.show_num += update_result.len();
+        let update_result = update_result
+            .into_iter()
+            .map(SearchResultItem::attach_icon_data)
+            .collect();
         (self.find_result_callback)(filename, update_result, if_increase);
     }
 

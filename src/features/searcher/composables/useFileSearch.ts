@@ -2,6 +2,8 @@ import { ref, type Ref } from 'vue'
 import { openFile, openFileAsAdmin, searcherFind, searcherRelease } from '../api'
 import type { SearchAction, SearchItem, UpdateResultPayload } from '../types'
 
+const MAX_RETAINED_RESULTS = 100
+
 function mapSearchItem(item: UpdateResultPayload[1][number]): SearchItem {
   const lowerFileName = item.file_name.toLowerCase()
   const isApp = lowerFileName.endsWith('.app') || lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk')
@@ -40,6 +42,7 @@ export function useFileSearch(searchQuery: Ref<string>, onHide: () => void, onRe
   }
 
   const handleLoadMore = () => {
+    if (searchResults.value.length >= MAX_RETAINED_RESULTS) return
     requestSearch()
   }
 
@@ -51,7 +54,12 @@ export function useFileSearch(searchQuery: Ref<string>, onHide: () => void, onRe
       searchResults.value = []
     }
 
-    searchResults.value = searchResults.value.concat(getSearchResults.map(mapSearchItem))
+    const availableSlots = MAX_RETAINED_RESULTS - searchResults.value.length
+    if (availableSlots <= 0) return
+
+    searchResults.value = searchResults.value.concat(
+      getSearchResults.slice(0, availableSlots).map(mapSearchItem)
+    )
     await onResize()
   }
 

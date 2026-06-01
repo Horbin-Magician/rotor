@@ -4,8 +4,9 @@ use std::fs;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::SearchResultItem;
-use rotor_platform::file_util;
+use super::{
+    read_i64, read_i8, read_string, read_u16, read_u32, read_u64, read_u64_or_eof, SearchResultItem,
+};
 
 pub struct FileView {
     pub parent_index: u64,
@@ -97,13 +98,12 @@ impl FileMap {
             {
                 if let Some(path) = self.get_path(&file.parent_index) {
                     let full_path = format!("{}{}", path, file.file_name);
-                    let icon_data = file_util::get_file_icon_data(&full_path);
                     result.push(SearchResultItem {
                         path,
                         file_path: full_path,
                         file_name: file.file_name.clone(),
                         rank: file.rank,
-                        icon_data,
+                        icon_data: None,
                         alias: None,
                     });
                     find_num += 1;
@@ -118,63 +118,35 @@ impl FileMap {
     }
 
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        let mut save_file = fs::File::create(path)?;
+        let save_file = fs::File::create(path)?;
+        let mut writer = io::BufWriter::new(save_file);
 
-        let mut buf = Vec::new();
-        buf.write_all(&self.start_usn.to_be_bytes())?;
+        writer.write_all(&self.start_usn.to_be_bytes())?;
         for (file_key, file) in self.iter() {
-            buf.write_all(&file_key.index.to_be_bytes())?;
-            buf.write_all(&file.parent_index.to_be_bytes())?;
-            buf.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
-            buf.write_all(file.file_name.as_bytes())?;
-            buf.write_all(&file.filter.to_be_bytes())?;
-            buf.write_all(&file.rank.to_be_bytes())?;
+            writer.write_all(&file_key.index.to_be_bytes())?;
+            writer.write_all(&file.parent_index.to_be_bytes())?;
+            writer.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
+            writer.write_all(file.file_name.as_bytes())?;
+            writer.write_all(&file.filter.to_be_bytes())?;
+            writer.write_all(&file.rank.to_be_bytes())?;
         }
-        save_file.write_all(&buf.to_vec())?;
+        writer.flush()?;
 
         Ok(())
     }
 
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let file_data = fs::read(path)?;
+        let save_file = fs::File::open(path)?;
+        let mut reader = io::BufReader::new(save_file);
 
-        if file_data.len() < 8 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "File data too short.").into());
-        }
+        self.start_usn = read_i64(&mut reader)?;
 
-        self.start_usn = i64::from_be_bytes(file_data[0..8].try_into()?);
-        let mut ptr_index = 8;
-
-        while ptr_index < file_data.len() {
-            if ptr_index + 18 > file_data.len() {
-                return Err(
-                    io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
-                );
-            }
-
-            let index = u64::from_be_bytes(file_data[ptr_index..ptr_index + 8].try_into()?);
-            ptr_index += 8;
-            let parent_index =
-                usize::from_be_bytes(file_data[ptr_index..ptr_index + 8].try_into()?) as u64;
-            ptr_index += 8;
-            let file_name_len =
-                u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?) as u16;
-            ptr_index += 2;
-
-            if ptr_index + (file_name_len as usize) + 5 > file_data.len() {
-                return Err(
-                    io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
-                );
-            }
-
-            let file_name = String::from_utf8(
-                file_data[ptr_index..(ptr_index + file_name_len as usize)].to_vec(),
-            )?;
-            ptr_index += file_name_len as usize;
-            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index + 4].try_into()?);
-            ptr_index += 4;
-            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index + 1].try_into()?);
-            ptr_index += 1;
+        while let Some(index) = read_u64_or_eof(&mut reader)? {
+            let parent_index = read_u64(&mut reader)?;
+            let file_name_len = read_u16(&mut reader)?;
+            let file_name = read_string(&mut reader, file_name_len as usize)?;
+            let filter = read_u32(&mut reader)?;
+            let rank = read_i8(&mut reader)?;
             self.insert_simple(
                 index,
                 FileView {
@@ -238,16 +210,23 @@ impl FileMap {
 
     // Constructs a path for a directory
     fn get_path(&self, index: &u64) -> Option<String> {
-        let mut path = String::new();
+        let mut segments = Vec::new();
         let mut loop_index = *index;
         while loop_index != 0 {
             let file_op = self.get(&loop_index);
             if let Some(file) = file_op {
-                path.insert_str(0, (file.file_name.clone() + "\\").as_str());
+                segments.push(file.file_name.as_str());
                 loop_index = file.parent_index;
             } else {
                 return None;
             }
+        }
+
+        let path_len = segments.iter().map(|segment| segment.len() + 1).sum();
+        let mut path = String::with_capacity(path_len);
+        for segment in segments.iter().rev() {
+            path.push_str(segment);
+            path.push('\\');
         }
         Some(path)
     }
@@ -288,11 +267,12 @@ fn make_filter(str: &str) -> u32 {
 
 // return true if contain query
 fn match_str(contain: &str, query_lower: &str) -> bool {
-    let mut lower_contain = contain.to_lowercase();
+    let lower_contain = contain.to_lowercase();
+    let mut offset = 0;
     for s in query_lower.split('*') {
         // for wildcard
-        if let Some(index) = lower_contain.find(s) {
-            lower_contain = (lower_contain.split_at(index).1).to_string();
+        if let Some(index) = lower_contain[offset..].find(s) {
+            offset += index + s.len();
         } else {
             return false;
         }

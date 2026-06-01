@@ -126,6 +126,10 @@ impl ScreenShotter {
         self.capture_cache.get(label)
     }
 
+    pub fn clear_captures(&self) {
+        self.capture_cache.clear();
+    }
+
     pub fn get_pin_record(&self, id: u32) -> Option<ShotterConfig> {
         self.shotter_record.get_record(id).cloned()
     }
@@ -198,6 +202,7 @@ impl ScreenShotter {
         let img = self.capture_cache.get(&record.mask_label)?;
         let dyn_img = DynamicImage::ImageRgba8(img.as_ref().clone());
         let _save_task = ShotterRecord::save_record_img(id, dyn_img.clone());
+        self.capture_cache.clear();
         Some(dyn_img)
     }
 

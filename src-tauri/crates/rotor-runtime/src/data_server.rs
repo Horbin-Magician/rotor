@@ -40,13 +40,15 @@ impl DataRequest {
         }
     }
 
-    fn success_message(&self, data: Vec<u8>) -> Message {
+    fn success_message(&self, mut data: Vec<u8>) -> Message {
         match self {
             DataRequest::Correlated { request_id, .. } => {
-                let mut payload = Vec::with_capacity(std::mem::size_of::<u32>() + data.len());
-                payload.extend_from_slice(&request_id.to_be_bytes());
-                payload.extend_from_slice(&data);
-                Message::Binary(payload.into())
+                let header_len = std::mem::size_of::<u32>();
+                let data_len = data.len();
+                data.resize(data_len + header_len, 0);
+                data.copy_within(0..data_len, header_len);
+                data[..header_len].copy_from_slice(&request_id.to_be_bytes());
+                Message::Binary(data.into())
             }
             DataRequest::Legacy { .. } => Message::Binary(data.into()),
         }
@@ -148,7 +150,7 @@ async fn handle_data_request(label: &str) -> Result<Vec<u8>, String> {
     if label.starts_with("sspin-") {
         return try_get_pin_img(label)
             .await
-            .map(|image| image.to_rgba8().to_vec())
+            .map(|image| image.to_rgba8().into_raw())
             .ok_or_else(|| format!("No image data found for {label}"));
     }
 

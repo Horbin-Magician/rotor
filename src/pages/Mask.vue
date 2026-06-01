@@ -42,7 +42,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event';
 import { info, warn } from '@tauri-apps/plugin-log';
 import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket';
-import { changeCurrentMask as focusCurrentMask, closeCachePin, getScreenRects, newCachePin, newPin, type ScreenRect } from '../features/screenshot/api';
+import { changeCurrentMask as focusCurrentMask, clearScreenshotCache, closeCachePin, getScreenRects, newCachePin, newPin, type ScreenRect } from '../features/screenshot/api';
 
 import ScreenCanvas from "../components/screenShotter/mask/ScreenCanvas.vue";
 import SelectionRect from "../components/screenShotter/mask/SelectionRect.vue";
@@ -306,14 +306,14 @@ async function handleMouseUp() {
     const y = Math.min(startY.value, endY.value) * scale_factor
     const width = Math.abs(endX.value - startX.value) * scale_factor
     const height = Math.abs(endY.value - startY.value) * scale_factor
-    newPin({ offsetX: x, offsetY: y, width, height })
+    void newPin({ offsetX: x, offsetY: y, width, height })
     hideWindow()
   } else if (autoSelectRect.value) {
     const x = autoSelectRect.value.x * scale_factor
     const y = autoSelectRect.value.y * scale_factor
     const width = autoSelectRect.value.width * scale_factor
     const height = autoSelectRect.value.height * scale_factor
-    newPin({ offsetX: x, offsetY: y, width, height })
+    void newPin({ offsetX: x, offsetY: y, width, height })
     hideWindow()
   }
   else {
@@ -326,7 +326,8 @@ async function handleMouseUp() {
 
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
-    closeCachePin()
+    void closeCachePin()
+    void clearScreenshotCache()
     hideWindow()
   } else if (event.key.toLowerCase() === 'c') {
     writeText(pixelColor.value)
@@ -441,6 +442,7 @@ onMounted(async () => {
     } catch (error) {
       if (requestId === screenshotRequestId) {
         warn(`Failed to initialize screenshot websocket: ${error}`)
+        void clearScreenshotCache()
       }
     }
   });

@@ -184,6 +184,11 @@ pub async fn close_cache_pin() {
     }
 }
 
+#[tauri::command]
+pub async fn clear_screenshot_cache() {
+    lock_app().screenshot.clear_captures();
+}
+
 // Command for pin window
 
 #[tauri::command]

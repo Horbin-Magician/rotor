@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::SearchResultItem;
+use super::{read_i8, read_string, read_u16, read_u16_or_eof, read_u32, SearchResultItem};
 use rotor_platform::file_util;
 
 pub struct FileView {
@@ -12,23 +13,40 @@ pub struct FileView {
     pub path: String,
     pub filter: u32,
     pub rank: i8,
-    pub aliases: Vec<String>, // Store alias names for this file
+    pub aliases: Option<Box<[String]>>, // Store alias names for this file
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub struct FileKey {
-    rank: i8,
-    pub full_name: String,
+impl PartialEq for FileView {
+    fn eq(&self, other: &Self) -> bool {
+        self.rank == other.rank && self.path == other.path && self.file_name == other.file_name
+    }
+}
+
+impl Eq for FileView {}
+
+impl PartialOrd for FileView {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FileView {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.rank
+            .cmp(&other.rank)
+            .then_with(|| self.path.cmp(&other.path))
+            .then_with(|| self.file_name.cmp(&other.file_name))
+    }
 }
 
 pub struct FileMap {
-    main_map: BTreeMap<FileKey, FileView>,
+    main_set: BTreeSet<FileView>,
 }
 
 impl FileMap {
     pub fn new() -> FileMap {
         FileMap {
-            main_map: BTreeMap::new(),
+            main_set: BTreeSet::new(),
         }
     }
 
@@ -60,26 +78,26 @@ impl FileMap {
             path,
             filter,
             rank,
-            aliases,
+            aliases: (!aliases.is_empty()).then(|| aliases.into_boxed_slice()),
         });
     }
 
     // insert a file to the database by index and file struct
     fn insert_simple(&mut self, file: FileView) {
-        let full_name = format!("{}/{}", file.path, file.file_name);
-        let key = FileKey {
-            rank: file.rank,
-            full_name,
-        };
-        self.main_map.insert(key, file);
+        self.main_set.replace(file);
     }
 
     // remove item by FileView
     pub fn remove(&mut self, file_name: String, path: String) {
-        let full_name = format!("{}/{}", path, file_name);
         let rank = Self::get_file_rank(&file_name);
-        let key = FileKey { rank, full_name };
-        self.main_map.remove(&key);
+        let file = FileView {
+            file_name,
+            path,
+            filter: 0,
+            rank,
+            aliases: None,
+        };
+        self.main_set.remove(&file);
     }
 
     // search for files by query
@@ -97,7 +115,7 @@ impl FileMap {
         let query_filter = make_filter(&query_lower);
 
         let file_map_iter = self.iter().rev().skip(last_search_num);
-        for (_, file) in file_map_iter {
+        for file in file_map_iter {
             if cancel.load(Ordering::Relaxed) {
                 return (None, 0);
             }
@@ -112,11 +130,13 @@ impl FileMap {
                     is_match = true;
                 } else {
                     // Then check all aliases
-                    for alias in &file.aliases {
-                        if match_str(alias, &query_lower) {
-                            is_match = true;
-                            file_alias = Some(alias.clone());
-                            break;
+                    if let Some(aliases) = &file.aliases {
+                        for alias in aliases {
+                            if match_str(alias, &query_lower) {
+                                is_match = true;
+                                file_alias = Some(alias.clone());
+                                break;
+                            }
                         }
                     }
                 }
@@ -127,14 +147,12 @@ impl FileMap {
                     .join(&file.file_name)
                     .to_string_lossy()
                     .into_owned();
-                let icon_data = file_util::get_file_icon_data(&full_path);
-
                 result.push(SearchResultItem {
                     path: file.path.clone(),
                     file_path: full_path,
                     file_name: file.file_name.clone(),
                     rank: file.rank,
-                    icon_data,
+                    icon_data: None,
                     alias: file_alias,
                 });
 
@@ -149,101 +167,47 @@ impl FileMap {
     }
 
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        let mut save_file = fs::File::create(path)?;
-
-        let mut buf = Vec::new();
-        for (_, file) in self.iter() {
-            buf.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
-            buf.write_all(file.file_name.as_bytes())?;
-            buf.write_all(&(file.path.len() as u16).to_be_bytes())?;
-            buf.write_all(file.path.as_bytes())?;
-            buf.write_all(&file.filter.to_be_bytes())?;
-            buf.write_all(&file.rank.to_be_bytes())?;
+        let save_file = fs::File::create(path)?;
+        let mut writer = io::BufWriter::new(save_file);
+        for file in self.iter() {
+            writer.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
+            writer.write_all(file.file_name.as_bytes())?;
+            writer.write_all(&(file.path.len() as u16).to_be_bytes())?;
+            writer.write_all(file.path.as_bytes())?;
+            writer.write_all(&file.filter.to_be_bytes())?;
+            writer.write_all(&file.rank.to_be_bytes())?;
 
             // Save aliases count and aliases
-            buf.write_all(&(file.aliases.len() as u16).to_be_bytes())?;
-            for alias in &file.aliases {
-                buf.write_all(&(alias.len() as u16).to_be_bytes())?;
-                buf.write_all(alias.as_bytes())?;
+            let aliases = file.aliases.as_deref().unwrap_or(&[]);
+            writer.write_all(&(aliases.len() as u16).to_be_bytes())?;
+            for alias in aliases {
+                writer.write_all(&(alias.len() as u16).to_be_bytes())?;
+                writer.write_all(alias.as_bytes())?;
             }
         }
-        save_file.write_all(&buf.to_vec())?;
+        writer.flush()?;
 
         Ok(())
     }
 
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let file_data = fs::read(path)?;
+        let save_file = fs::File::open(path)?;
+        let mut reader = io::BufReader::new(save_file);
 
-        let mut ptr_index = 0;
-        while ptr_index < file_data.len() {
-            if ptr_index + 10 > file_data.len() {
-                return Err(
-                    io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
-                );
-            }
-
-            let file_name_len =
-                u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?) as u16;
-            ptr_index += 2;
-            if ptr_index + (file_name_len as usize) + 5 > file_data.len() {
-                return Err(
-                    io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
-                );
-            }
-            let file_name = String::from_utf8(
-                file_data[ptr_index..(ptr_index + file_name_len as usize)].to_vec(),
-            )?;
-            ptr_index += file_name_len as usize;
-
-            let file_path_len =
-                u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?) as u16;
-            ptr_index += 2;
-            if ptr_index + (file_path_len as usize) + 5 > file_data.len() {
-                return Err(
-                    io::Error::new(io::ErrorKind::InvalidData, "File data size error.").into(),
-                );
-            }
-            let path = String::from_utf8(
-                file_data[ptr_index..(ptr_index + file_path_len as usize)].to_vec(),
-            )?;
-            ptr_index += file_path_len as usize;
-
-            let filter = u32::from_be_bytes(file_data[ptr_index..ptr_index + 4].try_into()?);
-            ptr_index += 4;
-            let rank = i8::from_be_bytes(file_data[ptr_index..ptr_index + 1].try_into()?);
-            ptr_index += 1;
+        while let Some(file_name_len) = read_u16_or_eof(&mut reader)? {
+            let file_name = read_string(&mut reader, file_name_len as usize)?;
+            let file_path_len = read_u16(&mut reader)?;
+            let path = read_string(&mut reader, file_path_len as usize)?;
+            let filter = read_u32(&mut reader)?;
+            let rank = read_i8(&mut reader)?;
 
             // Read aliases count and aliases
             let mut aliases = Vec::new();
-            if ptr_index + 2 <= file_data.len() {
-                let aliases_count =
-                    u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?);
-                ptr_index += 2;
-
+            if let Some(aliases_count) = read_u16_or_eof(&mut reader)? {
                 for _ in 0..aliases_count {
-                    if ptr_index + 2 > file_data.len() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "File data size error.",
-                        )
-                        .into());
-                    }
-                    let alias_len =
-                        u16::from_be_bytes(file_data[ptr_index..ptr_index + 2].try_into()?);
-                    ptr_index += 2;
+                    let alias_len = read_u16(&mut reader)?;
+                    let alias = read_string(&mut reader, alias_len as usize)?;
 
-                    if ptr_index + (alias_len as usize) > file_data.len() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "File data size error.",
-                        )
-                        .into());
-                    }
-                    let alias = String::from_utf8(
-                        file_data[ptr_index..(ptr_index + alias_len as usize)].to_vec(),
-                    )?;
-                    ptr_index += alias_len as usize;
                     aliases.push(alias);
                 }
             }
@@ -253,7 +217,7 @@ impl FileMap {
                 path,
                 filter,
                 rank,
-                aliases,
+                aliases: (!aliases.is_empty()).then(|| aliases.into_boxed_slice()),
             });
         }
 
@@ -261,19 +225,19 @@ impl FileMap {
     }
 
     pub fn clear(&mut self) {
-        self.main_map.clear();
+        self.main_set.clear();
     }
 
     pub fn is_empty(&self) -> bool {
-        self.main_map.is_empty()
+        self.main_set.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.main_map.len()
+        self.main_set.len()
     }
 
-    fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, FileView> {
-        self.main_map.iter()
+    fn iter(&self) -> std::collections::btree_set::Iter<'_, FileView> {
+        self.main_set.iter()
     }
 
     // return rank by filename
@@ -331,11 +295,12 @@ fn make_filter(str: &str) -> u32 {
 
 // return true if contain query
 fn match_str(contain: &str, query_lower: &str) -> bool {
-    let mut lower_contain = contain.to_lowercase();
+    let lower_contain = contain.to_lowercase();
+    let mut offset = 0;
     for s in query_lower.split('*') {
         // for wildcard
-        if let Some(index) = lower_contain.find(s) {
-            lower_contain = (lower_contain.split_at(index).1).to_string();
+        if let Some(index) = lower_contain[offset..].find(s) {
+            offset += index + s.len();
         } else {
             return false;
         }

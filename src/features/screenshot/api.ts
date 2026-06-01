@@ -39,6 +39,10 @@ export function closeCachePin() {
   return invoke<void>('close_cache_pin')
 }
 
+export function clearScreenshotCache() {
+  return invoke<void>('clear_screenshot_cache')
+}
+
 export function newPin(input: NewPinInput) {
   return invoke<void>('new_pin', {
     offsetX: input.offsetX,

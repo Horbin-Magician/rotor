@@ -2,6 +2,7 @@ pub mod default_file_map;
 pub mod default_volume;
 
 use std::fs::Metadata;
+use std::io::{self, Read};
 use std::time::UNIX_EPOCH;
 
 #[cfg(target_os = "windows")]
@@ -29,6 +30,13 @@ impl Clone for SearchResultItem {
             icon_data: self.icon_data.clone(),
             alias: self.alias.clone(),
         }
+    }
+}
+
+impl SearchResultItem {
+    pub fn attach_icon_data(mut self) -> Self {
+        self.icon_data = rotor_platform::file_util::get_file_icon_data(&self.file_path);
+        self
     }
 }
 
@@ -61,4 +69,59 @@ pub fn index_file_stem(name: &str) -> String {
     } else {
         stem
     }
+}
+
+pub(super) fn read_u16_or_eof(reader: &mut impl Read) -> io::Result<Option<u16>> {
+    let mut bytes = [0u8; 2];
+    match reader.read_exact(&mut bytes) {
+        Ok(()) => Ok(Some(u16::from_be_bytes(bytes))),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+pub(super) fn read_u16(reader: &mut impl Read) -> io::Result<u16> {
+    read_u16_or_eof(reader)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "Unexpected end of index"))
+}
+
+pub(super) fn read_u32(reader: &mut impl Read) -> io::Result<u32> {
+    let mut bytes = [0u8; 4];
+    reader.read_exact(&mut bytes)?;
+    Ok(u32::from_be_bytes(bytes))
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn read_u64_or_eof(reader: &mut impl Read) -> io::Result<Option<u64>> {
+    let mut bytes = [0u8; 8];
+    match reader.read_exact(&mut bytes) {
+        Ok(()) => Ok(Some(u64::from_be_bytes(bytes))),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn read_u64(reader: &mut impl Read) -> io::Result<u64> {
+    read_u64_or_eof(reader)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "Unexpected end of index"))
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn read_i64(reader: &mut impl Read) -> io::Result<i64> {
+    let mut bytes = [0u8; 8];
+    reader.read_exact(&mut bytes)?;
+    Ok(i64::from_be_bytes(bytes))
+}
+
+pub(super) fn read_i8(reader: &mut impl Read) -> io::Result<i8> {
+    let mut bytes = [0u8; 1];
+    reader.read_exact(&mut bytes)?;
+    Ok(i8::from_be_bytes(bytes))
+}
+
+pub(super) fn read_string(reader: &mut impl Read, len: usize) -> io::Result<String> {
+    let mut bytes = vec![0u8; len];
+    reader.read_exact(&mut bytes)?;
+    String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }

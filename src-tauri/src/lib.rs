@@ -61,6 +61,7 @@ pub fn run() {
             screen_shotter_cmd::get_screen_rects,
             screen_shotter_cmd::change_current_mask,
             screen_shotter_cmd::get_pin_state,
+            screen_shotter_cmd::clear_screenshot_cache,
             screen_shotter_cmd::close_cache_pin,
             screen_shotter_cmd::new_cache_pin,
             screen_shotter_cmd::update_pin_state,
