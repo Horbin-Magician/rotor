@@ -70,6 +70,7 @@ pub fn run() {
             screen_shotter_cmd::img2text,
             searcher_cmd::searcher_find,
             searcher_cmd::searcher_release,
+            searcher_cmd::searcher_index_status,
             searcher_cmd::open_file,
             searcher_cmd::open_file_as_admin,
         ])

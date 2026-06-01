@@ -1,4 +1,5 @@
 use rotor_runtime::Application;
+use rotor_searcher::file_data::SearchIndexStatus;
 
 #[tauri::command]
 pub async fn searcher_find(query: String) {
@@ -8,6 +9,18 @@ pub async fn searcher_find(query: String) {
 #[tauri::command]
 pub async fn searcher_release() {
     Application::lock_global().searcher.release();
+}
+
+#[tauri::command]
+pub async fn searcher_index_status() -> Result<SearchIndexStatus, String> {
+    let search_index_reader = {
+        let app_state = Application::lock_global();
+        app_state.searcher.index_status_reader()
+    };
+
+    tauri::async_runtime::spawn_blocking(move || search_index_reader.index_status())
+        .await
+        .map_err(|error| format!("Failed to collect search index status: {error}"))
 }
 
 #[tauri::command]

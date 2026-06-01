@@ -4,6 +4,7 @@
     <SearchInput
       ref="searchInputRef"
       v-model="searchQuery"
+      :index-state="searchIndexState"
       :placeholder="$t('message.searchPlaceholder')"
       @input="handleSearch"
       @keydown="handleKeydown"
@@ -24,18 +25,22 @@ import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import SearchInput from '../components/searcher/SearchInput.vue'
 import SearchResultList from '../components/searcher/SearchResultList.vue'
+import { searcherIndexStatus } from '../features/searcher/api'
 import { useFileSearch } from '../features/searcher/composables/useFileSearch'
 import { useSearcherWindow } from '../features/searcher/composables/useSearcherWindow'
-import type { UpdateResultPayload } from '../features/searcher/types'
+import type { SearchIndexState, UpdateResultPayload } from '../features/searcher/types'
 
 // State
 const searchInputRef = ref<InstanceType<typeof SearchInput>>()
 const searchQuery = ref('')
+const searchIndexState = ref<SearchIndexState>('loading')
 
 let unlistenBlur: UnlistenFn | null = null
 let unlistenFocus: UnlistenFn | null = null
 let unlistenUpdateResult: UnlistenFn | null = null
 let resizeWindow: () => Promise<void> = async () => {}
+let indexStatusTimer: number | null = null
+let isRefreshingIndexStatus = false
 
 const {
   searchResults,
@@ -101,7 +106,48 @@ const scrollToSelected = () => {
   })
 }
 
+const isSettledIndexState = (state: SearchIndexState) => {
+  return state === 'ready' || state === 'error' || state === 'unavailable'
+}
+
+const stopIndexStatusPolling = () => {
+  if (indexStatusTimer != null) {
+    window.clearInterval(indexStatusTimer)
+    indexStatusTimer = null
+  }
+}
+
+const refreshSearchIndexStatus = async () => {
+  if (isRefreshingIndexStatus) return
+
+  isRefreshingIndexStatus = true
+  try {
+    const status = await searcherIndexStatus()
+    searchIndexState.value = status.state
+    if (isSettledIndexState(status.state)) {
+      stopIndexStatusPolling()
+    }
+  } catch (error) {
+    console.warn('Failed to load search index status:', error)
+    searchIndexState.value = 'unavailable'
+    stopIndexStatusPolling()
+  } finally {
+    isRefreshingIndexStatus = false
+  }
+}
+
+const startIndexStatusPolling = () => {
+  stopIndexStatusPolling()
+  searchIndexState.value = 'loading'
+  void refreshSearchIndexStatus()
+  indexStatusTimer = window.setInterval(() => {
+    void refreshSearchIndexStatus()
+  }, 1000)
+}
+
 const hideWindow = async () => {
+  stopIndexStatusPolling()
+  searchIndexState.value = 'loading'
   searchQuery.value = ''
   resetSearch()
   await resizeWindow()
@@ -116,6 +162,8 @@ watch(searchQuery, (newVal, _oldVal) => {
 });
 
 onMounted(async () => {
+  void refreshSearchIndexStatus()
+
   unlistenBlur = await listen('tauri://blur', () => {
     setTimeout(() => {
       appWindow.isFocused().then(focused => {
@@ -126,6 +174,7 @@ onMounted(async () => {
 
   unlistenFocus = await listen('tauri://focus', () => {
     searchInputRef.value?.focus()
+    startIndexStatusPolling()
     resizeWindow()
   })
 
@@ -138,6 +187,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   // clean listeners
+  stopIndexStatusPolling()
   if (unlistenBlur) { unlistenBlur() }
   if (unlistenFocus) { unlistenFocus() }
   if (unlistenUpdateResult) { unlistenUpdateResult() }

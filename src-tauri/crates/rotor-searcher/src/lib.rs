@@ -2,22 +2,26 @@ pub mod file_data;
 
 use std::error::Error;
 use std::str::FromStr;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 
-use file_data::{FileData, SearchIndexStatus, SearchResultItem, SearcherMessage};
+use file_data::{
+    FileData, FileState, SearchIndexStatus, SearchResultItem, SearcherMessage, SharedFileState,
+};
 use rotor_common::AppConfig;
 
 pub struct Searcher {
     app_hander: Option<tauri::AppHandle>,
     searcher_msg_sender: mpsc::Sender<SearcherMessage>,
+    search_index_state: SharedFileState,
 }
 
 #[derive(Clone)]
 pub struct SearchIndexStatusReader {
     searcher_msg_sender: mpsc::Sender<SearcherMessage>,
+    search_index_state: SharedFileState,
 }
 
 impl SearchIndexStatusReader {
@@ -37,7 +41,15 @@ impl SearchIndexStatusReader {
             .recv_timeout(Duration::from_millis(800))
             .unwrap_or_else(|error| {
                 log::warn!("Failed to receive search index status: {error}");
-                SearchIndexStatus::empty()
+                let state = *self.search_index_state.lock().unwrap_or_else(|poisoned| {
+                    log::error!("Search index state lock poisoned; recovering inner state");
+                    poisoned.into_inner()
+                });
+
+                SearchIndexStatus {
+                    state: state.as_str().to_string(),
+                    ..SearchIndexStatus::empty()
+                }
             })
     }
 }
@@ -90,14 +102,16 @@ impl Searcher {
         F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
     {
         let (searcher_msg_sender, searcher_msg_receiver) = mpsc::channel::<SearcherMessage>();
+        let search_index_state = Arc::new(Mutex::new(FileState::Unbuild));
 
-        let _file_data = FileData::new(find_result_callback);
+        let _file_data = FileData::new(find_result_callback, search_index_state.clone());
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Init);
 
         Searcher {
             app_hander: None,
             searcher_msg_sender,
+            search_index_state,
         }
     }
 
@@ -142,6 +156,7 @@ impl Searcher {
     pub fn index_status_reader(&self) -> SearchIndexStatusReader {
         SearchIndexStatusReader {
             searcher_msg_sender: self.searcher_msg_sender.clone(),
+            search_index_state: self.search_index_state.clone(),
         }
     }
 }

@@ -50,16 +50,35 @@ impl SearchIndexStatus {
             volumes: Vec::new(),
         }
     }
+
 }
 
 const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
 const SEARCH_CANCEL_DRAIN_TIMEOUT: Duration = Duration::from_millis(200);
 
-#[derive(Debug)]
-enum FileState {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileState {
     Unbuild,
+    Building,
     Released,
+    Loading,
     Ready,
+    Error,
+}
+
+pub(crate) type SharedFileState = Arc<Mutex<FileState>>;
+
+impl FileState {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            FileState::Unbuild => "unbuilt",
+            FileState::Building => "building",
+            FileState::Released => "released",
+            FileState::Loading => "loading",
+            FileState::Ready => "ready",
+            FileState::Error => "error",
+        }
+    }
 }
 
 struct VolumePack {
@@ -144,14 +163,14 @@ pub struct FileData {
     finding_name: String,
     finding_result: SearchResult,
     volume_packs: Vec<VolumePack>,
-    state: FileState,
+    state: SharedFileState,
     show_num: usize,
     batch: u8,
     find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>, bool) + Send>,
 }
 
 impl FileData {
-    pub fn new<F>(find_result_callback: F) -> FileData
+    pub(crate) fn new<F>(find_result_callback: F, state: SharedFileState) -> FileData
     where
         F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
     {
@@ -163,14 +182,17 @@ impl FileData {
                 items: Vec::new(),
                 query: String::new(),
             },
-            state: FileState::Unbuild,
+            state,
             show_num: 20,
             batch: 20,
             find_result_callback: Box::new(find_result_callback),
         }
     }
 
-    pub fn event_loop(msg_reciever: mpsc::Receiver<SearcherMessage>, mut file_data: FileData) {
+    pub(crate) fn event_loop(
+        msg_reciever: mpsc::Receiver<SearcherMessage>,
+        mut file_data: FileData,
+    ) {
         std::thread::spawn(move || {
             let mut wait_deals: VecDeque<SearcherMessage> = VecDeque::new();
             loop {
@@ -182,14 +204,24 @@ impl FileData {
 
                 match msg {
                     Ok(SearcherMessage::Init) => {
-                        file_data.init_volumes();
-                        file_data.state = FileState::Released;
+                        file_data.set_state(FileState::Building);
+                        let ok = file_data.init_volumes();
+                        file_data.set_state(if ok {
+                            FileState::Released
+                        } else {
+                            FileState::Error
+                        });
                     }
                     Ok(SearcherMessage::Update) => {
-                        file_data.update_index();
-                        file_data.state = FileState::Ready;
+                        file_data.set_state(FileState::Loading);
+                        let ok = file_data.update_index();
+                        file_data.set_state(if ok {
+                            FileState::Ready
+                        } else {
+                            FileState::Error
+                        });
                     }
-                    Ok(SearcherMessage::Find(filename)) => match file_data.state {
+                    Ok(SearcherMessage::Find(filename)) => match file_data.state() {
                         FileState::Released => {
                             wait_deals.push_back(SearcherMessage::Update);
                             wait_deals.push_back(SearcherMessage::Find(filename));
@@ -203,9 +235,13 @@ impl FileData {
                         _ => {}
                     },
                     Ok(SearcherMessage::Release) => {
-                        if let FileState::Ready = file_data.state {
-                            file_data.release_index();
-                            file_data.state = FileState::Released;
+                        if let FileState::Ready = file_data.state() {
+                            let ok = file_data.release_index();
+                            file_data.set_state(if ok {
+                                FileState::Released
+                            } else {
+                                FileState::Error
+                            });
                         }
                     }
                     Ok(SearcherMessage::Status(sender)) => {
@@ -217,6 +253,20 @@ impl FileData {
                 }
             }
         });
+    }
+
+    fn state(&self) -> FileState {
+        *self.state.lock().unwrap_or_else(|poisoned| {
+            log::error!("Search index state lock poisoned; recovering inner state");
+            poisoned.into_inner()
+        })
+    }
+
+    fn set_state(&self, next_state: FileState) {
+        *self.state.lock().unwrap_or_else(|poisoned| {
+            log::error!("Search index state lock poisoned; recovering inner state");
+            poisoned.into_inner()
+        }) = next_state;
     }
 
     fn update_valid_vols(&mut self) -> u8 {
@@ -354,7 +404,7 @@ impl FileData {
         reply
     }
 
-    pub fn init_volumes(&mut self) {
+    pub fn init_volumes(&mut self) -> bool {
         self.volume_packs.clear();
         self.update_valid_vols();
 
@@ -394,14 +444,17 @@ impl FileData {
             })
             .collect::<Vec<_>>();
 
+        let mut ok = true;
         for handle in handles {
             if let Err(e) = handle.join() {
                 log::error!("Init volume failed: {:?}", e);
+                ok = false;
             }
         }
+        ok && !self.volume_packs.is_empty()
     }
 
-    pub fn update_index(&mut self) {
+    pub fn update_index(&mut self) -> bool {
         self.update_valid_vols();
 
         let handles = self
@@ -418,14 +471,17 @@ impl FileData {
             })
             .collect::<Vec<_>>();
 
+        let mut ok = true;
         for handle in handles {
             if let Err(e) = handle.join() {
                 log::error!("Update index failed: {:?}", e);
+                ok = false;
             }
         }
+        ok && !self.volume_packs.is_empty()
     }
 
-    pub fn release_index(&mut self) {
+    pub fn release_index(&mut self) -> bool {
         self.update_valid_vols();
 
         self.finding_name = String::new();
@@ -443,11 +499,14 @@ impl FileData {
             })
             .collect::<Vec<_>>();
 
+        let mut ok = true;
         for handle in handles {
             if let Err(e) = handle.join() {
                 log::error!("Release index failed: {:?}", e);
+                ok = false;
             }
         }
+        ok && !self.volume_packs.is_empty()
     }
 
     pub fn index_status(&self) -> SearchIndexStatus {
@@ -481,12 +540,7 @@ impl FileData {
             .max();
 
         SearchIndexStatus {
-            state: match &self.state {
-                FileState::Unbuild => "unbuilt",
-                FileState::Released => "released",
-                FileState::Ready => "ready",
-            }
-            .to_string(),
+            state: self.state().as_str().to_string(),
             volume_count: volumes.len(),
             indexed_volume_count,
             index_item_count,
