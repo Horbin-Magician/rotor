@@ -36,6 +36,9 @@ Rotor is a fast, low-occupancy toolbox for Windows and macOS built with Tauri. I
 
 ## Development Commands
 
+### Agent Constraints
+- Do not enable browser debugging.
+
 ### Frontend Development
 ```bash
 # Start development server
