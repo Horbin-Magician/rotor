@@ -301,9 +301,7 @@ onMounted(loadOverview)
 }
 
 .reload-button,
-.reload-button:hover,
-.reload-button:focus,
-.reload-button:focus-visible {
+.reload-button:hover {
   background: transparent !important;
   filter: none !important;
   outline: none;
