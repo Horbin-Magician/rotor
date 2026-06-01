@@ -1,0 +1,114 @@
+.settings-window {
+  --settings-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", sans-serif;
+  --settings-font-size: 13px;
+  --settings-line-height: 20px;
+  --settings-title-font-size: 14px;
+  --settings-title-line-height: 20px;
+  --settings-card-gap: 12px;
+  --settings-card-title-gap: 6px;
+  --settings-row-label-width: 130px;
+  --settings-row-control-width: 320px;
+  --settings-row-gap: 14px;
+
+  font-family: var(--settings-font-family);
+  font-size: var(--settings-font-size);
+  line-height: var(--settings-line-height);
+}
+
+.settings-window :where(button, input, textarea, select),
+.settings-window :where(.n-tabs, .n-button, .n-input, .n-base-selection, .n-slider, .n-switch, .n-tag) {
+  font-family: inherit;
+}
+
+.settings-card {
+  margin-bottom: var(--settings-card-gap);
+  font-size: var(--settings-font-size);
+  line-height: var(--settings-line-height);
+}
+
+.settings-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 26px;
+  margin-bottom: var(--settings-card-title-gap);
+  border-bottom: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+  font-size: var(--settings-title-font-size);
+  font-weight: 600;
+  line-height: var(--settings-title-line-height);
+}
+
+.settings-card-title-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-card-title-extra {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.settings-card-body {
+  min-width: 0;
+}
+
+.setting-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--settings-row-gap);
+  align-items: center;
+  min-height: 30px;
+  margin: 0 0 7px 12px;
+}
+
+.setting-item-has-label {
+  grid-template-columns: minmax(var(--settings-row-label-width), 1fr) minmax(min(180px, 45%), var(--settings-row-control-width));
+}
+
+.setting-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setting-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.setting-item-has-label .setting-control {
+  justify-content: flex-end;
+}
+
+.setting-control > * {
+  min-width: 0;
+}
+
+.setting-control :where(.n-select, .n-input, .n-slider, .path-selector) {
+  width: 100%;
+}
+
+.setting-item-conflict {
+  color: var(--theme-error);
+}
+
+.setting-item-conflict .n-input {
+  --n-border: 1px solid var(--theme-error) !important;
+  --n-border-hover: 1px solid var(--theme-error) !important;
+  --n-border-focus: 1px solid var(--theme-error) !important;
+  --n-box-shadow-focus: 0 0 0 2px rgba(208, 48, 80, 0.18) !important;
+}
+
+.quick-action-item.setting-item-conflict {
+  border-color: var(--theme-error);
+  background-color: rgba(208, 48, 80, 0.04);
+}

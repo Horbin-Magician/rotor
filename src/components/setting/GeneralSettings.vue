@@ -1,46 +1,40 @@
 <template>
-  <div class="settings-card">
-    <div class="settings-card-title">{{ t('message.common') }}</div>
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.language') }}</span>
+  <SettingsSection :title="t('message.common')">
+    <SettingRow :label="t('message.language')">
       <n-select v-model:value="language" :options="languageOptions" />
-    </div>
+    </SettingRow>
     
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.theme') }}</span>
+    <SettingRow :label="t('message.theme')">
       <n-select v-model:value="theme" :options="themeOptions" />
-    </div>
+    </SettingRow>
 
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.powerBoot') }}</span>
+    <SettingRow :label="t('message.powerBoot')">
       <n-switch v-model:value="powerBoot" />
-    </div>
+    </SettingRow>
 
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.currentVersion') }}{{ currentVersion }}</span>
+    <SettingRow :label="`${t('message.currentVersion')}${currentVersion}`">
       <n-button @click="handleCheckUpdate" :loading="isCheckingUpdate" :disabled="isCheckingUpdate">
         {{ t('message.checkUpdate') }}
       </n-button>
-    </div>
-  </div>
+    </SettingRow>
+  </SettingsSection>
 
-  <div class="settings-card">
-    <div class="settings-card-title">{{ t('message.globalShortcuts') }}</div>
-    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_screenshot' }">
-      <span class="setting-label">{{ t('message.screenshot') }}</span>
+  <SettingsSection :title="t('message.globalShortcuts')">
+    <SettingRow :label="t('message.screenshot')" :conflict="highlightedSetting === 'shortcut_screenshot'">
       <ShortcutInput v-model:shortcut="shortcutScreenshot" />
-    </div>
-    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_search' }">
-      <span class="setting-label">{{ t('message.search') }}</span>
+    </SettingRow>
+    <SettingRow :label="t('message.search')" :conflict="highlightedSetting === 'shortcut_search'">
       <ShortcutInput v-model:shortcut="shortcutSearch" />
-    </div>
-  </div>
+    </SettingRow>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
 import { NSelect, NSwitch, NButton } from 'naive-ui'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SettingRow from './SettingRow.vue'
+import SettingsSection from './SettingsSection.vue'
 import ShortcutInput from '../common/ShortcutInput.vue'
 
 const { t, locale } = useI18n()
@@ -102,41 +96,3 @@ function handleCheckUpdate() {
   emit('checkUpdate')
 }
 </script>
-
-<style scoped>
-.settings-card {
-  margin-bottom: 20px;
-}
-
-.settings-card-title {
-  font-weight: bold;
-  font-size: 16px;
-  height: 30px;
-  border-bottom: 1px solid gray;
-  margin-bottom: 10px;
-}
-
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 34px;
-  margin-bottom: 10px;
-  margin-left: 20px;
-}
-
-.setting-label {
-  min-width: 130px;
-}
-
-.setting-item-conflict {
-  color: #d03050;
-}
-
-.setting-item-conflict :deep(.n-input) {
-  --n-border: 1px solid #d03050 !important;
-  --n-border-hover: 1px solid #d03050 !important;
-  --n-border-focus: 1px solid #d03050 !important;
-  --n-box-shadow-focus: 0 0 0 2px rgba(208, 48, 80, 0.18) !important;
-}
-</style>

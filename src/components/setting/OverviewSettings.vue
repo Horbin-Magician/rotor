@@ -1,7 +1,9 @@
 <template>
-  <div class="settings-card">
-    <div class="settings-card-title">
+  <SettingsSection>
+    <template #title>
       <span>{{ t('message.systemOverview') }}</span>
+    </template>
+    <template #extra>
       <n-button
         class="reload-button"
         text
@@ -17,7 +19,7 @@
           </n-icon>
         </template>
       </n-button>
-    </div>
+    </template>
 
     <div v-if="overview" class="overview-strip">
       <div class="overview-item">
@@ -57,10 +59,9 @@
         <n-skeleton text class="skeleton-value" />
       </div>
     </div>
-  </div>
+  </SettingsSection>
 
-  <div class="settings-card">
-    <div class="settings-card-title">{{ t('message.indexStatus') }}</div>
+  <SettingsSection :title="t('message.indexStatus')">
     <div v-if="overview" class="info-list">
       <div class="info-row">
         <span class="info-label">{{ t('message.indexState') }}</span>
@@ -110,10 +111,9 @@
         </div>
       </div>
     </div>
-  </div>
+  </SettingsSection>
 
-  <div class="settings-card">
-    <div class="settings-card-title">{{ t('message.permissionStatus') }}</div>
+  <SettingsSection :title="t('message.permissionStatus')">
     <div v-if="overview" class="status-list">
       <div v-for="permission in overview.permissions" :key="permission.key" class="status-row">
         <div class="status-content">
@@ -135,7 +135,7 @@
         <n-skeleton text class="skeleton-tag" />
       </div>
     </div>
-  </div>
+  </SettingsSection>
 
 </template>
 
@@ -152,6 +152,7 @@ import {
   StorageRound as StorageIcon,
 } from '@vicons/material'
 import { useI18n } from 'vue-i18n'
+import SettingsSection from './SettingsSection.vue'
 import { getOverviewInfo, type OverviewInfo, type PermissionStatus } from '../../shared/api/core'
 
 const { t } = useI18n()
@@ -277,23 +278,6 @@ onMounted(loadOverview)
 </script>
 
 <style scoped>
-.settings-card {
-  margin-bottom: 14px;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.settings-card-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-weight: bold;
-  font-size: 14px;
-  min-height: 26px;
-  border-bottom: 1px solid gray;
-  margin-bottom: 8px;
-}
-
 .reload-button {
   width: 24px;
   height: 24px;

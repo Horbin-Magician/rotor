@@ -1,6 +1,6 @@
 <template>
   <WindowsTitlebar v-if="isWindows" />
-  <div class="tab-wrapper">
+  <div class="tab-wrapper settings-window">
     <n-tabs
       v-model:value="activeTab"
       placement = "left"
@@ -38,7 +38,12 @@
           </div>
         </n-scrollbar>
       </n-tab-pane>
-      <n-tab-pane class="tab-pane" name="Screen shotter" :tab="t('message.screenShotter')">
+      <n-tab-pane
+        class="tab-pane"
+        name="Screen shotter"
+        :tab="t('message.screenShotter')"
+        :tab-props="{ class: 'settings-sidebar-plugin-start' }"
+      >
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <PinwinSettings 
@@ -112,6 +117,7 @@ import UpdateModals from '../components/setting/UpdateModals.vue'
 import WindowsTitlebar from '../components/setting/WindowsTitlebar.vue'
 import { getQuickActions, runQuickAction, setQuickActions } from '../features/quick/api'
 import type { QuickAction } from '../features/quick/types'
+import '../components/setting/settings.css'
 
 const OverviewSettings = defineAsyncComponent(() => import('../components/setting/OverviewSettings.vue'))
 
@@ -534,12 +540,35 @@ async function askSave() {
 }
 
 .sidebar :deep(.n-tabs-nav .n-tabs-tab) {
-  height: 36px; /* 调整这里的值来改变标签页高度 */
+  box-sizing: border-box;
+  height: 32px; /* 调整这里的值来改变标签页高度 */
   width: 100px;
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 6px 16px;
+  font-size: 14px;
   text-align: center;
+}
+
+.sidebar :deep(.n-tabs-nav .n-tabs-tab-pad) {
+  height: 4px;
+}
+
+.sidebar :deep(.n-tabs-nav .n-tabs-tab.settings-sidebar-plugin-start) {
+  position: relative;
+  margin-top: 8px;
+}
+
+.sidebar :deep(.n-tabs-nav .n-tabs-tab.settings-sidebar-plugin-start::before) {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 16px;
+  right: 16px;
+  height: 1px;
+  background: var(--theme-border);
+  pointer-events: none;
 }
 
 .tab-pane {

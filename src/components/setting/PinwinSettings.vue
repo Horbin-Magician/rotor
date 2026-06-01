@@ -1,50 +1,42 @@
 <template>
-  <div class="settings-card">
-    <div class="settings-card-title">{{ t('message.pinwin') }}</div>
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.defaultSavePath') }}</span>
+  <SettingsSection :title="t('message.pinwin')">
+    <SettingRow :label="t('message.defaultSavePath')">
       <div class="path-selector">
         <n-input v-model:value="savePath" placeholder="" readonly />
         <n-button  @click="handleAskSave">{{ t('message.browse') }}</n-button>
       </div>
-    </div>
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.autoChangeSavePath') }}</span>
+    </SettingRow>
+    <SettingRow :label="t('message.autoChangeSavePath')">
       <n-switch v-model:value="ifAutoChangeSavePath" />
-    </div>
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.askSavePath') }}</span>
+    </SettingRow>
+    <SettingRow :label="t('message.askSavePath')">
       <n-switch v-model:value="ifAskSavePath" />
-    </div>
-    <div class="setting-item">
-      <span class="setting-label">{{ t('message.zoomDelta') }}</span>
+    </SettingRow>
+    <SettingRow :label="t('message.zoomDelta')">
       <n-slider v-model:value="zoomDelta" :step="1" :max="10" :min="1" />
-    </div>
-  </div>
-  <div class="settings-card">
-    <div class="settings-card-title">{{ t('message.shortcuts') }}</div>
-    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_close' }">
-      <span class="setting-label">{{ t('message.closePinwin') }}</span>
+    </SettingRow>
+  </SettingsSection>
+  <SettingsSection :title="t('message.shortcuts')">
+    <SettingRow :label="t('message.closePinwin')" :conflict="highlightedSetting === 'shortcut_pinwin_close'">
       <ShortcutInput v-model:shortcut="shortcutPinwinClose"/>
-    </div>
-    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_save' }">
-      <span class="setting-label">{{ t('message.savePinwin') }}</span>
+    </SettingRow>
+    <SettingRow :label="t('message.savePinwin')" :conflict="highlightedSetting === 'shortcut_pinwin_save'">
       <ShortcutInput v-model:shortcut="shortcutPinwinSave"/>
-    </div>
-    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_copy' }">
-      <span class="setting-label">{{ t('message.completePinwin') }}</span>
+    </SettingRow>
+    <SettingRow :label="t('message.completePinwin')" :conflict="highlightedSetting === 'shortcut_pinwin_copy'">
       <ShortcutInput v-model:shortcut="shortcutPinwinCopy"/>
-    </div>
-    <div class="setting-item" :class="{ 'setting-item-conflict': highlightedSetting === 'shortcut_pinwin_hide' }">
-      <span class="setting-label">{{ t('message.hidePinwin') }}</span>
+    </SettingRow>
+    <SettingRow :label="t('message.hidePinwin')" :conflict="highlightedSetting === 'shortcut_pinwin_hide'">
       <ShortcutInput v-model:shortcut="shortcutPinwinHide"/>
-    </div>
-  </div>
+    </SettingRow>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
 import { NInput, NButton, NSwitch, NSlider } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
+import SettingRow from './SettingRow.vue'
+import SettingsSection from './SettingsSection.vue'
 import ShortcutInput from '../common/ShortcutInput.vue'
 
 const { t } = useI18n()
@@ -76,49 +68,14 @@ function handleAskSave() {
 </script>
 
 <style scoped>
-.settings-card {
-  margin-bottom: 20px;
-}
-
-.settings-card-title {
-  font-weight: bold;
-  font-size: 16px;
-  height: 30px;
-  border-bottom: 1px solid gray;
-  margin-bottom: 10px;
-}
-
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 34px;
-  margin-bottom: 10px;
-  margin-left: 20px;
-}
-
-.setting-label {
-  min-width: 130px;
-}
-
 .path-selector {
   display: flex;
   gap: 8px;
   flex: 1;
+  width: 100%;
 }
 
 .path-selector .n-input {
   flex: 1;
-}
-
-.setting-item-conflict {
-  color: #d03050;
-}
-
-.setting-item-conflict :deep(.n-input) {
-  --n-border: 1px solid #d03050 !important;
-  --n-border-hover: 1px solid #d03050 !important;
-  --n-border-focus: 1px solid #d03050 !important;
-  --n-box-shadow-focus: 0 0 0 2px rgba(208, 48, 80, 0.18) !important;
 }
 </style>

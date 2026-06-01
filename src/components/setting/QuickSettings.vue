@@ -1,10 +1,10 @@
 <template>
-  <div class="settings-card">
-    <div class="settings-card-title">
-      <div class="title-main">
+  <SettingsSection>
+    <template #title>
         <span>{{ t('message.quickActions') }}</span>
         <span class="title-count">{{ enabledCount }}/{{ draftActions.length }}</span>
-      </div>
+    </template>
+    <template #extra>
       <n-button text circle size="small" :keyboard="false" :title="t('message.addQuickAction')" @click="handleAddAction">
         <template #icon>
           <n-icon>
@@ -12,7 +12,7 @@
           </n-icon>
         </template>
       </n-button>
-    </div>
+    </template>
 
     <div v-if="draftActions.length > 0" class="quick-action-list">
       <div
@@ -132,7 +132,7 @@
         </div>
       </template>
     </n-modal>
-  </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -147,6 +147,7 @@ import {
 } from '@vicons/material'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SettingsSection from './SettingsSection.vue'
 import ShortcutInput from '../common/ShortcutInput.vue'
 import type { QuickAction } from '../../features/quick/types'
 import { formatShortcut } from '../../shared/shortcut'
@@ -256,28 +257,6 @@ function handleRunAction(action: QuickAction) {
 </script>
 
 <style scoped>
-.settings-card {
-  margin-bottom: 20px;
-}
-
-.settings-card-title {
-  font-weight: bold;
-  font-size: 16px;
-  height: 30px;
-  border-bottom: 1px solid gray;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.title-main {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
 .title-count {
   color: #888;
   font-size: 12px;
@@ -449,15 +428,4 @@ function handleRunAction(action: QuickAction) {
   --n-height: 28px !important;
 }
 
-.setting-item-conflict {
-  border-color: #d03050;
-  background-color: rgba(208, 48, 80, 0.04);
-}
-
-.setting-item-conflict :deep(.n-input) {
-  --n-border: 1px solid #d03050 !important;
-  --n-border-hover: 1px solid #d03050 !important;
-  --n-border-focus: 1px solid #d03050 !important;
-  --n-box-shadow-focus: 0 0 0 2px rgba(208, 48, 80, 0.18) !important;
-}
 </style>
