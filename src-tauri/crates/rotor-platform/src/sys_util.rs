@@ -10,9 +10,25 @@ mod win_imports {
         DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
     };
     pub use windows::Win32::Storage::FileSystem;
+    pub use windows::Win32::System::{ProcessStatus, Threading};
 }
 #[cfg(target_os = "windows")]
 use win_imports::*;
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryUsage {
+    pub resident_bytes: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionStatus {
+    pub key: String,
+    pub name: String,
+    pub granted: Option<bool>,
+    pub detail: String,
+}
 
 #[cfg(target_os = "windows")]
 pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
@@ -101,6 +117,116 @@ pub fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
     {
         Ok((0, 0))
     }
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
+    let mut task_info = std::mem::MaybeUninit::<libc::proc_taskinfo>::uninit();
+    let info_size = std::mem::size_of::<libc::proc_taskinfo>() as i32;
+    let result = unsafe {
+        libc::proc_pidinfo(
+            std::process::id() as i32,
+            libc::PROC_PIDTASKINFO,
+            0,
+            task_info.as_mut_ptr() as *mut libc::c_void,
+            info_size,
+        )
+    };
+
+    if result != info_size {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    let task_info = unsafe { task_info.assume_init() };
+    Ok(MemoryUsage {
+        resident_bytes: task_info.pti_resident_size,
+    })
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
+    let mut counters = ProcessStatus::PROCESS_MEMORY_COUNTERS {
+        cb: std::mem::size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS>() as u32,
+        ..Default::default()
+    };
+
+    unsafe {
+        ProcessStatus::GetProcessMemoryInfo(
+            Threading::GetCurrentProcess(),
+            &mut counters,
+            std::mem::size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS>() as u32,
+        )?;
+    }
+
+    Ok(MemoryUsage {
+        resident_bytes: counters.WorkingSetSize as u64,
+    })
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
+    Ok(MemoryUsage { resident_bytes: 0 })
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_permission_statuses() -> Vec<PermissionStatus> {
+    vec![
+        PermissionStatus {
+            key: "screen_capture".to_string(),
+            name: "Screen Capture".to_string(),
+            granted: check_macos_screen_capture_permission(),
+            detail: "Required for screenshot capture".to_string(),
+        },
+        PermissionStatus {
+            key: "file_search".to_string(),
+            name: "File Search".to_string(),
+            granted: Some(true),
+            detail: "Uses the current user's readable folders".to_string(),
+        },
+    ]
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_permission_statuses() -> Vec<PermissionStatus> {
+    vec![
+        PermissionStatus {
+            key: "administrator".to_string(),
+            name: "Administrator".to_string(),
+            granted: Some(is_root()),
+            detail: "Required for NTFS journal indexing and admin file launches".to_string(),
+        },
+        PermissionStatus {
+            key: "screen_capture".to_string(),
+            name: "Screen Capture".to_string(),
+            granted: Some(true),
+            detail: "Allowed by the desktop session".to_string(),
+        },
+        PermissionStatus {
+            key: "file_search".to_string(),
+            name: "File Search".to_string(),
+            granted: Some(true),
+            detail: "Uses readable NTFS volumes".to_string(),
+        },
+    ]
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn get_permission_statuses() -> Vec<PermissionStatus> {
+    vec![PermissionStatus {
+        key: "file_search".to_string(),
+        name: "File Search".to_string(),
+        granted: None,
+        detail: "Permission checks are unavailable on this platform".to_string(),
+    }]
+}
+
+#[cfg(target_os = "macos")]
+fn check_macos_screen_capture_permission() -> Option<bool> {
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+    }
+
+    Some(unsafe { CGPreflightScreenCaptureAccess() })
 }
 
 #[cfg(target_os = "windows")]

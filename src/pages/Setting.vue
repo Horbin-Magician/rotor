@@ -14,6 +14,13 @@
           <img src="/assets/logo.svg" width="60px" @click="openGitHome" :draggable="false"/>
         </div>
       </template>
+      <n-tab-pane class="tab-pane" name="Overview" :tab="t('message.overview')">
+        <n-scrollbar style="max-height: 100vh" trigger="none">
+          <div class="settings-container">
+            <OverviewSettings />
+          </div>
+        </n-scrollbar>
+      </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Base" :tab="t('message.base')">
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
@@ -68,7 +75,7 @@
 
 <script setup lang="ts">
 import { NTabs, NTabPane, NScrollbar, useMessage } from 'naive-ui'
-import { onMounted, onUnmounted, ref, watch, h } from 'vue'
+import { defineAsyncComponent, onMounted, onUnmounted, ref, watch, h } from 'vue'
 import type { Ref } from 'vue'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -92,6 +99,8 @@ import PinwinSettings from '../components/setting/PinwinSettings.vue'
 import UpdateModals from '../components/setting/UpdateModals.vue'
 import WindowsTitlebar from '../components/setting/WindowsTitlebar.vue'
 
+const OverviewSettings = defineAsyncComponent(() => import('../components/setting/OverviewSettings.vue'))
+
 import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n()
 const message = useMessage()
@@ -102,7 +111,7 @@ import { info, error } from '@tauri-apps/plugin-log';
 
 const appWindow = getCurrentWindow()
 const isWindows = ref(false)
-const activeTab = ref('Base')
+const activeTab = ref('Overview')
 const highlightedSetting = ref('')
 const hasLoadedConfig = ref(false)
 let unlistenShortcutConflict: UnlistenFn | null = null
@@ -458,10 +467,20 @@ async function askSave() {
 
 .tab-wrapper {
   height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar{
   height: 100%;
+}
+
+.sidebar :deep(.n-tabs-pane-wrapper) {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sidebar :deep(.n-tab-pane) {
+  min-width: 0;
 }
 
 .sidebar :deep(.n-tabs-nav .n-tabs-tab) {
@@ -479,6 +498,10 @@ async function askSave() {
 
 .settings-container {
   padding-right: 20px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .drag-region {

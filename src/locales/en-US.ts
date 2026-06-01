@@ -1,5 +1,6 @@
 export default {
   message: {
+    overview: 'Overview',
     base: 'Base',
     common: 'General',
     language: 'Language',
@@ -66,6 +67,33 @@ export default {
     updateCheckFailed: 'Failed to check for updates',
     manualDownloadSuggestion: 'Please try to manually download the latest version from the project page',
     shortcutConflictPrefix: 'Shortcut conflict. Please update ',
-    settingUpdateFailed: 'Failed to update setting'
+    settingUpdateFailed: 'Failed to update setting',
+    systemOverview: 'System Overview',
+    memoryUsage: 'Memory Usage',
+    indexOverview: 'Index Overview',
+    permissionOverview: 'Permission Overview',
+    indexStatus: 'Index Status',
+    indexState: 'Index State',
+    indexFileSize: 'Index File Size',
+    indexItems: 'Index Items',
+    lastIndexedAt: 'Last Indexed',
+    indexed: 'Indexed',
+    notIndexed: 'Not Indexed',
+    indexReady: 'Index Ready',
+    indexReleased: 'Index Released',
+    indexUnbuilt: 'Index Unbuilt',
+    indexUnavailable: 'Index Unavailable',
+    permissionStatus: 'Permission Usage',
+    granted: 'Granted',
+    notGranted: 'Not Granted',
+    unknown: 'Unknown',
+    notAvailable: 'Not Available',
+    overviewLoadFailed: 'Failed to load overview',
+    permissionAdministrator: 'Administrator',
+    permissionFileSearch: 'File Search',
+    permissionScreenCapture: 'Screen Recording',
+    permissionAdministratorDetail: 'Used for NTFS journal indexing and opening files as administrator',
+    permissionFileSearchDetail: "Uses folders or volumes readable by the current user",
+    permissionScreenCaptureDetail: 'Used for screenshot capture'
   }
 }

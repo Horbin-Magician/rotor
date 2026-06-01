@@ -3,15 +3,43 @@ pub mod file_data;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::mpsc;
+use std::time::Duration;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 
-use file_data::{FileData, SearchResultItem, SearcherMessage};
+use file_data::{FileData, SearchIndexStatus, SearchResultItem, SearcherMessage};
 use rotor_common::AppConfig;
 
 pub struct Searcher {
     app_hander: Option<tauri::AppHandle>,
     searcher_msg_sender: mpsc::Sender<SearcherMessage>,
+}
+
+#[derive(Clone)]
+pub struct SearchIndexStatusReader {
+    searcher_msg_sender: mpsc::Sender<SearcherMessage>,
+}
+
+impl SearchIndexStatusReader {
+    pub fn index_status(&self) -> SearchIndexStatus {
+        let (sender, receiver) = mpsc::channel();
+
+        if self
+            .searcher_msg_sender
+            .send(SearcherMessage::Status(sender))
+            .is_err()
+        {
+            log::warn!("Failed to request search index status");
+            return SearchIndexStatus::empty();
+        }
+
+        receiver
+            .recv_timeout(Duration::from_millis(800))
+            .unwrap_or_else(|error| {
+                log::warn!("Failed to receive search index status: {error}");
+                SearchIndexStatus::empty()
+            })
+    }
 }
 
 impl Searcher {
@@ -109,5 +137,11 @@ impl Searcher {
 
     pub fn release(&self) {
         let _ = self.searcher_msg_sender.send(SearcherMessage::Release);
+    }
+
+    pub fn index_status_reader(&self) -> SearchIndexStatusReader {
+        SearchIndexStatusReader {
+            searcher_msg_sender: self.searcher_msg_sender.clone(),
+        }
     }
 }

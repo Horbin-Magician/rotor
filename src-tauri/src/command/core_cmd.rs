@@ -5,6 +5,14 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use rotor_common::{AppConfig, Config};
 use rotor_runtime::Application;
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverviewInfo {
+    memory: rotor_platform::sys_util::MemoryUsage,
+    search_index: rotor_searcher::file_data::SearchIndexStatus,
+    permissions: Vec<rotor_platform::sys_util::PermissionStatus>,
+}
+
 #[tauri::command]
 pub fn get_all_cfg() -> Config {
     AppConfig::lock_global().get_all()
@@ -104,6 +112,33 @@ pub fn get_app_version() -> String {
 #[tauri::command]
 pub fn get_ws_port() -> u16 {
     Application::lock_global().ws_port
+}
+
+fn collect_overview_info() -> OverviewInfo {
+    let memory = rotor_platform::sys_util::get_memory_usage().unwrap_or_else(|error| {
+        log::warn!("Failed to collect memory usage: {error}");
+        rotor_platform::sys_util::MemoryUsage { resident_bytes: 0 }
+    });
+
+    let search_index_reader = {
+        let app_state = Application::lock_global();
+        app_state.searcher.index_status_reader()
+    };
+    let search_index = search_index_reader.index_status();
+    let permissions = rotor_platform::sys_util::get_permission_statuses();
+
+    OverviewInfo {
+        memory,
+        search_index,
+        permissions,
+    }
+}
+
+#[tauri::command]
+pub async fn get_overview_info() -> Result<OverviewInfo, String> {
+    tauri::async_runtime::spawn_blocking(collect_overview_info)
+        .await
+        .map_err(|error| format!("Failed to collect overview info: {error}"))
 }
 
 #[tauri::command]

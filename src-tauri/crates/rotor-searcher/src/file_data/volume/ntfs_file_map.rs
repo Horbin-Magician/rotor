@@ -198,6 +198,10 @@ impl FileMap {
         self.main_map.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.main_map.len()
+    }
+
     // get a File by index
     fn get(&self, index: &u64) -> Option<&FileView> {
         if let Some(rank) = self.rank_map.get(index) {

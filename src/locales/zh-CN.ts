@@ -1,5 +1,6 @@
 export default {
   message: {
+    overview: '概览',
     base: '基础',
     common: '通用',
     language: '语言',
@@ -66,6 +67,33 @@ export default {
     updateCheckFailed: '检查更新失败',
     manualDownloadSuggestion: '请尝试从项目页面手动下载最新版本',
     shortcutConflictPrefix: '快捷键冲突，请重新设置 ',
-    settingUpdateFailed: '设置更新失败'
+    settingUpdateFailed: '设置更新失败',
+    systemOverview: '系统概览',
+    memoryUsage: '内存占用',
+    indexOverview: '索引概览',
+    permissionOverview: '权限概览',
+    indexStatus: '索引情况',
+    indexState: '索引状态',
+    indexFileSize: '索引文件大小',
+    indexItems: '索引条目',
+    lastIndexedAt: '最近索引时间',
+    indexed: '已索引',
+    notIndexed: '未索引',
+    indexReady: '索引已就绪',
+    indexReleased: '索引已释放',
+    indexUnbuilt: '索引未构建',
+    indexUnavailable: '索引不可用',
+    permissionStatus: '权限使用情况',
+    granted: '已授权',
+    notGranted: '未授权',
+    unknown: '未知',
+    notAvailable: '不可用',
+    overviewLoadFailed: '加载概览失败',
+    permissionAdministrator: '管理员权限',
+    permissionFileSearch: '文件搜索',
+    permissionScreenCapture: '屏幕录制',
+    permissionAdministratorDetail: '用于 NTFS 日志索引和管理员方式打开文件',
+    permissionFileSearchDetail: '使用当前用户可读取的目录或卷',
+    permissionScreenCaptureDetail: '用于截图捕获'
   }
 }

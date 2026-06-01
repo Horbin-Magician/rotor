@@ -5250,6 +5250,7 @@ dependencies = [
  "rotor-platform",
  "rotor-runtime",
  "rotor-screenshot",
+ "rotor-searcher",
  "serde",
  "serde_json",
  "tauri",
@@ -5285,8 +5286,10 @@ dependencies = [
  "file_icon_provider",
  "image",
  "is-root",
+ "libc",
  "log",
  "rotor-common",
+ "serde",
  "windows 0.61.3",
  "xcap",
 ]

@@ -39,6 +39,7 @@ rotor-common = { path = "crates/rotor-common" }
 rotor-platform = { path = "crates/rotor-platform" }
 rotor-runtime = { path = "crates/rotor-runtime" }
 rotor-screenshot = { path = "crates/rotor-screenshot" }
+rotor-searcher = { path = "crates/rotor-searcher" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

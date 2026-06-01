@@ -268,6 +268,10 @@ impl FileMap {
         self.main_map.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.main_map.len()
+    }
+
     fn iter(&self) -> std::collections::btree_map::Iter<'_, FileKey, FileView> {
         self.main_map.iter()
     }

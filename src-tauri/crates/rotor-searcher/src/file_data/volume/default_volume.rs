@@ -10,7 +10,7 @@ use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
 
 use super::default_file_map::FileMap;
-use super::SearchResultItem;
+use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
 use rotor_platform::file_util;
 
 #[derive(Debug, Clone, Copy)]
@@ -26,6 +26,7 @@ pub struct Volume {
     last_search_num: usize,
     watcher: Option<RecommendedWatcher>,
     event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
+    saved_item_count: usize,
 }
 
 impl Volume {
@@ -37,6 +38,7 @@ impl Volume {
             last_search_num: 0,
             watcher: None,
             event_receiver: None,
+            saved_item_count: 0,
         }
     }
 
@@ -75,6 +77,27 @@ impl Volume {
             root_path
         );
         Ok(())
+    }
+
+    pub fn index_status(&self) -> VolumeIndexStatus {
+        let index_file_path = self.index_file_path();
+        let index_file_metadata = index_file_path.metadata().ok();
+        let loaded_item_count = self.file_map.len();
+        let index_item_count = match loaded_item_count.max(self.saved_item_count) {
+            0 => None,
+            count => Some(count),
+        };
+
+        VolumeIndexStatus {
+            name: self.drive.clone(),
+            indexed: loaded_item_count > 0 || index_file_metadata.is_some(),
+            index_item_count,
+            index_file_size_bytes: index_file_metadata
+                .as_ref()
+                .map(|metadata| metadata.len())
+                .unwrap_or(0),
+            index_file_modified_at: index_file_metadata.as_ref().and_then(metadata_modified_at),
+        }
     }
 
     pub fn stop_watching(&mut self) {
@@ -366,13 +389,11 @@ impl Volume {
             return Ok(());
         }
 
-        let file_path = file_util::get_tmp_path();
-        if !file_path.exists() {
-            fs::create_dir(&file_path)?;
-        }
-        let safe_drive = self.drive[1..].replace("/", "_");
-        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
-        self.file_map.save(&file_name)?;
+        let index_dir = file_util::get_tmp_path();
+        fs::create_dir_all(index_dir)?;
+        self.saved_item_count = self.file_map.len();
+        self.file_map
+            .save(&self.index_file_path().to_string_lossy())?;
 
         #[cfg(debug_assertions)]
         log::info!(
@@ -391,10 +412,9 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_read", self.drive);
 
-        let file_path = file_util::get_tmp_path();
-        let safe_drive = self.drive[1..].replace("/", "_");
-        let file_name = format!("{}/{}.fd", file_path.to_str().unwrap_or("."), safe_drive);
-        self.file_map.read(&file_name)?;
+        self.file_map
+            .read(&self.index_file_path().to_string_lossy())?;
+        self.saved_item_count = self.file_map.len();
 
         #[cfg(debug_assertions)]
         log::info!(
@@ -404,5 +424,9 @@ impl Volume {
         );
 
         Ok(())
+    }
+
+    fn index_file_path(&self) -> std::path::PathBuf {
+        file_util::get_tmp_path().join(format!("{}.fd", index_file_stem(&self.drive)))
     }
 }

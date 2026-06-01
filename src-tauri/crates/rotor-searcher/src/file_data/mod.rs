@@ -16,13 +16,40 @@ use rotor_platform::sys_util::is_ntfs;
 use volume::default_volume::Volume;
 #[cfg(target_os = "windows")]
 use volume::ntfs_volume::Volume;
-pub use volume::SearchResultItem;
+pub use volume::{SearchResultItem, VolumeIndexStatus};
 
 pub enum SearcherMessage {
     Init,
     Update,
     Find(String),
     Release,
+    Status(mpsc::Sender<SearchIndexStatus>),
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchIndexStatus {
+    pub state: String,
+    pub volume_count: usize,
+    pub indexed_volume_count: usize,
+    pub index_item_count: usize,
+    pub index_file_size_bytes: u64,
+    pub latest_index_modified_at: Option<u64>,
+    pub volumes: Vec<VolumeIndexStatus>,
+}
+
+impl SearchIndexStatus {
+    pub fn empty() -> Self {
+        Self {
+            state: "unavailable".to_string(),
+            volume_count: 0,
+            indexed_volume_count: 0,
+            index_item_count: 0,
+            index_file_size_bytes: 0,
+            latest_index_modified_at: None,
+            volumes: Vec::new(),
+        }
+    }
 }
 
 const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
@@ -181,6 +208,11 @@ impl FileData {
                             file_data.state = FileState::Released;
                         }
                     }
+                    Ok(SearcherMessage::Status(sender)) => {
+                        if sender.send(file_data.index_status()).is_err() {
+                            log::warn!("Send search index status failed");
+                        }
+                    }
                     Err(_) => {}
                 }
             }
@@ -267,11 +299,24 @@ impl FileData {
         let mut task = SearchTask::dispatch(&self.volume_packs, filename.clone(), self.batch);
 
         while task.pending > 0 {
-            if let Ok(searcher_msg) = msg_reciever.try_recv() {
-                task.cancel();
-                task.drain_cancelled();
-                self.finding_result.items.clear();
-                reply = Some(searcher_msg);
+            while let Ok(searcher_msg) = msg_reciever.try_recv() {
+                match searcher_msg {
+                    SearcherMessage::Status(sender) => {
+                        if sender.send(self.index_status()).is_err() {
+                            log::warn!("Send search index status failed");
+                        }
+                    }
+                    searcher_msg => {
+                        task.cancel();
+                        task.drain_cancelled();
+                        self.finding_result.items.clear();
+                        reply = Some(searcher_msg);
+                        break;
+                    }
+                }
+            }
+
+            if reply.is_some() {
                 break;
             }
 
@@ -398,6 +443,52 @@ impl FileData {
             if let Err(e) = handle.join() {
                 log::error!("Release index failed: {:?}", e);
             }
+        }
+    }
+
+    pub fn index_status(&self) -> SearchIndexStatus {
+        let volumes = self
+            .volume_packs
+            .iter()
+            .filter_map(|VolumePack { volume, .. }| {
+                volume
+                    .lock()
+                    .map(|volume| volume.index_status())
+                    .map_err(|error| {
+                        log::warn!("Failed to lock volume for index status: {error}");
+                        error
+                    })
+                    .ok()
+            })
+            .collect::<Vec<_>>();
+
+        let indexed_volume_count = volumes.iter().filter(|volume| volume.indexed).count();
+        let index_item_count = volumes
+            .iter()
+            .filter_map(|volume| volume.index_item_count)
+            .sum::<usize>();
+        let index_file_size_bytes = volumes
+            .iter()
+            .map(|volume| volume.index_file_size_bytes)
+            .sum::<u64>();
+        let latest_index_modified_at = volumes
+            .iter()
+            .filter_map(|volume| volume.index_file_modified_at)
+            .max();
+
+        SearchIndexStatus {
+            state: match &self.state {
+                FileState::Unbuild => "unbuilt",
+                FileState::Released => "released",
+                FileState::Ready => "ready",
+            }
+            .to_string(),
+            volume_count: volumes.len(),
+            indexed_volume_count,
+            index_item_count,
+            index_file_size_bytes,
+            latest_index_modified_at,
+            volumes,
         }
     }
 }
