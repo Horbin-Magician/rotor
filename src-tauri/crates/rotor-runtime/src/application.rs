@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
 use crate::data_server;
+use crate::quick::Quick;
 use crate::tray::Tray;
 
 const SHORTCUT_TRIGGER_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -64,6 +65,22 @@ pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: 
         }
 
         if !handled {
+            match rotor_app.quick.run_by_shortcut(shortcut) {
+                Ok(true) => {
+                    rotor_app.finish_shortcut_trigger(shortcut_id);
+                    handled = true;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    let flag = rotor_app.quick.flag();
+                    log::error!("Module {flag} run error: {error}");
+                    rotor_app.finish_shortcut_trigger(shortcut_id);
+                    handled = true;
+                }
+            }
+        }
+
+        if !handled {
             rotor_app.pressed_shortcuts.remove(&shortcut_id);
         }
     }
@@ -74,6 +91,7 @@ pub struct Application {
     pub tray: Tray,
     pub screenshot: ScreenShotter,
     pub searcher: Searcher,
+    pub quick: Quick,
     pub ws_port: u16,
     pressed_shortcuts: HashSet<u32>,
     last_shortcut_triggers: HashMap<u32, Instant>,
@@ -87,6 +105,7 @@ impl Application {
             tray: Tray::new(),
             screenshot: ScreenShotter::new(),
             searcher: Searcher::new(Application::update_search_result),
+            quick: Quick::new(),
             ws_port: 10000,
             pressed_shortcuts: HashSet::new(),
             last_shortcut_triggers: HashMap::new(),
@@ -132,6 +151,19 @@ impl Application {
                 let flag = self.searcher.flag();
                 log::error!("Module {flag} shortcut registration error: {e}");
                 self.notify_shortcut_registration_error("shortcut_search", shortcut, e);
+            }
+        }
+
+        self.quick.reload();
+        for (action_id, shortcut) in self.quick.get_shortcuts() {
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                let flag = self.quick.flag();
+                log::error!("Module {flag} shortcut registration error: {e}");
+                self.notify_shortcut_registration_error(
+                    &format!("quick_action_{action_id}"),
+                    shortcut,
+                    e,
+                );
             }
         }
         if std::env::var("ROTOR_SIMULATE_SHORTCUT_CONFLICT").as_deref() == Ok("1") {

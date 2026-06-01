@@ -6,6 +6,15 @@ use crate::file_path;
 
 pub type Config = HashMap<String, String>;
 
+#[cfg(target_os = "macos")]
+pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Cmd+Shift+T","command":"open -a Terminal","enabled":true},{"id":"finder","name":"Finder","shortcut":"Cmd+Shift+E","command":"open -a Finder ~","enabled":true}]"#;
+#[cfg(target_os = "windows")]
+pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Ctrl+Shift+T","command":"start \"\" cmd.exe","enabled":true},{"id":"explorer","name":"Explorer","shortcut":"Ctrl+Shift+E","command":"start \"\" explorer.exe","enabled":true}]"#;
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Ctrl+Shift+T","command":"x-terminal-emulator","enabled":true},{"id":"files","name":"Files","shortcut":"Ctrl+Shift+E","command":"xdg-open ~","enabled":true}]"#;
+
+pub const DEFAULT_QUICK_ACTIONS_REVISION: &str = "2";
+
 static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
     HashMap::from([
         ("language".into(), "0".into()),
@@ -21,6 +30,11 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("shortcut_pinwin_close".into(), "Escape".into()),
         ("shortcut_pinwin_copy".into(), "Enter".into()),
         ("shortcut_pinwin_hide".into(), "H".into()),
+        ("quick_actions".into(), DEFAULT_QUICK_ACTIONS.into()),
+        (
+            "quick_actions_revision".into(),
+            DEFAULT_QUICK_ACTIONS_REVISION.into(),
+        ),
     ])
 });
 
@@ -76,11 +90,24 @@ impl AppConfig {
         Ok(())
     }
 
+    pub fn set_many(
+        &mut self,
+        entries: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<(), Box<dyn Error>> {
+        self.config.extend(entries);
+        self.save()?;
+        Ok(())
+    }
+
     pub fn get(&self, k: &str) -> Option<&String> {
         if self.config.contains_key(k) {
             return self.config.get(k);
         }
         DEFAULT_CONFIG.get(k)
+    }
+
+    pub fn get_user(&self, k: &str) -> Option<&String> {
+        self.config.get(k)
     }
 
     pub fn get_all(&self) -> Config {

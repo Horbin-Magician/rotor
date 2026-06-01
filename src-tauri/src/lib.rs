@@ -3,7 +3,7 @@ mod command;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 
-use command::{core_cmd, screen_shotter_cmd, searcher_cmd};
+use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -56,6 +56,9 @@ pub fn run() {
             core_cmd::get_overview_info,
             core_cmd::take_shortcut_registration_notices,
             core_cmd::open_url,
+            quick_cmd::get_quick_actions,
+            quick_cmd::set_quick_actions,
+            quick_cmd::run_quick_action,
             screen_shotter_cmd::new_pin,
             screen_shotter_cmd::save_img,
             screen_shotter_cmd::get_screen_rects,

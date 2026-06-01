@@ -58,6 +58,17 @@
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Search" :tab="t('message.search')">
       </n-tab-pane>
+      <n-tab-pane class="tab-pane" name="Quick" :tab="t('message.quick')">
+        <n-scrollbar style="max-height: 100vh" trigger="none">
+          <div class="settings-container">
+            <QuickSettings
+              v-model:quick-actions="quickActions"
+              :highlighted-setting="highlightedSetting"
+              @run-action="runAction"
+            />
+          </div>
+        </n-scrollbar>
+      </n-tab-pane>
     </n-tabs>
   </div>
   <div class="drag-region"  data-tauri-drag-region></div>
@@ -96,8 +107,11 @@ import { useTheme } from '../composables/useTheme';
 // Import setting components
 import GeneralSettings from '../components/setting/GeneralSettings.vue'
 import PinwinSettings from '../components/setting/PinwinSettings.vue'
+import QuickSettings from '../components/setting/QuickSettings.vue'
 import UpdateModals from '../components/setting/UpdateModals.vue'
 import WindowsTitlebar from '../components/setting/WindowsTitlebar.vue'
+import { getQuickActions, runQuickAction, setQuickActions } from '../features/quick/api'
+import type { QuickAction } from '../features/quick/types'
 
 const OverviewSettings = defineAsyncComponent(() => import('../components/setting/OverviewSettings.vue'))
 
@@ -157,6 +171,9 @@ const ifAutoChangeSavePath = ref(true)
 const ifAskSavePath = ref(true)
 const zoomDelta = ref(2)
 
+// Quick settings
+const quickActions = ref<QuickAction[]>([])
+
 // Update modal states
 const showUpdateModal = ref(false)
 const showProgressModal = ref(false)
@@ -169,7 +186,7 @@ const isCheckingUpdate = ref(false)
 let update_cache: Update | null = null
 
 // Search settings
-getAllConfig().then(async (config) => {
+Promise.all([getAllConfig(), getQuickActions()]).then(async ([config, actions]) => {
   language.value = Number(config["language"])
   theme.value = Number(config["theme"])
   powerBoot.value = await isEnabled()
@@ -187,6 +204,7 @@ getAllConfig().then(async (config) => {
   ifAutoChangeSavePath.value = config["if_auto_change_save_path"] === "false" ? false : true
   ifAskSavePath.value = config["if_ask_save_path"] === "false" ? false : true
   zoomDelta.value = Number(config["zoom_delta"])
+  quickActions.value = actions
 }).finally(() => {
   hasLoadedConfig.value = true
 })
@@ -306,11 +324,19 @@ function settingDisplayName(key: string) {
     shortcut_pinwin_hide: t('message.hidePinwin'),
   }
 
+  if (key.startsWith('quick_action_')) {
+    const actionId = key.replace('quick_action_', '')
+    const action = quickActions.value.find((action) => action.id === actionId)
+    return action?.name || t('message.quick')
+  }
+
   return displayNames[key] ?? key
 }
 
 function showShortcutConflict(notice: ShortcutRegistrationNotice) {
-  const targetTab = shortcutTabByKey[notice.key]
+  const targetTab = notice.key.startsWith('quick_action_')
+    ? 'Quick'
+    : shortcutTabByKey[notice.key]
 
   if (targetTab) {
     activeTab.value = targetTab
@@ -438,6 +464,30 @@ createSettingWatcher(savePath, "save_path")
 createSettingWatcher(ifAutoChangeSavePath, "if_auto_change_save_path")
 createSettingWatcher(ifAskSavePath, "if_ask_save_path")
 createSettingWatcher(zoomDelta, "zoom_delta")
+
+watch(quickActions, async (newValue, oldValue) => {
+  if (!hasLoadedConfig.value || isRevertingSetting) {
+    return
+  }
+
+  try {
+    await setQuickActions(newValue)
+  } catch (err) {
+    console.error('Failed to update quick actions:', err)
+    isRevertingSetting = true
+    quickActions.value = oldValue
+    isRevertingSetting = false
+    message.error(`${t('message.settingUpdateFailed')}: ${t('message.quickActions')}`)
+  }
+})
+
+async function runAction(id: string) {
+  try {
+    await runQuickAction(id)
+  } catch (err) {
+    message.error(`${t('message.quickActionRunFailed')}: ${String(err)}`)
+  }
+}
 
 async function askSave() {
   const path = await open({

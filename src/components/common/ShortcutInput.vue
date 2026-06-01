@@ -13,6 +13,7 @@
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NInput } from 'naive-ui';
+import { formatShortcut } from '../../shared/shortcut';
 
 const { t } = useI18n();
 
@@ -32,20 +33,6 @@ const VALID_KEYS = new Set([
   // Navigation keys
   'Home', 'End', 'PageUp', 'PageDown',
 ]);
-
-const KEY_REPLACEMENTS = {
-  'Key': '',
-  'Digit': '',
-  'Escape': 'Esc',
-  'shift': 'Shift',
-  'Super': 'Cmd',
-  'alt': 'Alt',
-  'ctrl': 'Ctrl',
-  'control': 'Ctrl'
-} as const;
-
-// Modifier display order
-const MODIFIER_ORDER = ['Cmd', 'Ctrl', 'Alt', 'Shift'];
 
 // Props and emits
 const props = defineProps<{
@@ -80,31 +67,7 @@ const displayValue = computed(() => {
     }
   }
 
-  value = Object.entries(KEY_REPLACEMENTS).reduce((acc, [pattern, replacement]) => {
-    const regex = pattern === 'Key' || pattern === 'Digit' 
-      ? new RegExp(`\\b${pattern}`, 'g')
-      : new RegExp(pattern, 'gi');
-    return acc.replace(regex, replacement);
-  }, value)
-
-  // Sort modifiers in the stored shortcut value
-  const parts = value.split('+');
-  const modifiers: string[] = [];
-  const nonModifiers: string[] = [];
-  
-  parts.forEach(part => {
-    if (MODIFIER_ORDER.includes(part)) {
-      modifiers.push(part);
-    } else {
-      nonModifiers.push(part);
-    }
-  });
-  
-  // Sort modifiers according to defined order
-  modifiers.sort((a, b) => MODIFIER_ORDER.indexOf(a) - MODIFIER_ORDER.indexOf(b));
-  
-  // Reconstruct the shortcut with sorted modifiers
-  return [...modifiers, ...nonModifiers].join('+');
+  return formatShortcut(value);
 });
 
 // Methods
