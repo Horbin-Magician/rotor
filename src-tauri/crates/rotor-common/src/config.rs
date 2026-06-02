@@ -16,6 +16,16 @@ pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","
 pub const DEFAULT_QUICK_ACTIONS_REVISION: &str = "2";
 
 #[cfg(target_os = "macos")]
+pub const DEFAULT_SEARCH_SHORTCUT: &str = "Cmd+Shift+F";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SEARCH_SHORTCUT: &str = "Ctrl+Shift+F";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Cmd+Shift+S";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+S";
+
+#[cfg(target_os = "macos")]
 pub const DEFAULT_SEARCH_EXCLUDED_DIRS: &str =
     "~/Library\nnode_modules\ntarget\ndist\nbuild\n.git\n.next\n.cache\ncoverage";
 #[cfg(not(target_os = "macos"))]
@@ -31,8 +41,8 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("if_ask_save_path".into(), "true".into()),
         ("zoom_delta".into(), "2".into()),
         ("current_workspace".into(), "0".into()),
-        ("shortcut_search".into(), "Ctrl+Shift+F".into()),
-        ("shortcut_screenshot".into(), "Ctrl+Shift+S".into()),
+        ("shortcut_search".into(), DEFAULT_SEARCH_SHORTCUT.into()),
+        ("shortcut_screenshot".into(), DEFAULT_SCREENSHOT_SHORTCUT.into()),
         ("shortcut_pinwin_save".into(), "S".into()),
         ("shortcut_pinwin_close".into(), "Escape".into()),
         ("shortcut_pinwin_copy".into(), "Enter".into()),

@@ -82,7 +82,7 @@ cd src-tauri && cargo check
 
 - Configuration files use TOML format for Rust components and JSON for frontend
 - The searcher module includes platform-specific optimizations (NTFS volume support for Windows)
-- Global shortcuts are implemented: `Shift+F` for search, `Shift+C` for screenshot
+- Global shortcuts are platform-specific: macOS uses `Cmd+Shift+F` for search and `Cmd+Shift+S` for screenshot; Windows uses `Ctrl+Shift+F` for search and `Ctrl+Shift+S` for screenshot
 - The application runs in system tray mode with dock visibility disabled on macOS
 - Frontend and backend communicate through Tauri's IPC system using generated handlers
 

@@ -27,7 +27,7 @@ Now, Rotor include **file search** and **screenshot** module.
 
 ## File Searching
 
-1. Shortcut key `CMD+Shift+F` shows the search window.
+1. Shortcut key `Cmd+Shift+F` on macOS or `Ctrl+Shift+F` on Windows shows the search window.
 2. Next, enter any information in the search window to get the search results immediately.
 3. `Up` and `Down` keys to select the result, `Enter` key to open the file. 
 4. A menu is displayed when the mouse hovers over the result item. You can opening the directory where the file is located or run as admin.
@@ -38,7 +38,7 @@ Now, Rotor include **file search** and **screenshot** module.
 
 ## Screenshot
 
-1. Shortcut key `CMD+Shift+S` prints screen.
+1. Shortcut key `Cmd+Shift+S` on macOS or `Ctrl+Shift+S` on Windows prints screen.
 2. Then by holding down the `left mouse button` drag to select the area you want to take a screenshot, release to complete;
 3. By default, the captured image is fixed to the screen, and press `ESC` to close it, `S` to save it, `Enter` to copy it, `H` to minimize it.
 
