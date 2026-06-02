@@ -2,8 +2,52 @@ mod command;
 
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
+#[cfg(debug_assertions)]
+use tauri_plugin_log::fern::colors::ColoredLevelConfig;
+use tauri_plugin_log::{Target, TargetKind};
 
 use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd};
+
+fn log_targets() -> Vec<Target> {
+    let stdout_target = {
+        #[cfg(debug_assertions)]
+        {
+            let colors = ColoredLevelConfig::new()
+                .trace(tauri_plugin_log::fern::colors::Color::BrightBlack)
+                .debug(tauri_plugin_log::fern::colors::Color::Blue)
+                .info(tauri_plugin_log::fern::colors::Color::Green)
+                .warn(tauri_plugin_log::fern::colors::Color::Yellow)
+                .error(tauri_plugin_log::fern::colors::Color::Red);
+
+            Target::new(TargetKind::Stdout).format(move |out, message, record| {
+                out.finish(format_args!(
+                    "[{}][{}][{}] {}",
+                    chrono::Local::now().format("%Y-%m-%d][%H:%M:%S"),
+                    colors.color(record.level()),
+                    record.target(),
+                    message
+                ))
+            })
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            Target::new(TargetKind::Stdout)
+        }
+    };
+
+    let log_file_target = Target::new(TargetKind::Folder {
+        path: rotor_platform::file_util::get_userdata_path()
+            .unwrap_or_else(|| std::path::PathBuf::from("./")),
+        file_name: Some("logs".to_string()),
+    });
+
+    vec![
+        stdout_target,
+        Target::new(TargetKind::LogDir { file_name: None }),
+        log_file_target,
+    ]
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,13 +68,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_log::Builder::new()
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::Folder {
-                        path: rotor_platform::file_util::get_userdata_path()
-                            .unwrap_or_else(|| std::path::PathBuf::from("./")),
-                        file_name: Some("logs".to_string()),
-                    },
-                ))
+                .targets(log_targets())
                 .level(log::LevelFilter::Debug)
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                 .build(),
