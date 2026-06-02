@@ -8,6 +8,20 @@ use tauri_plugin_log::{Target, TargetKind};
 
 use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd};
 
+fn format_plain_log(
+    out: tauri_plugin_log::fern::FormatCallback,
+    message: &std::fmt::Arguments<'_>,
+    record: &log::Record<'_>,
+) {
+    out.finish(format_args!(
+        "[{}][{}][{}] {}",
+        chrono::Local::now().format("%Y-%m-%d][%H:%M:%S"),
+        record.level(),
+        record.target(),
+        message
+    ))
+}
+
 fn log_targets() -> Vec<Target> {
     let stdout_target = {
         #[cfg(debug_assertions)]
@@ -32,7 +46,7 @@ fn log_targets() -> Vec<Target> {
 
         #[cfg(not(debug_assertions))]
         {
-            Target::new(TargetKind::Stdout)
+            Target::new(TargetKind::Stdout).format(format_plain_log)
         }
     };
 
@@ -40,11 +54,15 @@ fn log_targets() -> Vec<Target> {
         path: rotor_platform::file_util::get_userdata_path()
             .unwrap_or_else(|| std::path::PathBuf::from("./")),
         file_name: Some("logs".to_string()),
-    });
+    })
+    .format(format_plain_log);
+
+    let app_log_dir_target =
+        Target::new(TargetKind::LogDir { file_name: None }).format(format_plain_log);
 
     vec![
         stdout_target,
-        Target::new(TargetKind::LogDir { file_name: None }),
+        app_log_dir_target,
         log_file_target,
     ]
 }
@@ -71,6 +89,7 @@ pub fn run() {
                 .targets(log_targets())
                 .level(log::LevelFilter::Debug)
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                .clear_format()
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
