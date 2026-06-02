@@ -15,6 +15,13 @@ pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","
 
 pub const DEFAULT_QUICK_ACTIONS_REVISION: &str = "2";
 
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SEARCH_EXCLUDED_DIRS: &str =
+    "~/Library\nnode_modules\ntarget\ndist\nbuild\n.git\n.next\n.cache\ncoverage";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SEARCH_EXCLUDED_DIRS: &str =
+    "node_modules\ntarget\ndist\nbuild\n.git\n.next\n.cache\ncoverage";
+
 static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
     HashMap::from([
         ("language".into(), "0".into()),
@@ -34,6 +41,10 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         (
             "quick_actions_revision".into(),
             DEFAULT_QUICK_ACTIONS_REVISION.into(),
+        ),
+        (
+            "search_excluded_dirs".into(),
+            DEFAULT_SEARCH_EXCLUDED_DIRS.into(),
         ),
     ])
 });

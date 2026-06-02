@@ -83,7 +83,11 @@
           trigger="none"
           @wheel="handleSettingsWheel('Search', $event)"
         >
-          <div class="settings-container"></div>
+          <div class="settings-container">
+            <SearchSettings
+              v-model:excluded-dirs="searchExcludedDirs"
+            />
+          </div>
         </n-scrollbar>
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Quick" :tab="t('message.quick')">
@@ -142,6 +146,7 @@ import { useTheme } from '../composables/useTheme';
 import GeneralSettings from '../components/setting/GeneralSettings.vue'
 import PinwinSettings from '../components/setting/PinwinSettings.vue'
 import QuickSettings from '../components/setting/QuickSettings.vue'
+import SearchSettings from '../components/setting/SearchSettings.vue'
 import UpdateModals from '../components/setting/UpdateModals.vue'
 import WindowsTitlebar from '../components/setting/WindowsTitlebar.vue'
 import { getQuickActions, runQuickAction, setQuickActions } from '../features/quick/api'
@@ -238,6 +243,7 @@ const isCheckingUpdate = ref(false)
 let update_cache: Update | null = null
 
 // Search settings
+const searchExcludedDirs = ref('')
 Promise.all([getAllConfig(), getQuickActions()]).then(async ([config, actions]) => {
   language.value = Number(config["language"])
   theme.value = Number(config["theme"])
@@ -256,6 +262,7 @@ Promise.all([getAllConfig(), getQuickActions()]).then(async ([config, actions]) 
   ifAutoChangeSavePath.value = config["if_auto_change_save_path"] === "false" ? false : true
   ifAskSavePath.value = config["if_ask_save_path"] === "false" ? false : true
   zoomDelta.value = Number(config["zoom_delta"])
+  searchExcludedDirs.value = config["search_excluded_dirs"]
   quickActions.value = actions
 }).finally(() => {
   hasLoadedConfig.value = true
@@ -490,6 +497,7 @@ function settingDisplayName(key: string) {
     shortcut_pinwin_save: t('message.savePinwin'),
     shortcut_pinwin_copy: t('message.completePinwin'),
     shortcut_pinwin_hide: t('message.hidePinwin'),
+    search_excluded_dirs: t('message.searchExcludedDirs'),
   }
 
   if (key.startsWith('quick_action_')) {
@@ -632,6 +640,9 @@ createSettingWatcher(savePath, "save_path")
 createSettingWatcher(ifAutoChangeSavePath, "if_auto_change_save_path")
 createSettingWatcher(ifAskSavePath, "if_ask_save_path")
 createSettingWatcher(zoomDelta, "zoom_delta")
+
+// Search settings
+createSettingWatcher(searchExcludedDirs, "search_excluded_dirs")
 
 watch(quickActions, async (newValue, oldValue) => {
   if (!hasLoadedConfig.value || isRevertingSetting) {

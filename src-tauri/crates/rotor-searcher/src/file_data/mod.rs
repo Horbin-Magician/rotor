@@ -1,5 +1,6 @@
 mod volume;
 
+mod excluded_dirs;
 use std::collections::VecDeque;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -50,7 +51,6 @@ impl SearchIndexStatus {
             volumes: Vec::new(),
         }
     }
-
 }
 
 const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(50);

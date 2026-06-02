@@ -21,6 +21,7 @@ pub fn get_all_cfg() -> Config {
 #[tauri::command]
 pub fn set_cfg(k: String, mut v: String, app: AppHandle) -> Result<(), String> {
     let tokens = k.split('_').collect::<Vec<&str>>();
+    let should_rebuild_search_index = k == "search_excluded_dirs";
     {
         let mut app_config = AppConfig::lock_global();
         let old_value = app_config.get(&k).cloned();
@@ -92,6 +93,9 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) -> Result<(), String> {
             log::error!("{error}");
             error
         })?;
+    }
+    if should_rebuild_search_index {
+        Application::lock_global().searcher.rebuild_index();
     }
     Ok(())
 }

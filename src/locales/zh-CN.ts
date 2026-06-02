@@ -61,6 +61,8 @@ export default {
     searchPlaceholder: '输入你想要搜索的内容...',
     openAsAdminTip: '以管理员权限打开',
     openFolderTip: '打开文件所在目录',
+    searchIndexing: '搜索索引',
+    searchExcludedDirs: '排除目录',
     // Update related translations
     updateAvailable: '有可用更新',
     newVersionAvailable: '新版本',

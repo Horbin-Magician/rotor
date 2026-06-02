@@ -61,6 +61,8 @@ export default {
     searchPlaceholder: 'Enter the content you want to search...',
     openAsAdminTip: 'Open as admin',
     openFolderTip: 'Open folder',
+    searchIndexing: 'Search Indexing',
+    searchExcludedDirs: 'Excluded Directories',
     // Update related translations
     updateAvailable: 'Update Available',
     newVersionAvailable: 'A new version',

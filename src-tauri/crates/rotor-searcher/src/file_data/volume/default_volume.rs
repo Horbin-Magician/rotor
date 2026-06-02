@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
 
+use super::super::excluded_dirs::ExcludedDirs;
 use super::default_file_map::FileMap;
 use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
 use rotor_platform::file_util;
@@ -27,6 +28,7 @@ pub struct Volume {
     watcher: Option<RecommendedWatcher>,
     event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
     saved_item_count: usize,
+    excluded_dirs: ExcludedDirs,
 }
 
 impl Volume {
@@ -39,6 +41,7 @@ impl Volume {
             watcher: None,
             event_receiver: None,
             saved_item_count: 0,
+            excluded_dirs: ExcludedDirs::from_config(),
         }
     }
 
@@ -109,6 +112,10 @@ impl Volume {
     }
 
     fn process_path(&mut self, path: &std::path::Path, action: FileAction) {
+        if self.is_ignored_event_path(path, action) {
+            return;
+        }
+
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
             if let Some(parent) = path.parent() {
                 let parent_path = parent.to_string_lossy().to_string();
@@ -196,6 +203,7 @@ impl Volume {
     fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) {
         let sys_time = SystemTime::now();
 
+        self.excluded_dirs = ExcludedDirs::from_config();
         self.stop_watching();
         self.release_index_without_save();
 
@@ -216,29 +224,13 @@ impl Volume {
             return;
         }
 
-        fn is_ignored(entry: &DirEntry) -> bool {
-            let Some(file_name) = entry.file_name().to_str().map(|name| name.to_lowercase()) else {
-                return false;
-            };
-            if file_name.starts_with(".") {
-                return true;
-            }
-            #[cfg(target_os = "macos")]
-            {
-                let ignore_names = ["cache".to_string(), "caches".to_string()];
-                if ignore_names.contains(&file_name) {
-                    return true;
-                }
-            }
-            false
-        }
-
         // Walk the directory tree using walkdir
         let walkdir = WalkDir::new(&root_path).follow_links(false); // don't follow symbolic links to avoid infinite loops
+        let excluded_dirs = self.excluded_dirs.clone();
 
         let walker = walkdir
             .into_iter()
-            .filter_entry(|e| !is_ignored(e))
+            .filter_entry(move |e| !is_ignored_walk_entry(e, &excluded_dirs))
             .filter_map(|e| e.ok()); // skit no permission
 
         for entry in walker {
@@ -429,4 +421,67 @@ impl Volume {
     fn index_file_path(&self) -> std::path::PathBuf {
         file_util::get_tmp_path().join(format!("{}.fd", index_file_stem(&self.drive)))
     }
+
+    fn is_ignored_event_path(&self, path: &std::path::Path, action: FileAction) -> bool {
+        if has_hidden_component(path) {
+            return true;
+        }
+
+        #[cfg(target_os = "macos")]
+        if has_named_component(path, &["cache", "caches"]) {
+            return true;
+        }
+
+        match action {
+            FileAction::Insert => {
+                self.excluded_dirs.is_excluded_parent_path(path)
+                    || (path.is_dir() && self.excluded_dirs.is_excluded_path(path))
+            }
+            FileAction::Remove => self.excluded_dirs.is_excluded_parent_path(path),
+        }
+    }
+}
+
+fn is_ignored_walk_entry(entry: &DirEntry, excluded_dirs: &ExcludedDirs) -> bool {
+    let Some(file_name) = entry.file_name().to_str().map(|name| name.to_lowercase()) else {
+        return false;
+    };
+
+    if file_name.starts_with('.') {
+        return true;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let ignore_names = ["cache", "caches"];
+        if ignore_names.contains(&file_name.as_str()) {
+            return true;
+        }
+    }
+
+    if entry.file_type().is_dir() {
+        return excluded_dirs.is_excluded_path(entry.path());
+    }
+
+    false
+}
+
+fn has_hidden_component(path: &std::path::Path) -> bool {
+    path.components().any(|component| match component {
+        std::path::Component::Normal(segment) => segment
+            .to_str()
+            .is_some_and(|segment| segment.starts_with('.')),
+        _ => false,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
+    path.components().any(|component| match component {
+        std::path::Component::Normal(segment) => segment
+            .to_str()
+            .map(|segment| segment.to_lowercase())
+            .is_some_and(|segment| names.contains(&segment.as_str())),
+        _ => false,
+    })
 }

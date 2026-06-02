@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use super::super::excluded_dirs::ExcludedDirs;
 use super::{
     read_i64, read_i8, read_string, read_u16, read_u32, read_u64, read_u64_or_eof, SearchResultItem,
 };
@@ -80,6 +81,7 @@ impl FileMap {
         last_search_num: usize,
         batch: u8,
         cancel: &AtomicBool,
+        excluded_dirs: &ExcludedDirs,
     ) -> (Option<Vec<SearchResultItem>>, usize) {
         let mut result = Vec::new();
         let mut find_num = 0;
@@ -98,6 +100,9 @@ impl FileMap {
             {
                 if let Some(path) = self.get_path(&file.parent_index) {
                     let full_path = format!("{}{}", path, file.file_name);
+                    if excluded_dirs.is_excluded_path(std::path::Path::new(&full_path)) {
+                        continue;
+                    }
                     result.push(SearchResultItem {
                         path,
                         file_path: full_path,
@@ -172,6 +177,10 @@ impl FileMap {
 
     pub fn len(&self) -> usize {
         self.main_map.len()
+    }
+
+    pub fn contains_index(&self, index: &u64) -> bool {
+        self.rank_map.contains_key(index)
     }
 
     // get a File by index

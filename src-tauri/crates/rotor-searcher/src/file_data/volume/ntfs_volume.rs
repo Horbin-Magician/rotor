@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::error::Error;
 use std::ffi::{c_void, CString};
 use std::sync::{
@@ -12,6 +13,7 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem;
 use windows::Win32::System::{Ioctl, IO};
 
+use super::super::excluded_dirs::ExcludedDirs;
 use super::ntfs_file_map::FileMap;
 use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
 use rotor_platform::file_util;
@@ -24,6 +26,7 @@ pub struct Volume {
     last_query: String,
     last_search_num: usize,
     saved_item_count: usize,
+    excluded_dirs: ExcludedDirs,
 }
 
 impl Volume {
@@ -44,6 +47,7 @@ impl Volume {
             last_query: String::new(),
             last_search_num: 0,
             saved_item_count: 0,
+            excluded_dirs: ExcludedDirs::from_config(),
         }
     }
 
@@ -107,6 +111,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::build_index", self.drive);
 
+        self.excluded_dirs = ExcludedDirs::from_config();
         self.release_index();
 
         let h_vol = Self::open_drive(&self.drive);
@@ -140,6 +145,8 @@ impl Volume {
         };
         let mut data = [0u64; 0x10000];
         let mut cb: u32 = 0;
+        let excluded_dirs = self.excluded_dirs.clone();
+        let mut excluded_indexes = HashSet::new();
 
         unsafe {
             while IO::DeviceIoControl(
@@ -178,11 +185,17 @@ impl Volume {
                     let file_name =
                         String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
 
-                    self.file_map.insert(
-                        record.FileReferenceNumber,
-                        file_name,
-                        record.ParentFileReferenceNumber,
-                    );
+                    if excluded_indexes.contains(&record.ParentFileReferenceNumber)
+                        || excluded_dirs.is_excluded_name(&file_name)
+                    {
+                        excluded_indexes.insert(record.FileReferenceNumber);
+                    } else {
+                        self.file_map.insert(
+                            record.FileReferenceNumber,
+                            file_name,
+                            record.ParentFileReferenceNumber,
+                        );
+                    }
                     record_ptr = (record_ptr as usize + record.RecordLength as usize)
                         as *mut Ioctl::USN_RECORD_V2;
                 }
@@ -250,9 +263,13 @@ impl Volume {
             });
         };
 
-        let (result, search_num) =
-            self.file_map
-                .search(&query, self.last_search_num, batch, &cancel);
+        let (result, search_num) = self.file_map.search(
+            &query,
+            self.last_search_num,
+            batch,
+            &cancel,
+            &self.excluded_dirs,
+        );
 
         #[cfg(debug_assertions)]
         log::info!(
@@ -336,11 +353,15 @@ impl Volume {
                         & (Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_RENAME_NEW_NAME)
                         != 0
                     {
-                        self.file_map.insert(
-                            record.FileReferenceNumber,
-                            file_name,
-                            record.ParentFileReferenceNumber,
-                        );
+                        if self.is_excluded_record(&file_name, record.ParentFileReferenceNumber) {
+                            self.file_map.remove(&record.FileReferenceNumber);
+                        } else {
+                            self.file_map.insert(
+                                record.FileReferenceNumber,
+                                file_name,
+                                record.ParentFileReferenceNumber,
+                            );
+                        }
                     } else {
                         // Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_OLD_NAME
                         self.file_map.remove(&record.FileReferenceNumber);
@@ -409,5 +430,17 @@ impl Volume {
 
     fn index_file_path(&self) -> std::path::PathBuf {
         file_util::get_tmp_path().join(format!("{}.fd", index_file_stem(&self.drive)))
+    }
+
+    fn is_excluded_record(&self, file_name: &str, parent_index: u64) -> bool {
+        if self.excluded_dirs.is_excluded_name(file_name) {
+            return true;
+        }
+
+        if parent_index == 0 || parent_index == self.drive_frn {
+            return false;
+        }
+
+        !self.file_map.contains_index(&parent_index)
     }
 }

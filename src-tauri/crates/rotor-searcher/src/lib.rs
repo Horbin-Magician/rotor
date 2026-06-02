@@ -153,6 +153,10 @@ impl Searcher {
         let _ = self.searcher_msg_sender.send(SearcherMessage::Release);
     }
 
+    pub fn rebuild_index(&self) {
+        let _ = self.searcher_msg_sender.send(SearcherMessage::Init);
+    }
+
     pub fn index_status_reader(&self) -> SearchIndexStatusReader {
         SearchIndexStatusReader {
             searcher_msg_sender: self.searcher_msg_sender.clone(),
