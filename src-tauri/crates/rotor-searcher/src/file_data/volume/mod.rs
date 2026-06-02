@@ -1,5 +1,6 @@
 pub mod default_file_map;
 pub mod default_volume;
+mod search_match;
 
 use std::fs::Metadata;
 use std::io::{self, Read};

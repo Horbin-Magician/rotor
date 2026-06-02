@@ -7,6 +7,7 @@ edition = "2021"
 fxhash = "0.2.1"
 log = "0.4.27"
 notify = "8.2.0"
+pinyin = { version = "0.11.0", default-features = false, features = ["plain"] }
 rotor-common = { path = "../rotor-common" }
 rotor-platform = { path = "../rotor-platform" }
 serde = { version = "1", features = ["derive"] }

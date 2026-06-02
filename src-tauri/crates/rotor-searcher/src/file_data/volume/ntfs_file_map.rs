@@ -5,6 +5,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::excluded_dirs::ExcludedDirs;
+use super::search_match::{make_filter, match_indexed_name, prepare_search_name, SearchAlias};
 use super::{
     read_i64, read_i8, read_string, read_u16, read_u32, read_u64, read_u64_or_eof, SearchResultItem,
 };
@@ -14,6 +15,7 @@ pub struct FileView {
     pub file_name: String,
     pub filter: u32,
     pub rank: i8,
+    pub search_aliases: Option<Box<[SearchAlias]>>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -39,15 +41,16 @@ impl FileMap {
 
     // insert a file to the database by index, file name and parent index
     pub fn insert(&mut self, index: u64, file_name: String, parent_index: u64) {
-        let filter = make_filter(&file_name);
+        let prepared = prepare_search_name(&file_name, None);
         let rank = Self::get_file_rank(&file_name);
         self.insert_simple(
             index,
             FileView {
                 parent_index,
                 file_name,
-                filter,
+                filter: prepared.filter,
                 rank,
+                search_aliases: prepared.aliases,
             },
         );
     }
@@ -95,8 +98,15 @@ impl FileMap {
                 return (None, 0);
             }
             search_num += 1;
-            if (file.filter & query_filter) == query_filter
-                && match_str(&file.file_name, &query_lower)
+            if match_indexed_name(
+                &file.file_name,
+                None,
+                file.search_aliases.as_deref(),
+                file.filter,
+                &query_lower,
+                query_filter,
+            )
+            .is_some()
             {
                 if let Some(path) = self.get_path(&file.parent_index) {
                     let full_path = format!("{}{}", path, file.file_name);
@@ -150,15 +160,17 @@ impl FileMap {
             let parent_index = read_u64(&mut reader)?;
             let file_name_len = read_u16(&mut reader)?;
             let file_name = read_string(&mut reader, file_name_len as usize)?;
-            let filter = read_u32(&mut reader)?;
+            let _stored_filter = read_u32(&mut reader)?;
             let rank = read_i8(&mut reader)?;
+            let prepared = prepare_search_name(&file_name, None);
             self.insert_simple(
                 index,
                 FileView {
                     parent_index,
                     file_name,
-                    filter,
+                    filter: prepared.filter,
                     rank,
+                    search_aliases: prepared.aliases,
                 },
             );
         }
@@ -239,52 +251,4 @@ impl FileMap {
         }
         Some(path)
     }
-}
-
-// Calculates a 32bit value that is used to filter out many files before comparing their filenames
-fn make_filter(str: &str) -> u32 {
-    /*
-    Creates an address that is used to filter out strings that don't contain the queried characters
-    Explanation of the meaning of the single bits:
-    0-25 a-z
-    26 0-9
-    27 other ASCII
-    28 not in ASCII
-    */
-    let len = str.len();
-    if len == 0 {
-        return 0;
-    }
-    let mut address: u32 = 0;
-    let str_lower = str.to_lowercase();
-
-    for c in str_lower.chars() {
-        if c == '*' {
-            continue; // Reserved for wildcard
-        } else if c.is_ascii_lowercase() {
-            address |= 1 << (c as u32 - 97);
-        } else if c.is_ascii_digit() {
-            address |= 1 << 26;
-        } else if c < 127u8 as char {
-            address |= 1 << 27;
-        } else {
-            address |= 1 << 28;
-        }
-    }
-    address
-}
-
-// return true if contain query
-fn match_str(contain: &str, query_lower: &str) -> bool {
-    let lower_contain = contain.to_lowercase();
-    let mut offset = 0;
-    for s in query_lower.split('*') {
-        // for wildcard
-        if let Some(index) = lower_contain[offset..].find(s) {
-            offset += index + s.len();
-        } else {
-            return false;
-        }
-    }
-    true
 }

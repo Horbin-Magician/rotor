@@ -5,6 +5,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use super::search_match::{make_filter, match_indexed_name, prepare_search_name, SearchAlias};
 use super::{read_i8, read_string, read_u16, read_u16_or_eof, read_u32, SearchResultItem};
 use rotor_platform::file_util;
 
@@ -14,6 +15,7 @@ pub struct FileView {
     pub filter: u32,
     pub rank: i8,
     pub aliases: Option<Box<[String]>>, // Store alias names for this file
+    pub search_aliases: Option<Box<[SearchAlias]>>,
 }
 
 impl PartialEq for FileView {
@@ -52,7 +54,6 @@ impl FileMap {
 
     // insert a file to the database by index, file name and parent index
     pub fn insert(&mut self, file_name: String, path: String) {
-        let mut filter = make_filter(&file_name);
         let rank = Self::get_file_rank(&file_name);
         let mut aliases = Vec::new();
 
@@ -65,7 +66,6 @@ impl FileMap {
                     let names: Vec<String> = names.values().cloned().collect(); // Create aliases from translation names
                     for name in names {
                         if !file_name.contains(&name) {
-                            filter |= make_filter(&name);
                             aliases.push(name);
                         }
                     }
@@ -73,12 +73,18 @@ impl FileMap {
             }
         }
 
+        let prepared = prepare_search_name(
+            &file_name,
+            (!aliases.is_empty()).then_some(aliases.as_slice()),
+        );
+
         self.insert_simple(FileView {
             file_name,
             path,
-            filter,
+            filter: prepared.filter,
             rank,
             aliases: (!aliases.is_empty()).then(|| aliases.into_boxed_slice()),
+            search_aliases: prepared.aliases,
         });
     }
 
@@ -96,6 +102,7 @@ impl FileMap {
             filter: 0,
             rank,
             aliases: None,
+            search_aliases: None,
         };
         self.main_set.remove(&file);
     }
@@ -121,28 +128,14 @@ impl FileMap {
             }
             search_num += 1;
 
-            // Check if query matches file name or any of its aliases
-            let mut is_match = false;
-            let mut file_alias = None;
-            if (file.filter & query_filter) == query_filter {
-                // First check the original file name
-                if match_str(&file.file_name, &query_lower) {
-                    is_match = true;
-                } else {
-                    // Then check all aliases
-                    if let Some(aliases) = &file.aliases {
-                        for alias in aliases {
-                            if match_str(alias, &query_lower) {
-                                is_match = true;
-                                file_alias = Some(alias.clone());
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if is_match {
+            if let Some(file_alias) = match_indexed_name(
+                &file.file_name,
+                file.aliases.as_deref(),
+                file.search_aliases.as_deref(),
+                file.filter,
+                &query_lower,
+                query_filter,
+            ) {
                 let full_path = std::path::Path::new(&file.path)
                     .join(&file.file_name)
                     .to_string_lossy()
@@ -198,7 +191,7 @@ impl FileMap {
             let file_name = read_string(&mut reader, file_name_len as usize)?;
             let file_path_len = read_u16(&mut reader)?;
             let path = read_string(&mut reader, file_path_len as usize)?;
-            let filter = read_u32(&mut reader)?;
+            let _stored_filter = read_u32(&mut reader)?;
             let rank = read_i8(&mut reader)?;
 
             // Read aliases count and aliases
@@ -211,13 +204,16 @@ impl FileMap {
                     aliases.push(alias);
                 }
             }
+            let aliases = (!aliases.is_empty()).then(|| aliases.into_boxed_slice());
+            let prepared = prepare_search_name(&file_name, aliases.as_deref());
 
             self.insert_simple(FileView {
                 file_name,
                 path,
-                filter,
+                filter: prepared.filter,
                 rank,
-                aliases: (!aliases.is_empty()).then(|| aliases.into_boxed_slice()),
+                aliases,
+                search_aliases: prepared.aliases,
             });
         }
 
@@ -260,50 +256,27 @@ impl FileMap {
     }
 }
 
-// Calculates a 32bit value that is used to filter out many files before comparing their filenames
-fn make_filter(str: &str) -> u32 {
-    /*
-    Creates an address that is used to filter out strings that don't contain the queried characters
-    Explanation of the meaning of the single bits:
-    0-25 a-z
-    26 0-9
-    27 other ASCII
-    28 not in ASCII
-    */
-    let len = str.len();
-    if len == 0 {
-        return 0;
-    }
-    let mut address: u32 = 0;
-    let str_lower = str.to_lowercase();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
 
-    for c in str_lower.chars() {
-        if c == '*' {
-            continue; // Reserved for wildcard
-        } else if c.is_ascii_lowercase() {
-            address |= 1 << (c as u32 - 97);
-        } else if c.is_ascii_digit() {
-            address |= 1 << 26;
-        } else if c < 127u8 as char {
-            address |= 1 << 27;
-        } else {
-            address |= 1 << 28;
-        }
+    fn search_names(file_map: &FileMap, query: &str) -> Vec<String> {
+        let cancel = AtomicBool::new(false);
+        let (result, _) = file_map.search(query, 0, 10, &cancel);
+        result
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| item.file_name)
+            .collect()
     }
-    address
-}
 
-// return true if contain query
-fn match_str(contain: &str, query_lower: &str) -> bool {
-    let lower_contain = contain.to_lowercase();
-    let mut offset = 0;
-    for s in query_lower.split('*') {
-        // for wildcard
-        if let Some(index) = lower_contain[offset..].find(s) {
-            offset += index + s.len();
-        } else {
-            return false;
-        }
+    #[test]
+    fn search_matches_file_name_by_full_pinyin_and_initials() {
+        let mut file_map = FileMap::new();
+        file_map.insert("微信.txt".to_string(), "/tmp".to_string());
+
+        assert_eq!(search_names(&file_map, "weixin"), vec!["微信.txt"]);
+        assert_eq!(search_names(&file_map, "wx"), vec!["微信.txt"]);
     }
-    true
 }
