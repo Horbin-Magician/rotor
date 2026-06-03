@@ -54,8 +54,6 @@ I sincerely hope that you can provide quality code for this project.
 
 ## Important to-do list
 
-- [x] A brand new update system;
-- [x] OCR function for screenshots, directly scratch and copy the text in the image just like WeChat;
 - [ ] Plug-in system.
 
 # License
