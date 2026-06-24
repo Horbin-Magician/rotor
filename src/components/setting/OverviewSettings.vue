@@ -327,7 +327,7 @@ onMounted(loadOverview)
   grid-template-columns: 16px minmax(0, 1fr) minmax(5ch, auto);
   column-gap: 6px;
   align-items: center;
-  height: 28px;
+  height: 36px;
   min-width: 0;
   overflow: hidden;
   padding: 0 10px;

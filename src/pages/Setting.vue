@@ -572,12 +572,12 @@ async function askSave() {
 
 .sidebar :deep(.n-tabs-nav .n-tabs-tab) {
   box-sizing: border-box;
-  height: 32px; /* 调整这里的值来改变标签页高度 */
+  height: 28px;
   width: 100px;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 6px 16px;
+  padding: 4px 16px;
   font-size: 14px;
   text-align: center;
 }
@@ -612,6 +612,14 @@ async function askSave() {
   max-width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
+}
+
+.settings-container :deep(.n-input:not(.n-input--textarea)) {
+  --n-height: 30px !important;
+}
+
+.settings-container :deep(.n-input.n-input--textarea) {
+  --n-padding-vertical: 5px !important;
 }
 
 .drag-region {

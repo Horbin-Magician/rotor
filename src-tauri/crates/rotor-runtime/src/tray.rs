@@ -52,7 +52,8 @@ impl Tray {
             {
                 win_builder = win_builder
                     .hidden_title(true)
-                    .title_bar_style(tauri::TitleBarStyle::Overlay);
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .traffic_light_position(tauri::LogicalPosition { x: 21.0, y: 20.0 });
             }
             // disable decorations on Windows for custom titlebar
             #[cfg(target_os = "windows")]
