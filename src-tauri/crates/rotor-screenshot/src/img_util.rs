@@ -305,6 +305,56 @@ pub struct TextResult {
     pub text: String,
 }
 
+const LINE_MIN_VERTICAL_OVERLAP: f32 = 0.45;
+const LINE_CENTER_TOLERANCE: f32 = 0.35;
+const LINE_MAX_HEIGHT_RATIO: f32 = 2.4;
+const MERGE_MAX_HORIZONTAL_GAP_RATIO: f32 = 1.0;
+const MERGE_MIN_HORIZONTAL_GAP: i32 = 10;
+const ASCII_WORD_SPACE_GAP_RATIO: f32 = 0.18;
+const SYMBOL_SPACE_GAP_RATIO: f32 = 0.35;
+
+#[derive(Debug)]
+struct TextLine {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    items: Vec<TextResult>,
+}
+
+impl TextLine {
+    fn new(result: TextResult) -> Self {
+        let left = result.left;
+        let top = result.top;
+        let right = result_right(&result);
+        let bottom = result_bottom(&result);
+
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+            items: vec![result],
+        }
+    }
+
+    fn push(&mut self, result: TextResult) {
+        self.left = cmp::min(self.left, result.left);
+        self.top = cmp::min(self.top, result.top);
+        self.right = cmp::max(self.right, result_right(&result));
+        self.bottom = cmp::max(self.bottom, result_bottom(&result));
+        self.items.push(result);
+    }
+
+    fn height(&self) -> i32 {
+        cmp::max(1, self.bottom.saturating_sub(self.top))
+    }
+
+    fn center_y_times_two(&self) -> i32 {
+        self.top.saturating_add(self.bottom)
+    }
+}
+
 pub fn img2text(
     model_path: &Path,
     img: &DynamicImage,
@@ -338,5 +388,347 @@ pub fn img2text(
             text,
         });
     }
-    Ok(text_results)
+    Ok(merge_text_results(text_results))
+}
+
+fn merge_text_results(results: Vec<TextResult>) -> Vec<TextResult> {
+    let mut results: Vec<TextResult> = results
+        .into_iter()
+        .filter_map(|mut result| {
+            result.text = result.text.trim().to_string();
+            (!result.text.is_empty()).then_some(result)
+        })
+        .collect();
+
+    if results.len() <= 1 {
+        return results;
+    }
+
+    results.sort_by(|a, b| {
+        result_center_y_times_two(a)
+            .cmp(&result_center_y_times_two(b))
+            .then(a.left.cmp(&b.left))
+    });
+
+    let mut lines: Vec<TextLine> = Vec::new();
+    for result in results {
+        let mut best_line_index = None;
+        let mut best_center_distance = i32::MAX;
+
+        for (index, line) in lines.iter().enumerate() {
+            if !is_result_on_text_line(line, &result) {
+                continue;
+            }
+
+            let center_distance =
+                (line.center_y_times_two() - result_center_y_times_two(&result)).abs();
+            if center_distance < best_center_distance {
+                best_center_distance = center_distance;
+                best_line_index = Some(index);
+            }
+        }
+
+        if let Some(index) = best_line_index {
+            lines[index].push(result);
+        } else {
+            lines.push(TextLine::new(result));
+        }
+    }
+
+    lines.sort_by(|a, b| a.top.cmp(&b.top).then(a.left.cmp(&b.left)));
+
+    lines
+        .into_iter()
+        .flat_map(|mut line| {
+            line.items
+                .sort_by(|a, b| a.left.cmp(&b.left).then(a.top.cmp(&b.top)));
+            merge_text_line(line.items)
+        })
+        .collect()
+}
+
+fn merge_text_line(results: Vec<TextResult>) -> Vec<TextResult> {
+    let mut iter = results.into_iter();
+    let Some(mut current) = iter.next() else {
+        return Vec::new();
+    };
+
+    let mut merged = Vec::new();
+    for next in iter {
+        if should_merge_adjacent_results(&current, &next) {
+            merge_result_into(&mut current, next);
+        } else {
+            merged.push(current);
+            current = next;
+        }
+    }
+
+    merged.push(current);
+    merged
+}
+
+fn should_merge_adjacent_results(left: &TextResult, right: &TextResult) -> bool {
+    if !are_results_on_same_line(left, right) {
+        return false;
+    }
+
+    let gap = horizontal_gap(left, right);
+    if gap == 0 {
+        return true;
+    }
+
+    let average_height = average_height(left, right);
+    let max_gap = cmp::max(
+        MERGE_MIN_HORIZONTAL_GAP,
+        (average_height * MERGE_MAX_HORIZONTAL_GAP_RATIO).round() as i32,
+    );
+
+    gap <= max_gap
+}
+
+fn merge_result_into(current: &mut TextResult, next: TextResult) {
+    let gap = horizontal_gap(current, &next);
+    let average_height = average_height(current, &next);
+    let should_insert_space = should_insert_space_between(
+        current.text.as_str(),
+        next.text.as_str(),
+        gap,
+        average_height,
+    );
+
+    let left = cmp::min(current.left, next.left);
+    let top = cmp::min(current.top, next.top);
+    let right = cmp::max(result_right(current), result_right(&next));
+    let bottom = cmp::max(result_bottom(current), result_bottom(&next));
+
+    if should_insert_space {
+        current.text.push(' ');
+    }
+    current.text.push_str(next.text.as_str());
+    current.left = left;
+    current.top = top;
+    current.width = right.saturating_sub(left) as u32;
+    current.height = bottom.saturating_sub(top) as u32;
+}
+
+fn is_result_on_text_line(line: &TextLine, result: &TextResult) -> bool {
+    is_same_vertical_band(
+        line.top,
+        line.bottom,
+        line.height(),
+        line.center_y_times_two(),
+        result.top,
+        result_bottom(result),
+        result_height(result),
+        result_center_y_times_two(result),
+    )
+}
+
+fn are_results_on_same_line(left: &TextResult, right: &TextResult) -> bool {
+    is_same_vertical_band(
+        left.top,
+        result_bottom(left),
+        result_height(left),
+        result_center_y_times_two(left),
+        right.top,
+        result_bottom(right),
+        result_height(right),
+        result_center_y_times_two(right),
+    )
+}
+
+fn is_same_vertical_band(
+    first_top: i32,
+    first_bottom: i32,
+    first_height: i32,
+    first_center_y_times_two: i32,
+    second_top: i32,
+    second_bottom: i32,
+    second_height: i32,
+    second_center_y_times_two: i32,
+) -> bool {
+    let min_height = cmp::min(first_height, second_height) as f32;
+    let max_height = cmp::max(first_height, second_height) as f32;
+    if max_height / min_height > LINE_MAX_HEIGHT_RATIO {
+        return false;
+    }
+
+    let vertical_overlap = cmp::max(
+        0,
+        cmp::min(first_bottom, second_bottom).saturating_sub(cmp::max(first_top, second_top)),
+    ) as f32;
+    if vertical_overlap / min_height >= LINE_MIN_VERTICAL_OVERLAP {
+        return true;
+    }
+
+    let center_distance = (first_center_y_times_two - second_center_y_times_two).abs() as f32 / 2.0;
+    center_distance <= max_height * LINE_CENTER_TOLERANCE
+}
+
+fn should_insert_space_between(
+    left_text: &str,
+    right_text: &str,
+    gap: i32,
+    average_height: f32,
+) -> bool {
+    if gap <= 0 {
+        return false;
+    }
+
+    let Some(left_char) = left_text.chars().rev().find(|ch| !ch.is_whitespace()) else {
+        return false;
+    };
+    let Some(right_char) = right_text.chars().find(|ch| !ch.is_whitespace()) else {
+        return false;
+    };
+
+    if is_cjk(left_char)
+        || is_cjk(right_char)
+        || is_no_space_before(right_char)
+        || is_no_space_after(left_char)
+    {
+        return false;
+    }
+
+    if left_char.is_ascii_alphanumeric() && right_char.is_ascii_alphanumeric() {
+        return gap as f32 >= average_height * ASCII_WORD_SPACE_GAP_RATIO;
+    }
+
+    gap as f32 >= average_height * SYMBOL_SPACE_GAP_RATIO
+}
+
+fn is_cjk(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{3040}'..='\u{30FF}'
+            | '\u{AC00}'..='\u{D7AF}'
+            | '\u{F900}'..='\u{FAFF}'
+    )
+}
+
+fn is_no_space_before(ch: char) -> bool {
+    matches!(
+        ch,
+        ',' | '.'
+            | ':'
+            | ';'
+            | '!'
+            | '?'
+            | '%'
+            | ')'
+            | ']'
+            | '}'
+            | '\u{3001}'
+            | '\u{3002}'
+            | '\u{FF0C}'
+            | '\u{FF1A}'
+            | '\u{FF1B}'
+            | '\u{FF01}'
+            | '\u{FF1F}'
+            | '\u{FF09}'
+            | '\u{3011}'
+            | '\u{300B}'
+    )
+}
+
+fn is_no_space_after(ch: char) -> bool {
+    matches!(ch, '(' | '[' | '{' | '\u{FF08}' | '\u{3010}' | '\u{300A}')
+}
+
+fn average_height(left: &TextResult, right: &TextResult) -> f32 {
+    (result_height(left) + result_height(right)) as f32 / 2.0
+}
+
+fn result_height(result: &TextResult) -> i32 {
+    cmp::max(1, result.height.min(i32::MAX as u32) as i32)
+}
+
+fn result_right(result: &TextResult) -> i32 {
+    result
+        .left
+        .saturating_add(result.width.min(i32::MAX as u32) as i32)
+}
+
+fn result_bottom(result: &TextResult) -> i32 {
+    result
+        .top
+        .saturating_add(result.height.min(i32::MAX as u32) as i32)
+}
+
+fn result_center_y_times_two(result: &TextResult) -> i32 {
+    result
+        .top
+        .saturating_mul(2)
+        .saturating_add(result_height(result))
+}
+
+fn horizontal_gap(left: &TextResult, right: &TextResult) -> i32 {
+    right.left.saturating_sub(result_right(left))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text_result(left: i32, top: i32, width: u32, height: u32, text: &str) -> TextResult {
+        TextResult {
+            left,
+            top,
+            width,
+            height,
+            text: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn merges_nearby_chinese_results_without_spaces() {
+        let merged = merge_text_results(vec![
+            text_result(0, 0, 40, 20, "相邻"),
+            text_result(48, 1, 40, 19, "文字"),
+        ]);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].text, "相邻文字");
+        assert_eq!(merged[0].left, 0);
+        assert_eq!(merged[0].top, 0);
+        assert_eq!(merged[0].width, 88);
+        assert_eq!(merged[0].height, 20);
+    }
+
+    #[test]
+    fn inserts_spaces_between_separate_ascii_words() {
+        let merged = merge_text_results(vec![
+            text_result(0, 0, 42, 20, "Hello"),
+            text_result(50, 0, 44, 20, "World"),
+        ]);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].text, "Hello World");
+    }
+
+    #[test]
+    fn keeps_large_horizontal_gaps_separate() {
+        let merged = merge_text_results(vec![
+            text_result(0, 0, 40, 20, "Name"),
+            text_result(90, 0, 48, 20, "Value"),
+        ]);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].text, "Name");
+        assert_eq!(merged[1].text, "Value");
+    }
+
+    #[test]
+    fn keeps_different_lines_separate() {
+        let merged = merge_text_results(vec![
+            text_result(0, 0, 44, 18, "First"),
+            text_result(4, 28, 54, 18, "Second"),
+        ]);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].text, "First");
+        assert_eq!(merged[1].text, "Second");
+    }
 }
