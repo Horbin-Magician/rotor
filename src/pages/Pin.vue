@@ -663,11 +663,7 @@ async function handleMouseDown(event: MouseEvent) {
       }
     }
   } else if (state.value === State.OCR) {
-    const target = event.target as HTMLElement;
-    const isOcrText = target.classList.contains('ocr-text-content') || 
-                      target.closest('.ocr-text-overlay');
-
-    if (event.button === 0 && !isOcrText) {
+    if (event.button === 0 && !isOcrTextTarget(event.target)) {
       const resizeEdges = getResizeEdges(event);
       if (resizeEdges) {
         await startSelectionResize(event, resizeEdges);
@@ -676,6 +672,11 @@ async function handleMouseDown(event: MouseEvent) {
       }
     }
   }
+}
+
+function isOcrTextTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.classList.contains('ocr-text-content') || !!target.closest('.ocr-text-overlay');
 }
 
 function startDragging() {
@@ -1126,6 +1127,10 @@ onMounted(async () => {
   });
 
   window.addEventListener('contextmenu', async (event) => {
+    if (state.value === State.OCR && isOcrTextTarget(event.target)) {
+      return;
+    }
+
     event.preventDefault();
     menu.popup(new LogicalPosition(event.clientX, event.clientY));
   });
