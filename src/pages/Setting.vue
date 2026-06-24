@@ -16,10 +16,8 @@
       </template>
       <n-tab-pane class="tab-pane" name="Overview" :tab="t('message.overview')">
         <n-scrollbar
-          :ref="(scrollbar) => setScrollbarRef('Overview', scrollbar)"
           style="max-height: 100vh"
           trigger="none"
-          @wheel="handleSettingsWheel('Overview', $event)"
         >
           <div class="settings-container">
             <OverviewSettings />
@@ -28,10 +26,8 @@
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Base" :tab="t('message.base')">
         <n-scrollbar
-          :ref="(scrollbar) => setScrollbarRef('Base', scrollbar)"
           style="max-height: 100vh"
           trigger="none"
-          @wheel="handleSettingsWheel('Base', $event)"
         >
           <div class="settings-container">
             <GeneralSettings 
@@ -55,10 +51,8 @@
         :tab-props="{ class: 'settings-sidebar-plugin-start' }"
       >
         <n-scrollbar
-          :ref="(scrollbar) => setScrollbarRef('Screen shotter', scrollbar)"
           style="max-height: 100vh"
           trigger="none"
-          @wheel="handleSettingsWheel('Screen shotter', $event)"
         >
           <div class="settings-container">
             <PinwinSettings 
@@ -78,10 +72,8 @@
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Search" :tab="t('message.search')">
         <n-scrollbar
-          :ref="(scrollbar) => setScrollbarRef('Search', scrollbar)"
           style="max-height: 100vh"
           trigger="none"
-          @wheel="handleSettingsWheel('Search', $event)"
         >
           <div class="settings-container">
             <SearchSettings
@@ -92,10 +84,8 @@
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Quick" :tab="t('message.quick')">
         <n-scrollbar
-          :ref="(scrollbar) => setScrollbarRef('Quick', scrollbar)"
           style="max-height: 100vh"
           trigger="none"
-          @wheel="handleSettingsWheel('Quick', $event)"
         >
           <div class="settings-container">
             <QuickSettings
@@ -123,8 +113,7 @@
 
 <script setup lang="ts">
 import { NTabs, NTabPane, NScrollbar, useMessage } from 'naive-ui'
-import type { ScrollbarInst } from 'naive-ui'
-import { defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch, h } from 'vue'
+import { defineAsyncComponent, onMounted, onUnmounted, ref, watch, h } from 'vue'
 import type { Ref } from 'vue'
 import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -167,27 +156,12 @@ const appWindow = getCurrentWindow()
 const isWindows = ref(false)
 type SettingsTabName = 'Overview' | 'Base' | 'Screen shotter' | 'Search' | 'Quick'
 
-const settingsTabOrder: SettingsTabName[] = ['Overview', 'Base', 'Screen shotter', 'Search', 'Quick']
 const activeTab = ref<SettingsTabName>('Overview')
 const highlightedSetting = ref('')
 const hasLoadedConfig = ref(false)
-const scrollbarRefs = new Map<SettingsTabName, ScrollbarInst>()
 let unlistenShortcutConflict: UnlistenFn | null = null
 let highlightTimer: number | null = null
 let isRevertingSetting = false
-let lastSettingsWheelSwitchAt = 0
-let pendingSettingsWheelSwitch: {
-  tab: SettingsTabName
-  direction: SettingsWheelDirection
-  startedAt: number
-  lastWheelAt: number
-} | null = null
-
-type SettingsWheelDirection = 1 | -1
-const scrollEdgeTolerance = 2
-const tabSwitchWheelDelay = 300
-const tabSwitchWheelCooldown = 180
-const tabSwitchWheelPendingTimeout = 700
 
 const shortcutTabByKey: Record<string, SettingsTabName> = {
   shortcut_screenshot: 'Base',
@@ -278,122 +252,6 @@ function openGitHome() {
     .catch((error) => {
       console.error("Failed to open URL:", error)
     })
-}
-
-function setScrollbarRef(tab: SettingsTabName, scrollbar: unknown) {
-  if (scrollbar && typeof (scrollbar as ScrollbarInst).scrollTo === 'function') {
-    scrollbarRefs.set(tab, scrollbar as ScrollbarInst)
-  } else {
-    scrollbarRefs.delete(tab)
-  }
-}
-
-function getScrollbarContainer(event: WheelEvent) {
-  const currentTarget = event.currentTarget
-  if (!(currentTarget instanceof HTMLElement)) {
-    return null
-  }
-
-  if (currentTarget.classList.contains('n-scrollbar-container')) {
-    return currentTarget
-  }
-
-  const eventTarget = event.target
-  if (eventTarget instanceof HTMLElement) {
-    const closestContainer = eventTarget.closest('.n-scrollbar-container')
-    if (closestContainer instanceof HTMLElement && currentTarget.contains(closestContainer)) {
-      return closestContainer
-    }
-  }
-
-  return currentTarget.querySelector<HTMLElement>('.n-scrollbar-container')
-}
-
-function isAtScrollEdge(container: HTMLElement, direction: SettingsWheelDirection) {
-  const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0)
-
-  if (direction > 0) {
-    return container.scrollTop >= maxScrollTop - scrollEdgeTolerance
-  }
-
-  return container.scrollTop <= scrollEdgeTolerance
-}
-
-function adjacentSettingsTab(tab: SettingsTabName, direction: SettingsWheelDirection) {
-  const currentIndex = settingsTabOrder.indexOf(tab)
-  if (currentIndex === -1) {
-    return null
-  }
-
-  return settingsTabOrder[currentIndex + direction] ?? null
-}
-
-function scrollSettingsTabToEntryEdge(tab: SettingsTabName, direction: SettingsWheelDirection) {
-  void nextTick(() => {
-    scrollbarRefs.get(tab)?.scrollTo({
-      top: direction > 0 ? 0 : Number.MAX_SAFE_INTEGER,
-    })
-  })
-}
-
-function resetPendingSettingsWheelSwitch() {
-  pendingSettingsWheelSwitch = null
-}
-
-function hasSatisfiedSettingsWheelDelay(tab: SettingsTabName, direction: SettingsWheelDirection, now: number) {
-  if (
-    !pendingSettingsWheelSwitch
-    || pendingSettingsWheelSwitch.tab !== tab
-    || pendingSettingsWheelSwitch.direction !== direction
-    || now - pendingSettingsWheelSwitch.lastWheelAt > tabSwitchWheelPendingTimeout
-  ) {
-    pendingSettingsWheelSwitch = {
-      tab,
-      direction,
-      startedAt: now,
-      lastWheelAt: now,
-    }
-    return false
-  }
-
-  pendingSettingsWheelSwitch.lastWheelAt = now
-  return now - pendingSettingsWheelSwitch.startedAt >= tabSwitchWheelDelay
-}
-
-function handleSettingsWheel(tab: SettingsTabName, event: WheelEvent) {
-  if (event.deltaY === 0 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) {
-    resetPendingSettingsWheelSwitch()
-    return
-  }
-
-  const direction: SettingsWheelDirection = event.deltaY > 0 ? 1 : -1
-  const container = getScrollbarContainer(event)
-  if (!container || !isAtScrollEdge(container, direction)) {
-    resetPendingSettingsWheelSwitch()
-    return
-  }
-
-  const nextTab = adjacentSettingsTab(tab, direction)
-  if (!nextTab) {
-    resetPendingSettingsWheelSwitch()
-    return
-  }
-
-  event.preventDefault()
-
-  const now = window.performance.now()
-  if (now - lastSettingsWheelSwitchAt < tabSwitchWheelCooldown) {
-    return
-  }
-
-  if (!hasSatisfiedSettingsWheelDelay(tab, direction, now)) {
-    return
-  }
-
-  resetPendingSettingsWheelSwitch()
-  lastSettingsWheelSwitchAt = now
-  activeTab.value = nextTab
-  scrollSettingsTabToEntryEdge(nextTab, direction)
 }
 
 function checkUpdate() {
