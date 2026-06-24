@@ -1,6 +1,7 @@
 use image::{self, DynamicImage, GrayImage, RgbaImage};
+use oar_ocr::domain::TextRegion;
+use oar_ocr::oarocr::OAROCRBuilder;
 use rayon::prelude::*;
-use rust_paddle_ocr::{Det, Rec};
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::path::Path;
@@ -359,36 +360,48 @@ pub fn img2text(
     model_path: &Path,
     img: &DynamicImage,
 ) -> Result<Vec<TextResult>, Box<dyn std::error::Error>> {
-    let det_model_path = model_path.join("PP-OCRv6_tiny_det.mnn");
-    let rec_model_path = model_path.join("PP-OCRv6_tiny_rec.mnn");
-    let keys_path = model_path.join("ppocr_keys_v6_tiny.txt");
+    let det_model_path = model_path.join("pp-ocrv6_tiny_det.onnx");
+    let rec_model_path = model_path.join("pp-ocrv6_tiny_rec.onnx");
+    let dict_path = model_path.join("ppocrv6_tiny_dict.txt");
 
-    let mut det = Det::from_file(det_model_path)?.with_rect_border_size(12);
+    let ocr = OAROCRBuilder::new(det_model_path, rec_model_path, dict_path)
+        .image_batch_size(1)
+        .region_batch_size(32)
+        .build()?;
+    let Some(result) = ocr.predict(vec![img.to_rgb8()])?.into_iter().next() else {
+        return Ok(Vec::new());
+    };
 
-    let mut rec = Rec::from_file(rec_model_path, keys_path)?
-        .with_min_score(0.8)
-        .with_punct_min_score(0.1);
+    let text_results = result
+        .text_regions
+        .iter()
+        .filter_map(text_region_to_result)
+        .collect();
 
-    let rects = det.find_text_rect(img)?;
-
-    let mut text_results = Vec::new();
-    for rect in rects.iter() {
-        let text_img = img.crop_imm(
-            rect.left() as u32,
-            rect.top() as u32,
-            rect.width(),
-            rect.height(),
-        );
-        let text = rec.predict_str(&text_img)?;
-        text_results.push(TextResult {
-            left: rect.left(),
-            top: rect.top(),
-            width: rect.width(),
-            height: rect.height(),
-            text,
-        });
-    }
     Ok(merge_text_results(text_results))
+}
+
+fn text_region_to_result(region: &TextRegion) -> Option<TextResult> {
+    let text = region.text.as_deref()?.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+
+    let (min_x, min_y, max_x, max_y) = region.bounding_box.aabb();
+    let left = min_x.floor().max(0.0) as i32;
+    let top = min_y.floor().max(0.0) as i32;
+    let right = max_x.ceil().max(left as f32) as i32;
+    let bottom = max_y.ceil().max(top as f32) as i32;
+    let width = right.saturating_sub(left) as u32;
+    let height = bottom.saturating_sub(top) as u32;
+
+    (width > 0 && height > 0).then_some(TextResult {
+        left,
+        top,
+        width,
+        height,
+        text,
+    })
 }
 
 fn merge_text_results(results: Vec<TextResult>) -> Vec<TextResult> {

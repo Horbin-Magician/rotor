@@ -6,10 +6,10 @@ edition = "2021"
 [dependencies]
 image = "0.25.6"
 log = "0.4.27"
+oar-ocr = "0.7.1"
 rayon = "1.10"
 rotor-common = { path = "../rotor-common" }
 rotor-platform = { path = "../rotor-platform" }
-rust-paddle-ocr = { git = "https://github.com/zibo-chen/rust-paddle-ocr.git" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-global-shortcut = "2"

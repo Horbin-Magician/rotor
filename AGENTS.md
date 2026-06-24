@@ -12,7 +12,7 @@ Rotor is a fast, low-occupancy desktop toolbox for Windows and macOS. It is buil
 - **Backend**: Rust 2021 with a Cargo workspace under `src-tauri`.
 - **Frontend**: Vue 3, TypeScript, Vite 6, Vue Router 4, Vue i18n 11, Naive UI, and Tauri JS APIs.
 - **Package management**: Yarn 1.22.22 for frontend/Tauri CLI, Cargo for Rust.
-- **Screenshot/OCR**: `xcap`, `image`, `rayon`, and `rust-paddle-ocr` with model assets in `src-tauri/assets/model`.
+- **Screenshot/OCR**: `xcap`, `image`, `rayon`, and `oar-ocr` with ONNX model assets in `src-tauri/assets/model`.
 
 ## Agent Constraints
 
@@ -115,7 +115,7 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 - Frontend mask and pin pages request image bytes through `src/shared/api/dataSocket.ts`.
 - `rotor-runtime::data_server` binds a local WebSocket on `localhost` using the first available port from `10000..=48137`; the frontend gets that port via `get_ws_port`.
 - Pinned screenshots persist through `rotor-screenshot::shotter_record`; invalid persisted records are removed during restore.
-- OCR uses `img2text` and model files bundled from `src-tauri/assets/model`.
+- OCR uses `img2text` and ONNX model files bundled from `src-tauri/assets/model`.
 
 ### Search
 
