@@ -309,9 +309,9 @@ pub fn img2text(
     model_path: &Path,
     img: &DynamicImage,
 ) -> Result<Vec<TextResult>, Box<dyn std::error::Error>> {
-    let det_model_path = model_path.join("PP-OCRv5_mobile_det_fp16.mnn");
-    let rec_model_path = model_path.join("PP-OCRv5_mobile_rec_fp16.mnn");
-    let keys_path = model_path.join("ppocr_keys_v5.txt");
+    let det_model_path = model_path.join("PP-OCRv6_tiny_det.mnn");
+    let rec_model_path = model_path.join("PP-OCRv6_tiny_rec.mnn");
+    let keys_path = model_path.join("ppocr_keys_v6_tiny.txt");
 
     let mut det = Det::from_file(det_model_path)?.with_rect_border_size(12);
 
