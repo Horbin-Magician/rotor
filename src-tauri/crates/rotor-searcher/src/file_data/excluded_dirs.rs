@@ -28,6 +28,7 @@ impl ExcludedDirs {
         self.matches_configured_path(path) || self.has_excluded_name_component(path)
     }
 
+    #[cfg(target_os = "macos")]
     pub fn is_excluded_parent_path(&self, path: &Path) -> bool {
         path.parent()
             .is_some_and(|parent| self.is_excluded_path(parent))
