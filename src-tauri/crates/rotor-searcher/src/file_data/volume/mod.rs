@@ -1,4 +1,6 @@
+#[cfg(any(target_os = "macos", test))]
 pub mod default_file_map;
+#[cfg(target_os = "macos")]
 pub mod default_volume;
 mod search_match;
 
@@ -90,6 +92,13 @@ pub(super) fn read_u32(reader: &mut impl Read) -> io::Result<u32> {
     let mut bytes = [0u8; 4];
     reader.read_exact(&mut bytes)?;
     Ok(u32::from_be_bytes(bytes))
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn read_u8(reader: &mut impl Read) -> io::Result<u8> {
+    let mut bytes = [0u8; 1];
+    reader.read_exact(&mut bytes)?;
+    Ok(u8::from_be_bytes(bytes))
 }
 
 #[cfg(target_os = "windows")]
