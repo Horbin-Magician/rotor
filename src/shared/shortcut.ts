@@ -26,7 +26,7 @@ export function formatShortcut(shortcut: string) {
     }
 
     const modifier = MODIFIER_ORDER.find(
-      (item) => item.toLowerCase() === normalizedPart.toLowerCase()
+      (item) => item.toLowerCase() === normalizedPart.toLowerCase(),
     )
     if (modifier) {
       modifiers.push(modifier)

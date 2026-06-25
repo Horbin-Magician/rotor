@@ -3,34 +3,28 @@
   <div class="tab-wrapper settings-window">
     <n-tabs
       v-model:value="activeTab"
-      placement = "left"
-      size = "large"
-      type = "line"
-      class = "sidebar"
-      pane-wrapper-class = "tab-pane"
+      placement="left"
+      size="large"
+      type="line"
+      class="sidebar"
+      pane-wrapper-class="tab-pane"
     >
       <template #prefix>
-        <div class= "logo">
-          <img src="/assets/logo.svg" width="60px" @click="openGitHome" :draggable="false"/>
+        <div class="logo">
+          <img src="/assets/logo.svg" width="60px" @click="openGitHome" :draggable="false" />
         </div>
       </template>
       <n-tab-pane class="tab-pane" name="Overview" :tab="t('message.overview')">
-        <n-scrollbar
-          style="max-height: 100vh"
-          trigger="none"
-        >
+        <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <OverviewSettings />
           </div>
         </n-scrollbar>
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Base" :tab="t('message.base')">
-        <n-scrollbar
-          style="max-height: 100vh"
-          trigger="none"
-        >
+        <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
-            <GeneralSettings 
+            <GeneralSettings
               v-model:language="language"
               v-model:theme="theme"
               v-model:power-boot="powerBoot"
@@ -50,12 +44,9 @@
         :tab="t('message.screenShotter')"
         :tab-props="{ class: 'settings-sidebar-plugin-start' }"
       >
-        <n-scrollbar
-          style="max-height: 100vh"
-          trigger="none"
-        >
+        <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
-            <PinwinSettings 
+            <PinwinSettings
               v-model:shortcut-pinwin-close="shortcutPinwinClose"
               v-model:shortcut-pinwin-save="shortcutPinwinSave"
               v-model:shortcut-pinwin-copy="shortcutPinwinCopy"
@@ -71,22 +62,14 @@
         </n-scrollbar>
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Search" :tab="t('message.search')">
-        <n-scrollbar
-          style="max-height: 100vh"
-          trigger="none"
-        >
+        <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
-            <SearchSettings
-              v-model:excluded-dirs="searchExcludedDirs"
-            />
+            <SearchSettings v-model:excluded-dirs="searchExcludedDirs" />
           </div>
         </n-scrollbar>
       </n-tab-pane>
       <n-tab-pane class="tab-pane" name="Quick" :tab="t('message.quick')">
-        <n-scrollbar
-          style="max-height: 100vh"
-          trigger="none"
-        >
+        <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <QuickSettings
               v-model:quick-actions="quickActions"
@@ -98,9 +81,9 @@
       </n-tab-pane>
     </n-tabs>
   </div>
-  <div class="drag-region"  data-tauri-drag-region></div>
+  <div class="drag-region" data-tauri-drag-region></div>
 
-  <UpdateModals 
+  <UpdateModals
     v-model:show-update-modal="showUpdateModal"
     v-model:show-progress-modal="showProgressModal"
     :update-version="updateVersion"
@@ -115,10 +98,10 @@
 import { NTabs, NTabPane, NScrollbar, useMessage } from 'naive-ui'
 import { defineAsyncComponent, onMounted, onUnmounted, ref, watch, h } from 'vue'
 import type { Ref } from 'vue'
-import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart';
-import { open } from '@tauri-apps/plugin-dialog';
-import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { enable, isEnabled, disable } from '@tauri-apps/plugin-autostart'
+import { open } from '@tauri-apps/plugin-dialog'
+import { check, Update, CheckOptions } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   getAllConfig,
@@ -129,7 +112,7 @@ import {
   type ShortcutRegistrationNotice,
 } from '../shared/api/core'
 
-import { useTheme } from '../composables/useTheme';
+import { useTheme } from '../composables/useTheme'
 
 // Import setting components
 import GeneralSettings from '../components/setting/GeneralSettings.vue'
@@ -142,7 +125,9 @@ import { getQuickActions, runQuickAction, setQuickActions } from '../features/qu
 import type { QuickAction } from '../features/quick/types'
 import '../components/setting/settings.css'
 
-const OverviewSettings = defineAsyncComponent(() => import('../components/setting/OverviewSettings.vue'))
+const OverviewSettings = defineAsyncComponent(
+  () => import('../components/setting/OverviewSettings.vue'),
+)
 
 import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n()
@@ -150,7 +135,7 @@ const message = useMessage()
 const { changeTheme } = useTheme()
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { info, error } from '@tauri-apps/plugin-log';
+import { info, error } from '@tauri-apps/plugin-log'
 
 const appWindow = getCurrentWindow()
 const isWindows = ref(false)
@@ -177,8 +162,8 @@ if (navigator.platform.startsWith('Win')) {
   isWindows.value = true
 }
 
-appWindow.isVisible().then( (visible)=>{
-  if(visible == false) {
+appWindow.isVisible().then((visible) => {
+  if (!visible) {
     appWindow.show()
     appWindow.setFocus()
   }
@@ -188,7 +173,7 @@ appWindow.isVisible().then( (visible)=>{
 const language = ref(0)
 const theme = ref(0)
 const powerBoot = ref(false)
-const currentVersion = ref("Loading...")
+const currentVersion = ref('Loading...')
 const shortcutScreenshot = ref('Shift+C')
 const shortcutSearch = ref('Shift+F')
 
@@ -208,7 +193,7 @@ const quickActions = ref<QuickAction[]>([])
 // Update modal states
 const showUpdateModal = ref(false)
 const showProgressModal = ref(false)
-const updateVersion = ref<String>("null")
+const updateVersion = ref<string>('null')
 const updateProgress = ref(0)
 const updateStatus = ref('')
 const isUpdating = ref(false)
@@ -218,29 +203,30 @@ let update_cache: Update | null = null
 
 // Search settings
 const searchExcludedDirs = ref('')
-Promise.all([getAllConfig(), getQuickActions()]).then(async ([config, actions]) => {
-  language.value = Number(config["language"])
-  theme.value = Number(config["theme"])
-  powerBoot.value = await isEnabled()
+Promise.all([getAllConfig(), getQuickActions()])
+  .then(async ([config, actions]) => {
+    language.value = Number(config['language'])
+    theme.value = Number(config['theme'])
+    powerBoot.value = await isEnabled()
 
-  // currentVerision.value = config["current_verision"]
-  shortcutScreenshot.value = config["shortcut_screenshot"]
-  shortcutSearch.value = config["shortcut_search"]
+    shortcutScreenshot.value = config['shortcut_screenshot']
+    shortcutSearch.value = config['shortcut_search']
 
-  // Screenshot settings
-  shortcutPinwinClose.value = config["shortcut_pinwin_close"]
-  shortcutPinwinSave.value = config["shortcut_pinwin_save"]
-  shortcutPinwinCopy.value = config["shortcut_pinwin_copy"]
-  shortcutPinwinHide.value = config["shortcut_pinwin_hide"]
-  savePath.value = config["save_path"]
-  ifAutoChangeSavePath.value = config["if_auto_change_save_path"] === "false" ? false : true
-  ifAskSavePath.value = config["if_ask_save_path"] === "false" ? false : true
-  zoomDelta.value = Number(config["zoom_delta"])
-  searchExcludedDirs.value = config["search_excluded_dirs"]
-  quickActions.value = actions
-}).finally(() => {
-  hasLoadedConfig.value = true
-})
+    // Screenshot settings
+    shortcutPinwinClose.value = config['shortcut_pinwin_close']
+    shortcutPinwinSave.value = config['shortcut_pinwin_save']
+    shortcutPinwinCopy.value = config['shortcut_pinwin_copy']
+    shortcutPinwinHide.value = config['shortcut_pinwin_hide']
+    savePath.value = config['save_path']
+    ifAutoChangeSavePath.value = config['if_auto_change_save_path'] !== 'false'
+    ifAskSavePath.value = config['if_ask_save_path'] !== 'false'
+    zoomDelta.value = Number(config['zoom_delta'])
+    searchExcludedDirs.value = config['search_excluded_dirs']
+    quickActions.value = actions
+  })
+  .finally(() => {
+    hasLoadedConfig.value = true
+  })
 
 // Get app version
 getAppVersion().then((version) => {
@@ -248,50 +234,56 @@ getAppVersion().then((version) => {
 })
 
 function openGitHome() {
-  openUrl("https://github.com/Horbin-Magician/rotor")
-    .catch((error) => {
-      console.error("Failed to open URL:", error)
-    })
+  openUrl('https://github.com/Horbin-Magician/rotor').catch((error) => {
+    console.error('Failed to open URL:', error)
+  })
 }
 
 function checkUpdate() {
   isCheckingUpdate.value = true
 
-  let options: CheckOptions = {
+  const options: CheckOptions = {
     timeout: 3000, // 3 seconds timeout
   }
 
-  check(options).then(async (update) => {
-    if (update) {
-      update_cache = update
-      updateVersion.value = update.version
-      showUpdateModal.value = true
-    } else {
-      message.info(t('message.noUpdatesAvailable') + ', ' + t('message.latestVersion'))
-    }
-  }).catch((err) => {
-    error(`Failed to check for updates: ${err}`)
-    const displayErr = String(err).length > 50
-      ? String(err).slice(0, 50) + '...'
-      : String(err);
+  check(options)
+    .then(async (update) => {
+      if (update) {
+        update_cache = update
+        updateVersion.value = update.version
+        showUpdateModal.value = true
+      } else {
+        message.info(t('message.noUpdatesAvailable') + ', ' + t('message.latestVersion'))
+      }
+    })
+    .catch((err) => {
+      error(`Failed to check for updates: ${err}`)
+      const displayErr = String(err).length > 50 ? String(err).slice(0, 50) + '...' : String(err)
 
-    message.error(() => h('div', [
-        `${t('message.updateCheckFailed')}: ${displayErr}. ${t('message.manualDownloadSuggestion')}: `,
-        h('a', {
-          href: '#',
-          style: {
-            color: '#007bff',
-            textDecoration: 'none',
-          },
-          onClick: (e: Event) => {
-            e.preventDefault()
-            openGitHome()
-          }
-        }, 'https://github.com/Horbin-Magician/rotor')
-      ]))
-  }).finally(() => {
-    isCheckingUpdate.value = false
-  })
+      message.error(() =>
+        h('div', [
+          `${t('message.updateCheckFailed')}: ${displayErr}. ${t('message.manualDownloadSuggestion')}: `,
+          h(
+            'a',
+            {
+              href: '#',
+              style: {
+                color: '#007bff',
+                textDecoration: 'none',
+              },
+              onClick: (e: Event) => {
+                e.preventDefault()
+                openGitHome()
+              },
+            },
+            'https://github.com/Horbin-Magician/rotor',
+          ),
+        ]),
+      )
+    })
+    .finally(() => {
+      isCheckingUpdate.value = false
+    })
 }
 
 async function confirmUpdate() {
@@ -300,9 +292,9 @@ async function confirmUpdate() {
   isUpdating.value = true
   updateProgress.value = 0
   updateStatus.value = t('message.downloadingUpdate')
-  
-  info("Downloading and installing update...")
-  
+
+  info('Downloading and installing update...')
+
   // Download and install the update
   if (update_cache) {
     await update_cache.downloadAndInstall((event) => {
@@ -323,7 +315,7 @@ async function confirmUpdate() {
           updateProgress.value = 100
           updateStatus.value = t('message.updateCompleted')
           info('Update downloaded')
-          
+
           // Delay before relaunch to show completion
           setTimeout(async () => {
             try {
@@ -368,9 +360,7 @@ function settingDisplayName(key: string) {
 }
 
 function showShortcutConflict(notice: ShortcutRegistrationNotice) {
-  const targetTab = notice.key.startsWith('quick_action_')
-    ? 'Quick'
-    : shortcutTabByKey[notice.key]
+  const targetTab = notice.key.startsWith('quick_action_') ? 'Quick' : shortcutTabByKey[notice.key]
 
   if (targetTab) {
     activeTab.value = targetTab
@@ -390,15 +380,15 @@ function showShortcutConflict(notice: ShortcutRegistrationNotice) {
   const details = notice.message ? ` ${notice.message}` : ''
   message.error(
     `${t('message.shortcutConflictPrefix')}${settingDisplayName(notice.key)}: ${notice.shortcut}.${details}`,
-    { duration: 6000 }
+    { duration: 6000 },
   )
 }
 
 // Function to update a setting in the backend
-async function updateSetting(key: string, value: any) {
+async function updateSetting(key: string, value: unknown) {
   // Convert the value to string as required by the backend
   const stringValue = typeof value === 'boolean' ? value.toString() : String(value)
-  
+
   // Invoke the set_cfg command to update the setting
   await setConfig(key, stringValue)
 }
@@ -412,9 +402,7 @@ function createSettingWatcher<T>(settingRef: Ref<T>, key: string, callback?: (va
 
     try {
       await updateSetting(key, newValue)
-      if (callback) {
-        callback(newValue)
-      }
+      callback?.(newValue)
     } catch (err) {
       console.error(`Failed to update setting ${key}:`, err)
       isRevertingSetting = true
@@ -437,7 +425,7 @@ function createSettingWatcher<T>(settingRef: Ref<T>, key: string, callback?: (va
 onMounted(async () => {
   unlistenShortcutConflict = await listen<ShortcutRegistrationNotice>(
     'shortcut-registration-conflict',
-    (event) => showShortcutConflict(event.payload)
+    (event) => showShortcutConflict(event.payload),
   )
 
   takeShortcutRegistrationNotices()
@@ -460,7 +448,7 @@ onUnmounted(() => {
 })
 
 // Watch for changes in settings and update them in the backend
-createSettingWatcher(language, "language", (newValue) => {
+createSettingWatcher(language, 'language', (newValue) => {
   // Update app language
   if (newValue === 0) {
     // System default - detect system language
@@ -473,34 +461,35 @@ createSettingWatcher(language, "language", (newValue) => {
   }
 })
 
-createSettingWatcher(theme, "theme", (newValue) => { // Update app theme
+createSettingWatcher(theme, 'theme', (newValue) => {
+  // Update app theme
   changeTheme(newValue)
 })
 
-createSettingWatcher(powerBoot, "power_boot", (newValue) => {
-  if (newValue) { 
-    enable().catch(e => console.error('Failed to enable autostart:', e))
-  } else { 
-    disable().catch(e => console.error('Failed to disable autostart:', e))
+createSettingWatcher(powerBoot, 'power_boot', (newValue) => {
+  if (newValue) {
+    enable().catch((e) => console.error('Failed to enable autostart:', e))
+  } else {
+    disable().catch((e) => console.error('Failed to disable autostart:', e))
   }
 })
 
 // Global shortcuts
-createSettingWatcher(shortcutScreenshot, "shortcut_screenshot")
-createSettingWatcher(shortcutSearch, "shortcut_search")
+createSettingWatcher(shortcutScreenshot, 'shortcut_screenshot')
+createSettingWatcher(shortcutSearch, 'shortcut_search')
 
 // Screenshot settings
-createSettingWatcher(shortcutPinwinClose, "shortcut_pinwin_close")
-createSettingWatcher(shortcutPinwinSave, "shortcut_pinwin_save")
-createSettingWatcher(shortcutPinwinCopy, "shortcut_pinwin_copy")
-createSettingWatcher(shortcutPinwinHide, "shortcut_pinwin_hide")
-createSettingWatcher(savePath, "save_path")
-createSettingWatcher(ifAutoChangeSavePath, "if_auto_change_save_path")
-createSettingWatcher(ifAskSavePath, "if_ask_save_path")
-createSettingWatcher(zoomDelta, "zoom_delta")
+createSettingWatcher(shortcutPinwinClose, 'shortcut_pinwin_close')
+createSettingWatcher(shortcutPinwinSave, 'shortcut_pinwin_save')
+createSettingWatcher(shortcutPinwinCopy, 'shortcut_pinwin_copy')
+createSettingWatcher(shortcutPinwinHide, 'shortcut_pinwin_hide')
+createSettingWatcher(savePath, 'save_path')
+createSettingWatcher(ifAutoChangeSavePath, 'if_auto_change_save_path')
+createSettingWatcher(ifAskSavePath, 'if_ask_save_path')
+createSettingWatcher(zoomDelta, 'zoom_delta')
 
 // Search settings
-createSettingWatcher(searchExcludedDirs, "search_excluded_dirs")
+createSettingWatcher(searchExcludedDirs, 'search_excluded_dirs')
 
 watch(quickActions, async (newValue, oldValue) => {
   if (!hasLoadedConfig.value || isRevertingSetting) {
@@ -530,16 +519,15 @@ async function askSave() {
   const path = await open({
     multiple: false,
     directory: true,
-  });
+  })
   if (typeof path === 'string') {
     savePath.value = path
   }
 }
 </script>
 
-
 <style scoped>
-.logo{
+.logo {
   width: 100%;
   display: flex;
   justify-content: center;
@@ -557,7 +545,7 @@ async function askSave() {
   overflow: hidden;
 }
 
-.sidebar{
+.sidebar {
   height: 100%;
 }
 
@@ -592,7 +580,7 @@ async function askSave() {
 }
 
 .sidebar :deep(.n-tabs-nav .n-tabs-tab.settings-sidebar-plugin-start::before) {
-  content: "";
+  content: '';
   position: absolute;
   top: -6px;
   left: 16px;

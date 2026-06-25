@@ -25,20 +25,22 @@ interface DataSocketState {
 }
 
 const RESPONSE_HEADER_BYTES = 4
-const MAX_REQUEST_ID = 0xFFFFFFFF
+const MAX_REQUEST_ID = 0xffffffff
 const socketStates = new WeakMap<WebSocket, DataSocketState>()
 
-const delay = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms))
+const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
 function isDataSocketErrorResponse(value: unknown): value is DataSocketErrorResponse {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     typeof value.requestId === 'number' &&
     value.ok === false &&
     typeof value.error === 'string'
+  )
 }
 
 function allocateRequestId(state: DataSocketState) {
@@ -55,7 +57,7 @@ function allocateRequestId(state: DataSocketState) {
 function settlePending(
   state: DataSocketState,
   requestId: number,
-  settle: (request: PendingDataRequest) => void
+  settle: (request: PendingDataRequest) => void,
 ) {
   const request = state.pending.get(requestId)
   if (!request) return
@@ -90,7 +92,7 @@ async function handleDataSocketMessage(state: DataSocketState, event: MessageEve
     }
 
     if (isDataSocketErrorResponse(response)) {
-      settlePending(state, response.requestId, request => {
+      settlePending(state, response.requestId, (request) => {
         request.reject(new Error(response.error))
       })
       return
@@ -112,7 +114,7 @@ async function handleDataSocketMessage(state: DataSocketState, event: MessageEve
   }
 
   const requestId = new DataView(buffer, 0, RESPONSE_HEADER_BYTES).getUint32(0)
-  settlePending(state, requestId, request => {
+  settlePending(state, requestId, (request) => {
     request.resolve(buffer.slice(RESPONSE_HEADER_BYTES))
   })
 }
@@ -123,10 +125,10 @@ function getDataSocketState(socket: WebSocket) {
 
   state = {
     nextRequestId: 1,
-    pending: new Map()
+    pending: new Map(),
   }
 
-  socket.addEventListener('message', event => {
+  socket.addEventListener('message', (event) => {
     void handleDataSocketMessage(state, event)
   })
   socket.addEventListener('error', () => {
@@ -223,7 +225,7 @@ export function requestDataSocketBytes(socket: WebSocket, label: string, timeout
       label,
       timer,
       resolve,
-      reject
+      reject,
     })
 
     try {

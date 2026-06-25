@@ -52,7 +52,13 @@ const {
   handleUpdateResult,
   clickItem,
   handleActionClick,
-} = useFileSearch(searchQuery, () => { void hideWindow() }, () => resizeWindow())
+} = useFileSearch(
+  searchQuery,
+  () => {
+    void hideWindow()
+  },
+  () => resizeWindow(),
+)
 
 const searcherWindow = useSearcherWindow({
   searchQuery,
@@ -68,7 +74,7 @@ const handleSearch = () => {
 
 const handleKeydown = (event: KeyboardEvent) => {
   const maxIndex = searchResults.value.length - 1
-  
+
   switch (event.key) {
     case 'ArrowDown':
       event.preventDefault()
@@ -100,7 +106,7 @@ const scrollToSelected = () => {
     if (selectedElement) {
       selectedElement.scrollIntoView({
         behavior: 'smooth',
-        block: 'nearest'
+        block: 'nearest',
       })
     }
   })
@@ -156,18 +162,20 @@ const hideWindow = async () => {
 }
 
 watch(searchQuery, (newVal, _oldVal) => {
-  if (newVal != "") {
+  if (newVal != '') {
     requestSearch(newVal)
   }
-});
+})
 
 onMounted(async () => {
   void refreshSearchIndexStatus()
 
   unlistenBlur = await listen('tauri://blur', () => {
     setTimeout(() => {
-      appWindow.isFocused().then(focused => {
-        if (!focused) { hideWindow() }
+      appWindow.isFocused().then((focused) => {
+        if (!focused) {
+          hideWindow()
+        }
       })
     }, 100)
   })
@@ -178,9 +186,12 @@ onMounted(async () => {
     resizeWindow()
   })
 
-  unlistenUpdateResult = await appWindow.listen<UpdateResultPayload>('update_result', async (event) => {
-    await handleUpdateResult(event.payload)
-  });
+  unlistenUpdateResult = await appWindow.listen<UpdateResultPayload>(
+    'update_result',
+    async (event) => {
+      await handleUpdateResult(event.payload)
+    },
+  )
 
   nextTick(resizeWindow)
 })
@@ -188,9 +199,15 @@ onMounted(async () => {
 onUnmounted(() => {
   // clean listeners
   stopIndexStatusPolling()
-  if (unlistenBlur) { unlistenBlur() }
-  if (unlistenFocus) { unlistenFocus() }
-  if (unlistenUpdateResult) { unlistenUpdateResult() }
+  if (unlistenBlur) {
+    unlistenBlur()
+  }
+  if (unlistenFocus) {
+    unlistenFocus()
+  }
+  if (unlistenUpdateResult) {
+    unlistenUpdateResult()
+  }
 })
 </script>
 

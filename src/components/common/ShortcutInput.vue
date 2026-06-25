@@ -1,7 +1,7 @@
 <template>
-  <n-input 
-    :value="displayValue" 
-    readonly 
+  <n-input
+    :value="displayValue"
+    readonly
     class="shortcut-input"
     @focus="startRecording"
     @blur="stopRecording"
@@ -10,100 +10,154 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { useI18n } from 'vue-i18n';
-import { NInput } from 'naive-ui';
-import { formatShortcut } from '../../shared/shortcut';
+import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { NInput } from 'naive-ui'
+import { formatShortcut } from '../../shared/shortcut'
 
-const { t } = useI18n();
+const { t } = useI18n()
 
 // Constants
 const VALID_KEYS = new Set([
   // Letters
-  'KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE', 'KeyF', 'KeyG', 'KeyH', 'KeyI', 'KeyJ', 'KeyK', 'KeyL', 'KeyM', 
-  'KeyN', 'KeyO', 'KeyP', 'KeyQ', 'KeyR', 'KeyS', 'KeyT', 'KeyU', 'KeyV', 'KeyW', 'KeyX', 'KeyY', 'KeyZ',
+  'KeyA',
+  'KeyB',
+  'KeyC',
+  'KeyD',
+  'KeyE',
+  'KeyF',
+  'KeyG',
+  'KeyH',
+  'KeyI',
+  'KeyJ',
+  'KeyK',
+  'KeyL',
+  'KeyM',
+  'KeyN',
+  'KeyO',
+  'KeyP',
+  'KeyQ',
+  'KeyR',
+  'KeyS',
+  'KeyT',
+  'KeyU',
+  'KeyV',
+  'KeyW',
+  'KeyX',
+  'KeyY',
+  'KeyZ',
   // Numbers
-  'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
+  'Digit0',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+  'Digit4',
+  'Digit5',
+  'Digit6',
+  'Digit7',
+  'Digit8',
+  'Digit9',
   // Function keys
-  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+  'F1',
+  'F2',
+  'F3',
+  'F4',
+  'F5',
+  'F6',
+  'F7',
+  'F8',
+  'F9',
+  'F10',
+  'F11',
+  'F12',
   // Special keys
-  'Escape', 'Enter', 'Tab', 'Space', 'Backspace', 'Delete',
+  'Escape',
+  'Enter',
+  'Tab',
+  'Space',
+  'Backspace',
+  'Delete',
   // Arrow keys
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
   // Navigation keys
-  'Home', 'End', 'PageUp', 'PageDown',
-]);
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+])
 
 // Props and emits
 const props = defineProps<{
-  shortcut: string;
-}>();
+  shortcut: string
+}>()
 
 const emit = defineEmits<{
   'update:shortcut': [value: string]
-}>();
+}>()
 
 // State
-const isRecording = ref(false);
-const currentModifiers = ref(new Set<string>());
-const currentKey = ref('');
+const isRecording = ref(false)
+const currentModifiers = ref(new Set<string>())
+const currentKey = ref('')
 
 // Computed properties
 const displayValue = computed(() => {
-  let value = props.shortcut;
+  let value = props.shortcut
 
   if (isRecording.value) {
-    const modifiers = Array.from(currentModifiers.value);
-    const key = currentKey.value;
-    
+    const modifiers = Array.from(currentModifiers.value)
+    const key = currentKey.value
+
     if (modifiers.length > 0 && key) {
-      value = [...modifiers, key].join('+');
+      value = [...modifiers, key].join('+')
     } else if (modifiers.length > 0) {
-      value = [...modifiers, '...'].join('+');
+      value = [...modifiers, '...'].join('+')
     } else if (key) {
-      value = key;
+      value = key
     } else {
-      value = t('message.pressShortcut');
+      value = t('message.pressShortcut')
     }
   }
 
-  return formatShortcut(value);
-});
+  return formatShortcut(value)
+})
 
 // Methods
 const startRecording = () => {
-  isRecording.value = true;
-  currentModifiers.value.clear();
-  currentKey.value = '';
-};
+  isRecording.value = true
+  currentModifiers.value.clear()
+  currentKey.value = ''
+}
 
 const stopRecording = () => {
-  isRecording.value = false;
-};
+  isRecording.value = false
+}
 
 const handleKeyDown = (event: KeyboardEvent) => {
-  event.preventDefault();
-  event.stopPropagation();
+  event.preventDefault()
+  event.stopPropagation()
 
   // Reset current key
-  currentKey.value = '';
-  
-  // Update modifiers
-  currentModifiers.value.clear();
-  if (event.metaKey) currentModifiers.value.add('Cmd');
-  if (event.ctrlKey) currentModifiers.value.add('Ctrl');
-  if (event.altKey) currentModifiers.value.add('Alt');
-  if (event.shiftKey) currentModifiers.value.add('Shift');
-  
-  const key = event.code;
-  if (VALID_KEYS.has(key)) {
-    currentKey.value = key;
-    const modifiers = Array.from(currentModifiers.value);
-    const shortcut = [...modifiers, key].join('+');
-    emit('update:shortcut', shortcut);
-  }
-};
+  currentKey.value = ''
 
+  // Update modifiers
+  currentModifiers.value.clear()
+  if (event.metaKey) currentModifiers.value.add('Cmd')
+  if (event.ctrlKey) currentModifiers.value.add('Ctrl')
+  if (event.altKey) currentModifiers.value.add('Alt')
+  if (event.shiftKey) currentModifiers.value.add('Shift')
+
+  const key = event.code
+  if (VALID_KEYS.has(key)) {
+    currentKey.value = key
+    const modifiers = Array.from(currentModifiers.value)
+    const shortcut = [...modifiers, key].join('+')
+    emit('update:shortcut', shortcut)
+  }
+}
 </script>
 
 <style scoped>

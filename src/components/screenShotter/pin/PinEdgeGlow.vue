@@ -7,15 +7,15 @@
 
 <script setup lang="ts">
 interface EdgeGlow {
-  left: boolean;
-  right: boolean;
-  top: boolean;
-  bottom: boolean;
+  left: boolean
+  right: boolean
+  top: boolean
+  bottom: boolean
 }
 
 defineProps<{
-  edgeGlow: EdgeGlow;
-}>();
+  edgeGlow: EdgeGlow
+}>()
 </script>
 
 <style scoped>
@@ -26,7 +26,8 @@ defineProps<{
   width: 10px;
   height: 100%;
   pointer-events: none;
-  background: linear-gradient(to right, 
+  background: linear-gradient(
+    to right,
     rgba(75, 160, 244, 0.8) 0%,
     rgba(59, 130, 246, 0.4) 40%,
     rgba(59, 130, 246, 0) 100%
@@ -44,7 +45,8 @@ defineProps<{
   width: 10px;
   height: 100%;
   pointer-events: none;
-  background: linear-gradient(to left, 
+  background: linear-gradient(
+    to left,
     rgba(59, 130, 246, 0.8) 0%,
     rgba(59, 130, 246, 0.4) 40%,
     rgba(59, 130, 246, 0) 100%
@@ -62,7 +64,8 @@ defineProps<{
   width: 100%;
   height: 10px;
   pointer-events: none;
-  background: linear-gradient(to bottom, 
+  background: linear-gradient(
+    to bottom,
     rgba(59, 130, 246, 0.8) 0%,
     rgba(59, 130, 246, 0.4) 40%,
     rgba(59, 130, 246, 0) 100%
@@ -80,7 +83,8 @@ defineProps<{
   width: 100%;
   height: 10px;
   pointer-events: none;
-  background: linear-gradient(to top, 
+  background: linear-gradient(
+    to top,
     rgba(59, 130, 246, 0.8) 0%,
     rgba(59, 130, 246, 0.4) 40%,
     rgba(59, 130, 246, 0) 100%
@@ -92,7 +96,8 @@ defineProps<{
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

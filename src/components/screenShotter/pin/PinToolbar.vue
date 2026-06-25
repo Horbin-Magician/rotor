@@ -6,36 +6,58 @@
       </n-icon>
     </div>
 
-    <div class="toolbar-item" :title="$t('message.ocrMode')" @click="$emit('imgToText')" v-if="!isProcessingOcr" :class="{ 'active': isOcrActive }">
+    <div
+      class="toolbar-item"
+      :title="$t('message.ocrMode')"
+      @click="$emit('imgToText')"
+      v-if="!isProcessingOcr"
+      :class="{ active: isOcrActive }"
+    >
       <n-icon size="20">
         <ScanText24Filled />
       </n-icon>
     </div>
-    <div class="toolbar-item" v-else> 
-      <n-spin :size="20" /> 
+    <div class="toolbar-item" v-else>
+      <n-spin :size="20" />
     </div>
 
     <div class="toolbar-divider"></div>
-    
-    <div class="toolbar-item" :title="`${$t('message.minimize')} (${shortcuts.hide})`" @click="$emit('minimize')">
+
+    <div
+      class="toolbar-item"
+      :title="`${$t('message.minimize')} (${shortcuts.hide})`"
+      @click="$emit('minimize')"
+    >
       <n-icon size="20">
         <MinusFilled />
       </n-icon>
     </div>
-    
-    <div class="toolbar-item" :title="`${$t('message.saveImage')} (${shortcuts.save})`" @click="$emit('save')">
+
+    <div
+      class="toolbar-item"
+      :title="`${$t('message.saveImage')} (${shortcuts.save})`"
+      @click="$emit('save')"
+    >
       <n-icon size="20">
         <SaveAltFilled />
       </n-icon>
     </div>
-    
-    <div class="toolbar-item" :title="`${$t('message.close')} (${shortcuts.close})`" @click="$emit('close')">
+
+    <div
+      class="toolbar-item"
+      :title="`${$t('message.close')} (${shortcuts.close})`"
+      @click="$emit('close')"
+    >
       <n-icon size="20">
         <CloseFilled />
       </n-icon>
     </div>
-    
-    <div class="toolbar-item" :title="`${$t('message.copyImage')} (${shortcuts.copy})`" @click="$emit('copy')">
+
+    <div
+      class="toolbar-item"
+      :title="`${$t('message.copyImage')} (${shortcuts.copy})`"
+      @click="$emit('copy')"
+    >
       <n-icon size="20">
         <ContentCopyRound />
       </n-icon>
@@ -44,41 +66,39 @@
 </template>
 
 <script setup lang="ts">
-import { 
-  CloseFilled, 
-  SaveAltFilled, 
-  ContentCopyRound, 
-  MinusFilled, 
+import {
+  CloseFilled,
+  SaveAltFilled,
+  ContentCopyRound,
+  MinusFilled,
   EditOutlined,
-} from '@vicons/material';
-import { 
-  ScanText24Filled
-} from '@vicons/fluent';
-import { NIcon, NSpin } from 'naive-ui';
+} from '@vicons/material'
+import { ScanText24Filled } from '@vicons/fluent'
+import { NIcon, NSpin } from 'naive-ui'
 
 interface Props {
-  visible: boolean;
-  isProcessingOcr: boolean;
-  isOcrActive: boolean;
+  visible: boolean
+  isProcessingOcr: boolean
+  isOcrActive: boolean
   shortcuts: {
-    save: string;
-    close: string;
-    copy: string;
-    hide: string;
-  };
+    save: string
+    close: string
+    copy: string
+    hide: string
+  }
 }
 
 interface Emits {
-  (e: 'enterEditMode'): void;
-  (e: 'imgToText'): void;
-  (e: 'minimize'): void;
-  (e: 'save'): void;
-  (e: 'close'): void;
-  (e: 'copy'): void;
+  (e: 'enterEditMode'): void
+  (e: 'imgToText'): void
+  (e: 'minimize'): void
+  (e: 'save'): void
+  (e: 'close'): void
+  (e: 'copy'): void
 }
 
-defineProps<Props>();
-defineEmits<Emits>();
+defineProps<Props>()
+defineEmits<Emits>()
 </script>
 
 <style scoped>

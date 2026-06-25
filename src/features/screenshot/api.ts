@@ -31,6 +31,18 @@ export function changeCurrentMask() {
   return invoke<void>('change_current_mask')
 }
 
+export function isScreenshotSessionCurrent(sessionId: number) {
+  return invoke<boolean>('is_screenshot_session_current', { sessionId })
+}
+
+export function finishScreenshotSession() {
+  return invoke<void>('finish_screenshot_session')
+}
+
+export function cancelScreenshotSession() {
+  return invoke<void>('cancel_screenshot_session')
+}
+
 export function newCachePin() {
   return invoke<void>('new_cache_pin')
 }

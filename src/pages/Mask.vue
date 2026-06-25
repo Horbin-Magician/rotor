@@ -1,9 +1,11 @@
 <template>
-  <main class="container" 
-        @mousedown="handleMouseDown" 
-        @mousemove="handleMouseMove" 
-        @mouseout="handleMouseOut"
-        @mouseup="handleMouseUp">
+  <main
+    class="container"
+    @mousedown="handleMouseDown"
+    @mousemove="handleMouseMove"
+    @mouseout="handleMouseOut"
+    @mouseup="handleMouseUp"
+  >
     <ScreenCanvas
       :window-width="windowWidth"
       :window-height="windowHeight"
@@ -11,7 +13,7 @@
       :bac-img-height="bacImgHeight"
       @canvas-ready="handleCanvasReady"
     />
-    
+
     <SelectionRect
       :is-selecting="isSelecting"
       :start-x="startX"
@@ -21,7 +23,7 @@
       :auto-select-rect="autoSelectRect"
       :is-window-focused="isWindowFocused"
     />
-    
+
     <Magnifier
       :current-x="currentX"
       :current-y="currentY"
@@ -36,17 +38,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
-import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
-import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event';
-import { info, warn } from '@tauri-apps/plugin-log';
-import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket';
-import { changeCurrentMask as focusCurrentMask, clearScreenshotCache, closeCachePin, getScreenRects, newCachePin, newPin, type ScreenRect } from '../features/screenshot/api';
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window'
+import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { info, warn } from '@tauri-apps/plugin-log'
+import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket'
+import {
+  cancelScreenshotSession,
+  changeCurrentMask as focusCurrentMask,
+  finishScreenshotSession,
+  getScreenRects,
+  isScreenshotSessionCurrent,
+  newCachePin,
+  newPin,
+  type ScreenRect,
+} from '../features/screenshot/api'
 
-import ScreenCanvas from "../components/screenShotter/mask/ScreenCanvas.vue";
-import SelectionRect from "../components/screenShotter/mask/SelectionRect.vue";
-import Magnifier from "../components/screenShotter/mask/Magnifier.vue";
+import ScreenCanvas from '../components/screenShotter/mask/ScreenCanvas.vue'
+import SelectionRect from '../components/screenShotter/mask/SelectionRect.vue'
+import Magnifier from '../components/screenShotter/mask/Magnifier.vue'
 
 const appWindow = getCurrentWindow()
 
@@ -55,6 +66,10 @@ let backImgBitmap: ImageBitmap | null = null
 let unlistenShowMask: UnlistenFn | null = null
 let unlistenHideMask: UnlistenFn | null = null
 let screenshotRequestId = 0
+
+type HideWindowOptions = {
+  requestId?: number
+}
 
 async function initWebSocket() {
   try {
@@ -72,8 +87,9 @@ const windowWidth = window.screen.width
 const windowHeight = window.screen.height
 const bacImgWidth = windowWidth * window.devicePixelRatio
 const bacImgHeight = windowHeight * window.devicePixelRatio
+const hiddenPointerPosition = -9999
 
-let rects: ScreenRect[] = [];
+let rects: ScreenRect[] = []
 
 // Selection state
 const isSelecting = ref(false)
@@ -81,9 +97,9 @@ const startX = ref(0)
 const startY = ref(0)
 const endX = ref(0)
 const endY = ref(0)
-const currentX = ref(-9999)
-const currentY = ref(-9999)
-const autoSelectRect = ref<{x: number, y: number, width: number, height: number} | null>(null)
+const currentX = ref(hiddenPointerPosition)
+const currentY = ref(hiddenPointerPosition)
+const autoSelectRect = ref<{ x: number; y: number; width: number; height: number } | null>(null)
 
 // Magnifier state
 const magnifierSize = 100
@@ -111,23 +127,19 @@ function handleMagnifierCanvasReady(_canvas: HTMLCanvasElement, ctx: CanvasRende
 // Draw background image
 function drawBackgroundImage() {
   if (!mainCtx || !backImgBitmap) return
-  
+
   mainCtx.clearRect(0, 0, window.screen.width, window.screen.height)
-  mainCtx.drawImage(
-    backImgBitmap,
-    0, 0,
-    window.screen.width, window.screen.height
-  )
+  mainCtx.drawImage(backImgBitmap, 0, 0, window.screen.width, window.screen.height)
 }
 
 // Update magnifier
 const srcSize = magnifierSize / zoomFactor
 function updateMagnifier(x: number, y: number) {
   if (!magnifierCtx || !backImgBitmap) return
-  
+
   // Clear magnifier canvas
   magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize)
-  
+
   // Calculate source area to magnify (centered on mouse position)
   let srcX = x - srcSize / 2
   let srcY = y - srcSize / 2
@@ -137,12 +149,12 @@ function updateMagnifier(x: number, y: number) {
   const top = Math.max(srcY, 0)
   const right = Math.min(srcX + srcSize, window.screen.width)
   const bottom = Math.min(srcY + srcSize, window.screen.height)
-  
+
   // Only draw if there's a valid intersection
   if (left < right && top < bottom) {
     // Calculate destination coordinates in magnifier canvas
-    const destX = ( srcSize / 2 - (x - left) ) * zoomFactor
-    const destY = ( srcSize / 2 - (y - top) ) * zoomFactor
+    const destX = (srcSize / 2 - (x - left)) * zoomFactor
+    const destY = (srcSize / 2 - (y - top)) * zoomFactor
     const destWidth = (right - left) * zoomFactor
     const destHeight = (bottom - top) * zoomFactor
 
@@ -154,8 +166,14 @@ function updateMagnifier(x: number, y: number) {
     // Draw the intersected area
     magnifierCtx.drawImage(
       backImgBitmap,
-      srcX, srcY, srcWidth, srcHeight,
-      destX, destY, destWidth, destHeight
+      srcX,
+      srcY,
+      srcWidth,
+      srcHeight,
+      destX,
+      destY,
+      destWidth,
+      destHeight,
     )
   }
 }
@@ -168,7 +186,7 @@ function getPixelColor(x: number, y: number) {
     const dpr = window.devicePixelRatio || 1
     const imgX = Math.floor(x * dpr)
     const imgY = Math.floor(y * dpr)
-    
+
     // Bounds checking
     if (imgX < 0 || imgY < 0 || imgX >= mainCanvas!.width || imgY >= mainCanvas!.height) {
       return
@@ -176,13 +194,15 @@ function getPixelColor(x: number, y: number) {
 
     const pixelData = mainCtx.getImageData(imgX, imgY, 1, 1).data
 
-    const hexColor = "#" + 
-      Array.from(pixelData).slice(0, 3)
-        .map(x => {
-          const hex = x.toString(16);
-          return hex.length === 1 ? "0" + hex : hex;
+    const hexColor =
+      '#' +
+      Array.from(pixelData)
+        .slice(0, 3)
+        .map((x) => {
+          const hex = x.toString(16)
+          return hex.length === 1 ? '0' + hex : hex
         })
-        .join("");
+        .join('')
 
     pixelColor.value = hexColor
   } catch (error) {
@@ -190,26 +210,21 @@ function getPixelColor(x: number, y: number) {
   }
 }
 
-// Auto-selection functionality
-async function changeCurrentMask() {
-  await focusCurrentMask()
-}
-
 function updateAutoSelection(x: number, y: number) {
   const minRect = rects.reduce((min: ScreenRect | undefined, rect) => {
-    const [left, top, zindex, width, height] = rect;
+    const [left, top, zindex, width, height] = rect
     if (x > left && x < left + width && y > top && y < top + height) {
-      if (!min) return rect;
+      if (!min) return rect
       if (zindex >= 0 && min[2] != zindex) {
-        return min[2] > zindex ? min : rect;
+        return min[2] > zindex ? min : rect
       } else {
-        const minArea = min[3] * min[4];
-        const rectArea = width * height;
-        return minArea < rectArea ? min : rect;
+        const minArea = min[3] * min[4]
+        const rectArea = width * height
+        return minArea < rectArea ? min : rect
       }
     }
-    return min;
-  }, undefined);
+    return min
+  }, undefined)
 
   // Only update if we got valid window bounds
   if (minRect) {
@@ -217,7 +232,7 @@ function updateAutoSelection(x: number, y: number) {
       x: minRect[0],
       y: minRect[1],
       width: minRect[3],
-      height: minRect[4]
+      height: minRect[4],
     }
     // Update selection dimensions for display
     selectionWidth.value = minRect[3]
@@ -236,12 +251,12 @@ function applyPointerPosition(x: number, y: number) {
   if (isSelecting.value) {
     endX.value = x
     endY.value = y
-    
+
     // Update selection dimensions
     selectionWidth.value = Math.abs(endX.value - startX.value)
     selectionHeight.value = Math.abs(endY.value - startY.value)
   }
-  if(isSelecting.value == false) {
+  if (!isSelecting.value) {
     updateAutoSelection(x, y)
   }
   updateMagnifier(x, y)
@@ -278,12 +293,12 @@ function handleMouseDown(event: MouseEvent) {
   startY.value = event.clientY
   endX.value = event.clientX
   endY.value = event.clientY
-  
+
   // Initialize selection dimensions
   selectionWidth.value = 0
   selectionHeight.value = 0
 
-  newCachePin()
+  void newCachePin()
 }
 
 function handleMouseMove(event: MouseEvent) {
@@ -291,7 +306,7 @@ function handleMouseMove(event: MouseEvent) {
 }
 
 function handleMouseOut(_event: MouseEvent) {
-  void changeCurrentMask()
+  void focusCurrentMask()
 }
 
 async function handleMouseUp() {
@@ -299,7 +314,7 @@ async function handleMouseUp() {
   const width = Math.abs(endX.value - startX.value)
   const height = Math.abs(endY.value - startY.value)
   const scale_factor = await appWindow.scaleFactor()
-  
+
   if (width > 5 && height > 5) {
     isSelecting.value = false
     const x = Math.min(startX.value, endX.value) * scale_factor
@@ -307,16 +322,15 @@ async function handleMouseUp() {
     const width = Math.abs(endX.value - startX.value) * scale_factor
     const height = Math.abs(endY.value - startY.value) * scale_factor
     void newPin({ offsetX: x, offsetY: y, width, height })
-    hideWindow()
+    finishScreenshotMask()
   } else if (autoSelectRect.value) {
     const x = autoSelectRect.value.x * scale_factor
     const y = autoSelectRect.value.y * scale_factor
     const width = autoSelectRect.value.width * scale_factor
     const height = autoSelectRect.value.height * scale_factor
     void newPin({ offsetX: x, offsetY: y, width, height })
-    hideWindow()
-  }
-  else {
+    finishScreenshotMask()
+  } else {
     // Reset selection if it's too small
     isSelecting.value = false
     selectionWidth.value = 0
@@ -326,11 +340,9 @@ async function handleMouseUp() {
 
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Escape') {
-    void closeCachePin()
-    void clearScreenshotCache()
-    hideWindow()
+    cancelScreenshotMask()
   } else if (event.key.toLowerCase() === 'c') {
-    writeText(pixelColor.value)
+    void writeText(pixelColor.value)
   }
 }
 
@@ -343,53 +355,114 @@ function handleWindowBlur() {
 }
 
 onMounted(async () => {
-  window.addEventListener('keyup', handleKeyup);
-  window.addEventListener('focus', handleWindowFocus);
-  window.addEventListener('blur', handleWindowBlur);
-});
+  window.addEventListener('keyup', handleKeyup)
+  window.addEventListener('focus', handleWindowFocus)
+  window.addEventListener('blur', handleWindowBlur)
+})
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keyup', handleKeyup);
-  window.removeEventListener('focus', handleWindowFocus);
-  window.removeEventListener('blur', handleWindowBlur);
-  if (unlistenShowMask) { unlistenShowMask(); unlistenShowMask = null }
-  if (unlistenHideMask) { unlistenHideMask(); unlistenHideMask = null }
-  ws?.close();
-  ws = null;
-});
+  window.removeEventListener('keyup', handleKeyup)
+  window.removeEventListener('focus', handleWindowFocus)
+  window.removeEventListener('blur', handleWindowBlur)
+  if (unlistenShowMask) {
+    unlistenShowMask()
+    unlistenShowMask = null
+  }
+  if (unlistenHideMask) {
+    unlistenHideMask()
+    unlistenHideMask = null
+  }
+  ws?.close()
+  ws = null
+})
 
 // Load the screenshot
-async function initializeScreenshot(imgBuf: ArrayBuffer) {
+function isCurrentScreenshotRequest(requestId: number) {
+  return requestId === screenshotRequestId
+}
+
+function getEventSessionId(payload: unknown) {
+  return typeof payload === 'number' && Number.isFinite(payload) ? payload : null
+}
+
+async function isActiveScreenshotRequest(requestId: number) {
+  if (!isCurrentScreenshotRequest(requestId)) return false
+
+  try {
+    return await isScreenshotSessionCurrent(requestId)
+  } catch (error) {
+    warn(`Failed to verify screenshot session ${requestId}: ${error}`)
+    return false
+  }
+}
+
+async function ensureActiveScreenshotRequest(requestId: number) {
+  if (await isActiveScreenshotRequest(requestId)) return true
+
+  if (!isCurrentScreenshotRequest(requestId)) return false
+
+  try {
+    await appWindow.hide()
+  } catch (error) {
+    warn(`Failed to hide stale mask window ${appWindow.label}: ${error}`)
+  }
+  return false
+}
+
+async function initializeScreenshot(requestId: number, imgBuf: ArrayBuffer) {
   if (imgBuf.byteLength === 0) {
     throw new Error(`No image data returned for mask ${appWindow.label}`)
   }
 
-  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight);
-  backImgBitmap = await createImageBitmap(imgData)
+  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
+  const bitmap = await createImageBitmap(imgData)
+  if (!(await ensureActiveScreenshotRequest(requestId))) {
+    bitmap.close()
+    return false
+  }
+
+  backImgBitmap = bitmap
 
   // Draw the background image
   requestAnimationFrame(() => {
-    drawBackgroundImage()
+    if (isCurrentScreenshotRequest(requestId)) {
+      drawBackgroundImage()
+    }
   })
 
+  if (!(await ensureActiveScreenshotRequest(requestId))) return false
   await appWindow.show()
+  if (!(await ensureActiveScreenshotRequest(requestId))) return false
+
   const isCursorInCurrentWindow = await syncCursorPosition()
+  if (!(await ensureActiveScreenshotRequest(requestId))) return false
+
   if (isCursorInCurrentWindow) {
     await appWindow.setFocus()
   }
-  await changeCurrentMask() // Focus the current mask window
+  if (!(await ensureActiveScreenshotRequest(requestId))) return false
+
+  await focusCurrentMask() // Focus the current mask window
+  return ensureActiveScreenshotRequest(requestId)
 }
 
-function hideWindow() {
-  screenshotRequestId += 1
+function hideWindow({ requestId }: HideWindowOptions = {}) {
+  if (requestId) {
+    screenshotRequestId = Math.max(screenshotRequestId, requestId)
+  } else {
+    screenshotRequestId += 1
+  }
   ws?.close()
   ws = null
 
-  appWindow.hide()
-  emit('hide-mask') // Emit hide-mask event to notify other hide windows to close
-  
-  if (mainCtx) { mainCtx.clearRect(0, 0, windowWidth, windowHeight) }
-  if (magnifierCtx) { magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize) }
+  void appWindow.hide()
+
+  if (mainCtx) {
+    mainCtx.clearRect(0, 0, windowWidth, windowHeight)
+  }
+  if (magnifierCtx) {
+    magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize)
+  }
 
   if (backImgBitmap) {
     backImgBitmap.close()
@@ -403,17 +476,32 @@ function hideWindow() {
   startY.value = 0
   endX.value = 0
   endY.value = 0
-  currentX.value = -999
-  currentY.value = -999
+  currentX.value = hiddenPointerPosition
+  currentY.value = hiddenPointerPosition
   autoSelectRect.value = null
   pixelColor.value = '#ffffff'
   rects = []
 }
 
+function finishScreenshotMask() {
+  endScreenshotMask(finishScreenshotSession)
+}
+
+function cancelScreenshotMask() {
+  endScreenshotMask(cancelScreenshotSession)
+}
+
+function endScreenshotMask(endSession: () => Promise<void>) {
+  hideWindow({ requestId: screenshotRequestId + 1 })
+  endSession().catch((error) => {
+    warn(`Failed to end screenshot session: ${error}`)
+  })
+}
+
 // Load the rects
 async function initializeAutoRects(requestId: number) {
   const nextRects = await getScreenRects(appWindow.label)
-  if (requestId === screenshotRequestId) {
+  if (await isActiveScreenshotRequest(requestId)) {
     rects = nextRects
   }
 }
@@ -421,8 +509,9 @@ async function initializeAutoRects(requestId: number) {
 onMounted(async () => {
   appWindow.setSimpleFullscreen(true) // Enable simple fullscreen mode
 
-  unlistenShowMask = await listen('show-mask', async (_event) => {
-    const requestId = screenshotRequestId + 1
+  unlistenShowMask = await listen<number>('show-mask', async (event) => {
+    const requestId = getEventSessionId(event.payload) ?? screenshotRequestId + 1
+    if (requestId < screenshotRequestId) return
     screenshotRequestId = requestId
 
     try {
@@ -436,24 +525,24 @@ onMounted(async () => {
         throw new Error('WebSocket did not initialize')
       }
       const imgBuf = await requestDataSocketBytes(ws, appWindow.label)
-      if (requestId !== screenshotRequestId) return
-      await initializeScreenshot(imgBuf)
+      if (!(await ensureActiveScreenshotRequest(requestId))) return
+      const initialized = await initializeScreenshot(requestId, imgBuf)
+      if (!initialized) return
       await rectsPromise
     } catch (error) {
-      if (requestId === screenshotRequestId) {
+      if (await isActiveScreenshotRequest(requestId)) {
         warn(`Failed to initialize screenshot websocket: ${error}`)
-        void clearScreenshotCache()
+        cancelScreenshotMask()
       }
     }
-  });
+  })
 
-  unlistenHideMask = await listen('hide-mask', async (_event) => {
-    const visible = await appWindow.isVisible();
-    if (visible) {
-      hideWindow()
-    }
-  });
-});
+  unlistenHideMask = await listen<number>('hide-mask', async (event) => {
+    const requestId = getEventSessionId(event.payload)
+    if (requestId && requestId <= screenshotRequestId) return
+    hideWindow({ requestId: requestId ?? undefined })
+  })
+})
 </script>
 
 <style>

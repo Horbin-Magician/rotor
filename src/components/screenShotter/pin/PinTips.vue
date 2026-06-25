@@ -6,11 +6,11 @@
 
 <script setup lang="ts">
 interface Props {
-  visible: boolean;
-  tips: string;
+  visible: boolean
+  tips: string
 }
 
-defineProps<Props>();
+defineProps<Props>()
 </script>
 
 <style scoped>

@@ -5,9 +5,9 @@
     @pointermove="handlePointerMove"
   >
     <div class="item-icon">
-      <img 
-        v-if="item.icon_data" 
-        :src="`data:image/png;base64,${item.icon_data}`" 
+      <img
+        v-if="item.icon_data"
+        :src="`data:image/png;base64,${item.icon_data}`"
         alt="Icon"
         loading="lazy"
       />
@@ -38,31 +38,19 @@
 </template>
 
 <script setup lang="ts">
+import type { Component } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
 import {
   AdminPanelSettingsFilled as OpenAsAdminIcon,
   FolderCopyRound as OpenFolderIcon,
   ErrorFilled as ErrorIcon,
 } from '@vicons/material'
+import type { SearchItem, SearchAction, ItemType } from '../../features/searcher/types'
 
-// Types
-interface Action {
-  type: string
-  title: string
-}
-
-export interface SearchItem {
-  title: string
-  subtitle: string
-  file_path: string
-  type: ItemType
-  actions?: Action[]
-  icon_data?: string
-  alias?: string
-}
-
-type ItemType = 'app' | 'file'
 type ActionType = 'OpenAsAdmin' | 'OpenFolder'
+
+const { t } = useI18n()
 
 // Props
 interface Props {
@@ -74,21 +62,21 @@ const props = defineProps<Props>()
 
 // Emits
 const emit = defineEmits<{
-  'click': [item: SearchItem]
-  'action-click': [action: Action, item: SearchItem]
+  click: [item: SearchItem]
+  'action-click': [action: SearchAction, item: SearchItem]
   'pointer-move': [event: PointerEvent]
 }>()
 
 // Constants
-const ACTION_ICONS: Record<ActionType, any> = {
+const ACTION_ICONS: Record<ActionType, Component> = {
   OpenAsAdmin: OpenAsAdminIcon,
-  OpenFolder: OpenFolderIcon
-} as const
+  OpenFolder: OpenFolderIcon,
+}
 
 // Methods
 const getDisplayTitle = (item: SearchItem): string => {
   const title = item.alias || item.title
-  
+
   // If item type is 'app', remove file extension
   if (item.type === 'app') {
     const lastDotIndex = title.lastIndexOf('.')
@@ -96,25 +84,20 @@ const getDisplayTitle = (item: SearchItem): string => {
       return title.substring(0, lastDotIndex)
     }
   }
-  
+
   return title
 }
 
-const getActionIcon = (type: string) => ACTION_ICONS[type as ActionType] || ErrorIcon
+const getActionIcon = (type: string): Component => ACTION_ICONS[type as ActionType] || ErrorIcon
 
-const getTypeLabel = (type: ItemType): string => {
-  const labels: Record<ItemType, string> = {
-    app: 'APP',
-    file: 'FILE'
-  }
-  return labels[type] || type.toUpperCase()
-}
+const getTypeLabel = (type: ItemType): string =>
+  type === 'app' ? t('message.itemTypeApp') : t('message.itemTypeFile')
 
 const handleClick = () => {
   emit('click', props.item)
 }
 
-const handleActionClick = (action: Action) => {
+const handleActionClick = (action: SearchAction) => {
   emit('action-click', action, props.item)
 }
 

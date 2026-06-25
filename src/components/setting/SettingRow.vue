@@ -18,13 +18,16 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
 
-const props = withDefaults(defineProps<{
-  label?: string
-  conflict?: boolean
-}>(), {
-  label: '',
-  conflict: false,
-})
+const props = withDefaults(
+  defineProps<{
+    label?: string
+    conflict?: boolean
+  }>(),
+  {
+    label: '',
+    conflict: false,
+  },
+)
 
 const slots = useSlots()
 const hasLabel = computed(() => Boolean(props.label || slots.label))

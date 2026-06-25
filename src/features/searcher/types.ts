@@ -26,7 +26,14 @@ export interface SearchResultItem {
 
 export type UpdateResultPayload = [string, SearchResultItem[], boolean]
 
-export type SearchIndexState = 'unbuilt' | 'building' | 'released' | 'loading' | 'ready' | 'error' | 'unavailable'
+export type SearchIndexState =
+  | 'unbuilt'
+  | 'building'
+  | 'released'
+  | 'loading'
+  | 'ready'
+  | 'error'
+  | 'unavailable'
 
 export interface VolumeIndexStatus {
   name: string

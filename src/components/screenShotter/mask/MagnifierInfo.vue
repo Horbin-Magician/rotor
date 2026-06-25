@@ -15,12 +15,12 @@
 
 <script setup lang="ts">
 interface Props {
-  selectionWidth: number;
-  selectionHeight: number;
-  pixelColor: string;
+  selectionWidth: number
+  selectionHeight: number
+  pixelColor: string
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props>()
 </script>
 
 <style scoped>

@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import { warn } from '@tauri-apps/plugin-log'
 import { openFile, openFileAsAdmin, searcherFind, searcherRelease } from '../api'
 import type { SearchAction, SearchItem, UpdateResultPayload } from '../types'
 
@@ -6,7 +7,10 @@ const MAX_RETAINED_RESULTS = 100
 
 function mapSearchItem(item: UpdateResultPayload[1][number]): SearchItem {
   const lowerFileName = item.file_name.toLowerCase()
-  const isApp = lowerFileName.endsWith('.app') || lowerFileName.endsWith('.exe') || lowerFileName.endsWith('.lnk')
+  const isApp =
+    lowerFileName.endsWith('.app') ||
+    lowerFileName.endsWith('.exe') ||
+    lowerFileName.endsWith('.lnk')
 
   return {
     title: item.file_name,
@@ -22,7 +26,11 @@ function mapSearchItem(item: UpdateResultPayload[1][number]): SearchItem {
   }
 }
 
-export function useFileSearch(searchQuery: Ref<string>, onHide: () => void, onResize: () => void | Promise<void>) {
+export function useFileSearch(
+  searchQuery: Ref<string>,
+  onHide: () => void,
+  onResize: () => void | Promise<void>,
+) {
   const searchResults = ref<SearchItem[]>([])
   const selectedIndex = ref(0)
 
@@ -33,12 +41,12 @@ export function useFileSearch(searchQuery: Ref<string>, onHide: () => void, onRe
 
   const requestSearch = (query = searchQuery.value) => {
     if (query) {
-      searcherFind(query)
+      searcherFind(query).catch((err) => warn(`Search request failed: ${err}`))
     }
   }
 
   const releaseSearch = () => {
-    searcherRelease()
+    searcherRelease().catch((err) => warn(`Search release failed: ${err}`))
   }
 
   const handleLoadMore = () => {
@@ -58,26 +66,26 @@ export function useFileSearch(searchQuery: Ref<string>, onHide: () => void, onRe
     if (availableSlots <= 0) return
 
     searchResults.value = searchResults.value.concat(
-      getSearchResults.slice(0, availableSlots).map(mapSearchItem)
+      getSearchResults.slice(0, availableSlots).map(mapSearchItem),
     )
     await onResize()
   }
 
   const clickItem = (item: SearchItem) => {
-    openFile(item.file_path)
+    openFile(item.file_path).catch((err) => warn(`Failed to open file: ${err}`))
     onHide()
   }
 
   const handleActionClick = (action: SearchAction, item: SearchItem) => {
     switch (action.type) {
       case 'OpenAsAdmin':
-        openFileAsAdmin(item.file_path).catch(err => console.error('Failed to open as admin:', err))
+        openFileAsAdmin(item.file_path).catch((err) => warn(`Failed to open as admin: ${err}`))
         break
       case 'OpenFolder':
-        openFile(item.subtitle).catch(err => console.error('Failed to open folder:', err))
+        openFile(item.subtitle).catch((err) => warn(`Failed to open folder: ${err}`))
         break
       default:
-        console.warn('Unknown action type:', action.type)
+        warn(`Unknown action type: ${action.type}`)
     }
 
     onHide()

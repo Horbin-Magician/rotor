@@ -14,22 +14,27 @@ const i18n = createI18n({
   locale: getInitialLocale(),
   messages: {
     'zh-CN': zhCN,
-    'en-US': enUS
-  }
+    'en-US': enUS,
+  },
 })
 
 // Load language setting from config and update locale
-getAllConfig().then((config) => {
-  const languageSetting = Number(config["language"]) || 0
-  if (languageSetting === 0) { // System default
-    i18n.global.locale.value = getInitialLocale()
-  } else if (languageSetting === 1) { // Chinese
-    i18n.global.locale.value = 'zh-CN'
-  } else if (languageSetting === 2) { // English
-    i18n.global.locale.value = 'en-US'
-  }
-}).catch(error => {
-  console.error('Failed to load language config:', error)
-})
+getAllConfig()
+  .then((config) => {
+    const languageSetting = Number(config['language']) || 0
+    if (languageSetting === 0) {
+      // System default
+      i18n.global.locale.value = getInitialLocale()
+    } else if (languageSetting === 1) {
+      // Chinese
+      i18n.global.locale.value = 'zh-CN'
+    } else if (languageSetting === 2) {
+      // English
+      i18n.global.locale.value = 'en-US'
+    }
+  })
+  .catch((error) => {
+    console.error('Failed to load language config:', error)
+  })
 
 export default i18n

@@ -1,5 +1,7 @@
 .settings-window {
-  --settings-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", sans-serif;
+  --settings-font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans CJK SC', 'Helvetica Neue', sans-serif;
   --settings-font-size: 13px;
   --settings-line-height: 20px;
   --settings-title-font-size: 14px;
@@ -16,7 +18,8 @@
 }
 
 .settings-window :where(button, input, textarea, select),
-.settings-window :where(.n-tabs, .n-button, .n-input, .n-base-selection, .n-slider, .n-switch, .n-tag) {
+.settings-window
+  :where(.n-tabs, .n-button, .n-input, .n-base-selection, .n-slider, .n-switch, .n-tag) {
   font-family: inherit;
 }
 
@@ -67,7 +70,10 @@
 }
 
 .setting-item-has-label {
-  grid-template-columns: minmax(var(--settings-row-label-width), 1fr) minmax(min(180px, 45%), var(--settings-row-control-width));
+  grid-template-columns: minmax(var(--settings-row-label-width), 1fr) minmax(
+      min(180px, 45%),
+      var(--settings-row-control-width)
+    );
 }
 
 .setting-label {

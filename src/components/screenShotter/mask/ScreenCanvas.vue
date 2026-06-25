@@ -1,6 +1,6 @@
 <template>
-  <canvas 
-    ref="canvasRef" 
+  <canvas
+    ref="canvasRef"
     id="main-canvas"
     :style="{ width: props.windowWidth + 'px', height: props.windowHeight + 'px' }"
     :width="props.bacImgWidth"
@@ -9,41 +9,41 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted } from 'vue'
 
 interface Props {
-  windowWidth: number;
-  windowHeight: number;
-  bacImgWidth: number;
-  bacImgHeight: number;
+  windowWidth: number
+  windowHeight: number
+  bacImgWidth: number
+  bacImgHeight: number
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props>()
 
-const canvasRef = ref<HTMLCanvasElement | null>(null);
+const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 const emit = defineEmits<{
-  canvasReady: [canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D];
-}>();
+  canvasReady: [canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D]
+}>()
 
 onMounted(() => {
-  if (!canvasRef.value) return;
-  
-  const canvas = canvasRef.value;
-  const ctx = canvas.getContext('2d', { 
-    alpha: false, 
-    desynchronized: true, 
-    willReadFrequently: true 
-  });
-  
-  if (!ctx) return;
-  
-  const dpr = window.devicePixelRatio;
-  ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = false;
-  
-  emit('canvasReady', canvas, ctx);
-});
+  if (!canvasRef.value) return
+
+  const canvas = canvasRef.value
+  const ctx = canvas.getContext('2d', {
+    alpha: false,
+    desynchronized: true,
+    willReadFrequently: true,
+  })
+
+  if (!ctx) return
+
+  const dpr = window.devicePixelRatio
+  ctx.scale(dpr, dpr)
+  ctx.imageSmoothingEnabled = false
+
+  emit('canvasReady', canvas, ctx)
+})
 </script>
 
 <style scoped>

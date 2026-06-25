@@ -1,13 +1,16 @@
 <template>
   <div class="magnifier" :style="magnifierStyle">
-    <canvas 
-      ref="magnifierCanvasRef" 
-      class="magnifier-canvas" 
-      :width="magnifierSize" 
+    <canvas
+      ref="magnifierCanvasRef"
+      class="magnifier-canvas"
+      :width="magnifierSize"
       :height="magnifierSize"
     ></canvas>
-    <div class="magnifier-crosshair" :style="{ width: magnifierSize + 'px', height: magnifierSize + 'px' }"></div>
-    <MagnifierInfo 
+    <div
+      class="magnifier-crosshair"
+      :style="{ width: magnifierSize + 'px', height: magnifierSize + 'px' }"
+    ></div>
+    <MagnifierInfo
       :selection-width="selectionWidth"
       :selection-height="selectionHeight"
       :pixel-color="pixelColor"
@@ -16,62 +19,66 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import MagnifierInfo from "./MagnifierInfo.vue";
+import { ref, computed, onMounted } from 'vue'
+import MagnifierInfo from './MagnifierInfo.vue'
 
 interface Props {
-  currentX: number;
-  currentY: number;
-  magnifierSize: number;
-  selectionWidth: number;
-  selectionHeight: number;
-  pixelColor: string;
-  isWindowFocused: boolean;
+  currentX: number
+  currentY: number
+  magnifierSize: number
+  selectionWidth: number
+  selectionHeight: number
+  pixelColor: string
+  isWindowFocused: boolean
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props>()
 
-const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null);
+const magnifierCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 const emit = defineEmits<{
-  canvasReady: [canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D];
-}>();
+  canvasReady: [canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D]
+}>()
 
-const mgnfHeight = props.magnifierSize + 50;
-const mgnfOffset = 20;
-const viewportWidth = window.screen.width;
-const viewportHeight = window.screen.height;
+const mgnfHeight = props.magnifierSize + 50
+const mgnfOffset = 20
+const viewportWidth = window.screen.width
+const viewportHeight = window.screen.height
 
 const magnifierStyle = computed(() => {
   if (!props.isWindowFocused || props.currentX < 0 || props.currentY < 0) {
-    return { display: 'none' };
+    return { display: 'none' }
   }
-  
-  let left = (props.currentX + props.magnifierSize > viewportWidth) ? 
-    props.currentX - props.magnifierSize : props.currentX;
-  let top = (props.currentY + mgnfOffset + mgnfHeight > viewportHeight) ? 
-    props.currentY - mgnfOffset - mgnfHeight : (props.currentY + mgnfOffset);
+
+  const left =
+    props.currentX + props.magnifierSize > viewportWidth
+      ? props.currentX - props.magnifierSize
+      : props.currentX
+  const top =
+    props.currentY + mgnfOffset + mgnfHeight > viewportHeight
+      ? props.currentY - mgnfOffset - mgnfHeight
+      : props.currentY + mgnfOffset
 
   return {
     left: `${left}px`,
     top: `${top}px`,
     width: `${props.magnifierSize}px`,
-    height: `${mgnfHeight}px`
-  };
-});
+    height: `${mgnfHeight}px`,
+  }
+})
 
 onMounted(() => {
-  if (!magnifierCanvasRef.value) return;
-  
-  const canvas = magnifierCanvasRef.value;
-  const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
-  
-  if (!ctx) return;
-  
-  ctx.imageSmoothingEnabled = false;
-  
-  emit('canvasReady', canvas, ctx);
-});
+  if (!magnifierCanvasRef.value) return
+
+  const canvas = magnifierCanvasRef.value
+  const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true })
+
+  if (!ctx) return
+
+  ctx.imageSmoothingEnabled = false
+
+  emit('canvasReady', canvas, ctx)
+})
 </script>
 
 <style scoped>

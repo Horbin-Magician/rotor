@@ -21,13 +21,8 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { NInfiniteScroll } from 'naive-ui'
-import SearchResultItem, { type SearchItem } from './SearchResultItem.vue'
-
-// Types
-interface Action {
-  type: string
-  title: string
-}
+import SearchResultItem from './SearchResultItem.vue'
+import type { SearchItem, SearchAction } from '../../features/searcher/types'
 
 // Props
 interface Props {
@@ -36,14 +31,14 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  modelValue: 0
+  modelValue: 0,
 })
 
 // Emits
 const emit = defineEmits<{
   'update:modelValue': [value: number]
   'item-click': [item: SearchItem]
-  'action-click': [action: Action, item: SearchItem]
+  'action-click': [action: SearchAction, item: SearchItem]
   'load-more': []
 }>()
 
@@ -51,9 +46,12 @@ const emit = defineEmits<{
 const selectedIndex = ref(props.modelValue)
 
 // Watch for external changes
-watch(() => props.modelValue, (newVal) => {
-  selectedIndex.value = newVal
-})
+watch(
+  () => props.modelValue,
+  (newVal) => {
+    selectedIndex.value = newVal
+  },
+)
 
 // Watch for internal changes
 watch(selectedIndex, (newVal) => {
@@ -65,7 +63,7 @@ const handleItemClick = (item: SearchItem) => {
   emit('item-click', item)
 }
 
-const handleActionClick = (action: Action, item: SearchItem) => {
+const handleActionClick = (action: SearchAction, item: SearchItem) => {
   emit('action-click', action, item)
 }
 
@@ -87,7 +85,7 @@ const scrollToSelected = () => {
     if (selectedElement) {
       selectedElement.scrollIntoView({
         behavior: 'smooth',
-        block: 'nearest'
+        block: 'nearest',
       })
     }
   })
@@ -96,7 +94,7 @@ const scrollToSelected = () => {
 // Expose methods
 defineExpose({
   scrollToSelected,
-  selectedIndex
+  selectedIndex,
 })
 </script>
 

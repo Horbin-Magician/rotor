@@ -59,6 +59,8 @@ export default {
     undo: 'Undo',
     // Searcher
     searchPlaceholder: 'Enter the content you want to search...',
+    itemTypeApp: 'APP',
+    itemTypeFile: 'FILE',
     openAsAdminTip: 'Open as admin',
     openFolderTip: 'Open folder',
     searchIndexing: 'Search Indexing',
@@ -80,7 +82,8 @@ export default {
     downloading: 'Downloading',
     updateCompleted: 'Update completed, restarting...',
     updateCheckFailed: 'Failed to check for updates',
-    manualDownloadSuggestion: 'Please try to manually download the latest version from the project page',
+    manualDownloadSuggestion:
+      'Please try to manually download the latest version from the project page',
     shortcutConflictPrefix: 'Shortcut conflict. Please update ',
     settingUpdateFailed: 'Failed to update setting',
     systemOverview: 'System Overview',
@@ -107,8 +110,9 @@ export default {
     permissionAdministrator: 'Administrator',
     permissionFileSearch: 'File Search',
     permissionScreenCapture: 'Screen Recording',
-    permissionAdministratorDetail: 'Used for NTFS journal indexing and opening files as administrator',
-    permissionFileSearchDetail: "Uses folders or volumes readable by the current user",
-    permissionScreenCaptureDetail: 'Used for screenshot capture'
-  }
+    permissionAdministratorDetail:
+      'Used for NTFS journal indexing and opening files as administrator',
+    permissionFileSearchDetail: 'Uses folders or volumes readable by the current user',
+    permissionScreenCaptureDetail: 'Used for screenshot capture',
+  },
 }

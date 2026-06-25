@@ -1,9 +1,6 @@
 <template>
   <div class="search-input-container">
-    <div
-      class="search-input-wrapper"
-      :class="statusClass"
-    >
+    <div class="search-input-wrapper" :class="statusClass">
       <n-icon size="24" class="search-icon">
         <SearchIcon />
       </n-icon>
@@ -43,8 +40,8 @@ const props = withDefaults(defineProps<Props>(), {
 // Emits
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  'input': []
-  'keydown': [event: KeyboardEvent]
+  input: []
+  keydown: [event: KeyboardEvent]
 }>()
 
 // State
@@ -52,14 +49,21 @@ const inputRef = ref<HTMLInputElement>()
 const query = ref(props.modelValue)
 
 const statusClass = computed(() => ({
-  'is-indexing': props.indexState === 'building' || props.indexState === 'loading' || props.indexState === 'unbuilt' || props.indexState === 'released',
+  'is-indexing':
+    props.indexState === 'building' ||
+    props.indexState === 'loading' ||
+    props.indexState === 'unbuilt' ||
+    props.indexState === 'released',
   'is-error': props.indexState === 'error' || props.indexState === 'unavailable',
 }))
 
 // Watch for external changes
-watch(() => props.modelValue, (newVal) => {
-  query.value = newVal
-})
+watch(
+  () => props.modelValue,
+  (newVal) => {
+    query.value = newVal
+  },
+)
 
 // Watch for internal changes
 watch(query, (newVal) => {
@@ -81,7 +85,7 @@ const focus = () => {
 
 // Expose methods
 defineExpose({
-  focus
+  focus,
 })
 </script>
 

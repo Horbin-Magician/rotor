@@ -49,9 +49,13 @@ const draftExcludedDirs = ref('')
 
 const isDirty = computed(() => draftExcludedDirs.value !== excludedDirs.value)
 
-watch(excludedDirs, (value) => {
-  draftExcludedDirs.value = value
-}, { immediate: true })
+watch(
+  excludedDirs,
+  (value) => {
+    draftExcludedDirs.value = value
+  },
+  { immediate: true },
+)
 
 function resetDraft() {
   draftExcludedDirs.value = excludedDirs.value

@@ -1,11 +1,18 @@
 <template>
   <SettingsSection>
     <template #title>
-        <span>{{ t('message.quickActions') }}</span>
-        <span class="title-count">{{ enabledCount }}/{{ draftActions.length }}</span>
+      <span>{{ t('message.quickActions') }}</span>
+      <span class="title-count">{{ enabledCount }}/{{ draftActions.length }}</span>
     </template>
     <template #extra>
-      <n-button text circle size="small" :keyboard="false" :title="t('message.addQuickAction')" @click="handleAddAction">
+      <n-button
+        text
+        circle
+        size="small"
+        :keyboard="false"
+        :title="t('message.addQuickAction')"
+        @click="handleAddAction"
+      >
         <template #icon>
           <n-icon>
             <AddIcon />
@@ -21,7 +28,7 @@
         class="quick-action-item"
         :class="{
           'quick-action-disabled': !action.enabled,
-          'setting-item-conflict': highlightedSetting === quickActionSettingKey(action)
+          'setting-item-conflict': highlightedSetting === quickActionSettingKey(action),
         }"
       >
         <div class="quick-action-summary">
@@ -31,7 +38,9 @@
               <span class="action-title">{{ action.name || t('message.unnamedQuickAction') }}</span>
               <span class="shortcut-pill">{{ displayShortcut(action.shortcut) }}</span>
             </div>
-            <div class="command-preview">{{ action.command || t('message.quickActionCommand') }}</div>
+            <div class="command-preview">
+              {{ action.command || t('message.quickActionCommand') }}
+            </div>
           </div>
           <n-button
             quaternary
@@ -82,19 +91,11 @@
       {{ t('message.noQuickActions') }}
     </div>
 
-    <n-modal
-      v-model:show="showEditor"
-      preset="card"
-      class="quick-action-modal"
-      :closable="false"
-    >
+    <n-modal v-model:show="showEditor" preset="card" class="quick-action-modal" :closable="false">
       <div v-if="editingAction" class="editor-body">
         <label class="editor-field">
           <span class="editor-label">{{ t('message.quickActionName') }}</span>
-          <n-input
-            v-model:value="editingAction.name"
-            :placeholder="t('message.quickActionName')"
-          />
+          <n-input v-model:value="editingAction.name" :placeholder="t('message.quickActionName')" />
         </label>
 
         <label class="editor-field">
@@ -152,11 +153,14 @@ import ShortcutInput from '../common/ShortcutInput.vue'
 import type { QuickAction } from '../../features/quick/types'
 import { formatShortcut } from '../../shared/shortcut'
 
-withDefaults(defineProps<{
-  highlightedSetting?: string
-}>(), {
-  highlightedSetting: ''
-})
+withDefaults(
+  defineProps<{
+    highlightedSetting?: string
+  }>(),
+  {
+    highlightedSetting: '',
+  },
+)
 
 const quickActions = defineModel<QuickAction[]>('quickActions', { required: true })
 const draftActions = ref<QuickAction[]>([])
@@ -165,7 +169,7 @@ const editingIndex = ref<number | null>(null)
 const editingAction = ref<QuickAction | null>(null)
 
 const emit = defineEmits<{
-  'runAction': [id: string]
+  runAction: [id: string]
 }>()
 
 const { t } = useI18n()
@@ -174,9 +178,13 @@ const enabledCount = computed(() => {
   return draftActions.value.filter((action) => action.enabled).length
 })
 
-watch(quickActions, (actions) => {
-  draftActions.value = cloneActions(actions)
-}, { immediate: true })
+watch(
+  quickActions,
+  (actions) => {
+    draftActions.value = cloneActions(actions)
+  },
+  { immediate: true },
+)
 
 function quickActionSettingKey(action: QuickAction) {
   return `quick_action_${action.id}`
@@ -237,9 +245,9 @@ function saveEditor() {
   if (editingIndex.value === null) {
     draftActions.value = [...draftActions.value, action]
   } else {
-    draftActions.value = draftActions.value.map((currentAction, actionIndex) => (
-      actionIndex === editingIndex.value ? action : currentAction
-    ))
+    draftActions.value = draftActions.value.map((currentAction, actionIndex) =>
+      actionIndex === editingIndex.value ? action : currentAction,
+    )
   }
 
   commitActions()
@@ -275,7 +283,10 @@ function handleRunAction(action: QuickAction) {
   padding: 6px 8px;
   background-color: var(--theme-background-secondary);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: border-color 0.2s, background-color 0.2s, opacity 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s,
+    opacity 0.2s;
 }
 
 .quick-action-item:hover {
@@ -385,7 +396,9 @@ function handleRunAction(action: QuickAction) {
   border: 1px solid var(--theme-border);
   border-radius: 6px;
   background: var(--theme-background);
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
 }
 
 .editor-field:focus-within {
@@ -427,5 +440,4 @@ function handleRunAction(action: QuickAction) {
   min-width: 66px;
   --n-height: 28px !important;
 }
-
 </style>

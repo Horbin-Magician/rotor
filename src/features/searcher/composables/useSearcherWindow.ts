@@ -1,4 +1,9 @@
-import { LogicalSize, PhysicalPosition, getCurrentWindow, primaryMonitor } from '@tauri-apps/api/window'
+import {
+  LogicalSize,
+  PhysicalPosition,
+  getCurrentWindow,
+  primaryMonitor,
+} from '@tauri-apps/api/window'
 import type { Ref } from 'vue'
 
 const WINDOW_CONFIG = {

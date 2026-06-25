@@ -12,7 +12,7 @@ import { darkTheme, NConfigProvider, NMessageProvider, GlobalThemeOverrides } fr
 import { useTheme } from './composables/useTheme'
 
 const { currentTheme, getColor } = useTheme()
-const naiveTheme = computed(() => currentTheme.value === 'dark' ? darkTheme : null) // Naive UI Theme
+const naiveTheme = computed(() => (currentTheme.value === 'dark' ? darkTheme : null)) // Naive UI Theme
 
 // Make theme overrides reactive
 const themeOverrides = computed<GlobalThemeOverrides>(() => ({

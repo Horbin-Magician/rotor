@@ -1,17 +1,21 @@
 <template>
   <div class="windows-titlebar" data-tauri-drag-region>
-      <div class="titlebar-controls">
-        <button class="titlebar-button minimize-button" @click="minimizeWindow" :title="t('message.minimize')">
-          <svg width="12" height="12" viewBox="0 0 12 12">
-            <rect x="0" y="5" width="12" height="1" />
-          </svg>
-        </button>
-        <button class="titlebar-button close-button" @click="closeWindow" :title="t('message.close')">
-          <svg width="12" height="12" viewBox="0 0 12 12">
-            <path d="M0,0 L12,12 M12,0 L0,12" stroke-width="1" />
-          </svg>
-        </button>
-      </div>
+    <div class="titlebar-controls">
+      <button
+        class="titlebar-button minimize-button"
+        @click="minimizeWindow"
+        :title="t('message.minimize')"
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <rect x="0" y="5" width="12" height="1" />
+        </svg>
+      </button>
+      <button class="titlebar-button close-button" @click="closeWindow" :title="t('message.close')">
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <path d="M0,0 L12,12 M12,0 L0,12" stroke-width="1" />
+        </svg>
+      </button>
+    </div>
   </div>
 </template>
 

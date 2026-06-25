@@ -1,8 +1,10 @@
 <template>
-  <div v-if="visible" 
-       class="text-input-overlay"
-       :style="{ left: position.x + 'px', top: position.y + 'px' }">
-    <input 
+  <div
+    v-if="visible"
+    class="text-input-overlay"
+    :style="{ left: position.x + 'px', top: position.y + 'px' }"
+  >
+    <input
       ref="inputRef"
       :value="modelValue"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
@@ -15,40 +17,40 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref } from 'vue'
 
 interface Props {
-  visible: boolean;
-  position: { x: number; y: number };
-  modelValue: string;
+  visible: boolean
+  position: { x: number; y: number }
+  modelValue: string
 }
 
 interface Emits {
-  (e: 'update:modelValue', value: string): void;
-  (e: 'blur'): void;
-  (e: 'finish'): void;
-  (e: 'cancel'): void;
+  (e: 'update:modelValue', value: string): void
+  (e: 'blur'): void
+  (e: 'finish'): void
+  (e: 'cancel'): void
 }
 
-defineProps<Props>();
-const emit = defineEmits<Emits>();
+defineProps<Props>()
+const emit = defineEmits<Emits>()
 
-const inputRef = ref<HTMLInputElement | null>(null);
+const inputRef = ref<HTMLInputElement | null>(null)
 
 function handleKeyup(event: KeyboardEvent) {
   if (event.key === 'Enter') {
-    event.preventDefault();
-    emit('finish');
+    event.preventDefault()
+    emit('finish')
   } else if (event.key === 'Escape') {
-    event.preventDefault();
-    emit('cancel');
+    event.preventDefault()
+    emit('cancel')
   }
-  event.stopPropagation();
+  event.stopPropagation()
 }
 
 defineExpose({
-  inputRef
-});
+  inputRef,
+})
 </script>
 
 <style scoped>

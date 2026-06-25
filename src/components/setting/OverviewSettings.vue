@@ -9,6 +9,7 @@
         text
         size="small"
         :keyboard="false"
+        :focusable="false"
         :disabled="loading"
         :class="{ 'is-loading': loading }"
         @click="loadOverview"
@@ -45,7 +46,9 @@
           <SecurityIcon />
         </n-icon>
         <span class="overview-label">{{ t('message.permissionOverview') }}</span>
-        <span class="overview-value">{{ grantedPermissionCount }}/{{ overview.permissions.length }}</span>
+        <span class="overview-value"
+          >{{ grantedPermissionCount }}/{{ overview.permissions.length }}</span
+        >
       </div>
     </div>
 
@@ -65,7 +68,9 @@
     <div v-if="overview" class="info-list">
       <div class="info-row">
         <span class="info-label">{{ t('message.indexState') }}</span>
-        <n-tag size="small" :type="indexStateTagType">{{ t(searchStateLabel(overview.searchIndex.state)) }}</n-tag>
+        <n-tag size="small" :type="indexStateTagType">{{
+          t(searchStateLabel(overview.searchIndex.state))
+        }}</n-tag>
       </div>
       <div class="info-row">
         <span class="info-label">{{ t('message.indexFileSize') }}</span>
@@ -89,7 +94,13 @@
             </n-tag>
           </div>
           <div class="volume-detail">
-            {{ formatVolumeDetail(volume.indexItemCount, volume.indexFileSizeBytes, volume.indexFileModifiedAt) }}
+            {{
+              formatVolumeDetail(
+                volume.indexItemCount,
+                volume.indexFileSizeBytes,
+                volume.indexFileModifiedAt,
+              )
+            }}
           </div>
         </div>
       </div>
@@ -136,7 +147,6 @@
       </div>
     </div>
   </SettingsSection>
-
 </template>
 
 <script setup lang="ts">
@@ -179,6 +189,10 @@ const indexStateTagType = computed(() => {
 })
 
 async function loadOverview() {
+  if (loading.value) {
+    return
+  }
+
   loading.value = true
   loadError.value = ''
 
@@ -221,7 +235,11 @@ function formatCount(value?: number | null) {
   return value == null ? t('message.notAvailable') : String(value)
 }
 
-function formatVolumeDetail(itemCount: number | null | undefined, sizeBytes: number, modifiedAt?: number | null) {
+function formatVolumeDetail(
+  itemCount: number | null | undefined,
+  sizeBytes: number,
+  modifiedAt?: number | null,
+) {
   return `${formatCount(itemCount)} · ${formatBytes(sizeBytes)} · ${formatDate(modifiedAt)}`
 }
 
@@ -282,11 +300,20 @@ onMounted(loadOverview)
   width: 24px;
   height: 24px;
   border-radius: 50%;
+  --n-color-hover: transparent !important;
+  --n-color-focus: transparent !important;
+  --n-color-pressed: transparent !important;
+  --n-text-color-hover: var(--theme-text-secondary) !important;
+  --n-text-color-focus: var(--theme-text-secondary) !important;
+  --n-text-color-pressed: var(--theme-text-secondary) !important;
 }
 
 .reload-button,
-.reload-button:hover {
+.reload-button:hover,
+.reload-button:focus,
+.reload-button:active {
   background: transparent !important;
+  color: var(--theme-text-secondary) !important;
   filter: none !important;
   outline: none;
   box-shadow: none !important;

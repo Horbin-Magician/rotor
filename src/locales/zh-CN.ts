@@ -59,6 +59,8 @@ export default {
     undo: '撤销',
     // Searcher
     searchPlaceholder: '输入你想要搜索的内容...',
+    itemTypeApp: '应用',
+    itemTypeFile: '文件',
     openAsAdminTip: '以管理员权限打开',
     openFolderTip: '打开文件所在目录',
     searchIndexing: '搜索索引',
@@ -109,6 +111,6 @@ export default {
     permissionScreenCapture: '屏幕录制',
     permissionAdministratorDetail: '用于 NTFS 日志索引和管理员方式打开文件',
     permissionFileSearchDetail: '使用当前用户可读取的目录或卷',
-    permissionScreenCaptureDetail: '用于截图捕获'
-  }
+    permissionScreenCaptureDetail: '用于截图捕获',
+  },
 }

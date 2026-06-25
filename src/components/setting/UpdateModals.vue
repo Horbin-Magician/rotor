@@ -1,8 +1,16 @@
 <template>
   <!-- Update Confirmation Modal -->
-  <n-modal v-model:show="showUpdateModal" preset="dialog" :title="t('message.updateAvailable')" style="width: 400px;">
+  <n-modal
+    v-model:show="showUpdateModal"
+    preset="dialog"
+    :title="t('message.updateAvailable')"
+    style="width: 400px"
+  >
     <div class="update-modal-content">
-      <p>{{ t('message.newVersionAvailable') }} <strong>{{ updateVersion }}</strong> {{ t('message.isAvailable') }}</p>
+      <p>
+        {{ t('message.newVersionAvailable') }} <strong>{{ updateVersion }}</strong>
+        {{ t('message.isAvailable') }}
+      </p>
       <p>{{ t('message.installNow') }}</p>
     </div>
     <template #action>
@@ -21,9 +29,9 @@
   <n-modal v-model:show="showProgressModal" :closable="false" :mask-closable="false">
     <n-card style="width: 400px" :title="t('message.updatingApp')">
       <div class="progress-content">
-        <n-progress 
-          type="line" 
-          :percentage="updateProgress" 
+        <n-progress
+          type="line"
+          :percentage="updateProgress"
           indicator-placement="inside"
           :color="themeVars.primaryColor"
           status="success"
@@ -43,7 +51,7 @@ const themeVars = useThemeVars()
 
 // Props
 interface Props {
-  updateVersion: String
+  updateVersion: string
   updateProgress: number
   updateStatus: string
 }
@@ -56,8 +64,8 @@ const showProgressModal = defineModel<boolean>('showProgressModal', { required: 
 
 // Emits
 const emit = defineEmits<{
-  'confirmUpdate': []
-  'cancelUpdate': []
+  confirmUpdate: []
+  cancelUpdate: []
 }>()
 
 function handleConfirmUpdate() {
