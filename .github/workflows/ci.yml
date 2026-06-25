@@ -11,7 +11,7 @@ jobs:
     name: Frontend (typecheck + lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: setup node
         uses: actions/setup-node@v6
@@ -32,7 +32,7 @@ jobs:
     name: Rust (fmt + clippy + test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: install Linux dependencies
         run: |
@@ -70,7 +70,7 @@ jobs:
     name: Rust security audit (advisory)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: taiki-e/install-action@cargo-audit
       - name: cargo audit
         working-directory: ./src-tauri
