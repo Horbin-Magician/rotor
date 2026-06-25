@@ -391,7 +391,7 @@ impl FileData {
         if reply.is_none() {
             self.finding_result
                 .items
-                .sort_by(|a, b| b.rank.cmp(&a.rank)); // sort by rank
+                .sort_by_key(|item| std::cmp::Reverse(item.rank)); // sort by rank desc
             let return_result = if self.finding_result.items.len() > self.show_num {
                 let max = std::cmp::min(self.finding_result.items.len(), need_num);
                 self.finding_result.items[self.show_num..max].to_vec()

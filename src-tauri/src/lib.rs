@@ -60,11 +60,7 @@ fn log_targets() -> Vec<Target> {
     let app_log_dir_target =
         Target::new(TargetKind::LogDir { file_name: None }).format(format_plain_log);
 
-    vec![
-        stdout_target,
-        app_log_dir_target,
-        log_file_target,
-    ]
+    vec![stdout_target, app_log_dir_target, log_file_target]
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -120,6 +116,9 @@ pub fn run() {
             screen_shotter_cmd::save_img,
             screen_shotter_cmd::get_screen_rects,
             screen_shotter_cmd::change_current_mask,
+            screen_shotter_cmd::is_screenshot_session_current,
+            screen_shotter_cmd::finish_screenshot_session,
+            screen_shotter_cmd::cancel_screenshot_session,
             screen_shotter_cmd::get_pin_state,
             screen_shotter_cmd::clear_screenshot_cache,
             screen_shotter_cmd::close_cache_pin,

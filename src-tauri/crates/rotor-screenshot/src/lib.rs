@@ -54,6 +54,15 @@ pub fn focus_mask_window_at_cursor(app_handle: &tauri::AppHandle) {
         return;
     };
 
+    match window.is_visible() {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(err) => {
+            log::warn!("Failed to read mask window visibility for {label}: {err}");
+            return;
+        }
+    }
+
     if let Err(err) = window.set_focus() {
         log::warn!("Failed to focus mask window {label}: {err}");
     }
@@ -69,6 +78,7 @@ pub struct ScreenShotter {
     shotter_record: ShotterRecord,
     max_pin_id: u32,
     current_monitors: Vec<MonitorConfig>,
+    screenshot_session_id: u32,
 }
 
 impl ScreenShotter {
@@ -83,6 +93,7 @@ impl ScreenShotter {
             shotter_record: ShotterRecord::new(),
             max_pin_id: 0,
             current_monitors: Vec::new(),
+            screenshot_session_id: 0,
         }
     }
 
@@ -96,6 +107,7 @@ impl ScreenShotter {
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         self.check_and_rebuild_mask_windows()?;
+        let session_id = self.advance_screenshot_session();
         self.capture_cache.clear();
 
         let captures = capture_all(Monitor::all()?);
@@ -104,8 +116,20 @@ impl ScreenShotter {
         }
 
         self.capture_cache.replace_all(captures);
-        self.app_handle()?.emit("show-mask", ())?;
+        self.app_handle()?.emit("show-mask", session_id)?;
         Ok(())
+    }
+
+    pub fn is_screenshot_session_current(&self, session_id: u32) -> bool {
+        session_id != 0 && session_id == self.screenshot_session_id
+    }
+
+    pub fn finish_screenshot_session(&mut self) -> Result<(), Box<dyn Error>> {
+        self.end_screenshot_session(false)
+    }
+
+    pub fn cancel_screenshot_session(&mut self) -> Result<(), Box<dyn Error>> {
+        self.end_screenshot_session(true)
     }
 
     pub fn get_shortcut(&self) -> Option<Shortcut> {
@@ -247,6 +271,40 @@ impl ScreenShotter {
             .ok_or_else(|| Box::<dyn Error>::from("AppHandle not initialized"))
     }
 
+    fn advance_screenshot_session(&mut self) -> u32 {
+        self.screenshot_session_id = self.screenshot_session_id.wrapping_add(1);
+        if self.screenshot_session_id == 0 {
+            self.screenshot_session_id = 1;
+        }
+        self.screenshot_session_id
+    }
+
+    fn end_screenshot_session(&mut self, clear_capture: bool) -> Result<(), Box<dyn Error>> {
+        let session_id = self.advance_screenshot_session();
+        if clear_capture {
+            self.capture_cache.clear();
+            self.close_cache_pin()?;
+        }
+        self.hide_mask_windows()?;
+        self.app_handle()?.emit("hide-mask", session_id)?;
+        Ok(())
+    }
+
+    fn hide_mask_windows(&self) -> Result<(), Box<dyn Error>> {
+        let app_handle = self.app_handle()?;
+        for monitor in &self.current_monitors {
+            let label = mask_label(monitor.id);
+            let Some(window) = app_handle.get_webview_window(&label) else {
+                continue;
+            };
+
+            if let Err(error) = window.hide() {
+                log::warn!("Failed to hide mask window {label}: {error}");
+            }
+        }
+        Ok(())
+    }
+
     fn monitors_have_changed(&self) -> Result<bool, Box<dyn Error>> {
         let current = sorted_configs(current_configs()?);
         let stored = sorted_configs(self.current_monitors.clone());
@@ -357,6 +415,12 @@ impl ScreenShotter {
         disable_window_animation(&window);
         refocus_mask_after_pin_build(app_handle, pos);
         Ok(())
+    }
+}
+
+impl Default for ScreenShotter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -552,6 +552,7 @@ fn are_results_on_same_line(left: &TextResult, right: &TextResult) -> bool {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn is_same_vertical_band(
     first_top: i32,
     first_bottom: i32,

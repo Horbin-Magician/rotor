@@ -82,6 +82,12 @@ impl Quick {
     }
 }
 
+impl Default for Quick {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn normalize_actions(actions: Vec<QuickAction>) -> Result<Vec<QuickAction>, QuickActionError> {
     let mut ids = HashSet::new();
     let mut normalized = Vec::with_capacity(actions.len());

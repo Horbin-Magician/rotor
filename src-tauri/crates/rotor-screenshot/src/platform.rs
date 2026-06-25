@@ -27,7 +27,7 @@ fn update_macos_overlay_window(window: &WebviewWindow, order_front: bool) -> tau
                     | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary,
             );
 
-            if order_front {
+            if order_front && ns_window.isVisible() {
                 ns_window.orderFrontRegardless();
             }
         }

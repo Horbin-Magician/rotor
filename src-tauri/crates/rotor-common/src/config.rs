@@ -42,7 +42,10 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("zoom_delta".into(), "2".into()),
         ("current_workspace".into(), "0".into()),
         ("shortcut_search".into(), DEFAULT_SEARCH_SHORTCUT.into()),
-        ("shortcut_screenshot".into(), DEFAULT_SCREENSHOT_SHORTCUT.into()),
+        (
+            "shortcut_screenshot".into(),
+            DEFAULT_SCREENSHOT_SHORTCUT.into(),
+        ),
         ("shortcut_pinwin_save".into(), "S".into()),
         ("shortcut_pinwin_close".into(), "Escape".into()),
         ("shortcut_pinwin_copy".into(), "Enter".into()),

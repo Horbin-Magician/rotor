@@ -128,6 +128,27 @@ pub async fn change_current_mask(handle: tauri::AppHandle) {
 }
 
 #[tauri::command]
+pub async fn is_screenshot_session_current(session_id: u32) -> bool {
+    lock_app()
+        .screenshot
+        .is_screenshot_session_current(session_id)
+}
+
+#[tauri::command]
+pub async fn finish_screenshot_session() {
+    if let Err(error) = lock_app().screenshot.finish_screenshot_session() {
+        log::error!("Failed to finish screenshot session: {error}");
+    }
+}
+
+#[tauri::command]
+pub async fn cancel_screenshot_session() {
+    if let Err(error) = lock_app().screenshot.cancel_screenshot_session() {
+        log::error!("Failed to cancel screenshot session: {error}");
+    }
+}
+
+#[tauri::command]
 pub async fn new_pin(
     offset_x: f32,
     offset_y: f32,

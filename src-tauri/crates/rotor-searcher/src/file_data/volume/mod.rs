@@ -62,10 +62,7 @@ pub fn metadata_modified_at(metadata: &Metadata) -> Option<u64> {
 }
 
 pub fn index_file_stem(name: &str) -> String {
-    let stem = name
-        .trim_start_matches('/')
-        .replace('/', "_")
-        .replace('\\', "_");
+    let stem = name.trim_start_matches('/').replace(['/', '\\'], "_");
 
     if stem.is_empty() {
         "root".to_string()
@@ -124,6 +121,7 @@ pub(super) fn read_i64(reader: &mut impl Read) -> io::Result<i64> {
     Ok(i64::from_be_bytes(bytes))
 }
 
+#[allow(dead_code)]
 pub(super) fn read_i8(reader: &mut impl Read) -> io::Result<i8> {
     let mut bytes = [0u8; 1];
     reader.read_exact(&mut bytes)?;

@@ -9,7 +9,7 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use crate::ShortcutRegistrationNotice;
 use rotor_common::i18n;
 
-pub struct Tray {}
+pub struct Tray;
 
 impl Tray {
     pub fn flag(&self) -> &str {
@@ -25,8 +25,8 @@ impl Tray {
         Ok(())
     }
 
-    pub fn new() -> Tray {
-        Tray {}
+    pub fn new() -> Self {
+        Self
     }
 
     pub fn show_setting_window(
@@ -108,5 +108,11 @@ impl Tray {
             })
             .build(app)?;
         Ok(())
+    }
+}
+
+impl Default for Tray {
+    fn default() -> Self {
+        Self::new()
     }
 }

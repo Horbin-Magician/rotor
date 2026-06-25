@@ -264,12 +264,7 @@ impl FileMap {
         self.insert_with_aliases(file_name, parent_id, aliases);
     }
 
-    fn insert_with_aliases(
-        &mut self,
-        file_name: String,
-        parent_id: DirId,
-        aliases: Vec<String>,
-    ) {
+    fn insert_with_aliases(&mut self, file_name: String, parent_id: DirId, aliases: Vec<String>) {
         let rank = Self::get_file_rank(&file_name);
         let prepared = prepare_search_name(
             &file_name,
@@ -588,7 +583,10 @@ mod tests {
         let items = search_items(&restored, "beta");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].path, parent_path);
-        assert_eq!(items[0].file_path, parent.join("beta.txt").to_string_lossy());
+        assert_eq!(
+            items[0].file_path,
+            parent.join("beta.txt").to_string_lossy()
+        );
 
         let _ = fs::remove_file(index_path);
     }
