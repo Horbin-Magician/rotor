@@ -3,7 +3,7 @@
 <p align="center">
 <span>English</span>
 <span> | </span>
-<a href="doc\README_CN.md">中文</a>
+<a href="doc/README_CN.md">中文</a>
 </p>
 
 <p align="center"><span>A fast, low occupancy and free toolbox for Windows and MacOS.</span></p>
@@ -29,11 +29,11 @@ Now, Rotor include **file search** and **screenshot** module.
 
 1. Shortcut key `Cmd+Shift+F` on macOS or `Ctrl+Shift+F` on Windows shows the search window.
 2. Next, enter any information in the search window to get the search results immediately.
-3. `Up` and `Down` keys to select the result, `Enter` key to open the file. 
+3. `Up` and `Down` keys to select the result, `Enter` key to open the file.
 4. A menu is displayed when the mouse hovers over the result item. You can opening the directory where the file is located or run as admin.
 
 <div align=center>
-<img src="./doc/search_demo.png" width="500" height="470"> 
+<img src="./doc/search_demo.png" width="500" height="470">
 </div>
 
 ## Screenshot
@@ -43,7 +43,7 @@ Now, Rotor include **file search** and **screenshot** module.
 3. By default, the captured image is fixed to the screen, and press `ESC` to close it, `S` to save it, `Enter` to copy it, `H` to minimize it.
 
 <div align=center>
-<img src="./doc/screenshot_demo.png" width="558" height="352"> 
+<img src="./doc/screenshot_demo.png" width="558" height="352">
 </div>
 
 # Contribution

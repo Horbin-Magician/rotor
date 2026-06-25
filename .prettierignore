@@ -1,0 +1,6 @@
+dist
+node_modules
+src-tauri
+public
+*.md
+yarn.lock

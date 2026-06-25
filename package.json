@@ -8,6 +8,11 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
     "release:bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
@@ -29,7 +34,12 @@
     "@vicons/fluent": "^0.13.0",
     "@vicons/material": "^0.13.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.9.0",
+    "eslint": "^10.5.0",
+    "eslint-plugin-vue": "^10.9.2",
     "naive-ui": "^2.42.0",
+    "prettier": "^3.8.4",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vue-tsc": "^2.1.10"
