@@ -66,6 +66,8 @@ fn image_to_scaled_gray(img: &RgbaImage, scale_factor: u32) -> GrayImage {
                 let src_offset = src_row_offset + src_x * 4;
 
                 unsafe {
+                    // SAFETY: src_x/src_y are clamped to src_width-1 / src_height-1, so
+                    // src_offset + 2 stays within img_data (length src_width*src_height*4).
                     let r = *img_data.get_unchecked(src_offset) as u32;
                     let g = *img_data.get_unchecked(src_offset + 1) as u32;
                     let b = *img_data.get_unchecked(src_offset + 2) as u32;

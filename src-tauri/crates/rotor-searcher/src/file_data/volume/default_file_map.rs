@@ -135,9 +135,16 @@ impl DirectoryTree {
             return *dir_id;
         }
 
-        let dir_id = self
-            .next_id()
-            .unwrap_or_else(|_| panic!("Directory tree exceeded u32::MAX nodes"));
+        let dir_id = match self.next_id() {
+            Ok(dir_id) => dir_id,
+            Err(error) => {
+                // Practically unreachable (would require >u32::MAX directories), but
+                // degrade gracefully instead of crashing the indexer thread: attach the
+                // entry to the existing parent rather than minting a new node.
+                log::error!("Directory tree exceeded capacity, reusing parent id: {error}");
+                return parent_id;
+            }
+        };
         self.nodes.push(DirNode { parent_id, name });
         self.lookup.insert(key, dir_id);
         dir_id

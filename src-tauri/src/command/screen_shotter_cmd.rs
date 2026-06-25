@@ -264,13 +264,21 @@ pub async fn save_img(img_buf: Vec<u8>, app: tauri::AppHandle) -> bool {
         .to_string();
 
     let file_path = if config.ask_save_path || config.save_path.is_empty() {
-        app.dialog()
-            .file()
-            .set_directory(&config.save_path)
-            .add_filter("PNG", &["png"])
-            .set_file_name(file_name)
-            .blocking_save_file()
-            .and_then(|v| v.into_path().ok())
+        // Run the native dialog off the async runtime so it does not block a worker
+        // thread while waiting for user interaction.
+        let app = app.clone();
+        let save_path = config.save_path.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            app.dialog()
+                .file()
+                .set_directory(&save_path)
+                .add_filter("PNG", &["png"])
+                .set_file_name(file_name)
+                .blocking_save_file()
+                .and_then(|v| v.into_path().ok())
+        })
+        .await
+        .unwrap_or(None)
     } else {
         Some(PathBuf::from(&config.save_path).join(file_name))
     };
