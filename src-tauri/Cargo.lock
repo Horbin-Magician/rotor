@@ -5504,7 +5504,7 @@ name = "rotor-platform"
 version = "2.5.2"
 dependencies = [
  "base64 0.22.1",
- "core-graphics 0.23.2",
+ "core-graphics 0.25.0",
  "encoding_rs",
  "file_icon_provider",
  "image",
