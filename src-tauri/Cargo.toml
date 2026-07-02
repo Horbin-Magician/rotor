@@ -17,6 +17,11 @@ members = [
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 [lib]
 name = "rotor_tauri_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
