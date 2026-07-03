@@ -21,23 +21,6 @@ Rotor 是基于 Tauri 2（Rust 后端 + Vue 3/TS 前端）的桌面工具箱，�
 
 ## Phase 1 — 快速收益（低风险，先做）
 
-### 1.1 添加 release 编译优化
-
-- `src-tauri/Cargo.toml`（workspace 根）添加：
-  ```toml
-  [profile.release]
-  lto = "thin"
-  codegen-units = 1
-  strip = "symbols"
-  ```
-- **不加** `panic = "abort"`：代码中 `collect_captures` 等依赖 `JoinHandle::join` 捕获 worker panic。
-
-### 1.2 缓存 OCR 管线
-
-- `src-tauri/crates/rotor-screenshot/src/img_util.rs:360-383`
-- 将 `OAROCRBuilder::new(...).build()` 的结果放入 `static OnceLock<Mutex<OAROCR>>`（模型路径在应用运行期恒定）。第二次及以后的 OCR 调用复用管线。
-- 实现时确认 `OAROCR: Send`（`screen_shotter_cmd.rs:356` 的 `spawn_blocking` 需要）；若不满足，改用单一 OCR 工作线程 + mpsc 通道。
-
 ### 1.3 Pin 窗口配置缓存
 
 - `src/pages/Pin.vue:286-302, ~959`

@@ -1,10 +1,24 @@
 use image::{self, DynamicImage, GrayImage, RgbaImage};
 use oar_ocr::domain::TextRegion;
-use oar_ocr::oarocr::OAROCRBuilder;
+use oar_ocr::oarocr::{OAROCRBuilder, OAROCR};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::path::Path;
+use std::sync::{mpsc, Mutex, MutexGuard, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant};
+
+const OCR_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Default)]
+struct OcrCache {
+    pipeline: Option<OAROCR>,
+    last_used: Option<Instant>,
+}
+
+static OCR_PIPELINE: OnceLock<Mutex<OcrCache>> = OnceLock::new();
+static OCR_REAPER: Mutex<Option<mpsc::Sender<()>>> = Mutex::new(None);
 
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let original_width = original_img.width();
@@ -362,15 +376,24 @@ pub fn img2text(
     model_path: &Path,
     img: &DynamicImage,
 ) -> Result<Vec<TextResult>, Box<dyn std::error::Error>> {
-    let det_model_path = model_path.join("pp-ocrv6_tiny_det.onnx");
-    let rec_model_path = model_path.join("pp-ocrv6_tiny_rec.onnx");
-    let dict_path = model_path.join("ppocrv6_tiny_dict.txt");
+    let result = {
+        let pipeline_cache = OCR_PIPELINE.get_or_init(|| Mutex::new(OcrCache::default()));
+        let mut cache = lock_ocr_cache(pipeline_cache);
+        if cache.pipeline.is_none() {
+            cache.pipeline = Some(build_ocr_pipeline(model_path)?);
+        }
 
-    let ocr = OAROCRBuilder::new(det_model_path, rec_model_path, dict_path)
-        .image_batch_size(1)
-        .region_batch_size(32)
-        .build()?;
-    let Some(result) = ocr.predict(vec![img.to_rgb8()])?.into_iter().next() else {
+        let result = cache
+            .pipeline
+            .as_ref()
+            .expect("OCR pipeline was initialized")
+            .predict(vec![img.to_rgb8()]);
+        cache.last_used = Some(Instant::now());
+        result
+    };
+    schedule_ocr_reaper();
+
+    let Some(result) = result?.into_iter().next() else {
         return Ok(Vec::new());
     };
 
@@ -381,6 +404,87 @@ pub fn img2text(
         .collect();
 
     Ok(merge_text_results(text_results))
+}
+
+fn build_ocr_pipeline(model_path: &Path) -> Result<OAROCR, Box<dyn std::error::Error>> {
+    let det_model_path = model_path.join("pp-ocrv6_tiny_det.onnx");
+    let rec_model_path = model_path.join("pp-ocrv6_tiny_rec.onnx");
+    let dict_path = model_path.join("ppocrv6_tiny_dict.txt");
+    Ok(
+        OAROCRBuilder::new(det_model_path, rec_model_path, dict_path)
+            .image_batch_size(1)
+            .region_batch_size(32)
+            .build()?,
+    )
+}
+
+fn lock_ocr_cache(cache: &Mutex<OcrCache>) -> MutexGuard<'_, OcrCache> {
+    match cache.lock() {
+        Ok(guard) => guard,
+        Err(error) => {
+            log::warn!("Recovering OCR pipeline after a panic");
+            let mut guard = error.into_inner();
+            *guard = OcrCache::default();
+            cache.clear_poison();
+            guard
+        }
+    }
+}
+
+fn schedule_ocr_reaper() {
+    let mut reaper = OCR_REAPER.lock().unwrap_or_else(|error| error.into_inner());
+    if reaper
+        .as_ref()
+        .is_some_and(|sender| sender.send(()).is_ok())
+    {
+        return;
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    match thread::Builder::new()
+        .name("rotor-ocr-reaper".to_string())
+        .stack_size(64 * 1024)
+        .spawn(move || run_ocr_reaper(receiver))
+    {
+        Ok(_) => {
+            let _ = sender.send(());
+            *reaper = Some(sender);
+        }
+        Err(error) => {
+            log::error!("Failed to start OCR reaper: {error}");
+            *reaper = None;
+        }
+    }
+}
+
+fn run_ocr_reaper(receiver: mpsc::Receiver<()>) {
+    while receiver.recv().is_ok() {
+        loop {
+            let remaining = {
+                let Some(cache) = OCR_PIPELINE.get() else {
+                    break;
+                };
+                let mut cache = lock_ocr_cache(cache);
+                let Some(last_used) = cache.last_used else {
+                    break;
+                };
+
+                match OCR_IDLE_TIMEOUT.checked_sub(last_used.elapsed()) {
+                    Some(remaining) if !remaining.is_zero() => remaining,
+                    _ => {
+                        cache.pipeline.take();
+                        cache.last_used = None;
+                        break;
+                    }
+                }
+            };
+
+            match receiver.recv_timeout(remaining) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+    }
 }
 
 fn text_region_to_result(region: &TextRegion) -> Option<TextResult> {
@@ -687,6 +791,7 @@ fn horizontal_gap(left: &TextResult, right: &TextResult) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     fn text_result(left: i32, top: i32, width: u32, height: u32, text: &str) -> TextResult {
         TextResult {
@@ -746,5 +851,26 @@ mod tests {
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].text, "First");
         assert_eq!(merged[1].text, "Second");
+    }
+
+    #[test]
+    fn resets_ocr_cache_after_mutex_poisoning() {
+        let cache = Mutex::new(OcrCache {
+            pipeline: None,
+            last_used: Some(Instant::now()),
+        });
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            let _guard = cache
+                .lock()
+                .expect("test cache should initially be available");
+            panic!("poison test cache");
+        }));
+
+        assert!(cache.is_poisoned());
+        let recovered = lock_ocr_cache(&cache);
+        assert!(recovered.pipeline.is_none());
+        assert!(recovered.last_used.is_none());
+        drop(recovered);
+        assert!(!cache.is_poisoned());
     }
 }
