@@ -30,7 +30,7 @@ struct DirLookupKey {
 
 struct DirectoryTree {
     nodes: Vec<DirNode>,
-    lookup: HashMap<DirLookupKey, DirId>,
+    lookup: HashMap<DirLookupKey, DirId, std::hash::BuildHasherDefault<fxhash::FxHasher>>,
 }
 
 impl DirectoryTree {
@@ -40,7 +40,7 @@ impl DirectoryTree {
                 parent_id: ROOT_DIR_ID,
                 name: String::new(),
             }],
-            lookup: HashMap::new(),
+            lookup: HashMap::default(),
         }
     }
 
@@ -534,6 +534,18 @@ mod tests {
 
         assert_eq!(search_names(&file_map, "weixin"), vec!["微信.txt"]);
         assert_eq!(search_names(&file_map, "wx"), vec!["微信.txt"]);
+    }
+
+    #[test]
+    fn directory_tree_intern_and_find_round_trip() {
+        let mut tree = DirectoryTree::new();
+        let path = PathBuf::from("Users").join("alice").join("Documents");
+
+        let dir_id = tree.intern_path(&path);
+
+        assert_eq!(tree.find_path(&path), Some(dir_id));
+        assert_eq!(tree.intern_path(&path), dir_id);
+        assert_eq!(tree.path(dir_id).as_deref(), path.to_str());
     }
 
     #[test]
