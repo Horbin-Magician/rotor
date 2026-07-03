@@ -46,6 +46,7 @@ function initStage(backImg: ImageBitmap, crop: CropRegion) {
 
   // Add the image with proper crop and positioning
   backImgLayer = new Konva.Layer() // Create background layer with black background
+  backImgLayer.listening(false)
   const konvaImage = new Konva.Image({
     x: 0,
     y: 0,
@@ -267,11 +268,11 @@ function endDrawing() {
     currentPath.points(smoothedPoints)
     drawingHistory.push(currentPath)
   } else if (currentArrow) {
-    drawingHistory.push(currentArrow.clone())
+    drawingHistory.push(currentArrow)
   } else if (currentRect) {
-    drawingHistory.push(currentRect.clone())
+    drawingHistory.push(currentRect)
   } else if (currentText) {
-    drawingHistory.push(currentText.clone())
+    drawingHistory.push(currentText)
   }
 
   currentPath = null
@@ -316,7 +317,7 @@ function addText(text: string, pos: { x: number; y: number }) {
   drawingLayer.add(currentText)
   drawingLayer.batchDraw()
 
-  drawingHistory.push(currentText.clone())
+  drawingHistory.push(currentText)
 
   currentText = null
 }

@@ -135,15 +135,39 @@ impl AppConfig {
     }
 
     pub fn get_all(&self) -> Config {
-        let mut merged = HashMap::new();
-        for (key, value) in self.config.iter() {
-            merged.insert(key.clone(), value.clone());
-        }
-        for (key, value) in DEFAULT_CONFIG.iter() {
-            merged.entry(key.clone()).or_insert_with(|| value.clone());
-        }
+        let mut merged = DEFAULT_CONFIG.clone();
+        merged.extend(self.config.clone());
         merged
     }
 }
 
 static INSTANCE: LazyLock<Mutex<AppConfig>> = LazyLock::new(|| Mutex::new(AppConfig::new()));
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_all_user_values_override_defaults() {
+        let config = AppConfig {
+            config: HashMap::from([("language".to_string(), "1".to_string())]),
+        };
+
+        assert_eq!(
+            config.get_all().get("language").map(String::as_str),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn get_all_fills_missing_values_from_defaults() {
+        let config = AppConfig {
+            config: HashMap::new(),
+        };
+
+        assert_eq!(
+            config.get_all().get("zoom_delta").map(String::as_str),
+            Some("2")
+        );
+    }
+}

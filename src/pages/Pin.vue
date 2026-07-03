@@ -197,6 +197,7 @@ const pin_id = Number.isNaN(parsedPinId) ? -1 : parsedPinId
 let unlisten_show_pin: UnlistenFn | null = null
 let unlistenFocusChanged: UnlistenFn | null = null
 let unlistenScaleChanged: UnlistenFn | null = null
+let contextMenuHandler: ((event: MouseEvent) => void) | null = null
 
 let ws: WebSocket | null = null
 
@@ -891,11 +892,15 @@ async function saveImage() {
     pixelRatio,
     callback(blob) {
       if (!blob) return
-      blob.arrayBuffer().then((imgBuf) => {
-        saveScreenshotImage(imgBuf).then((if_success) => {
+      blob
+        .arrayBuffer()
+        .then((imgBuf) => saveScreenshotImage(imgBuf))
+        .then((if_success) => {
           if (if_success) closeWindow()
         })
-      })
+        .catch((error) => {
+          console.error('Failed to save image:', error)
+        })
     },
   })
 }
@@ -907,10 +912,13 @@ async function copyImage() {
     pixelRatio,
     callback(blob) {
       if (!blob) return
-      blob.arrayBuffer().then((imgBuf) => {
-        writeImage(imgBuf)
-        closeWindow()
-      })
+      blob
+        .arrayBuffer()
+        .then((imgBuf) => writeImage(imgBuf))
+        .then(() => closeWindow())
+        .catch((error) => {
+          console.error('Failed to copy image:', error)
+        })
     },
   })
 }
@@ -1177,14 +1185,17 @@ onMounted(async () => {
     ],
   })
 
-  window.addEventListener('contextmenu', async (event) => {
+  contextMenuHandler = (event) => {
     if (state.value === State.OCR && isOcrTextTarget(event.target)) {
       return
     }
 
     event.preventDefault()
-    menu.popup(new LogicalPosition(event.clientX, event.clientY))
-  })
+    menu.popup(new LogicalPosition(event.clientX, event.clientY)).catch((error) => {
+      console.error('Failed to open context menu:', error)
+    })
+  }
+  window.addEventListener('contextmenu', contextMenuHandler)
 
   {
     const result = await tryLoadScreenShot(pin_id)
@@ -1207,6 +1218,10 @@ onBeforeUnmount(async () => {
   window.removeEventListener('mousemove', handleSelectionResizeMove, true)
   window.removeEventListener('mouseup', handleSelectionResizeEnd, true)
   window.removeEventListener('mouseup', handleDragMouseUp, true)
+  if (contextMenuHandler) {
+    window.removeEventListener('contextmenu', contextMenuHandler)
+    contextMenuHandler = null
+  }
   if (unlisten_show_pin) {
     unlisten_show_pin()
   }
