@@ -1,65 +1,142 @@
-<p align="center"><a href="https://github.com/Horbin-Magician/rotor-rs" target="_blank" rel="noopener noreferrer"><img width="100" src="../public/assets/logo.png" alt="Rotor logo"></a></p>
-
 <p align="center">
-<a href="../README.md">English</a>
-<span> | </span>
-<span>中文</span>
+  <a href="https://github.com/Horbin-Magician/rotor" target="_blank" rel="noopener noreferrer">
+    <img width="100" src="../public/assets/logo.png" alt="Rotor logo">
+  </a>
 </p>
 
-<p align="center"><span>一款快速、低占用、免费的工具箱，适用于Windows和MacOS操作系统</span></p>
+<p align="center">
+  <strong>适用于 Windows 和 macOS 的快速、轻量桌面工具箱。</strong>
+</p>
+
+<p align="center">
+  <a href="../README.md">English</a>
+  <span> | </span>
+  <span>中文</span>
+</p>
 
 <div align="center">
 
-![GitHub License](https://img.shields.io/github/license/Horbin-Magician/rotor)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/Horbin-Magician/rotor/total)
+[![GitHub License](https://img.shields.io/github/license/Horbin-Magician/rotor?style=flat)](../LICENSE)
+[![GitHub Downloads](https://img.shields.io/github/downloads/Horbin-Magician/rotor/total?style=flat)](https://github.com/Horbin-Magician/rotor/releases)
 ![Windows Support](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
+![macOS Support](https://img.shields.io/badge/macOS-000000?style=flat&logo=apple&logoColor=white)
 
 </div>
 
-# 什么是小云管家?
+## 关于 Rotor
 
-小云管家（Rotor）是一款跨平台的 **快速**、**低占用**、**免费** 工具箱
+Rotor 将常用桌面工具集中到全局快捷键中，同时保持快速和低资源占用。目前提供文件
+搜索、截图与图片置顶、本地截图 OCR，以及可配置的快捷操作。
 
-目前，小云管家包含了 **文件搜索**，以及 **截图** 模块。
+## 功能
 
-# 模块
+### 文件搜索
 
-## 文件搜索
+- macOS 按 `Cmd+Shift+F`，Windows 按 `Ctrl+Shift+F` 打开搜索窗口。
+- 输入文件名即时搜索，并通过键盘切换结果。
+- 按 `Enter` 打开结果，也可以通过条目操作在文件夹中显示。
+- Windows 支持以管理员身份打开适用的结果。
+- 可在设置中配置需要排除的目录名称或路径。
 
-1. 在 macOS 按下快捷键 `Cmd+Shift+F`，或在 Windows 按下 `Ctrl+Shift+F`，即可显示搜索窗口；
-2. 接着，你可以输入任何关于文件名的信息，相关文件会立即显示在下方；
-3. 按方向键 `上` 和 `下` 选择所需的文件，按回车键 `Enter` 打开相应文件； 
-4. 当鼠标悬停在结果项上时，将显示菜单。您可以打开文件所在的目录或以管理员身份运行该文件。
+<p align="center">
+  <img src="./search_demo.png" width="500" alt="Rotor 文件搜索">
+</p>
 
-<div align=center>
-<img src="./search_demo.png" width="500" height="470"> 
-</div>
+### 截图与图片置顶
 
-## 截图
+- macOS 按 `Cmd+Shift+S`，Windows 按 `Ctrl+Shift+S` 开始截图。
+- 在连接的显示器上框选区域，并将结果置顶显示。
+- 使用画笔、矩形、箭头和文字标注置顶图片。
+- 对置顶图片执行本地 OCR，并选择识别出的文字。
+- 支持缩放、保存、复制、隐藏、恢复和关闭置顶图片。
 
-1. 在 macOS 按下快捷键 `Cmd+Shift+S`，或在 Windows 按下 `Ctrl+Shift+S`，即可开始截图；
-2. 接着通过按住 `鼠标左键` 拖动选择你需要截图的区域，松开即可完成；
-3. 默认情况下，捕获的图像将被固定在屏幕上，按 `ESC` 关闭它，按 `S` 保存它，按回车键 `Enter` 复制它，按 `H` 最小化它。
+默认置顶窗口快捷键：
 
-<div align=center>
-<img src="./screenshot_demo.png" width="742" height="290"> 
-</div>
+| 操作 | 快捷键 |
+| --- | --- |
+| 保存 | `S` |
+| 复制 | `Enter` |
+| 隐藏 | `H` |
+| 关闭 | `Escape` |
 
-# 贡献
+<p align="center">
+  <img src="./screenshot_demo.png" width="558" alt="Rotor 截图工具">
+</p>
 
-本项目由 [Rust](https://www.rust-lang.org/) 编写，使用 [Tauri](https://github.com/tauri-apps/tauri/) 作为GUI框架
+### 快捷操作
 
-我诚挚地邀请您为本项目建言献策及提供高质量的代码。
+通过全局快捷键运行终端命令。可以在设置中新增、编辑、禁用和测试操作，并为每个
+操作分配快捷键。Rotor 默认提供打开终端和系统文件管理器的快捷操作。
 
-## 重要待办列表
+### 设置与诊断
 
-- [ ] 单词查找和翻译功能；
-- [ ] 屏幕录制功能;
-- [ ] 长截图功能;
-- [ ] 插件系统。
+- 自定义全局快捷键和置顶窗口快捷键。
+- 支持跟随系统、浅色和深色主题，以及中文和英文界面。
+- 配置截图保存方式和搜索排除目录。
+- 查看内存占用、搜索索引状态和相关系统权限。
+- 自动检查更新。
 
-# 开源协议
+## 安装
 
-[MIT](https://opensource.org/licenses/MIT)
+从 [GitHub Releases](https://github.com/Horbin-Magician/rotor/releases/latest) 下载最新安装包：
 
-Copyright (c) 2022-present, Horbin
+- Windows：使用 NSIS 安装程序。
+- macOS：使用 DMG 镜像。
+
+macOS 截图功能需要授予“屏幕录制”权限。Windows 采用每台计算机安装模式，可能会
+请求管理员权限。
+
+## 开发
+
+Rotor 使用 [Tauri 2](https://tauri.app/)、Rust 2021、Vue 3 和 TypeScript。
+
+### 环境要求
+
+- [Tauri 开发环境要求](https://v2.tauri.app/start/prerequisites/)
+- Rust 和 Cargo
+- Node.js 与 Yarn `1.22.22`
+
+### 本地运行
+
+```bash
+yarn install
+yarn tauri dev
+```
+
+仅启动前端开发服务器：
+
+```bash
+yarn dev
+```
+
+### 检查与构建
+
+```bash
+# 前端类型检查、代码检查、格式检查和构建
+yarn typecheck
+yarn lint
+yarn format:check
+yarn build
+
+# Rust 工作区
+cd src-tauri
+cargo check --workspace
+cargo test --workspace
+
+# 平台应用安装包
+cd ..
+yarn tauri build
+```
+
+主要代码位于 `src/`（Vue 前端）和 `src-tauri/`（Tauri 应用及 Rust 工作区 crate）。
+
+## 参与贡献
+
+欢迎提交 Issue 和 Pull Request。请保持改动范围清晰，运行相关的前端和 Rust 检查，
+并在受影响的操作系统上测试平台相关功能。
+
+## 开源协议
+
+Rotor 基于 [MIT License](../LICENSE) 开源。
+
+Copyright (c) 2024-present Horbin
