@@ -19,54 +19,6 @@ Rotor 是基于 Tauri 2（Rust 后端 + Vue 3/TS 前端）的桌面工具箱，�
 
 ---
 
-## Phase 1 — 快速收益（低风险，先做）
-
-### 1.3 Pin 窗口配置缓存
-
-- `src/pages/Pin.vue:286-302, ~959`
-- `loadShortcuts` 的 4 次串行 `getConfig` 改为一次 `getAllConfig()`（已存在于 `src/shared/api/core.ts`，Setting.vue 已在用），并同时读出 `zoom_delta` 缓存到模块级 ref。
-- 从滚轮处理函数中删除 `await getConfig('zoom_delta')`（当前每次缩放一个 IPC 往返）。
-
-### 1.4 macOS 目录索引改用 FxHash
-
-- `src-tauri/crates/rotor-searcher/src/file_data/volume/default_file_map.rs:33`
-- `lookup` HashMap 指定 `fxhash::FxHasher`（依赖已存在，`ntfs_file_map.rs:30` 已有同样用法）。索引构建热路径为 `intern_child`/`find_child`。
-- **补测试**：`DirectoryTree` intern/find 往返的 `#[test]`（纯逻辑、无 I/O）。
-
-### 1.5 代码质量微修复（合并为一个 commit）
-
-- `rotor-common/src/config.rs:137-146`：`get_all` 简化为 `DEFAULT_CONFIG.clone()` + `extend`。**补测试**：用户值覆盖默认值、默认值填补空缺。
-- `Pin.vue:1183`：contextmenu 监听器存引用并在 `onBeforeUnmount` 移除（当前泄漏）。
-- `Pin.vue:888-917`：`saveImage`/`copyImage`/`writeImage` promise 链补 `.catch`。
-- `PinCanvas.vue:261-322`：`drawingHistory` 停止 push 无用的 `.clone()`（纯内存浪费）；`backImgLayer.listening(false)`。
-
-## Phase 2 — 后端锁范围收缩（价值最高，中等风险；每项单独 commit，按 2.1→2.2→2.3 顺序）
-
-### 2.1 截屏移出全局锁
-
-- `rotor-runtime/src/application.rs:28-53`、`rotor-screenshot/src/lib.rs:108-121`
-- 将 `ScreenShotter::run()` 拆为：
-  1. 锁内 `prepare_screenshot_session`：重建 mask 窗口、推进 session、`capture_cache.clear()`、克隆 `CaptureCache` 句柄（内部为 `Arc<Mutex>`，可 Clone）和 `AppHandle`。
-  2. 锁外：`capture_all(Monitor::all()?)` → `cache.replace_all(captures)` → `emit("show-mask", session_id)`（保持 replace_all 在 emit 之前）。
-- 现有保护机制可复用：Mask 前端的 `is_screenshot_session_current` 会话守卫 + `data_server` 400ms 重试 + 500ms 快捷键防抖。验证方式：连击快捷键。
-
-### 2.2 ShotterRecord 持久化移出锁
-
-- `rotor-screenshot/src/shotter_record.rs:134-151`（调用方 `screen_shotter_cmd.rs:221-258`，每次贴图移动/缩放/失焦触发）
-- 锁内序列化为 String（廉价），`fs::write` 交给后台写线程；用 `Arc<AtomicU64>` 保存 save generation，旧代际写入被新代际取代（去抖）。同文件 `save_record_img`（line 74）已有后台 I/O 先例。
-- 崩溃可能丢最后一次贴图位置写入——UI 状态可接受，commit 中注明。
-- **补测试**：generation 取代逻辑（纯逻辑部分）的 `#[test]`。
-
-### 2.3 贴图图像加载移出锁
-
-- `rotor-runtime/src/data_server.rs:82-87`、`rotor-screenshot/src/lib.rs:220-231`
-- `get_pin_img` 拆为锁内阶段（取 `ShotterConfig` 克隆 + `CaptureCache` 克隆）与锁外阶段（磁盘 PNG 解码/缓存回退），解码包在 `tokio::task::spawn_blocking` 中（当前在 async runtime 上跑阻塞解码，属于额外发现的 bug）。
-- `get_pin_img` 内的 `capture_cache.clear()` 行为本次**只搬迁不改动**，标记为后续跟进项。
-
-### 2.4（可选，2.1-2.3 顺利后再做）事件驱动的图像就绪通知
-
-- 用 `tokio::sync::Notify`/`watch` 替换 `data_server.rs:89-104` 的 `retry_image` 轮询（20ms×20）。2.1 落地后轮询窗口已大幅缩短，时间紧可跳过。
-
 ## Phase 3 — 前端性能与包体积
 
 ### 3.1 Vite 分包 + 包体积审计

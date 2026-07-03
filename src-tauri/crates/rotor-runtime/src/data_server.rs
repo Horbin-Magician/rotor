@@ -79,11 +79,22 @@ fn get_screen_img(label: &str) -> Option<Arc<RgbaImage>> {
     Application::lock_global().screenshot.get_capture(label)
 }
 
-fn get_pin_img(label: &str) -> Option<DynamicImage> {
+async fn get_pin_img(label: &str) -> Option<DynamicImage> {
     let id = label.trim_start_matches("sspin-");
     let parsed_id = id.parse::<u32>().ok()?;
+    let image_load = {
+        Application::lock_global()
+            .screenshot
+            .prepare_pin_img(parsed_id)
+    };
 
-    Application::lock_global().screenshot.get_pin_img(parsed_id)
+    match tokio::task::spawn_blocking(move || image_load.load()).await {
+        Ok(image) => image,
+        Err(error) => {
+            log::error!("Pin image load task failed for {label}: {error}");
+            None
+        }
+    }
 }
 
 async fn retry_image<T, F>(mut load: F) -> Option<T>
@@ -108,7 +119,17 @@ async fn try_get_screen_img(label: &str) -> Option<Arc<RgbaImage>> {
 }
 
 async fn try_get_pin_img(label: &str) -> Option<DynamicImage> {
-    retry_image(|| get_pin_img(label)).await
+    for attempt in 0..IMAGE_RETRY_COUNT {
+        if let Some(image) = get_pin_img(label).await {
+            return Some(image);
+        }
+
+        if attempt + 1 < IMAGE_RETRY_COUNT {
+            tokio::time::sleep(IMAGE_RETRY_DELAY).await;
+        }
+    }
+
+    None
 }
 
 fn parse_data_request(msg: Message) -> Result<Option<DataRequest>, String> {

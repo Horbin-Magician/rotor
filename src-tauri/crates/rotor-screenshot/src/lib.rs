@@ -81,6 +81,46 @@ pub struct ScreenShotter {
     screenshot_session_id: u32,
 }
 
+pub struct ScreenshotSession {
+    app_handle: tauri::AppHandle,
+    capture_cache: CaptureCache,
+    session_id: u32,
+}
+
+impl ScreenshotSession {
+    pub fn capture_and_show(self) -> Result<(), Box<dyn Error>> {
+        let captures = capture_all(Monitor::all()?);
+        if captures.is_empty() {
+            return Err("No screenshot images captured".into());
+        }
+
+        self.capture_cache.replace_all(captures);
+        self.app_handle.emit("show-mask", self.session_id)?;
+        Ok(())
+    }
+}
+
+pub struct PinImageLoad {
+    id: u32,
+    record: Option<ShotterConfig>,
+    capture_cache: CaptureCache,
+}
+
+impl PinImageLoad {
+    pub fn load(self) -> Option<DynamicImage> {
+        if let Ok(img) = ShotterRecord::load_record_img(self.id) {
+            return Some(img);
+        }
+
+        let record = self.record?;
+        let img = self.capture_cache.get(&record.mask_label)?;
+        let dyn_img = DynamicImage::ImageRgba8(img.as_ref().clone());
+        let _save_task = ShotterRecord::save_record_img(self.id, dyn_img.clone());
+        self.capture_cache.clear();
+        Some(dyn_img)
+    }
+}
+
 impl ScreenShotter {
     pub fn flag(&self) -> &str {
         "screenshot"
@@ -105,19 +145,16 @@ impl ScreenShotter {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn prepare_screenshot_session(&mut self) -> Result<ScreenshotSession, Box<dyn Error>> {
         self.check_and_rebuild_mask_windows()?;
         let session_id = self.advance_screenshot_session();
         self.capture_cache.clear();
 
-        let captures = capture_all(Monitor::all()?);
-        if captures.is_empty() {
-            return Err("No screenshot images captured".into());
-        }
-
-        self.capture_cache.replace_all(captures);
-        self.app_handle()?.emit("show-mask", session_id)?;
-        Ok(())
+        Ok(ScreenshotSession {
+            app_handle: self.app_handle()?.clone(),
+            capture_cache: self.capture_cache.clone(),
+            session_id,
+        })
     }
 
     pub fn is_screenshot_session_current(&self, session_id: u32) -> bool {
@@ -217,17 +254,12 @@ impl ScreenShotter {
         Ok(())
     }
 
-    pub fn get_pin_img(&self, id: u32) -> Option<DynamicImage> {
-        if let Ok(img) = ShotterRecord::load_record_img(id) {
-            return Some(img);
+    pub fn prepare_pin_img(&self, id: u32) -> PinImageLoad {
+        PinImageLoad {
+            id,
+            record: self.shotter_record.get_record(id).cloned(),
+            capture_cache: self.capture_cache.clone(),
         }
-
-        let record = self.shotter_record.get_record(id)?;
-        let img = self.capture_cache.get(&record.mask_label)?;
-        let dyn_img = DynamicImage::ImageRgba8(img.as_ref().clone());
-        let _save_task = ShotterRecord::save_record_img(id, dyn_img.clone());
-        self.capture_cache.clear();
-        Some(dyn_img)
     }
 
     pub fn restore_pin_wins(&mut self) {

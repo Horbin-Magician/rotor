@@ -2,7 +2,9 @@ use image::{self, DynamicImage};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, LazyLock};
+use std::time::Duration;
 use std::{collections::HashMap, fs, io, thread};
 use toml;
 
@@ -40,10 +42,18 @@ fn default_workspace() -> HashMap<String, WorkSpace> {
 }
 
 const DEFAULT_SPACE_ID: &str = "default";
+const SAVE_DEBOUNCE: Duration = Duration::from_millis(50);
 static EMPTY_SHOTTERS: LazyLock<HashMap<String, ShotterConfig>> = LazyLock::new(HashMap::new);
+
+struct SaveRequest {
+    generation: u64,
+    config: String,
+}
 
 pub struct ShotterRecord {
     record: Record,
+    save_generation: Arc<AtomicU64>,
+    save_tx: Option<mpsc::Sender<SaveRequest>>,
 }
 
 impl ShotterRecord {
@@ -94,6 +104,7 @@ impl ShotterRecord {
     }
 
     pub fn new() -> ShotterRecord {
+        let save_generation = Arc::new(AtomicU64::new(0));
         let record_path = match ShotterRecord::get_root_path() {
             Ok(root_path) => root_path.join("record.toml"),
             Err(error) => {
@@ -102,6 +113,8 @@ impl ShotterRecord {
                     record: Record {
                         workspaces: HashMap::new(),
                     },
+                    save_generation,
+                    save_tx: None,
                 };
             }
         };
@@ -128,13 +141,27 @@ impl ShotterRecord {
                 shotters: HashMap::new(),
             });
 
-        ShotterRecord { record }
+        let save_tx = Some(start_save_worker(record_path, Arc::clone(&save_generation)));
+        ShotterRecord {
+            record,
+            save_generation,
+            save_tx,
+        }
     }
 
     fn save(&self) -> Result<(), Box<dyn Error>> {
-        let path = ShotterRecord::get_root_path()?.join("record.toml");
         let config_str = toml::to_string_pretty(&self.record)?;
-        fs::write(path, config_str)?;
+        let generation = next_generation(&self.save_generation);
+        let save_tx = self
+            .save_tx
+            .as_ref()
+            .ok_or_else(|| io::Error::other("Shotter record writer is unavailable"))?;
+        save_tx
+            .send(SaveRequest {
+                generation,
+                config: config_str,
+            })
+            .map_err(|_| io::Error::other("Shotter record writer stopped"))?;
         Ok(())
     }
 
@@ -190,5 +217,63 @@ impl ShotterRecord {
 impl Default for ShotterRecord {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn next_generation(generation: &AtomicU64) -> u64 {
+    generation.fetch_add(1, Ordering::AcqRel).wrapping_add(1)
+}
+
+fn is_current_generation(generation: &AtomicU64, candidate: u64) -> bool {
+    generation.load(Ordering::Acquire) == candidate
+}
+
+fn start_save_worker(path: PathBuf, generation: Arc<AtomicU64>) -> mpsc::Sender<SaveRequest> {
+    let (save_tx, save_rx) = mpsc::channel::<SaveRequest>();
+    thread::spawn(move || {
+        while let Ok(mut request) = save_rx.recv() {
+            let mut disconnected = false;
+            loop {
+                match save_rx.recv_timeout(SAVE_DEBOUNCE) {
+                    Ok(newer_request) => request = newer_request,
+                    Err(mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+
+            if is_current_generation(&generation, request.generation) {
+                // This write is intentionally asynchronous. A process crash can lose the
+                // final pin position update, which is acceptable for transient UI state.
+                if let Err(error) = fs::write(&path, request.config) {
+                    log::error!("Failed to save shotter record: {error}");
+                }
+            }
+
+            if disconnected {
+                break;
+            }
+        }
+    });
+    save_tx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_current_generation, next_generation};
+    use std::sync::atomic::AtomicU64;
+
+    #[test]
+    fn newer_save_generation_supersedes_older_generation() {
+        let generation = AtomicU64::new(0);
+
+        let older = next_generation(&generation);
+        assert!(is_current_generation(&generation, older));
+
+        let newer = next_generation(&generation);
+        assert!(!is_current_generation(&generation, older));
+        assert!(is_current_generation(&generation, newer));
     }
 }

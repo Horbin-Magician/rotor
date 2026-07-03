@@ -42,12 +42,17 @@ pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: 
         let mut handled = false;
         if let Some(module_shortcut) = rotor_app.screenshot.get_shortcut() {
             if module_shortcut == *shortcut {
-                let result = rotor_app.screenshot.run();
+                let result = rotor_app.screenshot.prepare_screenshot_session();
                 rotor_app.finish_shortcut_trigger(shortcut_id);
-                result.unwrap_or_else(|e| {
-                    let flag = rotor_app.screenshot.flag();
-                    log::error!("Module {flag} run error: {e}")
-                });
+                let flag = rotor_app.screenshot.flag().to_string();
+                drop(rotor_app);
+
+                match result {
+                    Ok(session) => session
+                        .capture_and_show()
+                        .unwrap_or_else(|e| log::error!("Module {flag} run error: {e}")),
+                    Err(e) => log::error!("Module {flag} run error: {e}"),
+                }
                 return;
             }
         }
