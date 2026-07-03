@@ -112,7 +112,7 @@ import { Menu } from '@tauri-apps/api/menu'
 import { writeImage } from '@tauri-apps/plugin-clipboard-manager'
 import { UnlistenFn } from '@tauri-apps/api/event'
 import { warn } from '@tauri-apps/plugin-log'
-import { getConfig } from '../shared/api/core'
+import { getAllConfig } from '../shared/api/core'
 import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket'
 import {
   deletePinRecord,
@@ -237,6 +237,7 @@ const canvasRef = ref<InstanceType<typeof PinCanvas> | null>(null)
 const init_scale_factor = ref(1)
 const scale_factor = ref(1)
 const zoomScale = ref(100)
+const zoomDelta = ref(2)
 const tips = ref('')
 const show_tips = ref(false)
 
@@ -285,17 +286,15 @@ const canResizeSelection = computed(
 // Load shortcuts from configuration
 async function loadShortcuts() {
   try {
-    const saveShortcut = await getConfig('shortcut_pinwin_save')
-    const closeShortcut = await getConfig('shortcut_pinwin_close')
-    const copyShortcut = await getConfig('shortcut_pinwin_copy')
-    const hideShortcut = await getConfig('shortcut_pinwin_hide')
+    const config = await getAllConfig()
 
     shortcuts.value = {
-      save: parseShortcutKey(saveShortcut) || 's',
-      close: parseShortcutKey(closeShortcut) || 'Escape',
-      copy: parseShortcutKey(copyShortcut) || 'Enter',
-      hide: parseShortcutKey(hideShortcut) || 'h',
+      save: parseShortcutKey(config['shortcut_pinwin_save']) || 's',
+      close: parseShortcutKey(config['shortcut_pinwin_close']) || 'Escape',
+      copy: parseShortcutKey(config['shortcut_pinwin_copy']) || 'Enter',
+      hide: parseShortcutKey(config['shortcut_pinwin_hide']) || 'h',
     }
+    zoomDelta.value = Number.parseInt(config['zoom_delta'], 10) || 2
   } catch (error) {
     console.error('Failed to load shortcuts:', error)
   }
@@ -956,9 +955,7 @@ async function imgToText() {
 }
 
 async function zoomWindow(wheel_delta: number) {
-  const zoom_delta = parseInt(await getConfig('zoom_delta'), 10)
-
-  const delta = wheel_delta > 0 ? -zoom_delta : zoom_delta
+  const delta = wheel_delta > 0 ? -zoomDelta.value : zoomDelta.value
   zoomScale.value += delta
   zoomScale.value = Math.max(5, Math.min(zoomScale.value, 500))
 
