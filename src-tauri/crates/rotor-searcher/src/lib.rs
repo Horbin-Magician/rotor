@@ -97,14 +97,21 @@ impl Searcher {
         None
     }
 
-    pub fn new<F>(find_result_callback: F) -> Searcher
+    pub fn new<F>(
+        find_result_callback: F,
+        state_change_callback: Option<Box<dyn Fn(String) + Send>>,
+    ) -> Searcher
     where
         F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
     {
         let (searcher_msg_sender, searcher_msg_receiver) = mpsc::channel::<SearcherMessage>();
         let search_index_state = Arc::new(Mutex::new(FileState::Unbuild));
 
-        let _file_data = FileData::new(find_result_callback, search_index_state.clone());
+        let _file_data = FileData::new(
+            find_result_callback,
+            state_change_callback,
+            search_index_state.clone(),
+        );
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Init);
 

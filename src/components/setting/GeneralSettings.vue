@@ -34,13 +34,13 @@
 
 <script setup lang="ts">
 import { NSelect, NSwitch, NButton } from 'naive-ui'
-import { ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SettingRow from './SettingRow.vue'
 import SettingsSection from './SettingsSection.vue'
 import ShortcutInput from '../common/ShortcutInput.vue'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
 // Props
 interface Props {
@@ -68,32 +68,17 @@ const powerBoot = defineModel<boolean>('powerBoot', { required: true })
 const shortcutScreenshot = defineModel<string>('shortcutScreenshot', { required: true })
 const shortcutSearch = defineModel<string>('shortcutSearch', { required: true })
 
-const languageOptions = ref([
+const languageOptions = computed(() => [
   { label: t('message.systemDefault'), value: 0 },
   { label: t('message.chinese'), value: 1 },
   { label: t('message.english'), value: 2 },
 ])
 
-const themeOptions = ref([
+const themeOptions = computed(() => [
   { label: t('message.followSystem'), value: 0 },
   { label: t('message.light'), value: 1 },
   { label: t('message.dark'), value: 2 },
 ])
-
-// Update options when language changes
-watch(locale, () => {
-  languageOptions.value = [
-    { label: t('message.systemDefault'), value: 0 },
-    { label: t('message.chinese'), value: 1 },
-    { label: t('message.english'), value: 2 },
-  ]
-
-  themeOptions.value = [
-    { label: t('message.followSystem'), value: 0 },
-    { label: t('message.light'), value: 1 },
-    { label: t('message.dark'), value: 2 },
-  ]
-})
 
 function handleCheckUpdate() {
   emit('checkUpdate')

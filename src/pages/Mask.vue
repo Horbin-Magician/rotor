@@ -112,6 +112,8 @@ const isWindowFocused = ref(true)
 let mainCanvas: HTMLCanvasElement | null = null
 let mainCtx: CanvasRenderingContext2D | null = null
 let magnifierCtx: CanvasRenderingContext2D | null = null
+let pointerAnimationFrame: number | null = null
+let latestPointerPosition: { x: number; y: number } | null = null
 
 // Handle canvas ready events
 function handleCanvasReady(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
@@ -263,6 +265,23 @@ function applyPointerPosition(x: number, y: number) {
   getPixelColor(x, y)
 }
 
+function cancelPointerAnimationFrame() {
+  if (pointerAnimationFrame != null) {
+    window.cancelAnimationFrame(pointerAnimationFrame)
+    pointerAnimationFrame = null
+  }
+  latestPointerPosition = null
+}
+
+function applyLatestPointerPosition() {
+  pointerAnimationFrame = null
+  const position = latestPointerPosition
+  latestPointerPosition = null
+  if (position) {
+    applyPointerPosition(position.x, position.y)
+  }
+}
+
 async function syncCursorPosition() {
   try {
     const [cursor, windowPosition, scaleFactor] = await Promise.all([
@@ -302,14 +321,20 @@ function handleMouseDown(event: MouseEvent) {
 }
 
 function handleMouseMove(event: MouseEvent) {
-  applyPointerPosition(event.clientX, event.clientY)
+  latestPointerPosition = { x: event.clientX, y: event.clientY }
+  if (pointerAnimationFrame == null) {
+    pointerAnimationFrame = window.requestAnimationFrame(applyLatestPointerPosition)
+  }
 }
 
 function handleMouseOut(_event: MouseEvent) {
   void focusCurrentMask()
 }
 
-async function handleMouseUp() {
+async function handleMouseUp(event: MouseEvent) {
+  cancelPointerAnimationFrame()
+  applyPointerPosition(event.clientX, event.clientY)
+
   // Complete selection if it has a minimum size
   const width = Math.abs(endX.value - startX.value)
   const height = Math.abs(endY.value - startY.value)
@@ -361,6 +386,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  cancelPointerAnimationFrame()
   window.removeEventListener('keyup', handleKeyup)
   window.removeEventListener('focus', handleWindowFocus)
   window.removeEventListener('blur', handleWindowBlur)

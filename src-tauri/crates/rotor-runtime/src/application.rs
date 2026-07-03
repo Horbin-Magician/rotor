@@ -109,7 +109,10 @@ impl Application {
             app: None,
             tray: Tray::new(),
             screenshot: ScreenShotter::new(),
-            searcher: Searcher::new(Application::update_search_result),
+            searcher: Searcher::new(
+                Application::update_search_result,
+                Some(Box::new(Application::update_search_index_state)),
+            ),
             quick: Quick::new(),
             ws_port: 10000,
             pressed_shortcuts: HashSet::new(),
@@ -209,6 +212,19 @@ impl Application {
                 (filename, update_result, if_increase),
             ) {
                 log::warn!("Failed to emit search result update: {e}");
+            }
+        }
+    }
+
+    fn update_search_index_state(state: String) {
+        let app_handle = {
+            let app = Application::lock_global();
+            app.app.clone()
+        };
+
+        if let Some(app_handle) = app_handle {
+            if let Err(e) = app_handle.emit_to("searcher", "index-state-changed", state) {
+                log::warn!("Failed to emit search index state change: {e}");
             }
         }
     }

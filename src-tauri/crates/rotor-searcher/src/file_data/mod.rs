@@ -167,10 +167,15 @@ pub struct FileData {
     show_num: usize,
     batch: u8,
     find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>, bool) + Send>,
+    state_change_callback: Option<Box<dyn Fn(String) + Send>>,
 }
 
 impl FileData {
-    pub(crate) fn new<F>(find_result_callback: F, state: SharedFileState) -> FileData
+    pub(crate) fn new<F>(
+        find_result_callback: F,
+        state_change_callback: Option<Box<dyn Fn(String) + Send>>,
+        state: SharedFileState,
+    ) -> FileData
     where
         F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
     {
@@ -186,6 +191,7 @@ impl FileData {
             show_num: 20,
             batch: 20,
             find_result_callback: Box::new(find_result_callback),
+            state_change_callback,
         }
     }
 
@@ -263,10 +269,24 @@ impl FileData {
     }
 
     fn set_state(&self, next_state: FileState) {
-        *self.state.lock().unwrap_or_else(|poisoned| {
-            log::error!("Search index state lock poisoned; recovering inner state");
-            poisoned.into_inner()
-        }) = next_state;
+        let changed = {
+            let mut state = self.state.lock().unwrap_or_else(|poisoned| {
+                log::error!("Search index state lock poisoned; recovering inner state");
+                poisoned.into_inner()
+            });
+            if *state == next_state {
+                false
+            } else {
+                *state = next_state;
+                true
+            }
+        };
+
+        if changed {
+            if let Some(callback) = &self.state_change_callback {
+                callback(next_state.as_str().to_string());
+            }
+        }
     }
 
     fn update_valid_vols(&mut self) -> u8 {
@@ -548,5 +568,38 @@ impl FileData {
             latest_index_modified_at,
             volumes,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_change_callback_only_runs_for_new_states() {
+        let state = Arc::new(Mutex::new(FileState::Unbuild));
+        let observed_states = Arc::new(Mutex::new(Vec::new()));
+        let callback_states = observed_states.clone();
+        let file_data = FileData::new(
+            |_, _, _| {},
+            Some(Box::new(move |state| {
+                callback_states
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(state);
+            })),
+            state,
+        );
+
+        file_data.set_state(FileState::Building);
+        file_data.set_state(FileState::Building);
+        file_data.set_state(FileState::Ready);
+
+        assert_eq!(
+            *observed_states
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            vec!["building".to_string(), "ready".to_string()]
+        );
     }
 }

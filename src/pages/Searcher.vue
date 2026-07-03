@@ -38,8 +38,8 @@ const searchIndexState = ref<SearchIndexState>('loading')
 let unlistenBlur: UnlistenFn | null = null
 let unlistenFocus: UnlistenFn | null = null
 let unlistenUpdateResult: UnlistenFn | null = null
+let unlistenIndexStateChange: UnlistenFn | null = null
 let resizeWindow: () => Promise<void> = async () => {}
-let indexStatusTimer: number | null = null
 let isRefreshingIndexStatus = false
 
 const {
@@ -112,17 +112,6 @@ const scrollToSelected = () => {
   })
 }
 
-const isSettledIndexState = (state: SearchIndexState) => {
-  return state === 'ready' || state === 'error' || state === 'unavailable'
-}
-
-const stopIndexStatusPolling = () => {
-  if (indexStatusTimer != null) {
-    window.clearInterval(indexStatusTimer)
-    indexStatusTimer = null
-  }
-}
-
 const refreshSearchIndexStatus = async () => {
   if (isRefreshingIndexStatus) return
 
@@ -130,29 +119,15 @@ const refreshSearchIndexStatus = async () => {
   try {
     const status = await searcherIndexStatus()
     searchIndexState.value = status.state
-    if (isSettledIndexState(status.state)) {
-      stopIndexStatusPolling()
-    }
   } catch (error) {
     console.warn('Failed to load search index status:', error)
     searchIndexState.value = 'unavailable'
-    stopIndexStatusPolling()
   } finally {
     isRefreshingIndexStatus = false
   }
 }
 
-const startIndexStatusPolling = () => {
-  stopIndexStatusPolling()
-  searchIndexState.value = 'loading'
-  void refreshSearchIndexStatus()
-  indexStatusTimer = window.setInterval(() => {
-    void refreshSearchIndexStatus()
-  }, 1000)
-}
-
 const hideWindow = async () => {
-  stopIndexStatusPolling()
   searchIndexState.value = 'loading'
   searchQuery.value = ''
   resetSearch()
@@ -168,6 +143,13 @@ watch(searchQuery, (newVal, _oldVal) => {
 })
 
 onMounted(async () => {
+  unlistenIndexStateChange = await appWindow.listen<SearchIndexState>(
+    'index-state-changed',
+    (event) => {
+      searchIndexState.value = event.payload
+    },
+  )
+
   void refreshSearchIndexStatus()
 
   unlistenBlur = await listen('tauri://blur', () => {
@@ -182,7 +164,7 @@ onMounted(async () => {
 
   unlistenFocus = await listen('tauri://focus', () => {
     searchInputRef.value?.focus()
-    startIndexStatusPolling()
+    void refreshSearchIndexStatus()
     resizeWindow()
   })
 
@@ -198,7 +180,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   // clean listeners
-  stopIndexStatusPolling()
   if (unlistenBlur) {
     unlistenBlur()
   }
@@ -207,6 +188,9 @@ onUnmounted(() => {
   }
   if (unlistenUpdateResult) {
     unlistenUpdateResult()
+  }
+  if (unlistenIndexStateChange) {
+    unlistenIndexStateChange()
   }
 })
 </script>

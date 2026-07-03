@@ -1,5 +1,5 @@
 import { ref, computed, onMounted } from 'vue'
-import { generateCSSVariables, darkTheme, lightTheme, ThemeColors } from '../styles/theme'
+import { generateCSSVariables, darkTheme, lightTheme, type ThemeColors } from '../styles/theme'
 import { getCurrentWindow, Theme } from '@tauri-apps/api/window'
 import { getConfig } from '../shared/api/core'
 
@@ -75,12 +75,9 @@ function setupSystemThemeListener(callback: (theme: Theme) => void) {
 export function useTheme() {
   const appWindow = getCurrentWindow()
 
-  // get specific color - make it reactive
-  const getColor = (colorKey: keyof ThemeColors) => {
-    return computed(() =>
-      currentTheme.value === 'dark' ? darkTheme[colorKey] : lightTheme[colorKey],
-    )
-  }
+  const colors = computed<ThemeColors>(() =>
+    currentTheme.value === 'dark' ? darkTheme : lightTheme,
+  )
 
   const applyThemeMode = (mode: number) => {
     currentThemeMode.value = normalizeThemeMode(mode)
@@ -105,9 +102,9 @@ export function useTheme() {
   return {
     // status
     currentTheme: computed(() => currentTheme.value),
+    colors,
 
     // methods
-    getColor,
     changeTheme,
   }
 }

@@ -11,16 +11,16 @@ import { computed } from 'vue'
 import { darkTheme, NConfigProvider, NMessageProvider, GlobalThemeOverrides } from 'naive-ui'
 import { useTheme } from './composables/useTheme'
 
-const { currentTheme, getColor } = useTheme()
+const { currentTheme, colors } = useTheme()
 const naiveTheme = computed(() => (currentTheme.value === 'dark' ? darkTheme : null)) // Naive UI Theme
 
 // Make theme overrides reactive
 const themeOverrides = computed<GlobalThemeOverrides>(() => ({
   common: {
-    primaryColor: getColor('primary').value,
-    primaryColorHover: getColor('primaryHover').value,
-    primaryColorPressed: getColor('primaryPressed').value,
-    primaryColorSuppl: getColor('primaryPressed').value,
+    primaryColor: colors.value.primary,
+    primaryColorHover: colors.value.primaryHover,
+    primaryColorPressed: colors.value.primaryPressed,
+    primaryColorSuppl: colors.value.primaryPressed,
   },
 }))
 </script>
