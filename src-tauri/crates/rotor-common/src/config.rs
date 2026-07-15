@@ -9,7 +9,7 @@ pub type Config = HashMap<String, String>;
 #[cfg(target_os = "macos")]
 pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Cmd+Shift+T","command":"open -a Terminal","enabled":true},{"id":"finder","name":"Finder","shortcut":"Cmd+Shift+E","command":"open -a Finder ~","enabled":true}]"#;
 #[cfg(target_os = "windows")]
-pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Ctrl+Shift+T","command":"start \"\" cmd.exe","enabled":true},{"id":"explorer","name":"Explorer","shortcut":"Ctrl+Shift+E","command":"start \"\" explorer.exe","enabled":true}]"#;
+pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Ctrl+Shift+T","command":"start wt","enabled":true}]"#;
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Ctrl+Shift+T","command":"x-terminal-emulator","enabled":true},{"id":"files","name":"Files","shortcut":"Ctrl+Shift+E","command":"xdg-open ~","enabled":true}]"#;
 
