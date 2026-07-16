@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{LazyLock, Mutex, MutexGuard},
+    sync::{mpsc, LazyLock, Mutex, MutexGuard},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -25,52 +26,64 @@ pub struct ShortcutRegistrationNotice {
     pub message: String,
 }
 
+#[derive(Clone, Copy)]
+struct GlobalHotkeyDispatch {
+    shortcut: Shortcut,
+    state: ShortcutState,
+}
+
 pub fn handle_global_hotkey_event(_app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
+    let dispatch = GlobalHotkeyDispatch {
+        shortcut: *shortcut,
+        state: event.state(),
+    };
+
+    if GLOBAL_HOTKEY_DISPATCHER.send(dispatch).is_err() {
+        log::error!("Global shortcut dispatcher is unavailable");
+    }
+}
+
+fn dispatch_global_hotkey_event(dispatch: GlobalHotkeyDispatch) {
     let mut rotor_app = Application::lock_global();
 
+    let shortcut = dispatch.shortcut;
     let shortcut_id = shortcut.id();
-    if event.state() == ShortcutState::Released {
+    if dispatch.state == ShortcutState::Released {
         rotor_app.pressed_shortcuts.remove(&shortcut_id);
         return;
     }
 
-    if event.state() == ShortcutState::Pressed {
-        if rotor_app.should_ignore_shortcut_press(shortcut_id, shortcut) {
+    if dispatch.state == ShortcutState::Pressed {
+        if rotor_app.should_ignore_shortcut_press(shortcut_id, &shortcut) {
             return;
         }
 
         let mut handled = false;
-        if let Some(module_shortcut) = rotor_app.screenshot.get_shortcut() {
-            if module_shortcut == *shortcut {
-                let result = rotor_app.screenshot.prepare_screenshot_session();
-                rotor_app.finish_shortcut_trigger(shortcut_id);
-                let flag = rotor_app.screenshot.flag().to_string();
-                drop(rotor_app);
+        if rotor_app.screenshot_shortcut == Some(shortcut) {
+            let result = rotor_app.screenshot.prepare_screenshot_session();
+            rotor_app.finish_shortcut_trigger(shortcut_id);
+            let flag = rotor_app.screenshot.flag().to_string();
+            drop(rotor_app);
 
-                match result {
-                    Ok(session) => session
-                        .capture_and_show()
-                        .unwrap_or_else(|e| log::error!("Module {flag} run error: {e}")),
-                    Err(e) => log::error!("Module {flag} run error: {e}"),
-                }
-                return;
+            match result {
+                Ok(session) => session.capture_and_show_async(),
+                Err(e) => log::error!("Module {flag} run error: {e}"),
             }
+            return;
         }
 
-        if let Some(module_shortcut) = rotor_app.searcher.get_shortcut() {
-            if module_shortcut == *shortcut {
-                let result = rotor_app.searcher.run();
-                rotor_app.finish_shortcut_trigger(shortcut_id);
-                result.unwrap_or_else(|e| {
-                    let flag = rotor_app.searcher.flag();
-                    log::error!("Module {flag} run error: {e}")
-                });
-                handled = true;
-            }
+        if rotor_app.search_shortcut == Some(shortcut) {
+            let result = rotor_app.searcher.run();
+            rotor_app.finish_shortcut_trigger(shortcut_id);
+            result.unwrap_or_else(|e| {
+                let flag = rotor_app.searcher.flag();
+                log::error!("Module {flag} run error: {e}")
+            });
+            handled = true;
         }
 
         if !handled {
-            match rotor_app.quick.run_by_shortcut(shortcut) {
+            match rotor_app.quick.run_by_shortcut(&shortcut) {
                 Ok(true) => {
                     rotor_app.finish_shortcut_trigger(shortcut_id);
                     handled = true;
@@ -98,6 +111,8 @@ pub struct Application {
     pub searcher: Searcher,
     pub quick: Quick,
     pub ws_port: u16,
+    screenshot_shortcut: Option<Shortcut>,
+    search_shortcut: Option<Shortcut>,
     pressed_shortcuts: HashSet<u32>,
     last_shortcut_triggers: HashMap<u32, Instant>,
     shortcut_registration_notices: Vec<ShortcutRegistrationNotice>,
@@ -115,6 +130,8 @@ impl Application {
             ),
             quick: Quick::new(),
             ws_port: 10000,
+            screenshot_shortcut: None,
+            search_shortcut: None,
             pressed_shortcuts: HashSet::new(),
             last_shortcut_triggers: HashMap::new(),
             shortcut_registration_notices: Vec::new(),
@@ -142,7 +159,8 @@ impl Application {
             let flag = self.screenshot.flag();
             log::error!("Module {flag} init error: {e}");
         }
-        if let Some(shortcut) = self.screenshot.get_shortcut() {
+        self.screenshot_shortcut = self.screenshot.get_shortcut();
+        if let Some(shortcut) = self.screenshot_shortcut {
             if let Err(e) = app.global_shortcut().register(shortcut) {
                 let flag = self.screenshot.flag();
                 log::error!("Module {flag} shortcut registration error: {e}");
@@ -154,7 +172,8 @@ impl Application {
             let flag = self.searcher.flag();
             log::error!("Module {flag} init error: {e}");
         }
-        if let Some(shortcut) = self.searcher.get_shortcut() {
+        self.search_shortcut = self.searcher.get_shortcut();
+        if let Some(shortcut) = self.search_shortcut {
             if let Err(e) = app.global_shortcut().register(shortcut) {
                 let flag = self.searcher.flag();
                 log::error!("Module {flag} shortcut registration error: {e}");
@@ -271,6 +290,14 @@ impl Application {
         std::mem::take(&mut self.shortcut_registration_notices)
     }
 
+    pub fn update_module_shortcut(&mut self, key: &str, shortcut: Shortcut) {
+        match key {
+            "shortcut_screenshot" => self.screenshot_shortcut = Some(shortcut),
+            "shortcut_search" => self.search_shortcut = Some(shortcut),
+            _ => {}
+        }
+    }
+
     fn notify_shortcut_registration_error(
         &mut self,
         key: &str,
@@ -294,3 +321,17 @@ impl Application {
 }
 
 static INSTANCE: LazyLock<Mutex<Application>> = LazyLock::new(|| Mutex::new(Application::new()));
+
+static GLOBAL_HOTKEY_DISPATCHER: LazyLock<mpsc::Sender<GlobalHotkeyDispatch>> =
+    LazyLock::new(|| {
+        let (sender, receiver) = mpsc::channel::<GlobalHotkeyDispatch>();
+        thread::Builder::new()
+            .name("rotor-global-hotkey-dispatch".to_string())
+            .spawn(move || {
+                while let Ok(dispatch) = receiver.recv() {
+                    dispatch_global_hotkey_event(dispatch);
+                }
+            })
+            .unwrap_or_else(|error| panic!("Failed to start global shortcut dispatcher: {error}"));
+        sender
+    });

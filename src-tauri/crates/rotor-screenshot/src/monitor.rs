@@ -1,8 +1,12 @@
 use image::RgbaImage;
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::mpsc;
 use std::thread;
+use std::time::{Duration, Instant};
 use xcap::Monitor;
+
+const CAPTURE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MonitorConfig {
@@ -43,66 +47,97 @@ pub(crate) fn sorted_configs(mut configs: Vec<MonitorConfig>) -> Vec<MonitorConf
     configs
 }
 
-pub(crate) fn capture_all(monitors: Vec<Monitor>) -> HashMap<String, RgbaImage> {
+pub(crate) fn capture_all(monitors: Vec<Monitor>) -> Result<HashMap<String, RgbaImage>, String> {
     capture_all_inner(monitors)
 }
 
 #[cfg(target_os = "windows")]
-fn capture_all_inner(monitors: Vec<Monitor>) -> HashMap<String, RgbaImage> {
-    let handles = monitors
-        .into_iter()
-        .filter_map(|monitor| {
-            let x = match monitor.x() {
-                Ok(x) => x,
-                Err(error) => {
-                    log::error!("Failed to get monitor x coordinate before capture: {error}");
-                    return None;
-                }
-            };
-            let y = match monitor.y() {
-                Ok(y) => y,
-                Err(error) => {
-                    log::error!("Failed to get monitor y coordinate before capture: {error}");
-                    return None;
-                }
-            };
+fn capture_all_inner(monitors: Vec<Monitor>) -> Result<HashMap<String, RgbaImage>, String> {
+    let mut capture_points = Vec::with_capacity(monitors.len());
+    for monitor in monitors {
+        let x = monitor
+            .x()
+            .map_err(|error| format!("failed to get monitor x coordinate: {error}"))?;
+        let y = monitor
+            .y()
+            .map_err(|error| format!("failed to get monitor y coordinate: {error}"))?;
+        capture_points.push((x, y));
+    }
 
-            Some(thread::spawn(move || capture_monitor_at_point(x, y)))
-        })
-        .collect::<Vec<_>>();
-
-    collect_captures(handles)
+    run_capture_workers(capture_points, |(x, y)| capture_monitor_at_point(x, y))
 }
 
 #[cfg(not(target_os = "windows"))]
-fn capture_all_inner(monitors: Vec<Monitor>) -> HashMap<String, RgbaImage> {
-    let handles = monitors
-        .into_iter()
-        .map(|monitor| thread::spawn(move || capture_monitor(monitor)))
-        .collect::<Vec<_>>();
-
-    collect_captures(handles)
+fn capture_all_inner(monitors: Vec<Monitor>) -> Result<HashMap<String, RgbaImage>, String> {
+    run_capture_workers(monitors, capture_monitor)
 }
 
-fn collect_captures(
-    handles: Vec<thread::JoinHandle<Result<(String, RgbaImage), String>>>,
-) -> HashMap<String, RgbaImage> {
+fn run_capture_workers<T, F>(jobs: Vec<T>, capture: F) -> Result<HashMap<String, RgbaImage>, String>
+where
+    T: Send + 'static,
+    F: Fn(T) -> Result<(String, RgbaImage), String> + Copy + Send + 'static,
+{
+    if jobs.is_empty() {
+        return Err("No monitors available for screenshot capture".to_string());
+    }
+
+    let worker_count = jobs.len();
+    let (sender, receiver) = mpsc::channel();
+    for job in jobs {
+        let sender = sender.clone();
+        thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| capture(job)))
+                .unwrap_or_else(|_| Err("Screenshot capture worker panicked".to_string()));
+            let _ = sender.send(result);
+        });
+    }
+    drop(sender);
+
+    let deadline = Instant::now() + CAPTURE_TIMEOUT;
     let mut captures = HashMap::new();
-    for handle in handles {
-        match handle.join() {
+    let mut errors = Vec::new();
+    for completed in 0..worker_count {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(capture_timeout_message(completed, worker_count));
+        }
+
+        match receiver.recv_timeout(remaining) {
             Ok(Ok((label, image))) => {
                 captures.insert(label, image);
             }
-            Ok(Err(error)) => {
-                log::error!("Failed to capture screenshot: {error}");
+            Ok(Err(error)) => errors.push(error),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(capture_timeout_message(completed, worker_count));
             }
-            Err(_) => {
-                log::error!("Screenshot capture worker panicked");
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("Screenshot capture workers stopped unexpectedly".to_string());
             }
         }
     }
 
-    captures
+    if !errors.is_empty() {
+        return Err(format!(
+            "Failed to capture all monitors: {}",
+            errors.join("; ")
+        ));
+    }
+    if captures.len() != worker_count {
+        return Err(format!(
+            "Screenshot capture returned {}/{} monitor images",
+            captures.len(),
+            worker_count
+        ));
+    }
+
+    Ok(captures)
+}
+
+fn capture_timeout_message(completed: usize, worker_count: usize) -> String {
+    format!(
+        "Screenshot capture timed out after {} ms ({completed}/{worker_count} monitors completed)",
+        CAPTURE_TIMEOUT.as_millis()
+    )
 }
 
 #[cfg(target_os = "windows")]

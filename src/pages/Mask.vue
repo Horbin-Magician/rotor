@@ -44,6 +44,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { info, warn } from '@tauri-apps/plugin-log'
 import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket'
+import { createValidatedRgbaImageData } from '../shared/imageData'
 import {
   cancelScreenshotSession,
   changeCurrentMask as focusCurrentMask,
@@ -85,8 +86,8 @@ async function initWebSocket() {
 
 const windowWidth = window.screen.width
 const windowHeight = window.screen.height
-const bacImgWidth = windowWidth * window.devicePixelRatio
-const bacImgHeight = windowHeight * window.devicePixelRatio
+const bacImgWidth = Math.round(windowWidth * window.devicePixelRatio)
+const bacImgHeight = Math.round(windowHeight * window.devicePixelRatio)
 const hiddenPointerPosition = -9999
 
 let rects: ScreenRect[] = []
@@ -440,8 +441,14 @@ async function initializeScreenshot(requestId: number, imgBuf: ArrayBuffer) {
     throw new Error(`No image data returned for mask ${appWindow.label}`)
   }
 
-  const imgData = new ImageData(new Uint8ClampedArray(imgBuf), bacImgWidth, bacImgHeight)
-  const bitmap = await createImageBitmap(imgData)
+  const imageDataResult = createValidatedRgbaImageData(imgBuf, bacImgWidth, bacImgHeight)
+  if (imageDataResult.corrected) {
+    warn(
+      `Corrected screenshot dimensions for mask ${appWindow.label} from ${bacImgWidth}x${bacImgHeight} to ${imageDataResult.width}x${imageDataResult.height} to match ${imgBuf.byteLength} RGBA bytes`,
+    )
+  }
+
+  const bitmap = await createImageBitmap(imageDataResult.imageData)
   if (!(await ensureActiveScreenshotRequest(requestId))) {
     bitmap.close()
     return false

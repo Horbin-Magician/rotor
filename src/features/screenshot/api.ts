@@ -13,6 +13,7 @@ export interface PinConfig {
   monitor_pos: [number, number]
   monitor_size: [number, number]
   rect: [number, number, number, number]
+  image_rect?: [number, number, number, number] | null
   offset: [number, number]
   zoom_factor: number
   mask_label: string

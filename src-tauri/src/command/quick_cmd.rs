@@ -69,20 +69,21 @@ pub fn set_quick_actions(actions: Vec<QuickAction>, app: AppHandle) -> Result<()
         message
     })?;
 
-    {
+    let save_result = {
         let mut app_config = AppConfig::lock_global();
-        if let Err(error) = app_config.set_many([
+        app_config.set_many([
             ("quick_actions".to_string(), serialized),
             (
                 "quick_actions_revision".to_string(),
                 DEFAULT_QUICK_ACTIONS_REVISION.to_string(),
             ),
-        ]) {
-            log::error!("Failed to save quick actions: {error}");
-            rollback_quick_shortcuts(&app, &registered_shortcuts, &old_shortcuts);
+        ])
+    };
+    if let Err(error) = save_result {
+        log::error!("Failed to save quick actions: {error}");
+        rollback_quick_shortcuts(&app, &registered_shortcuts, &old_shortcuts);
 
-            return Err(format!("Failed to save quick actions: {error}"));
-        }
+        return Err(format!("Failed to save quick actions: {error}"));
     }
 
     Application::lock_global().quick.set_actions(normalized);

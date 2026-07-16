@@ -114,6 +114,7 @@ import { UnlistenFn } from '@tauri-apps/api/event'
 import { warn } from '@tauri-apps/plugin-log'
 import { getAllConfig } from '../shared/api/core'
 import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket'
+import { createValidatedRgbaImageData } from '../shared/imageData'
 import {
   deletePinRecord,
   getPinState,
@@ -234,6 +235,7 @@ let resizeApplyPromise: Promise<void> | null = null
 
 const backImg = ref<ImageBitmap | null>(null)
 const cropRegion = ref<CropRegion>({ x: 0, y: 0, width: 0, height: 0 })
+const sourceImageOrigin = ref({ x: 0, y: 0 })
 const canvasRef = ref<InstanceType<typeof PinCanvas> | null>(null)
 const init_scale_factor = ref(1)
 const scale_factor = ref(1)
@@ -383,14 +385,27 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
       throw new Error(`No image data returned for pin id ${id}`)
     }
 
-    const full_monitor_width = pin_config.monitor_size[0]
-    const full_monitor_height = pin_config.monitor_size[1]
-    const fullImgData = new ImageData(
-      new Uint8ClampedArray(imgBuf),
-      full_monitor_width,
-      full_monitor_height,
+    const sourceImageRect = pin_config.image_rect
+    const sourceImageWidth = sourceImageRect?.[2] ?? pin_config.monitor_size[0]
+    const sourceImageHeight = sourceImageRect?.[3] ?? pin_config.monitor_size[1]
+    const imageDataResult = createValidatedRgbaImageData(
+      imgBuf,
+      sourceImageWidth,
+      sourceImageHeight,
     )
-    backImg.value = await createImageBitmap(fullImgData)
+    if (imageDataResult.corrected) {
+      warn(
+        `Corrected screenshot dimensions for pin ${id} from ${sourceImageWidth}x${sourceImageHeight} to ${imageDataResult.width}x${imageDataResult.height} to match ${imgBuf.byteLength} RGBA bytes`,
+      )
+    }
+
+    const bitmap = await createImageBitmap(imageDataResult.imageData)
+    backImg.value?.close()
+    backImg.value = bitmap
+    sourceImageOrigin.value = {
+      x: sourceImageRect?.[0] ?? 0,
+      y: sourceImageRect?.[1] ?? 0,
+    }
     await completeInitialization(pin_config)
     return true
   } catch (error) {
@@ -407,8 +422,8 @@ async function completeInitialization(pin_config: PinConfig) {
 
   // Define crop region
   cropRegion.value = {
-    x: pin_config.rect[0],
-    y: pin_config.rect[1],
+    x: pin_config.rect[0] - sourceImageOrigin.value.x,
+    y: pin_config.rect[1] - sourceImageOrigin.value.y,
     width: crop_width,
     height: crop_height,
   }
@@ -679,8 +694,8 @@ async function persistPinState() {
   try {
     await updatePinSelection(
       pin_id,
-      Math.round(cropRegion.value.x),
-      Math.round(cropRegion.value.y),
+      Math.round(cropRegion.value.x + sourceImageOrigin.value.x),
+      Math.round(cropRegion.value.y + sourceImageOrigin.value.y),
       Math.round(cropRegion.value.width),
       Math.round(cropRegion.value.height),
       position.x,
@@ -1233,6 +1248,8 @@ onBeforeUnmount(async () => {
   }
   ws?.close()
   ws = null
+  backImg.value?.close()
+  backImg.value = null
 })
 </script>
 

@@ -11,7 +11,9 @@ use crate::shotter_record::{ShotterConfig, ShotterRecord};
 use image::{DynamicImage, RgbaImage};
 use std::error::Error;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
 use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::Shortcut;
 use xcap::Monitor;
@@ -79,24 +81,42 @@ pub struct ScreenShotter {
     max_pin_id: u32,
     current_monitors: Vec<MonitorConfig>,
     screenshot_session_id: u32,
+    capture_in_progress: Arc<AtomicBool>,
 }
 
 pub struct ScreenshotSession {
     app_handle: tauri::AppHandle,
     capture_cache: CaptureCache,
     session_id: u32,
+    capture_in_progress: Arc<AtomicBool>,
 }
 
 impl ScreenshotSession {
     pub fn capture_and_show(self) -> Result<(), Box<dyn Error>> {
-        let captures = capture_all(Monitor::all()?);
-        if captures.is_empty() {
-            return Err("No screenshot images captured".into());
-        }
+        let captures = capture_all(Monitor::all()?).map_err(Box::<dyn Error>::from)?;
 
         self.capture_cache.replace_all(captures);
         self.app_handle.emit("show-mask", self.session_id)?;
         Ok(())
+    }
+
+    pub fn capture_and_show_async(self) {
+        if let Err(error) = thread::Builder::new()
+            .name("rotor-screenshot-capture".to_string())
+            .spawn(move || {
+                if let Err(error) = self.capture_and_show() {
+                    log::error!("Module screenshot run error: {error}");
+                }
+            })
+        {
+            log::error!("Failed to start screenshot capture worker: {error}");
+        }
+    }
+}
+
+impl Drop for ScreenshotSession {
+    fn drop(&mut self) {
+        self.capture_in_progress.store(false, Ordering::Release);
     }
 }
 
@@ -114,7 +134,26 @@ impl PinImageLoad {
 
         let record = self.record?;
         let img = self.capture_cache.get(&record.mask_label)?;
-        let dyn_img = DynamicImage::ImageRgba8(img.as_ref().clone());
+        let dyn_img = if let Some((x, y, width, height)) = record.image_rect {
+            let right = x.checked_add(width)?;
+            let bottom = y.checked_add(height)?;
+            if width == 0 || height == 0 || right > img.width() || bottom > img.height() {
+                log::error!(
+                    "Invalid pin crop for {}: ({x}, {y}, {width}, {height}) outside {}x{}",
+                    self.id,
+                    img.width(),
+                    img.height()
+                );
+                return None;
+            }
+
+            DynamicImage::ImageRgba8(
+                image::imageops::crop_imm(img.as_ref(), x, y, width, height).to_image(),
+            )
+        } else {
+            // Records created before image_rect was introduced reference a full-monitor image.
+            DynamicImage::ImageRgba8(img.as_ref().clone())
+        };
         let _save_task = ShotterRecord::save_record_img(self.id, dyn_img.clone());
         self.capture_cache.clear();
         Some(dyn_img)
@@ -134,6 +173,7 @@ impl ScreenShotter {
             max_pin_id: 0,
             current_monitors: Vec::new(),
             screenshot_session_id: 0,
+            capture_in_progress: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -146,14 +186,33 @@ impl ScreenShotter {
     }
 
     pub fn prepare_screenshot_session(&mut self) -> Result<ScreenshotSession, Box<dyn Error>> {
-        self.check_and_rebuild_mask_windows()?;
+        if self
+            .capture_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err("Screenshot capture is already in progress".into());
+        }
+
+        if let Err(error) = self.check_and_rebuild_mask_windows() {
+            self.capture_in_progress.store(false, Ordering::Release);
+            return Err(error);
+        }
         let session_id = self.advance_screenshot_session();
         self.capture_cache.clear();
+        let app_handle = match self.app_handle() {
+            Ok(app_handle) => app_handle.clone(),
+            Err(error) => {
+                self.capture_in_progress.store(false, Ordering::Release);
+                return Err(error);
+            }
+        };
 
         Ok(ScreenshotSession {
-            app_handle: self.app_handle()?.clone(),
+            app_handle,
             capture_cache: self.capture_cache.clone(),
             session_id,
+            capture_in_progress: Arc::clone(&self.capture_in_progress),
         })
     }
 
@@ -219,6 +278,7 @@ impl ScreenShotter {
             monitor_pos,
             monitor_size,
             rect,
+            image_rect: Some(rect),
             offset,
             zoom_factor: 100,
             mask_label,
@@ -226,17 +286,25 @@ impl ScreenShotter {
         };
 
         let pin_id = self.max_pin_id;
-        self.build_pin_window(
+        self.update_shotter_record(pin_id, config)?;
+        if let Err(error) = self.build_pin_window(
             Some(pin_id),
             Some(PhysicalPosition {
                 x: monitor_pos.0 + rect.0 as i32 + offset.0,
                 y: monitor_pos.1 + rect.1 as i32 + offset.1,
             }),
-        )?;
-        self.update_shotter_record(pin_id, config)?;
+        ) {
+            if let Err(rollback_error) = self.shotter_record.del_shotter(pin_id) {
+                log::warn!("Failed to rollback pin record {pin_id}: {rollback_error}");
+            }
+            return Err(error);
+        }
         let pin_label = format!("sspin-{pin_id}");
-        self.app_handle()?.emit_to(&pin_label, "show-pin", ())?;
         self.max_pin_id = self.max_pin_id.saturating_add(1);
+        if let Err(error) = self.app_handle()?.emit_to(&pin_label, "show-pin", ()) {
+            // The pin page also loads immediately on mount, so a missed wake-up is recoverable.
+            log::warn!("Failed to emit show-pin to {pin_label}: {error}");
+        }
         Ok(())
     }
 
