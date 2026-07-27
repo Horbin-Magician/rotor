@@ -24,7 +24,8 @@
   "app": {
     "macOSPrivateApi": true,
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* ipc://localhost http://ipc.localhost; img-src 'self' data:;"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc://localhost http://ipc.localhost; img-src 'self' data:;",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc://localhost http://ipc.localhost ws://localhost:1420 ws://localhost:1421; img-src 'self' data:;"
     }
   },
   "plugins": {

@@ -1,7 +1,5 @@
 #[cfg(target_os = "windows")]
 use rotor_platform::sys_util;
-#[cfg(target_os = "windows")]
-use tauri::Manager;
 use tauri::WebviewWindow;
 
 #[cfg(target_os = "macos")]

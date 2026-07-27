@@ -63,10 +63,6 @@ export function getAppVersion() {
   return invoke<string>('get_app_version')
 }
 
-export function getWsPort() {
-  return invoke<number>('get_ws_port')
-}
-
 export function getOverviewInfo() {
   return invoke<OverviewInfo>('get_overview_info')
 }
