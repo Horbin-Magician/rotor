@@ -5,4 +5,4 @@ pub mod tray;
 
 pub use application::{handle_global_hotkey_event, Application, ShortcutRegistrationNotice};
 pub use quick::{Quick, QuickAction};
-pub use screenshot_data::fetch_screenshot_data;
+pub use screenshot_data::{fetch_screenshot_data, resolve_screenshot_image, ScreenshotImage};
