@@ -30,6 +30,8 @@
               v-model:power-boot="powerBoot"
               v-model:shortcut-screenshot="shortcutScreenshot"
               v-model:shortcut-search="shortcutSearch"
+              v-model:shortcut-translate-select="shortcutTranslateSelect"
+              v-model:shortcut-translate-input="shortcutTranslateInput"
               :highlighted-setting="highlightedSetting"
               :current-version="currentVersion"
               :is-checking-update="isCheckingUpdate"
@@ -65,6 +67,18 @@
         <n-scrollbar style="max-height: 100vh" trigger="none">
           <div class="settings-container">
             <SearchSettings v-model:excluded-dirs="searchExcludedDirs" />
+          </div>
+        </n-scrollbar>
+      </n-tab-pane>
+      <n-tab-pane class="tab-pane" name="Translator" :tab="t('message.translator')">
+        <n-scrollbar style="max-height: 100vh" trigger="none">
+          <div class="settings-container">
+            <TranslatorSettings
+              v-model:engine="translatorEngine"
+              v-model:custom-url="translatorCustomUrl"
+              v-model:custom-key="translatorCustomKey"
+              v-model:target-lang="translatorTargetLang"
+            />
           </div>
         </n-scrollbar>
       </n-tab-pane>
@@ -119,6 +133,7 @@ import GeneralSettings from '../components/setting/GeneralSettings.vue'
 import PinwinSettings from '../components/setting/PinwinSettings.vue'
 import QuickSettings from '../components/setting/QuickSettings.vue'
 import SearchSettings from '../components/setting/SearchSettings.vue'
+import TranslatorSettings from '../components/setting/TranslatorSettings.vue'
 import UpdateModals from '../components/setting/UpdateModals.vue'
 import WindowsTitlebar from '../components/setting/WindowsTitlebar.vue'
 import { getQuickActions, runQuickAction, setQuickActions } from '../features/quick/api'
@@ -139,7 +154,7 @@ import { info, error } from '@tauri-apps/plugin-log'
 
 const appWindow = getCurrentWindow()
 const isWindows = ref(false)
-type SettingsTabName = 'Overview' | 'Base' | 'Screen shotter' | 'Search' | 'Quick'
+type SettingsTabName = 'Overview' | 'Base' | 'Screen shotter' | 'Search' | 'Translator' | 'Quick'
 
 const activeTab = ref<SettingsTabName>('Overview')
 const highlightedSetting = ref('')
@@ -151,6 +166,8 @@ let isRevertingSetting = false
 const shortcutTabByKey: Record<string, SettingsTabName> = {
   shortcut_screenshot: 'Base',
   shortcut_search: 'Base',
+  shortcut_translate_select: 'Base',
+  shortcut_translate_input: 'Base',
   shortcut_pinwin_close: 'Screen shotter',
   shortcut_pinwin_save: 'Screen shotter',
   shortcut_pinwin_copy: 'Screen shotter',
@@ -176,6 +193,8 @@ const powerBoot = ref(false)
 const currentVersion = ref('Loading...')
 const shortcutScreenshot = ref('Shift+C')
 const shortcutSearch = ref('Shift+F')
+const shortcutTranslateSelect = ref('Shift+D')
+const shortcutTranslateInput = ref('Shift+W')
 
 // Screenshot settings
 const shortcutPinwinClose = ref('Esc')
@@ -203,6 +222,12 @@ let update_cache: Update | null = null
 
 // Search settings
 const searchExcludedDirs = ref('')
+
+// Translator settings
+const translatorEngine = ref('google')
+const translatorCustomUrl = ref('')
+const translatorCustomKey = ref('')
+const translatorTargetLang = ref('auto')
 Promise.all([getAllConfig(), getQuickActions()])
   .then(async ([config, actions]) => {
     language.value = Number(config['language'])
@@ -211,6 +236,8 @@ Promise.all([getAllConfig(), getQuickActions()])
 
     shortcutScreenshot.value = config['shortcut_screenshot']
     shortcutSearch.value = config['shortcut_search']
+    shortcutTranslateSelect.value = config['shortcut_translate_select']
+    shortcutTranslateInput.value = config['shortcut_translate_input']
 
     // Screenshot settings
     shortcutPinwinClose.value = config['shortcut_pinwin_close']
@@ -222,6 +249,10 @@ Promise.all([getAllConfig(), getQuickActions()])
     ifAskSavePath.value = config['if_ask_save_path'] !== 'false'
     zoomDelta.value = Number(config['zoom_delta'])
     searchExcludedDirs.value = config['search_excluded_dirs']
+    translatorEngine.value = config['translator_engine']
+    translatorCustomUrl.value = config['translator_custom_url']
+    translatorCustomKey.value = config['translator_custom_key']
+    translatorTargetLang.value = config['translator_target_lang']
     quickActions.value = actions
   })
   .finally(() => {
@@ -343,6 +374,8 @@ function settingDisplayName(key: string) {
   const displayNames: Record<string, string> = {
     shortcut_screenshot: t('message.screenshot'),
     shortcut_search: t('message.search'),
+    shortcut_translate_select: t('message.translateSelect'),
+    shortcut_translate_input: t('message.translateInput'),
     shortcut_pinwin_close: t('message.closePinwin'),
     shortcut_pinwin_save: t('message.savePinwin'),
     shortcut_pinwin_copy: t('message.completePinwin'),
@@ -477,6 +510,8 @@ createSettingWatcher(powerBoot, 'power_boot', (newValue) => {
 // Global shortcuts
 createSettingWatcher(shortcutScreenshot, 'shortcut_screenshot')
 createSettingWatcher(shortcutSearch, 'shortcut_search')
+createSettingWatcher(shortcutTranslateSelect, 'shortcut_translate_select')
+createSettingWatcher(shortcutTranslateInput, 'shortcut_translate_input')
 
 // Screenshot settings
 createSettingWatcher(shortcutPinwinClose, 'shortcut_pinwin_close')
@@ -490,6 +525,12 @@ createSettingWatcher(zoomDelta, 'zoom_delta')
 
 // Search settings
 createSettingWatcher(searchExcludedDirs, 'search_excluded_dirs')
+
+// Translator settings
+createSettingWatcher(translatorEngine, 'translator_engine')
+createSettingWatcher(translatorCustomUrl, 'translator_custom_url')
+createSettingWatcher(translatorCustomKey, 'translator_custom_key')
+createSettingWatcher(translatorTargetLang, 'translator_target_lang')
 
 watch(quickActions, async (newValue, oldValue) => {
   if (!hasLoadedConfig.value || isRevertingSetting) {

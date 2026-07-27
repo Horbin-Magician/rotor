@@ -7,6 +7,7 @@ use std::{
 
 use rotor_screenshot::ScreenShotter;
 use rotor_searcher::{file_data::SearchResultItem, Searcher};
+use rotor_translator::Translator;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
@@ -81,6 +82,26 @@ fn dispatch_global_hotkey_event(dispatch: GlobalHotkeyDispatch) {
             handled = true;
         }
 
+        if !handled && rotor_app.translate_select_shortcut == Some(shortcut) {
+            let result = rotor_app.translator.run_select();
+            rotor_app.finish_shortcut_trigger(shortcut_id);
+            result.unwrap_or_else(|e| {
+                let flag = rotor_app.translator.flag();
+                log::error!("Module {flag} run error: {e}")
+            });
+            handled = true;
+        }
+
+        if !handled && rotor_app.translate_input_shortcut == Some(shortcut) {
+            let result = rotor_app.translator.run_input();
+            rotor_app.finish_shortcut_trigger(shortcut_id);
+            result.unwrap_or_else(|e| {
+                let flag = rotor_app.translator.flag();
+                log::error!("Module {flag} run error: {e}")
+            });
+            handled = true;
+        }
+
         if !handled {
             match rotor_app.quick.run_by_shortcut(&shortcut) {
                 Ok(true) => {
@@ -109,8 +130,11 @@ pub struct Application {
     pub screenshot: ScreenShotter,
     pub searcher: Searcher,
     pub quick: Quick,
+    pub translator: Translator,
     screenshot_shortcut: Option<Shortcut>,
     search_shortcut: Option<Shortcut>,
+    translate_select_shortcut: Option<Shortcut>,
+    translate_input_shortcut: Option<Shortcut>,
     pressed_shortcuts: HashSet<u32>,
     last_shortcut_triggers: HashMap<u32, Instant>,
     shortcut_registration_notices: Vec<ShortcutRegistrationNotice>,
@@ -127,8 +151,11 @@ impl Application {
                 Some(Box::new(Application::update_search_index_state)),
             ),
             quick: Quick::new(),
+            translator: Translator::new(),
             screenshot_shortcut: None,
             search_shortcut: None,
+            translate_select_shortcut: None,
+            translate_input_shortcut: None,
             pressed_shortcuts: HashSet::new(),
             last_shortcut_triggers: HashMap::new(),
             shortcut_registration_notices: Vec::new(),
@@ -175,6 +202,27 @@ impl Application {
                 let flag = self.searcher.flag();
                 log::error!("Module {flag} shortcut registration error: {e}");
                 self.notify_shortcut_registration_error("shortcut_search", shortcut, e);
+            }
+        }
+
+        if let Err(e) = self.translator.init(&app) {
+            let flag = self.translator.flag();
+            log::error!("Module {flag} init error: {e}");
+        }
+        self.translate_select_shortcut = self.translator.get_select_shortcut();
+        if let Some(shortcut) = self.translate_select_shortcut {
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                let flag = self.translator.flag();
+                log::error!("Module {flag} shortcut registration error: {e}");
+                self.notify_shortcut_registration_error("shortcut_translate_select", shortcut, e);
+            }
+        }
+        self.translate_input_shortcut = self.translator.get_input_shortcut();
+        if let Some(shortcut) = self.translate_input_shortcut {
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                let flag = self.translator.flag();
+                log::error!("Module {flag} shortcut registration error: {e}");
+                self.notify_shortcut_registration_error("shortcut_translate_input", shortcut, e);
             }
         }
 
@@ -287,6 +335,8 @@ impl Application {
         match key {
             "shortcut_screenshot" => self.screenshot_shortcut = Some(shortcut),
             "shortcut_search" => self.search_shortcut = Some(shortcut),
+            "shortcut_translate_select" => self.translate_select_shortcut = Some(shortcut),
+            "shortcut_translate_input" => self.translate_input_shortcut = Some(shortcut),
             _ => {}
         }
     }

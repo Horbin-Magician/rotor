@@ -17,6 +17,10 @@ const routes: RouteRecordRaw[] = [
     path: '/Searcher',
     component: () => import('../pages/Searcher.vue'),
   },
+  {
+    path: '/Translator',
+    component: () => import('../pages/Translator.vue'),
+  },
 ]
 
 const router = createRouter({
