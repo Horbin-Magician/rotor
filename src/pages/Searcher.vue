@@ -131,7 +131,11 @@ const hideWindow = async () => {
   searchIndexState.value = 'loading'
   searchQuery.value = ''
   resetSearch()
-  await resizeWindow()
+  try {
+    await resizeWindow()
+  } catch (error) {
+    console.warn('Failed to resize searcher window before hide:', error)
+  }
   await appWindow.hide()
   releaseSearch()
 }

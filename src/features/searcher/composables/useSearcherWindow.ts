@@ -33,8 +33,12 @@ export function useSearcherWindow(state: SearcherWindowState) {
     if (!monitor) return
 
     const scale = monitor.scaleFactor
-    const centerX = monitor.position.x + (monitor.size.width - scale * WINDOW_CONFIG.width) / 2
-    const centerY = Math.ceil(monitor.position.y + monitor.size.height * 0.3)
+    // PhysicalPosition is deserialized as i32 on the Rust side; fractional values
+    // (possible at non-integer scale factors like 125%/175%) make setPosition fail.
+    const centerX = Math.round(
+      monitor.position.x + (monitor.size.width - scale * WINDOW_CONFIG.width) / 2,
+    )
+    const centerY = Math.round(monitor.position.y + monitor.size.height * 0.3)
 
     await appWindow.setPosition(new PhysicalPosition(centerX, centerY))
 

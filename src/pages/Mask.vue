@@ -39,7 +39,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window'
+import { cursorPosition, currentMonitor, getCurrentWindow } from '@tauri-apps/api/window'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { warn } from '@tauri-apps/plugin-log'
@@ -280,7 +280,7 @@ async function syncCursorPosition() {
     const x = (cursor.x - windowPosition.x) / scaleFactor
     const y = (cursor.y - windowPosition.y) / scaleFactor
 
-    if (x < 0 || y < 0 || x > windowWidth || y > windowHeight) {
+    if (x < 0 || y < 0 || x > window.screen.width || y > window.screen.height) {
       return false
     }
 
@@ -421,16 +421,60 @@ async function ensureActiveScreenshotRequest(requestId: number) {
   return false
 }
 
+// Compute the expected capture size when the mask is shown. The module-level screen
+// constants are snapshotted at page load and can be stale (mixed-DPI multi-monitor,
+// or the window being moved to its monitor after the page loaded), which previously
+// made createValidatedRgbaImageData throw and cancelled the whole screenshot session.
+async function getExpectedImageSize() {
+  try {
+    const monitor = await currentMonitor()
+    if (monitor) {
+      return { width: monitor.size.width, height: monitor.size.height }
+    }
+  } catch (error) {
+    warn(`Failed to query current monitor for mask ${appWindow.label}: ${error}`)
+  }
+  const dpr = window.devicePixelRatio || 1
+  return {
+    width: Math.round(window.screen.width * dpr),
+    height: Math.round(window.screen.height * dpr),
+  }
+}
+
 async function initializeScreenshot(requestId: number, imgBuf: ArrayBuffer) {
   if (imgBuf.byteLength === 0) {
     throw new Error(`No image data returned for mask ${appWindow.label}`)
   }
 
-  const imageDataResult = createValidatedRgbaImageData(imgBuf, bacImgWidth, bacImgHeight)
+  const expectedSize = await getExpectedImageSize()
+  if (!(await ensureActiveScreenshotRequest(requestId))) return false
+
+  const imageDataResult = createValidatedRgbaImageData(
+    imgBuf,
+    expectedSize.width,
+    expectedSize.height,
+  )
   if (imageDataResult.corrected) {
     warn(
-      `Corrected screenshot dimensions for mask ${appWindow.label} from ${bacImgWidth}x${bacImgHeight} to ${imageDataResult.width}x${imageDataResult.height} to match ${imgBuf.byteLength} RGBA bytes`,
+      `Corrected screenshot dimensions for mask ${appWindow.label} from ${expectedSize.width}x${expectedSize.height} to ${imageDataResult.width}x${imageDataResult.height} to match ${imgBuf.byteLength} RGBA bytes`,
     )
+  }
+
+  // Keep the canvas backing store in sync with the real capture size. Assigning
+  // width/height resets the context, so reapply the DPR transform afterwards.
+  if (
+    mainCanvas &&
+    (mainCanvas.width !== imageDataResult.width || mainCanvas.height !== imageDataResult.height)
+  ) {
+    mainCanvas.width = imageDataResult.width
+    mainCanvas.height = imageDataResult.height
+    mainCanvas.style.width = `${window.screen.width}px`
+    mainCanvas.style.height = `${window.screen.height}px`
+    if (mainCtx) {
+      const dpr = window.devicePixelRatio || 1
+      mainCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      mainCtx.imageSmoothingEnabled = false
+    }
   }
 
   const bitmap = await createImageBitmap(imageDataResult.imageData)
@@ -474,7 +518,7 @@ function hideWindow({ requestId }: HideWindowOptions = {}) {
   void appWindow.hide()
 
   if (mainCtx) {
-    mainCtx.clearRect(0, 0, windowWidth, windowHeight)
+    mainCtx.clearRect(0, 0, window.screen.width, window.screen.height)
   }
   if (magnifierCtx) {
     magnifierCtx.clearRect(0, 0, magnifierSize, magnifierSize)
