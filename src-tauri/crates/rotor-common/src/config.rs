@@ -69,6 +69,7 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
             DEFAULT_TRANSLATE_INPUT_SHORTCUT.into(),
         ),
         ("translator_engine".into(), "google".into()),
+        ("translator_deepseek_api_key".into(), "".into()),
         ("translator_custom_url".into(), "".into()),
         ("translator_custom_key".into(), "".into()),
         ("translator_target_lang".into(), "auto".into()),

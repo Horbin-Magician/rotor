@@ -4,6 +4,16 @@
       <n-select v-model:value="engine" :options="engineOptions" />
     </SettingRow>
 
+    <SettingRow v-if="engine === 'deepseek'" :label="t('message.translatorDeepseekApiKey')">
+      <n-input
+        v-model:value="deepseekApiKey"
+        type="password"
+        show-password-on="click"
+        :placeholder="t('message.translatorDeepseekApiKeyPlaceholder')"
+        spellcheck="false"
+      />
+    </SettingRow>
+
     <template v-if="engine === 'custom'">
       <SettingRow :label="t('message.translatorCustomUrl')">
         <n-input
@@ -38,12 +48,14 @@ import SettingsSection from './SettingsSection.vue'
 const { t } = useI18n()
 
 const engine = defineModel<string>('engine', { required: true })
+const deepseekApiKey = defineModel<string>('deepseekApiKey', { required: true })
 const customUrl = defineModel<string>('customUrl', { required: true })
 const customKey = defineModel<string>('customKey', { required: true })
 const targetLang = defineModel<string>('targetLang', { required: true })
 
 const engineOptions = computed(() => [
   { label: t('message.translatorEngineGoogle'), value: 'google' },
+  { label: t('message.translatorEngineDeepseek'), value: 'deepseek' },
   { label: t('message.translatorEngineCustom'), value: 'custom' },
 ])
 
