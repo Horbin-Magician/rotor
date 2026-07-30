@@ -37,6 +37,10 @@ export function isScreenshotSessionCurrent(sessionId: number) {
   return invoke<boolean>('is_screenshot_session_current', { sessionId })
 }
 
+export function getRecoverableScreenshotSession() {
+  return invoke<number | null>('get_recoverable_screenshot_session')
+}
+
 export function finishScreenshotSession() {
   return invoke<void>('finish_screenshot_session')
 }

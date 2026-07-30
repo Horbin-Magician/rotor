@@ -11,7 +11,7 @@ use crate::shotter_record::{ShotterConfig, ShotterRecord};
 use image::{DynamicImage, RgbaImage};
 use std::error::Error;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::thread;
 use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
@@ -82,6 +82,7 @@ pub struct ScreenShotter {
     current_monitors: Vec<MonitorConfig>,
     screenshot_session_id: u32,
     capture_in_progress: Arc<AtomicBool>,
+    ready_session_id: Arc<AtomicU32>,
 }
 
 pub struct ScreenshotSession {
@@ -89,6 +90,7 @@ pub struct ScreenshotSession {
     capture_cache: CaptureCache,
     session_id: u32,
     capture_in_progress: Arc<AtomicBool>,
+    ready_session_id: Arc<AtomicU32>,
 }
 
 impl ScreenshotSession {
@@ -96,6 +98,8 @@ impl ScreenshotSession {
         let captures = capture_all(Monitor::all()?).map_err(Box::<dyn Error>::from)?;
 
         self.capture_cache.replace_all(captures);
+        self.ready_session_id
+            .store(self.session_id, Ordering::Release);
         self.app_handle.emit("show-mask", self.session_id)?;
         Ok(())
     }
@@ -174,6 +178,7 @@ impl ScreenShotter {
             current_monitors: Vec::new(),
             screenshot_session_id: 0,
             capture_in_progress: Arc::new(AtomicBool::new(false)),
+            ready_session_id: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -193,6 +198,7 @@ impl ScreenShotter {
         {
             return Err("Screenshot capture is already in progress".into());
         }
+        self.ready_session_id.store(0, Ordering::Release);
 
         if let Err(error) = self.check_and_rebuild_mask_windows() {
             self.capture_in_progress.store(false, Ordering::Release);
@@ -213,7 +219,17 @@ impl ScreenShotter {
             capture_cache: self.capture_cache.clone(),
             session_id,
             capture_in_progress: Arc::clone(&self.capture_in_progress),
+            ready_session_id: Arc::clone(&self.ready_session_id),
         })
+    }
+
+    pub fn recoverable_screenshot_session_id(&self, label: &str) -> Option<u32> {
+        let ready_session_id = self.ready_session_id.load(Ordering::Acquire);
+        recoverable_session_id(
+            ready_session_id,
+            self.screenshot_session_id,
+            self.capture_cache.get(label).is_some(),
+        )
     }
 
     pub fn is_screenshot_session_current(&self, session_id: u32) -> bool {
@@ -380,6 +396,7 @@ impl ScreenShotter {
     }
 
     fn end_screenshot_session(&mut self, clear_capture: bool) -> Result<(), Box<dyn Error>> {
+        self.ready_session_id.store(0, Ordering::Release);
         let session_id = self.advance_screenshot_session();
         if clear_capture {
             self.capture_cache.clear();
@@ -524,6 +541,15 @@ impl Default for ScreenShotter {
     }
 }
 
+fn recoverable_session_id(
+    ready_session_id: u32,
+    current_session_id: u32,
+    has_capture: bool,
+) -> Option<u32> {
+    (ready_session_id != 0 && ready_session_id == current_session_id && has_capture)
+        .then_some(ready_session_id)
+}
+
 fn get_logical_position(pos: Option<PhysicalPosition<i32>>) -> Result<(f64, f64), Box<dyn Error>> {
     let Some(pos) = pos else {
         return Ok((0.0, 0.0));
@@ -573,5 +599,18 @@ fn refocus_mask_after_pin_build(app_handle: &tauri::AppHandle, pos: Option<Physi
     {
         let _ = app_handle;
         let _ = pos;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recoverable_session_id;
+
+    #[test]
+    fn only_ready_current_sessions_with_capture_are_recoverable() {
+        assert_eq!(recoverable_session_id(0, 0, true), None);
+        assert_eq!(recoverable_session_id(4, 5, true), None);
+        assert_eq!(recoverable_session_id(5, 5, false), None);
+        assert_eq!(recoverable_session_id(5, 5, true), Some(5));
     }
 }

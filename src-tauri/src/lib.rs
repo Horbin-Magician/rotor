@@ -118,6 +118,7 @@ pub fn run() {
             screen_shotter_cmd::get_screen_rects,
             screen_shotter_cmd::change_current_mask,
             screen_shotter_cmd::is_screenshot_session_current,
+            screen_shotter_cmd::get_recoverable_screenshot_session,
             screen_shotter_cmd::finish_screenshot_session,
             screen_shotter_cmd::cancel_screenshot_session,
             screen_shotter_cmd::get_pin_state,

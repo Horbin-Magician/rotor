@@ -48,6 +48,7 @@ import {
   cancelScreenshotSession,
   changeCurrentMask as focusCurrentMask,
   finishScreenshotSession,
+  getRecoverableScreenshotSession,
   getScreenRects,
   getScreenshotData,
   isScreenshotSessionCurrent,
@@ -566,31 +567,35 @@ async function initializeAutoRects(requestId: number) {
   }
 }
 
+async function showScreenshotSession(requestId: number) {
+  if (requestId <= screenshotRequestId) return
+  screenshotRequestId = requestId
+
+  try {
+    const rectsPromise = initializeAutoRects(requestId).catch((error) => {
+      if (requestId === screenshotRequestId) {
+        warn(`Failed to initialize screenshot rects: ${error}`)
+      }
+    })
+    const imgBuf = await getScreenshotData(appWindow.label)
+    if (!(await ensureActiveScreenshotRequest(requestId))) return
+    const initialized = await initializeScreenshot(requestId, imgBuf)
+    if (!initialized) return
+    await rectsPromise
+  } catch (error) {
+    if (await isActiveScreenshotRequest(requestId)) {
+      warn(`Failed to load screenshot data: ${error}`)
+      cancelScreenshotMask()
+    }
+  }
+}
+
 onMounted(async () => {
   appWindow.setSimpleFullscreen(true) // Enable simple fullscreen mode
 
   unlistenShowMask = await listen<number>('show-mask', async (event) => {
     const requestId = getEventSessionId(event.payload) ?? screenshotRequestId + 1
-    if (requestId < screenshotRequestId) return
-    screenshotRequestId = requestId
-
-    try {
-      const rectsPromise = initializeAutoRects(requestId).catch((error) => {
-        if (requestId === screenshotRequestId) {
-          warn(`Failed to initialize screenshot rects: ${error}`)
-        }
-      })
-      const imgBuf = await getScreenshotData(appWindow.label)
-      if (!(await ensureActiveScreenshotRequest(requestId))) return
-      const initialized = await initializeScreenshot(requestId, imgBuf)
-      if (!initialized) return
-      await rectsPromise
-    } catch (error) {
-      if (await isActiveScreenshotRequest(requestId)) {
-        warn(`Failed to load screenshot data: ${error}`)
-        cancelScreenshotMask()
-      }
-    }
+    await showScreenshotSession(requestId)
   })
 
   unlistenHideMask = await listen<number>('hide-mask', async (event) => {
@@ -598,6 +603,15 @@ onMounted(async () => {
     if (requestId && requestId <= screenshotRequestId) return
     hideWindow({ requestId: requestId ?? undefined })
   })
+
+  try {
+    const requestId = await getRecoverableScreenshotSession()
+    if (requestId !== null) {
+      await showScreenshotSession(requestId)
+    }
+  } catch (error) {
+    warn(`Failed to recover screenshot session: ${error}`)
+  }
 })
 </script>
 

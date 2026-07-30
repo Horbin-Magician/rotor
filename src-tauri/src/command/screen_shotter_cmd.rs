@@ -152,6 +152,13 @@ pub async fn is_screenshot_session_current(session_id: u32) -> bool {
 }
 
 #[tauri::command]
+pub async fn get_recoverable_screenshot_session(window: tauri::WebviewWindow) -> Option<u32> {
+    lock_app()
+        .screenshot
+        .recoverable_screenshot_session_id(window.label())
+}
+
+#[tauri::command]
 pub async fn finish_screenshot_session() {
     if let Err(error) = lock_app().screenshot.finish_screenshot_session() {
         log::error!("Failed to finish screenshot session: {error}");
