@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { debug as logDebug } from '@tauri-apps/plugin-log'
 
 export type ScreenRect = [number, number, number, number, number]
 
@@ -69,9 +70,81 @@ export function getScreenRects(label: string) {
   return invoke<ScreenRect[]>('get_screen_rects', { label })
 }
 
+const SHARED_BUFFER_TIMEOUT_MS = 5000
+
+let sharedBufferDisabled = false
+
+function getScreenshotDataShared(_label: string): Promise<ArrayBuffer> {
+  const webview = window.chrome?.webview
+  if (!webview) {
+    return Promise.reject(new Error('shared-buffer-unsupported'))
+  }
+
+  const requestId = crypto.randomUUID()
+
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    let settled = false
+
+    const cleanup = () => {
+      webview.removeEventListener('sharedbufferreceived', handler)
+      clearTimeout(timer)
+    }
+
+    const handler = (event: WebView2SharedBufferReceivedEvent) => {
+      const meta = event.additionalData as { requestId?: string; length?: number } | undefined
+      if (!meta || meta.requestId !== requestId) {
+        return
+      }
+
+      const buffer = event.getBuffer()
+      const copy = new Uint8Array(buffer).slice().buffer
+      webview.releaseBuffer(buffer)
+
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(copy)
+    }
+
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error('shared-buffer-timeout'))
+    }, SHARED_BUFFER_TIMEOUT_MS)
+
+    webview.addEventListener('sharedbufferreceived', handler)
+
+    invoke<void>('get_screenshot_data_shared', { requestId }).catch((error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error instanceof Error ? error : new Error(String(error)))
+    })
+  })
+}
+
 export async function getScreenshotData(label: string): Promise<ArrayBuffer> {
+  const start = performance.now()
+  if (!sharedBufferDisabled) {
+    try {
+      const data = await getScreenshotDataShared(label)
+      logDebug(
+        `[screenshot] shared buffer transfer ${(performance.now() - start).toFixed(1)}ms (${data.byteLength} bytes)`,
+      )
+      return data
+    } catch (error) {
+      sharedBufferDisabled = true
+      logDebug(`[screenshot] shared buffer unavailable, fallback to ipc: ${error}`)
+    }
+  }
+  const fallbackStart = performance.now()
   const data = await invoke<ArrayBuffer | number[]>('get_screenshot_data', { label })
-  return data instanceof ArrayBuffer ? data : Uint8Array.from(data).buffer
+  const buffer = data instanceof ArrayBuffer ? data : Uint8Array.from(data).buffer
+  logDebug(
+    `[screenshot] ipc fallback transfer ${(performance.now() - fallbackStart).toFixed(1)}ms (${buffer.byteLength} bytes)`,
+  )
+  return buffer
 }
 
 export function getPinState(id: number) {

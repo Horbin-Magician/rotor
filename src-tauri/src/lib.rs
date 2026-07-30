@@ -6,7 +6,7 @@ use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_log::fern::colors::ColoredLevelConfig;
 use tauri_plugin_log::{Target, TargetKind};
 
-use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd};
+use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd, shared_image_cmd};
 
 fn format_plain_log(
     out: tauri_plugin_log::fern::FormatCallback,
@@ -114,6 +114,7 @@ pub fn run() {
             screen_shotter_cmd::new_pin,
             screen_shotter_cmd::save_img,
             screen_shotter_cmd::get_screenshot_data,
+            shared_image_cmd::get_screenshot_data_shared,
             screen_shotter_cmd::get_screen_rects,
             screen_shotter_cmd::change_current_mask,
             screen_shotter_cmd::is_screenshot_session_current,

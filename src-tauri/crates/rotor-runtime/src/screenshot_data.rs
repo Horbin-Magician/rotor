@@ -64,6 +64,46 @@ async fn try_get_pin_img(label: &str) -> Option<DynamicImage> {
     None
 }
 
+pub enum ScreenshotImage {
+    Mask(Arc<RgbaImage>),
+    Pin(RgbaImage),
+}
+
+impl ScreenshotImage {
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            ScreenshotImage::Mask(image) => image.as_raw(),
+            ScreenshotImage::Pin(image) => image.as_raw(),
+        }
+    }
+
+    pub fn dimensions(&self) -> (u32, u32) {
+        match self {
+            ScreenshotImage::Mask(image) => image.dimensions(),
+            ScreenshotImage::Pin(image) => image.dimensions(),
+        }
+    }
+}
+
+// Resolves a mask/pin label to its image without cloning the raw bytes
+pub async fn resolve_screenshot_image(label: &str) -> Result<ScreenshotImage, String> {
+    if label.starts_with("ssmask-") {
+        return try_get_screen_img(label)
+            .await
+            .map(ScreenshotImage::Mask)
+            .ok_or_else(|| format!("No image data found for {label}"));
+    }
+
+    if label.starts_with("sspin-") {
+        return try_get_pin_img(label)
+            .await
+            .map(|image| ScreenshotImage::Pin(image.to_rgba8()))
+            .ok_or_else(|| format!("No image data found for {label}"));
+    }
+
+    Err(format!("Unsupported data label: {label}"))
+}
+
 pub async fn fetch_screenshot_data(label: &str) -> Result<Vec<u8>, String> {
     if label.starts_with("ssmask-") {
         return try_get_screen_img(label)
