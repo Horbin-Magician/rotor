@@ -3,6 +3,9 @@
     <div class="titlebar-controls">
       <button
         class="titlebar-button minimize-button"
+        :class="{ 'is-hovered': hoveredButton === 'minimize' }"
+        @mouseenter="hoveredButton = 'minimize'"
+        @mouseleave="hoveredButton = null"
         @click="minimizeWindow"
         :title="t('message.minimize')"
       >
@@ -10,7 +13,14 @@
           <rect x="0" y="5" width="12" height="1" />
         </svg>
       </button>
-      <button class="titlebar-button close-button" @click="closeWindow" :title="t('message.close')">
+      <button
+        class="titlebar-button close-button"
+        :class="{ 'is-hovered': hoveredButton === 'close' }"
+        @mouseenter="hoveredButton = 'close'"
+        @mouseleave="hoveredButton = null"
+        @click="closeWindow"
+        :title="t('message.close')"
+      >
         <svg width="12" height="12" viewBox="0 0 12 12">
           <path d="M0,0 L12,12 M12,0 L0,12" stroke-width="1" />
         </svg>
@@ -21,10 +31,22 @@
 
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const appWindow = getCurrentWindow()
+
+// Hiding the window while the pointer is over a button leaves WebView's
+// :hover state stuck: no mouseleave is delivered on hide, and the webview
+// keeps applying hover from its stale pointer position on the next show.
+// Track hover manually from real mouse events instead of CSS :hover, and
+// clear it whenever the window loses or gains focus.
+const hoveredButton = ref<'minimize' | 'close' | null>(null)
+
+function resetHoverState() {
+  hoveredButton.value = null
+}
 
 function minimizeWindow() {
   appWindow.minimize()
@@ -33,6 +55,15 @@ function minimizeWindow() {
 function closeWindow() {
   appWindow.hide()
 }
+
+onMounted(() => {
+  window.addEventListener('focus', resetHoverState)
+  window.addEventListener('blur', resetHoverState)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', resetHoverState)
+  window.removeEventListener('blur', resetHoverState)
+})
 </script>
 
 <style scoped>
@@ -74,11 +105,11 @@ function closeWindow() {
   stroke-linecap: round;
 }
 
-.titlebar-button.minimize-button:hover {
+.titlebar-button.minimize-button.is-hovered {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-.titlebar-button.close-button:hover {
+.titlebar-button.close-button.is-hovered {
   background-color: #e81123;
   color: white;
 }
