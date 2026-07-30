@@ -71,14 +71,115 @@ pub fn is_ntfs(vol: char) -> bool {
 
 type WindowRect = (i32, i32, i32, u32, u32);
 
+// On Windows, enumerate top-level windows directly so the rects cover the full
+// visible frame (title bar included) in physical pixels, and a single bad
+// window cannot fail the whole list.
+#[cfg(target_os = "windows")]
+pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
+    use windows::Win32::Foundation::{LPARAM, RECT};
+    use windows::core::BOOL;
+    use windows::Win32::Graphics::Dwm::{
+        DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    unsafe extern "system" fn enum_window_callback(hwnd: HWND, state: LPARAM) -> BOOL {
+        let hwnds = &mut *(state.0 as *mut Vec<HWND>);
+        hwnds.push(hwnd);
+        BOOL(1)
+    }
+
+    let mut hwnds: Vec<HWND> = Vec::new();
+    unsafe {
+        EnumWindows(
+            Some(enum_window_callback),
+            LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
+        )?;
+    }
+
+    let current_pid = unsafe { Threading::GetCurrentProcessId() };
+    let window_count = hwnds.len() as i32;
+    let mut res = Vec::new();
+
+    // EnumWindows enumerates top-level windows in Z order, topmost first
+    for (index, hwnd) in hwnds.into_iter().enumerate() {
+        let rect = unsafe {
+            if !IsWindowVisible(hwnd).as_bool() {
+                continue;
+            }
+
+            // Skip windows owned by the current process (mask/pin windows)
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid == current_pid {
+                continue;
+            }
+
+            // Skip Program Manager
+            let mut class_name = [0u16; 256];
+            let class_name_len = GetClassNameW(hwnd, &mut class_name) as usize;
+            if String::from_utf16_lossy(&class_name[..class_name_len]) == "Progman" {
+                continue;
+            }
+
+            // Skip cloaked windows (other virtual desktops, hidden UWP windows)
+            let mut cloaked = 0u32;
+            let _ = DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_CLOAKED,
+                &mut cloaked as *mut u32 as *mut std::ffi::c_void,
+                std::mem::size_of::<u32>() as u32,
+            );
+            if cloaked != 0 {
+                continue;
+            }
+
+            // Visible frame bounds in physical pixels, title bar included
+            let mut rect = RECT::default();
+            if DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_EXTENDED_FRAME_BOUNDS,
+                &mut rect as *mut RECT as *mut std::ffi::c_void,
+                std::mem::size_of::<RECT>() as u32,
+            )
+            .is_err()
+            {
+                continue;
+            }
+            rect
+        };
+
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        if width <= 0 || height <= 0 {
+            continue;
+        }
+
+        let z = window_count - index as i32;
+        res.push((rect.left, rect.top, z, width as u32, height as u32));
+    }
+
+    Ok(res)
+}
+
+#[cfg(not(target_os = "windows"))]
 pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
     let mut res = Vec::new();
 
     let windows = xcap::Window::all()?;
     for window in windows {
-        let (x, y, width, height) = (window.x()?, window.y()?, window.width()?, window.height()?);
-        let z = window.z()?;
-        res.push((x, y, z, width, height));
+        // Skip windows whose properties cannot be read instead of failing the whole list
+        if let (Ok(x), Ok(y), Ok(width), Ok(height), Ok(z)) = (
+            window.x(),
+            window.y(),
+            window.width(),
+            window.height(),
+            window.z(),
+        ) {
+            res.push((x, y, z, width, height));
+        }
     }
 
     Ok(res)
@@ -240,5 +341,17 @@ pub fn forbid_window_animation(handle: HWND) {
             std::mem::size_of_val(&disable) as u32,
         )
         .unwrap_or_else(|e| log::error!("DwmSetWindowAttribute error: {:?}", e));
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    #[test]
+    fn get_all_window_rect_returns_valid_rects() {
+        let rects = super::get_all_window_rect().expect("get_all_window_rect failed");
+        assert!(!rects.is_empty(), "expected at least one visible window");
+        for &(x, y, z, width, height) in &rects {
+            assert!(width > 0 && height > 0, "invalid rect: {x},{y},{z},{width}x{height}");
+        }
     }
 }

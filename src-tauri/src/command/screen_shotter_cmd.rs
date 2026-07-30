@@ -68,6 +68,16 @@ pub async fn get_screen_rects(
     for rect in raw_rects {
         let (rect_x, rect_y, rect_z, rect_width, rect_height) = rect;
 
+        // On Windows the window rects are physical pixels; convert them to
+        // logical coordinates to match the monitor bounds and frontend CSS pixels.
+        #[cfg(target_os = "windows")]
+        let (rect_x, rect_y, rect_width, rect_height) = (
+            (rect_x as f64 / scale_factor).round() as i32,
+            (rect_y as f64 / scale_factor).round() as i32,
+            (rect_width as f64 / scale_factor).round() as u32,
+            (rect_height as f64 / scale_factor).round() as u32,
+        );
+
         // Calculate rect bounds
         let rect_right = rect_x + rect_width as i32;
         let rect_bottom = rect_y + rect_height as i32;
