@@ -75,6 +75,12 @@ pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
     // Virtual key code for the "C" key.
     const KEY_CODE_C: u16 = 8;
 
+    if !request_accessibility_permission() {
+        return Err("macOS Accessibility permission is required for selection translation".into());
+    }
+
+    wait_for_modifiers_release();
+
     let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
         .map_err(|_| std::io::Error::other("Failed to create CGEventSource"))?;
 
@@ -89,6 +95,62 @@ pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
     key_up.post(CGEventTapLocation::HID);
 
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn request_accessibility_permission() -> bool {
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
+    use core_foundation::string::CFString;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
+    }
+
+    let prompt_key = CFString::new("AXTrustedCheckOptionPrompt");
+    let options = CFDictionary::from_CFType_pairs(&[(prompt_key, CFBoolean::true_value())]);
+
+    unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) }
+}
+
+#[cfg(target_os = "macos")]
+fn wait_for_modifiers_release() {
+    use core_graphics::event::{CGEvent, CGEventFlags};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use std::time::{Duration, Instant};
+
+    const WAIT_TIMEOUT: Duration = Duration::from_millis(1500);
+    const POLL_INTERVAL: Duration = Duration::from_millis(30);
+    let modifier_flags = CGEventFlags::CGEventFlagShift
+        | CGEventFlags::CGEventFlagControl
+        | CGEventFlags::CGEventFlagAlternate
+        | CGEventFlags::CGEventFlagCommand;
+
+    let start = Instant::now();
+    while start.elapsed() < WAIT_TIMEOUT {
+        let modifiers_pressed = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
+            .and_then(CGEvent::new)
+            .is_ok_and(|event| event.get_flags().intersects(modifier_flags));
+
+        if !modifiers_pressed {
+            return;
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn clipboard_change_count() -> Option<isize> {
+    use objc2_app_kit::NSPasteboard;
+
+    Some(unsafe { NSPasteboard::generalPasteboard().changeCount() })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn clipboard_change_count() -> Option<isize> {
+    None
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]

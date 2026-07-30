@@ -136,17 +136,25 @@ fn capture_selected_text(
 ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
     let clipboard = app.clipboard();
     let previous_text = clipboard.read_text().ok();
+    let previous_change_count = selection::clipboard_change_count();
 
     selection::simulate_copy()?;
 
     // Poll until the clipboard content changes; large selections and some
     // applications (e.g. browsers) take a while to land on the clipboard.
+    // macOS change counts also detect a successful copy when the selected
+    // text happens to equal the previous clipboard text.
     let mut captured = None;
     let wait_start = std::time::Instant::now();
     while wait_start.elapsed() < CLIPBOARD_WAIT_TIMEOUT {
         thread::sleep(CLIPBOARD_POLL_INTERVAL);
         let current = clipboard.read_text().ok();
-        if current.is_some() && current != previous_text {
+        if clipboard_has_changed(
+            &previous_text,
+            &current,
+            previous_change_count,
+            selection::clipboard_change_count(),
+        ) {
             captured = current;
             break;
         }
@@ -164,6 +172,18 @@ fn capture_selected_text(
         .filter(|text| !text.is_empty());
 
     Ok(text)
+}
+
+fn clipboard_has_changed(
+    previous_text: &Option<String>,
+    current_text: &Option<String>,
+    previous_change_count: Option<isize>,
+    current_change_count: Option<isize>,
+) -> bool {
+    match (previous_change_count, current_change_count) {
+        (Some(previous), Some(current)) => current != previous,
+        _ => current_text.is_some() && current_text != previous_text,
+    }
 }
 
 fn show_window(app: &tauri::AppHandle, selected_text: Option<String>) -> Result<(), Box<dyn Error>> {
@@ -207,5 +227,26 @@ fn position_near_cursor(app: &tauri::AppHandle, window: &WebviewWindow) {
 
     if let Err(e) = window.set_position(PhysicalPosition::new(x, y)) {
         log::warn!("Translator: failed to position window: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clipboard_has_changed;
+
+    #[test]
+    fn change_count_detects_copy_of_identical_text() {
+        let text = Some("same text".to_string());
+
+        assert!(clipboard_has_changed(&text, &text, Some(10), Some(11)));
+    }
+
+    #[test]
+    fn text_difference_is_used_without_change_counts() {
+        let previous = Some("before".to_string());
+        let current = Some("after".to_string());
+
+        assert!(clipboard_has_changed(&previous, &current, None, None));
+        assert!(!clipboard_has_changed(&previous, &previous, None, None));
     }
 }

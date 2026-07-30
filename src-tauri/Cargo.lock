@@ -5571,8 +5571,10 @@ dependencies = [
 name = "rotor-translator"
 version = "2.5.4"
 dependencies = [
+ "core-foundation 0.9.4",
  "core-graphics 0.23.2",
  "log",
+ "objc2-app-kit 0.2.2",
  "reqwest",
  "rotor-common",
  "rotor-platform",
