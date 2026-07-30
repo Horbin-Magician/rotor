@@ -6,7 +6,7 @@ use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_log::fern::colors::ColoredLevelConfig;
 use tauri_plugin_log::{Target, TargetKind};
 
-use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd, shared_image_cmd};
+use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd, shared_image_cmd, translator_cmd};
 
 fn format_plain_log(
     out: tauri_plugin_log::fern::FormatCallback,
@@ -133,6 +133,7 @@ pub fn run() {
             searcher_cmd::searcher_index_status,
             searcher_cmd::open_file,
             searcher_cmd::open_file_as_admin,
+            translator_cmd::translator_translate,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

@@ -13,6 +13,7 @@ members = [
   "crates/rotor-searcher",
   "crates/rotor-screenshot",
   "crates/rotor-runtime",
+  "crates/rotor-translator",
 ]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -45,6 +46,7 @@ rotor-platform = { path = "crates/rotor-platform" }
 rotor-runtime = { path = "crates/rotor-runtime" }
 rotor-screenshot = { path = "crates/rotor-screenshot" }
 rotor-searcher = { path = "crates/rotor-searcher" }
+rotor-translator = { path = "crates/rotor-translator" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

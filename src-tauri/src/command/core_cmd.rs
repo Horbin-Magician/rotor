@@ -25,7 +25,8 @@ pub fn get_all_cfg() -> Config {
 pub fn set_cfg(k: String, mut v: String, app: AppHandle) -> Result<(), String> {
     let tokens = k.split('_').collect::<Vec<&str>>();
     let should_rebuild_search_index = k == "search_excluded_dirs";
-    let _shortcut_update_guard = (tokens[0] == "shortcut" && tokens.len() == 2).then(|| {
+    let is_global_shortcut = is_global_shortcut_key(&k);
+    let _shortcut_update_guard = is_global_shortcut.then(|| {
         GLOBAL_SHORTCUT_UPDATE
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -42,7 +43,7 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) -> Result<(), String> {
                     return Ok(());
                 }
 
-                if tokens.len() == 2 {
+                if is_global_shortcut {
                     let old_shortcut = old_value.as_deref().and_then(|value| {
                         Shortcut::from_str(value)
                             .map_err(|error| {
@@ -72,7 +73,7 @@ pub fn set_cfg(k: String, mut v: String, app: AppHandle) -> Result<(), String> {
                 }
             }
             Err(error) => {
-                if tokens.len() == 2 {
+                if is_global_shortcut {
                     return Err(format!("Invalid shortcut `{v}`: {error}"));
                 }
             }
@@ -116,6 +117,12 @@ fn restore_shortcut(app: &AppHandle, shortcut: Option<Shortcut>) {
             log::error!("Failed to restore old shortcut `{shortcut}`: {error}");
         }
     }
+}
+
+/// Global shortcuts are all `shortcut_*` keys except the pin-window local
+/// shortcuts (`shortcut_pinwin_*`), which are only persisted as config.
+fn is_global_shortcut_key(k: &str) -> bool {
+    k.starts_with("shortcut_") && !k.starts_with("shortcut_pinwin_")
 }
 
 #[tauri::command]

@@ -6,7 +6,8 @@
     "setting",
     "ssmask-*",
     "sspin-*",
-    "searcher"
+    "searcher",
+    "translator"
   ],
   "permissions": [
     "core:default",

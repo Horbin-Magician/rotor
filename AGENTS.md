@@ -4,7 +4,7 @@ This file provides guidance to Codex when working with code in this repository.
 
 ## Project Overview
 
-Rotor is a fast, low-occupancy desktop toolbox for Windows and macOS. It is built with Tauri 2, a Rust backend, and a Vue 3 + TypeScript frontend. Current user-facing modules include file search, screenshots, pinned screenshot windows, screenshot OCR, settings/overview, and configurable quick actions.
+Rotor is a fast, low-occupancy desktop toolbox for Windows and macOS. It is built with Tauri 2, a Rust backend, and a Vue 3 + TypeScript frontend. Current user-facing modules include file search, screenshots, pinned screenshot windows, screenshot OCR, text translation (selection and input), settings/overview, and configurable quick actions.
 
 ## Technology Stack
 
@@ -72,11 +72,12 @@ cd src-tauri && cargo build --workspace
 - `src/plugins/router.ts`: Defines the Tauri webview routes:
   - `/` -> settings window.
   - `/Searcher` -> search window.
+  - `/Translator` -> translator window.
   - `/ScreenShotter/Mask` -> per-monitor screenshot mask windows.
   - `/ScreenShotter/Pin` -> pinned screenshot windows.
 - `src/plugins/i18n.ts` and `src/locales/*`: English and Chinese localization.
 - `src/shared/api/*`: Shared Tauri IPC clients.
-- `src/features/*`: Typed API wrappers and composables for searcher, screenshot, and quick actions.
+- `src/features/*`: Typed API wrappers and composables for searcher, screenshot, translator, and quick actions.
 - `src/components/setting/*`: Settings, overview, shortcut, quick action, update, and platform titlebar UI.
 - `src/components/screenShotter/*`: Screenshot mask, pin canvas, pin toolbar, OCR overlay, drawing, text, and edge UI.
 - `src/components/searcher/*`: Search input and result list UI.
@@ -91,21 +92,24 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
   - `quick_cmd.rs`: Quick action CRUD, validation, shortcut registration, rollback, and execution.
   - `screen_shotter_cmd.rs`: Mask/pin commands, screenshot data bytes, save image, persisted pin state, and OCR.
   - `searcher_cmd.rs`: Search requests, index status, open file, and open as admin.
+  - `translator_cmd.rs`: Translation requests against the configured engine.
 - `src-tauri/crates/rotor-common`: App config, user data paths, and backend i18n.
 - `src-tauri/crates/rotor-platform`: Platform-specific file utilities, file icons, permission/status collection, window rects, memory usage, elevation, and open-file behavior.
 - `src-tauri/crates/rotor-runtime`: Global application state, tray menu, global shortcut dispatch, quick actions, shortcut conflict notices, and screenshot data fetching for IPC.
 - `src-tauri/crates/rotor-searcher`: File indexing/search, excluded directory parsing, per-volume search workers, result ranking, and icon attachment.
 - `src-tauri/crates/rotor-screenshot`: Monitor capture, mask and pin windows, capture cache, persisted shotter records, image utilities, rectangle detection, and OCR integration.
+- `src-tauri/crates/rotor-translator`: Translator window, simulated-copy selection capture, cursor-following window placement, and translation engines (free Google endpoint plus custom API template). Uses `reqwest` with `rustls-no-provider` + ring (mirrors tauri-plugin-updater).
 
 ## Runtime Flows
 
 ### Global Shortcuts
 
 - Defaults live in `src-tauri/crates/rotor-common/src/config.rs`.
-- macOS defaults: search `Cmd+Shift+F`, screenshot `Cmd+Shift+S`, quick actions `Cmd+Shift+T` and `Cmd+Shift+E`.
-- Windows defaults: search `Ctrl+Shift+F`, screenshot `Ctrl+Shift+S`, quick actions `Ctrl+Shift+T` and `Ctrl+Shift+E`.
+- macOS defaults: search `Cmd+Shift+F`, screenshot `Cmd+Shift+S`, quick actions `Cmd+Shift+T` and `Cmd+Shift+E`, selection translate `Cmd+Shift+D`, input translate `Cmd+Shift+W`.
+- Windows defaults: search `Ctrl+Shift+F`, screenshot `Ctrl+Shift+S`, quick actions `Ctrl+Shift+T` and `Ctrl+Shift+E`, selection translate `Ctrl+Shift+D`, input translate `Ctrl+Shift+W`.
 - Pin window defaults: save `S`, close `Escape`, copy `Enter`, hide `H`.
-- `rotor-runtime::handle_global_hotkey_event` dispatches screenshot, searcher, and quick action shortcuts with debounce/stale-press handling.
+- `rotor-runtime::handle_global_hotkey_event` dispatches screenshot, searcher, translator, and quick action shortcuts with debounce/stale-press handling.
+- Global shortcut keys are `shortcut_*` config keys except `shortcut_pinwin_*` (pin-window local shortcuts, persisted only); `set_cfg` registers/unregisters them accordingly.
 - Shortcut updates are validated through `tauri-plugin-global-shortcut`; failed registrations emit notices that the settings UI displays.
 
 ### Screenshot And Pin Windows
@@ -131,6 +135,13 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 - `set_quick_actions` normalizes IDs, names, shortcuts, commands, and enabled state; duplicate enabled shortcuts are rejected.
 - On Windows, commands run via `cmd /C`; on other platforms they run via `sh -lc`.
 - If shortcut registration fails while saving quick actions, the command rolls back previously registered shortcuts.
+
+### Translator
+
+- The `translator` window is pre-created hidden at startup (same builder pattern as `searcher`) and follows the mouse cursor when shown.
+- Selection translation saves the clipboard text, simulates Ctrl+C (Windows `SendInput`) / Cmd+C (macOS `CGEvent`), reads the clipboard, restores the previous text, then emits `translate-select` with the captured text.
+- Input translation just emits `translate-input`; the page clears and focuses its input box. The window hides itself on blur/Escape.
+- Translation runs Rust-side via the `translator_translate` command (no CSP change needed). Engine is configured by `translator_engine` (`google` default free endpoint, or `custom` with `translator_custom_url` template supporting `{text}`/`{from}`/`{to}`/`{key}` and `translator_custom_key`). `translator_target_lang` is `auto` (CJK text -> `en`, otherwise `zh-CN`) or an explicit language code.
 
 ## Configuration And Resources
 
@@ -159,3 +170,4 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 - `src-tauri/crates/rotor-runtime/src/screenshot_data.rs`: Screenshot/pin image byte fetching behind the `get_screenshot_data` command.
 - `src-tauri/crates/rotor-searcher/src/file_data/mod.rs`: Search index state machine and search task orchestration.
 - `src-tauri/crates/rotor-screenshot/src/lib.rs`: Screenshot capture, mask windows, pin windows, and pin restore flow.
+- `src-tauri/crates/rotor-translator/src/lib.rs`: Translator window lifecycle, selection capture, and cursor-following placement.

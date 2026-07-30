@@ -29,6 +29,18 @@
     <SettingRow :label="t('message.search')" :conflict="highlightedSetting === 'shortcut_search'">
       <ShortcutInput v-model:shortcut="shortcutSearch" />
     </SettingRow>
+    <SettingRow
+      :label="t('message.translateSelect')"
+      :conflict="highlightedSetting === 'shortcut_translate_select'"
+    >
+      <ShortcutInput v-model:shortcut="shortcutTranslateSelect" />
+    </SettingRow>
+    <SettingRow
+      :label="t('message.translateInput')"
+      :conflict="highlightedSetting === 'shortcut_translate_input'"
+    >
+      <ShortcutInput v-model:shortcut="shortcutTranslateInput" />
+    </SettingRow>
   </SettingsSection>
 </template>
 
@@ -67,6 +79,8 @@ const theme = defineModel<number>('theme', { required: true })
 const powerBoot = defineModel<boolean>('powerBoot', { required: true })
 const shortcutScreenshot = defineModel<string>('shortcutScreenshot', { required: true })
 const shortcutSearch = defineModel<string>('shortcutSearch', { required: true })
+const shortcutTranslateSelect = defineModel<string>('shortcutTranslateSelect', { required: true })
+const shortcutTranslateInput = defineModel<string>('shortcutTranslateInput', { required: true })
 
 const languageOptions = computed(() => [
   { label: t('message.systemDefault'), value: 0 },

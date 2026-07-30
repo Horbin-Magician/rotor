@@ -26,6 +26,16 @@ pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Cmd+Shift+S";
 pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+S";
 
 #[cfg(target_os = "macos")]
+pub const DEFAULT_TRANSLATE_SELECT_SHORTCUT: &str = "Cmd+Shift+D";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_TRANSLATE_SELECT_SHORTCUT: &str = "Ctrl+Shift+D";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_TRANSLATE_INPUT_SHORTCUT: &str = "Cmd+Shift+W";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_TRANSLATE_INPUT_SHORTCUT: &str = "Ctrl+Shift+W";
+
+#[cfg(target_os = "macos")]
 pub const DEFAULT_SEARCH_EXCLUDED_DIRS: &str =
     "~/Library\nnode_modules\ntarget\ndist\nbuild\n.git\n.next\n.cache\ncoverage";
 #[cfg(not(target_os = "macos"))]
@@ -50,6 +60,18 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("shortcut_pinwin_close".into(), "Escape".into()),
         ("shortcut_pinwin_copy".into(), "Enter".into()),
         ("shortcut_pinwin_hide".into(), "H".into()),
+        (
+            "shortcut_translate_select".into(),
+            DEFAULT_TRANSLATE_SELECT_SHORTCUT.into(),
+        ),
+        (
+            "shortcut_translate_input".into(),
+            DEFAULT_TRANSLATE_INPUT_SHORTCUT.into(),
+        ),
+        ("translator_engine".into(), "google".into()),
+        ("translator_custom_url".into(), "".into()),
+        ("translator_custom_key".into(), "".into()),
+        ("translator_target_lang".into(), "auto".into()),
         ("quick_actions".into(), DEFAULT_QUICK_ACTIONS.into()),
         (
             "quick_actions_revision".into(),
