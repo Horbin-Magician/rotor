@@ -35,6 +35,13 @@ fn lock_app() -> std::sync::MutexGuard<'static, Application> {
     Application::lock_global()
 }
 
+// Returns raw RGBA bytes for a screenshot mask or pin window label
+#[tauri::command]
+pub async fn get_screenshot_data(label: String) -> Result<tauri::ipc::Response, String> {
+    let data = rotor_runtime::fetch_screenshot_data(&label).await?;
+    Ok(tauri::ipc::Response::new(data))
+}
+
 // Command for mask window
 #[tauri::command]
 pub async fn get_screen_rects(

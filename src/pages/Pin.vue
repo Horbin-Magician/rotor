@@ -113,11 +113,11 @@ import { writeImage } from '@tauri-apps/plugin-clipboard-manager'
 import { UnlistenFn } from '@tauri-apps/api/event'
 import { warn } from '@tauri-apps/plugin-log'
 import { getAllConfig } from '../shared/api/core'
-import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket'
 import { createValidatedRgbaImageData } from '../shared/imageData'
 import {
   deletePinRecord,
   getPinState,
+  getScreenshotData,
   imageToText,
   saveImage as saveScreenshotImage,
   updatePinSelection,
@@ -199,13 +199,6 @@ let unlisten_show_pin: UnlistenFn | null = null
 let unlistenFocusChanged: UnlistenFn | null = null
 let unlistenScaleChanged: UnlistenFn | null = null
 let contextMenuHandler: ((event: MouseEvent) => void) | null = null
-
-let ws: WebSocket | null = null
-
-// Initialize WebSocket connection with dynamic port
-async function initWebSocket() {
-  ws = await connectDataSocket()
-}
 
 const state = ref(State.Default)
 const drawState = ref(DrawState.Pen)
@@ -342,15 +335,6 @@ async function syncCurrentScaleFactor(scaleFactor?: number) {
 }
 
 async function tryLoadScreenShot(id: number): Promise<boolean> {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    try {
-      await initWebSocket()
-    } catch (error) {
-      warn(`WebSocket not ready for pin id ${id}: ${error}`)
-      return false
-    }
-  }
-
   const pin_config = await getPinState(id)
   if (!pin_config) {
     warn(`No pin config found for id: ${id}`)
@@ -373,14 +357,8 @@ async function tryLoadScreenShot(id: number): Promise<boolean> {
     ),
   )
 
-  const socket = ws
-  if (!socket) {
-    warn(`WebSocket not initialized for pin id ${id}`)
-    return false
-  }
-
   try {
-    const imgBuf = await requestDataSocketBytes(socket, appWindow.label)
+    const imgBuf = await getScreenshotData(appWindow.label)
     if (imgBuf.byteLength === 0) {
       throw new Error(`No image data returned for pin id ${id}`)
     }
@@ -1141,12 +1119,6 @@ function cancelTextInput() {
 
 // do something on mounted
 onMounted(async () => {
-  try {
-    await initWebSocket() // Initialize WebSocket connection
-  } catch (error) {
-    warn(`Failed to initialize websocket for pin ${pin_id}: ${error}`)
-  }
-
   await loadShortcuts()
 
   window.addEventListener('keyup', handleKeyup)
@@ -1246,8 +1218,6 @@ onBeforeUnmount(async () => {
   if (unlistenScaleChanged) {
     unlistenScaleChanged()
   }
-  ws?.close()
-  ws = null
   backImg.value?.close()
   backImg.value = null
 })

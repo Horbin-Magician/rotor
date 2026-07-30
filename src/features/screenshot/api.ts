@@ -69,6 +69,11 @@ export function getScreenRects(label: string) {
   return invoke<ScreenRect[]>('get_screen_rects', { label })
 }
 
+export async function getScreenshotData(label: string): Promise<ArrayBuffer> {
+  const data = await invoke<ArrayBuffer | number[]>('get_screenshot_data', { label })
+  return data instanceof ArrayBuffer ? data : Uint8Array.from(data).buffer
+}
+
 export function getPinState(id: number) {
   return invoke<PinConfig | null>('get_pin_state', { id })
 }

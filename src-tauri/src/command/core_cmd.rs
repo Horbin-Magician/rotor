@@ -131,11 +131,6 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-#[tauri::command]
-pub fn get_ws_port() -> u16 {
-    Application::lock_global().ws_port
-}
-
 fn collect_overview_info() -> OverviewInfo {
     let memory = rotor_platform::sys_util::get_memory_usage().unwrap_or_else(|error| {
         log::warn!("Failed to collect memory usage: {error}");

@@ -11,7 +11,6 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
-use crate::data_server;
 use crate::quick::Quick;
 use crate::tray::Tray;
 
@@ -110,7 +109,6 @@ pub struct Application {
     pub screenshot: ScreenShotter,
     pub searcher: Searcher,
     pub quick: Quick,
-    pub ws_port: u16,
     screenshot_shortcut: Option<Shortcut>,
     search_shortcut: Option<Shortcut>,
     pressed_shortcuts: HashSet<u32>,
@@ -129,7 +127,6 @@ impl Application {
                 Some(Box::new(Application::update_search_index_state)),
             ),
             quick: Quick::new(),
-            ws_port: 10000,
             screenshot_shortcut: None,
             search_shortcut: None,
             pressed_shortcuts: HashSet::new(),
@@ -206,10 +203,6 @@ impl Application {
         }
 
         self.app = Some(app);
-
-        tauri::async_runtime::spawn(async move {
-            data_server::run().await;
-        });
 
         Ok(())
     }

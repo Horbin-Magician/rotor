@@ -75,7 +75,7 @@ cd src-tauri && cargo build --workspace
   - `/ScreenShotter/Mask` -> per-monitor screenshot mask windows.
   - `/ScreenShotter/Pin` -> pinned screenshot windows.
 - `src/plugins/i18n.ts` and `src/locales/*`: English and Chinese localization.
-- `src/shared/api/*`: Shared Tauri IPC and data WebSocket clients.
+- `src/shared/api/*`: Shared Tauri IPC clients.
 - `src/features/*`: Typed API wrappers and composables for searcher, screenshot, and quick actions.
 - `src/components/setting/*`: Settings, overview, shortcut, quick action, update, and platform titlebar UI.
 - `src/components/screenShotter/*`: Screenshot mask, pin canvas, pin toolbar, OCR overlay, drawing, text, and edge UI.
@@ -87,13 +87,13 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 
 - `src-tauri/src/lib.rs`: Main Tauri entry point. Registers plugins, IPC commands, global shortcut handler, dock behavior, and app lifecycle.
 - `src-tauri/src/command/*`: Tauri command handlers for IPC:
-  - `core_cmd.rs`: Config, app version, overview info, shortcut conflict notices, URL opening, and WebSocket port.
+  - `core_cmd.rs`: Config, app version, overview info, shortcut conflict notices, and URL opening.
   - `quick_cmd.rs`: Quick action CRUD, validation, shortcut registration, rollback, and execution.
-  - `screen_shotter_cmd.rs`: Mask/pin commands, save image, persisted pin state, and OCR.
+  - `screen_shotter_cmd.rs`: Mask/pin commands, screenshot data bytes, save image, persisted pin state, and OCR.
   - `searcher_cmd.rs`: Search requests, index status, open file, and open as admin.
 - `src-tauri/crates/rotor-common`: App config, user data paths, and backend i18n.
 - `src-tauri/crates/rotor-platform`: Platform-specific file utilities, file icons, permission/status collection, window rects, memory usage, elevation, and open-file behavior.
-- `src-tauri/crates/rotor-runtime`: Global application state, tray menu, global shortcut dispatch, quick actions, shortcut conflict notices, and local data WebSocket server.
+- `src-tauri/crates/rotor-runtime`: Global application state, tray menu, global shortcut dispatch, quick actions, shortcut conflict notices, and screenshot data fetching for IPC.
 - `src-tauri/crates/rotor-searcher`: File indexing/search, excluded directory parsing, per-volume search workers, result ranking, and icon attachment.
 - `src-tauri/crates/rotor-screenshot`: Monitor capture, mask and pin windows, capture cache, persisted shotter records, image utilities, rectangle detection, and OCR integration.
 
@@ -112,8 +112,8 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 
 - The screenshot shortcut calls `ScreenShotter::run`, captures all monitors, stores raw RGBA images in `CaptureCache`, and emits `show-mask`.
 - Mask windows are labeled `ssmask-*`; pin windows are labeled `sspin-{id}`. The Tauri capability file must allow any new labels.
-- Frontend mask and pin pages request image bytes through `src/shared/api/dataSocket.ts`.
-- `rotor-runtime::data_server` binds a local WebSocket on `localhost` using the first available port from `10000..=48137`; the frontend gets that port via `get_ws_port`.
+- Frontend mask and pin pages request image bytes through the `get_screenshot_data` command, which returns raw RGBA bytes as a binary IPC response (`tauri::ipc::Response`).
+- `rotor-runtime::screenshot_data::fetch_screenshot_data` resolves a window label to image bytes from `CaptureCache` (mask) or persisted pin images, retrying briefly until the image is available.
 - Pinned screenshots persist through `rotor-screenshot::shotter_record`; invalid persisted records are removed during restore.
 - OCR uses `img2text` and ONNX model files bundled from `src-tauri/assets/model`.
 
@@ -156,6 +156,6 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 - `src-tauri/src/lib.rs`: Tauri builder, plugins, command registration, setup, and run loop.
 - `src-tauri/crates/rotor-common/src/config.rs`: Default settings, shortcuts, quick actions, and excluded search directories.
 - `src-tauri/crates/rotor-runtime/src/application.rs`: Global app state and shortcut dispatch.
-- `src-tauri/crates/rotor-runtime/src/data_server.rs`: Local screenshot data WebSocket.
+- `src-tauri/crates/rotor-runtime/src/screenshot_data.rs`: Screenshot/pin image byte fetching behind the `get_screenshot_data` command.
 - `src-tauri/crates/rotor-searcher/src/file_data/mod.rs`: Search index state machine and search task orchestration.
 - `src-tauri/crates/rotor-screenshot/src/lib.rs`: Screenshot capture, mask windows, pin windows, and pin restore flow.

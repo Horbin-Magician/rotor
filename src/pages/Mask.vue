@@ -42,14 +42,14 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { info, warn } from '@tauri-apps/plugin-log'
-import { connectDataSocket, requestDataSocketBytes } from '../shared/api/dataSocket'
+import { warn } from '@tauri-apps/plugin-log'
 import { createValidatedRgbaImageData } from '../shared/imageData'
 import {
   cancelScreenshotSession,
   changeCurrentMask as focusCurrentMask,
   finishScreenshotSession,
   getScreenRects,
+  getScreenshotData,
   isScreenshotSessionCurrent,
   newCachePin,
   newPin,
@@ -62,7 +62,6 @@ import Magnifier from '../components/screenShotter/mask/Magnifier.vue'
 
 const appWindow = getCurrentWindow()
 
-let ws: WebSocket | null = null
 let backImgBitmap: ImageBitmap | null = null
 let unlistenShowMask: UnlistenFn | null = null
 let unlistenHideMask: UnlistenFn | null = null
@@ -70,18 +69,6 @@ let screenshotRequestId = 0
 
 type HideWindowOptions = {
   requestId?: number
-}
-
-async function initWebSocket() {
-  try {
-    ws?.close()
-    ws = null
-    ws = await connectDataSocket()
-    info('WebSocket connection established')
-  } catch (error) {
-    warn(`WebSocket connection error: ${error}`)
-    throw error
-  }
 }
 
 const windowWidth = window.screen.width
@@ -399,8 +386,6 @@ onBeforeUnmount(() => {
     unlistenHideMask()
     unlistenHideMask = null
   }
-  ws?.close()
-  ws = null
 })
 
 // Load the screenshot
@@ -485,8 +470,6 @@ function hideWindow({ requestId }: HideWindowOptions = {}) {
   } else {
     screenshotRequestId += 1
   }
-  ws?.close()
-  ws = null
 
   void appWindow.hide()
 
@@ -548,23 +531,19 @@ onMounted(async () => {
     screenshotRequestId = requestId
 
     try {
-      await initWebSocket() // Initialize WebSocket connection
       const rectsPromise = initializeAutoRects(requestId).catch((error) => {
         if (requestId === screenshotRequestId) {
           warn(`Failed to initialize screenshot rects: ${error}`)
         }
       })
-      if (!ws) {
-        throw new Error('WebSocket did not initialize')
-      }
-      const imgBuf = await requestDataSocketBytes(ws, appWindow.label)
+      const imgBuf = await getScreenshotData(appWindow.label)
       if (!(await ensureActiveScreenshotRequest(requestId))) return
       const initialized = await initializeScreenshot(requestId, imgBuf)
       if (!initialized) return
       await rectsPromise
     } catch (error) {
       if (await isActiveScreenshotRequest(requestId)) {
-        warn(`Failed to initialize screenshot websocket: ${error}`)
+        warn(`Failed to load screenshot data: ${error}`)
         cancelScreenshotMask()
       }
     }
