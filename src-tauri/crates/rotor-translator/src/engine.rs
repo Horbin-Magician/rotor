@@ -18,6 +18,19 @@ pub struct TranslateResult {
     pub to: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "event", rename_all = "camelCase")]
+pub enum TranslateStreamEvent {
+    Started {
+        text: String,
+        from: String,
+        to: String,
+    },
+    Delta {
+        content: String,
+    },
+}
+
 #[derive(Clone, Debug)]
 pub struct EngineConfig {
     pub engine: String,
@@ -55,7 +68,13 @@ impl EngineConfig {
     }
 }
 
-pub async fn translate(text: &str) -> Result<TranslateResult, Box<dyn Error + Send + Sync>> {
+pub async fn translate<F>(
+    text: &str,
+    on_event: F,
+) -> Result<TranslateResult, Box<dyn Error + Send + Sync>>
+where
+    F: Fn(TranslateStreamEvent) + Send + Sync,
+{
     // reqwest is built with `rustls-no-provider`, so install the ring
     // provider process-wide (mirrors what tauri-plugin-updater does).
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -64,17 +83,21 @@ pub async fn translate(text: &str) -> Result<TranslateResult, Box<dyn Error + Se
     let to = resolve_target_lang(&engine_config.target_lang, text);
 
     match engine_config.engine.as_str() {
-        "deepseek" => translate_deepseek(&engine_config, text, &to).await,
+        "deepseek" => translate_deepseek(&engine_config, text, &to, &on_event).await,
         "custom" => translate_custom(&engine_config, text, &to).await,
         _ => translate_google(text, &to).await,
     }
 }
 
-async fn translate_deepseek(
+async fn translate_deepseek<F>(
     engine_config: &EngineConfig,
     text: &str,
     to: &str,
-) -> Result<TranslateResult, Box<dyn Error + Send + Sync>> {
+    on_event: &F,
+) -> Result<TranslateResult, Box<dyn Error + Send + Sync>>
+where
+    F: Fn(TranslateStreamEvent) + Send + Sync,
+{
     let api_key = engine_config.deepseek_api_key.trim();
     if api_key.is_empty() {
         return Err("DeepSeek API key is not configured".into());
@@ -91,31 +114,62 @@ async fn translate_deepseek(
             { "role": "user", "content": text }
         ],
         "thinking": { "type": "disabled" },
-        "stream": false
+        "stream": true
     });
 
     let client = reqwest::Client::builder()
         .timeout(LLM_REQUEST_TIMEOUT)
         .build()?;
-    let response = client
+    let mut response = client
         .post(DEEPSEEK_CHAT_URL)
         .bearer_auth(api_key)
         .json(&request_body)
         .send()
         .await?;
     let status = response.status();
-    let body = response.text().await?;
 
     if !status.is_success() {
+        let body = response.text().await?;
         let detail = parse_deepseek_error(&body)
             .map(|message| format!(": {message}"))
             .unwrap_or_default();
         return Err(format!("DeepSeek translate request failed: {status}{detail}").into());
     }
 
-    let translated = parse_deepseek_response(&body)
-        .filter(|translated| !translated.is_empty())
-        .ok_or("Unexpected DeepSeek response format")?;
+    on_event(TranslateStreamEvent::Started {
+        text: text.to_string(),
+        from: "auto".to_string(),
+        to: to.to_string(),
+    });
+
+    let mut translated = String::new();
+    let mut line_buffer = Vec::new();
+    let mut stream_done = false;
+
+    while let Some(chunk) = response.chunk().await? {
+        line_buffer.extend_from_slice(&chunk);
+
+        while let Some(newline) = line_buffer.iter().position(|byte| *byte == b'\n') {
+            let line = line_buffer.drain(..=newline).collect::<Vec<_>>();
+            if consume_deepseek_stream_line(&line, &mut translated, on_event)? {
+                stream_done = true;
+                break;
+            }
+        }
+
+        if stream_done {
+            break;
+        }
+    }
+
+    if !stream_done && !line_buffer.is_empty() {
+        consume_deepseek_stream_line(&line_buffer, &mut translated, on_event)?;
+    }
+
+    let translated = translated.trim().to_string();
+    if translated.is_empty() {
+        return Err("Unexpected DeepSeek response format".into());
+    }
 
     Ok(TranslateResult {
         text: text.to_string(),
@@ -123,6 +177,45 @@ async fn translate_deepseek(
         from: "auto".to_string(),
         to: to.to_string(),
     })
+}
+
+fn consume_deepseek_stream_line<F>(
+    line: &[u8],
+    translated: &mut String,
+    on_event: &F,
+) -> Result<bool, Box<dyn Error + Send + Sync>>
+where
+    F: Fn(TranslateStreamEvent) + Send + Sync,
+{
+    let line = std::str::from_utf8(line)?.trim_end_matches(['\r', '\n']);
+    let Some(data) = line.strip_prefix("data:").map(str::trim) else {
+        return Ok(false);
+    };
+
+    if data == "[DONE]" {
+        return Ok(true);
+    }
+
+    let payload: serde_json::Value = serde_json::from_str(data)?;
+    if let Some(message) = payload
+        .pointer("/error/message")
+        .and_then(|message| message.as_str())
+    {
+        return Err(format!("DeepSeek translate stream failed: {message}").into());
+    }
+
+    if let Some(content) = payload
+        .pointer("/choices/0/delta/content")
+        .and_then(|content| content.as_str())
+        .filter(|content| !content.is_empty())
+    {
+        translated.push_str(content);
+        on_event(TranslateStreamEvent::Delta {
+            content: content.to_string(),
+        });
+    }
+
+    Ok(false)
 }
 
 fn target_language_name(language: &str) -> String {
@@ -133,16 +226,6 @@ fn target_language_name(language: &str) -> String {
         "ko" => "Korean (ko)".to_string(),
         other => other.to_string(),
     }
-}
-
-fn parse_deepseek_response(body: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(body)
-        .ok()?
-        .pointer("/choices/0/message/content")?
-        .as_str()
-        .map(str::trim)
-        .filter(|content| !content.is_empty())
-        .map(str::to_string)
 }
 
 fn parse_deepseek_error(body: &str) -> Option<String> {
@@ -321,12 +404,36 @@ mod tests {
     }
 
     #[test]
-    fn parse_deepseek_response_reads_assistant_content() {
-        let body = r#"{"choices":[{"message":{"content":"  Hello world  "}}]}"#;
-        assert_eq!(
-            parse_deepseek_response(body).as_deref(),
-            Some("Hello world")
-        );
+    fn consumes_deepseek_stream_delta() {
+        let mut translated = String::new();
+        let events = std::sync::Mutex::new(Vec::new());
+
+        let done = consume_deepseek_stream_line(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n",
+            &mut translated,
+            &|event| events.lock().unwrap().push(event),
+        )
+        .unwrap();
+
+        assert!(!done);
+        assert_eq!(translated, "Hello");
+        let events = events.lock().unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [TranslateStreamEvent::Delta { content }] if content == "Hello"
+        ));
+    }
+
+    #[test]
+    fn recognizes_deepseek_stream_end() {
+        let mut translated = String::new();
+        let done = consume_deepseek_stream_line(
+            b"data: [DONE]\r\n",
+            &mut translated,
+            &|_| {},
+        )
+        .unwrap();
+        assert!(done);
     }
 
     #[test]

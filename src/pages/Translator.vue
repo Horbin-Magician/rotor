@@ -17,7 +17,7 @@
     </div>
 
     <div v-if="result || translating || errorMessage" class="translator-result">
-      <div v-if="translating" class="translator-status">
+      <div v-if="translating && !result" class="translator-status">
         {{ $t('message.translating') }}
       </div>
       <div v-else-if="errorMessage" class="translator-status is-error">
@@ -25,8 +25,10 @@
       </div>
       <template v-else-if="result">
         <div class="translator-meta">{{ result.from }} → {{ result.to }}</div>
-        <div class="translator-text">{{ result.translated }}</div>
-        <div class="translator-actions">
+        <div class="translator-text" :class="{ 'is-streaming': translating }">
+          {{ result.translated }}
+        </div>
+        <div v-if="!translating" class="translator-actions">
           <button class="translator-copy" @click="copyResult">
             {{ copied ? $t('message.translatorCopied') : $t('message.translatorCopy') }}
           </button>
@@ -65,6 +67,7 @@ let unlistenFocus: UnlistenFn | null = null
 let unlistenSelect: UnlistenFn | null = null
 let unlistenInput: UnlistenFn | null = null
 let translateSeq = 0
+let resizeFrame: number | null = null
 
 const resizeWindow = async () => {
   let height = INPUT_HEIGHT
@@ -79,6 +82,14 @@ const resizeWindow = async () => {
   await appWindow.setSize(new LogicalSize(WINDOW_WIDTH, height))
 }
 
+const scheduleResize = () => {
+  if (resizeFrame !== null) return
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    void resizeWindow()
+  })
+}
+
 const doTranslate = async (text: string) => {
   const query = text.trim()
   if (!query) {
@@ -90,12 +101,27 @@ const doTranslate = async (text: string) => {
 
   const seq = ++translateSeq
   translating.value = true
+  result.value = null
   errorMessage.value = ''
   copied.value = false
   await resizeWindow()
 
   try {
-    const translated = await translatorTranslate(query)
+    const translated = await translatorTranslate(query, (event) => {
+      if (seq !== translateSeq) return
+
+      if (event.event === 'started') {
+        result.value = {
+          text: event.text,
+          translated: '',
+          from: event.from,
+          to: event.to,
+        }
+      } else if (result.value) {
+        result.value.translated += event.content
+      }
+      scheduleResize()
+    })
     if (seq !== translateSeq) return
     result.value = translated
   } catch (error) {
@@ -180,6 +206,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
   if (unlistenBlur) unlistenBlur()
   if (unlistenFocus) unlistenFocus()
   if (unlistenSelect) unlistenSelect()
@@ -274,6 +301,17 @@ onUnmounted(() => {
   user-select: text;
 }
 
+.translator-text.is-streaming::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background-color: var(--theme-primary);
+  animation: translator-caret-blink 0.8s steps(1) infinite;
+}
+
 .translator-actions {
   display: flex;
   justify-content: flex-end;
@@ -304,6 +342,12 @@ onUnmounted(() => {
 
   50% {
     opacity: 1;
+  }
+}
+
+@keyframes translator-caret-blink {
+  50% {
+    opacity: 0;
   }
 }
 </style>
