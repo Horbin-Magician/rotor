@@ -4,15 +4,24 @@
       <n-select v-model:value="engine" :options="engineOptions" />
     </SettingRow>
 
-    <SettingRow v-if="engine === 'deepseek'" :label="t('message.translatorDeepseekApiKey')">
-      <n-input
-        v-model:value="deepseekApiKey"
-        type="password"
-        show-password-on="click"
-        :placeholder="t('message.translatorDeepseekApiKeyPlaceholder')"
-        spellcheck="false"
-      />
-    </SettingRow>
+    <template v-if="engine === 'deepseek'">
+      <SettingRow :label="t('message.translatorDeepseekApiKey')">
+        <n-input
+          v-model:value="deepseekApiKey"
+          type="password"
+          show-password-on="click"
+          :placeholder="t('message.translatorDeepseekApiKeyPlaceholder')"
+          spellcheck="false"
+        />
+      </SettingRow>
+      <SettingRow :label="t('message.translatorDeepseekModel')">
+        <n-input
+          v-model:value="deepseekModel"
+          :placeholder="t('message.translatorDeepseekModelPlaceholder')"
+          spellcheck="false"
+        />
+      </SettingRow>
+    </template>
 
     <template v-if="engine === 'custom'">
       <SettingRow :label="t('message.translatorCustomUrl')">
@@ -49,6 +58,7 @@ const { t } = useI18n()
 
 const engine = defineModel<string>('engine', { required: true })
 const deepseekApiKey = defineModel<string>('deepseekApiKey', { required: true })
+const deepseekModel = defineModel<string>('deepseekModel', { required: true })
 const customUrl = defineModel<string>('customUrl', { required: true })
 const customKey = defineModel<string>('customKey', { required: true })
 const targetLang = defineModel<string>('targetLang', { required: true })

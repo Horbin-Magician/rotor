@@ -14,6 +14,7 @@ pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","
 pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Ctrl+Shift+T","command":"x-terminal-emulator","enabled":true},{"id":"files","name":"Files","shortcut":"Ctrl+Shift+E","command":"xdg-open ~","enabled":true}]"#;
 
 pub const DEFAULT_QUICK_ACTIONS_REVISION: &str = "2";
+pub const DEFAULT_TRANSLATOR_DEEPSEEK_MODEL: &str = "deepseek-v4-flash";
 
 #[cfg(target_os = "macos")]
 pub const DEFAULT_SEARCH_SHORTCUT: &str = "Cmd+Shift+F";
@@ -70,6 +71,10 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ),
         ("translator_engine".into(), "google".into()),
         ("translator_deepseek_api_key".into(), "".into()),
+        (
+            "translator_deepseek_model".into(),
+            DEFAULT_TRANSLATOR_DEEPSEEK_MODEL.into(),
+        ),
         ("translator_custom_url".into(), "".into()),
         ("translator_custom_key".into(), "".into()),
         ("translator_target_lang".into(), "auto".into()),
@@ -191,6 +196,13 @@ mod tests {
         assert_eq!(
             config.get_all().get("zoom_delta").map(String::as_str),
             Some("2")
+        );
+        assert_eq!(
+            config
+                .get_all()
+                .get("translator_deepseek_model")
+                .map(String::as_str),
+            Some("deepseek-v4-flash")
         );
     }
 }

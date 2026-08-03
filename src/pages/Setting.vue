@@ -76,6 +76,7 @@
             <TranslatorSettings
               v-model:engine="translatorEngine"
               v-model:deepseek-api-key="translatorDeepseekApiKey"
+              v-model:deepseek-model="translatorDeepseekModel"
               v-model:custom-url="translatorCustomUrl"
               v-model:custom-key="translatorCustomKey"
               v-model:target-lang="translatorTargetLang"
@@ -227,6 +228,7 @@ const searchExcludedDirs = ref('')
 // Translator settings
 const translatorEngine = ref('google')
 const translatorDeepseekApiKey = ref('')
+const translatorDeepseekModel = ref('deepseek-v4-flash')
 const translatorCustomUrl = ref('')
 const translatorCustomKey = ref('')
 const translatorTargetLang = ref('auto')
@@ -253,6 +255,7 @@ Promise.all([getAllConfig(), getQuickActions()])
     searchExcludedDirs.value = config['search_excluded_dirs']
     translatorEngine.value = config['translator_engine']
     translatorDeepseekApiKey.value = config['translator_deepseek_api_key']
+    translatorDeepseekModel.value = config['translator_deepseek_model']
     translatorCustomUrl.value = config['translator_custom_url']
     translatorCustomKey.value = config['translator_custom_key']
     translatorTargetLang.value = config['translator_target_lang']
@@ -532,6 +535,7 @@ createSettingWatcher(searchExcludedDirs, 'search_excluded_dirs')
 // Translator settings
 createSettingWatcher(translatorEngine, 'translator_engine')
 createSettingWatcher(translatorDeepseekApiKey, 'translator_deepseek_api_key')
+createSettingWatcher(translatorDeepseekModel, 'translator_deepseek_model')
 createSettingWatcher(translatorCustomUrl, 'translator_custom_url')
 createSettingWatcher(translatorCustomKey, 'translator_custom_key')
 createSettingWatcher(translatorTargetLang, 'translator_target_lang')
