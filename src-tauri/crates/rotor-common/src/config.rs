@@ -148,7 +148,7 @@ impl AppConfig {
             .path
             .as_deref()
             .ok_or_else(|| std::io::Error::other("configuration path unavailable"))?;
-        crate::persistence::atomic_write(path, toml::to_string_pretty(config)?.as_bytes())?;
+        crate::persistence::atomic_write_private(path, toml::to_string_pretty(config)?.as_bytes())?;
         Ok(())
     }
 

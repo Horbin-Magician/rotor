@@ -8262,6 +8262,7 @@ dependencies = [
  "core-graphics 0.23.2",
  "encoding_rs",
  "file_icon_provider",
+ "getrandom 0.4.2",
  "image",
  "is-root",
  "libc",
@@ -8269,6 +8270,8 @@ dependencies = [
  "objc2-app-kit 0.2.2",
  "rotor-common",
  "serde",
+ "serde_json",
+ "tempfile",
  "windows 0.61.3",
  "xcap",
 ]
