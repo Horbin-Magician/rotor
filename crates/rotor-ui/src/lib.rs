@@ -17,6 +17,10 @@ pub struct SettingsView {
 }
 
 impl SettingsView {
+    pub fn show_message(&mut self, message: String, cx: &mut Context<Self>) {
+        self.message = message;
+        cx.notify();
+    }
     pub fn new(config: Config, services: Arc<Services>) -> Self {
         Self {
             config,

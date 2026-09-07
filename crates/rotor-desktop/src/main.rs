@@ -1,18 +1,38 @@
+mod system;
+
+use futures::future::{Either, select};
 use gpui_kit::{
     component::{Root, Theme, ThemeMode},
     *,
 };
 use rotor_common::{AppConfig, Config, ConfigService, ResourceLocator, file_path};
+use rotor_platform::single_instance::{Instance, InstanceGuard};
 use rotor_runtime::{RuntimeEvent, ServiceOptions, Services};
-use std::{cell::Cell, error::Error, path::PathBuf, rc::Rc, sync::Arc};
+use std::{cell::Cell, collections::HashMap, error::Error, path::PathBuf, rc::Rc, sync::Arc};
+use system::{Command, CommandBus, SystemServices};
 
-struct EventBridge {
-    view: Option<WeakEntity<rotor_ui::SettingsView>>,
-    config: Config,
-    _task: Option<Task<()>>,
-    _appearance: Option<Subscription>,
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum WindowRole {
+    Settings,
 }
-impl Global for EventBridge {}
+
+struct WindowSlot {
+    window: AnyWindowHandle,
+    view: WeakEntity<rotor_ui::SettingsView>,
+    _appearance: Subscription,
+}
+
+struct ShellState {
+    windows: HashMap<WindowRole, WindowSlot>,
+    config: Config,
+    services: Arc<Services>,
+    commands: CommandBus,
+    system: SystemServices,
+    _task: Option<Task<()>>,
+    _closed: Option<Subscription>,
+    _quit: Option<Subscription>,
+}
+impl Global for ShellState {}
 
 fn apply_theme(config: &Config, cx: &mut App) {
     match config.get("theme").map(String::as_str) {
@@ -22,7 +42,93 @@ fn apply_theme(config: &Config, cx: &mut App) {
     }
 }
 
+fn show_settings(cx: &mut App) -> Result<(), String> {
+    if let Some(handle) = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Settings)
+        .map(|entry| entry.window)
+        && handle
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
+    {
+        return Ok(());
+    }
+    let state = cx.global::<ShellState>();
+    let config = state.config.clone();
+    let services = state.services.clone();
+    let warning = state.system.warning.clone();
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::centered(size(px(820.), px(600.)), cx)),
+        titlebar: Some(TitlebarOptions {
+            title: Some("Rotor（开发版）".into()),
+            ..Default::default()
+        }),
+        app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
+        ..Default::default()
+    };
+    cx.open_window(options, |window, cx| {
+        let appearance = window.observe_window_appearance(|window, cx| {
+            if !matches!(
+                cx.global::<ShellState>()
+                    .config
+                    .get("theme")
+                    .map(String::as_str),
+                Some("1" | "2")
+            ) {
+                Theme::sync_system_appearance(Some(window), cx);
+            }
+        });
+        let view = cx.new(|_| rotor_ui::SettingsView::new(config, services));
+        if let Some(warning) = warning {
+            view.update(cx, |view, cx| view.show_message(warning, cx));
+        }
+        cx.global_mut::<ShellState>().windows.insert(
+            WindowRole::Settings,
+            WindowSlot {
+                window: window.window_handle(),
+                view: view.downgrade(),
+                _appearance: appearance,
+            },
+        );
+        cx.new(|cx| Root::new(view, window, cx))
+    })
+    .map_err(|error| error.to_string())?;
+    let _ = cx.global::<ShellState>().services.request_index_status();
+    Ok(())
+}
+
+fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if let RuntimeEvent::SettingsSaved {
+        result: Ok(config), ..
+    } = &event
+    {
+        let theme_changed = cx.global::<ShellState>().config.get("theme") != config.get("theme");
+        let language_changed =
+            cx.global::<ShellState>().config.get("language") != config.get("language");
+        cx.global_mut::<ShellState>().config = config.clone();
+        if theme_changed {
+            apply_theme(config, cx);
+        }
+        if language_changed {
+            let state = cx.global_mut::<ShellState>();
+            if let Err(error) = state.system.update_menu(state.commands.clone(), config) {
+                eprintln!("Tray menu: {error}");
+            }
+        }
+    }
+    if let Some(view) = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Settings)
+        .map(|entry| entry.view.clone())
+    {
+        let _ = view.update(cx, |view, cx| view.handle_event(event, cx));
+    }
+}
+
 fn run() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = std::env::args().collect();
     let directory = match std::env::var_os("ROTOR_DATA_DIR") {
         Some(value) if value.is_empty() => return Err("ROTOR_DATA_DIR cannot be empty".into()),
         Some(value) => {
@@ -38,8 +144,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             .join(".rotor-gpui"),
     };
     file_path::initialize_data_directory(directory.clone())?;
-    let service = ConfigService::load_from(&directory)?;
-    if std::env::args().any(|arg| arg == "--check-config") {
+    if args.iter().any(|arg| arg == "--check-config") {
+        let service = ConfigService::load_from(&directory)?;
         println!(
             "Configuration loaded from {} ({} keys)",
             directory.display(),
@@ -47,7 +153,15 @@ fn run() -> Result<(), Box<dyn Error>> {
         );
         return Ok(());
     }
-    let config = service.get_all();
+    let (commands, command_receiver) = CommandBus::new();
+    let activate = commands.clone();
+    let _instance = match InstanceGuard::acquire(&directory, move || {
+        activate.request(Command::ShowSettings)
+    })? {
+        Instance::Primary(guard) => guard,
+        Instance::ActivatedExisting => return Ok(()),
+    };
+    let config = ConfigService::load_from(&directory)?.get_all();
     let resources = ResourceLocator::for_current_process()
         .map_err(|error| eprintln!("OCR resources: {error}"))
         .ok();
@@ -55,81 +169,95 @@ fn run() -> Result<(), Box<dyn Error>> {
         AppConfig::shared_global(),
         resources,
         ServiceOptions {
-            index_files: !std::env::args().any(|arg| arg == "--no-index"),
+            index_files: !args.iter().any(|arg| arg == "--no-index"),
         },
     )
     .map_err(std::io::Error::other)?;
     let services = Arc::new(services);
     let app_services = services.clone();
+    let background = args.iter().any(|arg| arg == "--background");
+    let enable_hotkeys = !args.iter().any(|arg| arg == "--no-hotkeys");
     let failed = Rc::new(Cell::new(false));
     let startup_failed = failed.clone();
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
-        .with_quit_mode(QuitMode::LastWindowClosed)
+        .with_quit_mode(QuitMode::Explicit)
         .run(move |cx| {
             gpui_kit::init(cx);
             apply_theme(&config, cx);
-            cx.set_global(EventBridge {
-                view: None,
-                config: config.clone(),
-                _task: None,
-                _appearance: None,
-            });
-            let options = WindowOptions {
-                window_bounds: Some(WindowBounds::centered(size(px(820.), px(600.)), cx)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Rotor（开发版）".into()),
-                    ..Default::default()
-                }),
-                app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
-                ..Default::default()
+            let system = match SystemServices::new(commands.clone(), &config, enable_hotkeys) {
+                Ok(system) => system,
+                Err(error) => {
+                    eprintln!("System services: {error}");
+                    startup_failed.set(true);
+                    cx.quit();
+                    return;
+                }
             };
-            if let Err(error) = cx.open_window(options, |window, cx| {
-                let observer = window.observe_window_appearance(|window, cx| {
-                    if !matches!(
-                        cx.global::<EventBridge>()
-                            .config
-                            .get("theme")
-                            .map(String::as_str),
-                        Some("1" | "2")
-                    ) {
-                        Theme::sync_system_appearance(Some(window), cx);
-                    }
-                });
-                cx.global_mut::<EventBridge>()._appearance = Some(observer);
-                let view = cx.new(|_| rotor_ui::SettingsView::new(config, app_services));
-                cx.global_mut::<EventBridge>().view = Some(view.downgrade());
-                cx.new(|cx| Root::new(view, window, cx))
-            }) {
-                eprintln!("Failed to open settings: {error:#}");
-                startup_failed.set(true);
-                cx.quit();
-            }
-            let task = cx.spawn(async move |cx| {
-                while let Ok(event) = events.recv().await {
-                    cx.update(|cx| {
-                        if let RuntimeEvent::SettingsSaved {
-                            result: Ok(config), ..
-                        } = &event
-                        {
-                            let theme_changed = cx.global::<EventBridge>().config.get("theme")
-                                != config.get("theme");
-                            cx.global_mut::<EventBridge>().config = config.clone();
-                            if theme_changed {
-                                apply_theme(config, cx);
-                            }
-                        }
-                        if let Some(view) = cx.global::<EventBridge>().view.clone() {
-                            let _ = view.update(cx, |view, cx| view.handle_event(event, cx));
-                        }
-                    });
+            cx.set_global(ShellState {
+                windows: HashMap::new(),
+                config,
+                services: app_services,
+                commands: commands.clone(),
+                system,
+                _task: None,
+                _closed: None,
+                _quit: None,
+            });
+            let closed = cx.on_window_closed(|cx, id| {
+                if cx.try_global::<ShellState>().is_some() {
+                    cx.global_mut::<ShellState>()
+                        .windows
+                        .retain(|_, entry| entry.window.window_id() != id);
                 }
             });
-            cx.global_mut::<EventBridge>()._task = Some(task);
+            cx.global_mut::<ShellState>()._closed = Some(closed);
+            let quit = cx.on_app_quit(|cx| {
+                let state = cx.global_mut::<ShellState>();
+                state.commands.close();
+                state.system.stop_events();
+                state.services.shutdown();
+                async {}
+            });
+            cx.global_mut::<ShellState>()._quit = Some(quit);
+            if !background && let Err(error) = show_settings(cx) {
+                eprintln!("Settings: {error}");
+                startup_failed.set(true);
+                cx.quit();
+                return;
+            }
+            let task = cx.spawn(async move |cx| {
+                loop {
+                    let command = command_receiver.recv();
+                    let event = events.recv();
+                    futures::pin_mut!(command, event);
+                    match select(command, event).await {
+                        Either::Left((Ok(()), _)) => {
+                            if let Some(command) = commands.take() {
+                                let quit = matches!(command, Command::Quit);
+                                cx.update(|cx| match command {
+                                    Command::ShowSettings => {
+                                        if let Err(error) = show_settings(cx) {
+                                            eprintln!("Settings: {error}");
+                                        }
+                                    }
+                                    Command::Quit => cx.quit(),
+                                });
+                                if quit {
+                                    break;
+                                }
+                            }
+                        }
+                        Either::Right((Ok(event), _)) => cx.update(|cx| handle_event(event, cx)),
+                        _ => break,
+                    }
+                }
+            });
+            cx.global_mut::<ShellState>()._task = Some(task);
         });
     services.shutdown();
     if failed.get() {
-        return Err("settings window startup failed".into());
+        return Err("native application startup failed".into());
     }
     Ok(())
 }

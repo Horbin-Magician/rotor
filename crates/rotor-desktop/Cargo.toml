@@ -10,4 +10,10 @@ gpui.workspace = true
 gpui-platform.workspace = true
 rotor-common.workspace = true
 rotor-runtime.workspace = true
+rotor-platform.workspace = true
+async-channel.workspace = true
+futures.workspace = true
+image.workspace = true
+global-hotkey = "=0.7.0"
+tray-icon = "=0.21.3"
 rotor-ui.workspace = true
