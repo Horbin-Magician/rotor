@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-08",
+  "source_commit": "76f0352ddd0af2ef3765723151340710a132c976",
+  "version": "2.6.0",
+  "signed": false,
+  "installed": false,
+  "candidates": [
+    {
+      "flavor": "development",
+      "artifact": "target/native-final/development-package/Rotor-GPUI_2.6.0_x64-setup.exe",
+      "bytes": 37531440,
+      "sha256": "a0eadbc4b1eda62247d1619ee234467e6f4b78da587234d630c010a294bfbccb",
+      "native_source_sha256": "be09038648c8fa0b7f4d3183d2dfaa4cfc3a15881fca3c81461e34e0105f4b88"
+    },
+    {
+      "flavor": "production",
+      "artifact": "target/native-final/production-package/Rotor_2.6.0_x64-setup.exe",
+      "bytes": 37567235,
+      "sha256": "699a233710277aaa2b614c9f3ff9edfe5bf2c13c6f00d8847360691c3b1611c6",
+      "native_source_sha256": "be09038648c8fa0b7f4d3183d2dfaa4cfc3a15881fca3c81461e34e0105f4b88"
+    }
+  ],
+  "native_core_tests_passed": 125,
+  "limits": [
+    "No macOS compilation or hardware acceptance has run.",
+    "Windows native interaction was stopped by Escape earlier in the turn.",
+    "Automatic approval review blocked the final batched candidate-execution diagnostics; no workaround was attempted.",
+    "No actual install, uninstall, UAC, signed release, or old-client upgrade/rollback was executed.",
+    "G8/G9 remain open; legacy shell retained."
+  ]
+}
