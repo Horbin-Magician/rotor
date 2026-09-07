@@ -8315,6 +8315,7 @@ dependencies = [
  "base64 0.22.1",
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
+ "dunce",
  "encoding_rs",
  "file_icon_provider",
  "getrandom 0.4.2",

@@ -62,21 +62,65 @@ pub fn is_elevated() -> bool {
 
 #[cfg(target_os = "windows")]
 pub fn launch_elevated(executable: &std::path::Path, arguments: &[String]) -> Result<(), String> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::{
-        core::{w, PCWSTR},
-        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
-    };
-    let path: Vec<u16> = executable
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
     let parameters = arguments
         .iter()
         .map(|argument| crate::startup::quote_argument(argument))
         .collect::<Result<Vec<_>, _>>()?
         .join(" ");
+    launch_elevated_parameters(executable, &parameters)
+}
+
+#[cfg(target_os = "windows")]
+pub fn launch_update_installer(
+    executable: &std::path::Path,
+    profile: &std::path::Path,
+    flags: &[String],
+) -> Result<(), String> {
+    let parameters = update_installer_parameters(profile, std::process::id(), flags)?;
+    launch_elevated_parameters(executable, &parameters)
+}
+
+#[cfg(target_os = "windows")]
+fn update_installer_parameters(
+    profile: &std::path::Path,
+    parent: u32,
+    flags: &[String],
+) -> Result<String, String> {
+    let profile = profile.to_str().ok_or("Profile path is not Unicode")?;
+    if parent == 0 || profile.contains(['\0', '"']) {
+        return Err("Invalid installer arguments".into());
+    }
+    // NSIS GetOptions scans raw parameters and ignores switches inside quotes.
+    // This is deliberately distinct from CommandLineToArgvW argument quoting.
+    let mut parameters = format!("/UPDATE /PARENT={parent} /PROFILE=\"{profile}\"");
+    for flag in flags {
+        let switch = match flag.as_str() {
+            "--no-elevate" => " /NOELEVATE",
+            "--no-index" => " /NOINDEX",
+            "--no-hotkeys" => " /NOHOTKEYS",
+            "--production-shortcuts" => " /PRODUCTIONSHORTCUTS",
+            _ => "",
+        };
+        parameters.push_str(switch);
+    }
+    Ok(parameters)
+}
+
+#[cfg(target_os = "windows")]
+fn launch_elevated_parameters(
+    executable: &std::path::Path,
+    parameters: &str,
+) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        core::{w, PCWSTR},
+        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+    };
+    let path: Vec<u16> = dunce::simplified(executable)
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
     let parameters: Vec<u16> = parameters.encode_utf16().chain(Some(0)).collect();
     let result = unsafe {
         ShellExecuteW(
@@ -99,6 +143,28 @@ pub fn launch_elevated(executable: &std::path::Path, arguments: &[String]) -> Re
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn installer_switches_remain_outside_quotes() {
+        let value = super::update_installer_parameters(
+            std::path::Path::new(r"C:\Profiles\李 & test"),
+            42,
+            &["--no-elevate".into(), "--no-index".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            value,
+            "/UPDATE /PARENT=42 /PROFILE=\"C:\\Profiles\\李 & test\" /NOELEVATE /NOINDEX"
+        );
+        assert!(
+            super::update_installer_parameters(std::path::Path::new("bad\"path"), 42, &[]).is_err()
+        );
+        assert!(
+            super::update_installer_parameters(std::path::Path::new("C:\\profile"), 0, &[])
+                .is_err()
+        );
+    }
+
     #[test]
     fn external_link_handler_rejects_non_web_schemes_before_launch() {
         assert!(super::open_url("javascript:alert(1)").is_err());

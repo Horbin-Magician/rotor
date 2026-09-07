@@ -1,6 +1,8 @@
 Unicode true
 !include "MUI2.nsh"
 !include "x64.nsh"
+!include "FileFunc.nsh"
+!include "LogicLib.nsh"
 !ifndef STAGE_DIR
 !error "Pass /DSTAGE_DIR=<verified native staging directory>"
 !endif
@@ -17,6 +19,8 @@ InstallDirRegKey HKLM "Software\RotorGpuiDevelopment" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 !define MUI_ABORTWARNING
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_FUNCTION RestartRotor
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -26,12 +30,78 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
+Var RestartArguments
+Var ParentPid
+
+Function RestartRotor
+  ExecShell "open" "$INSTDIR\rotor-desktop.exe" "$RestartArguments"
+FunctionEnd
+
 Function .onInit
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "Rotor requires 64-bit Windows."
     Abort
   ${EndIf}
   SetRegView 64
+  ReadRegStr $R1 HKLM "Software\RotorGpuiDevelopment" "InstallDir"
+  ${If} $R1 != ""
+    StrCpy $INSTDIR $R1
+  ${EndIf}
+  StrCpy $RestartArguments ""
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/PROFILE=" $R1
+  ${IfNot} ${Errors}
+    StrCpy $R2 $R1 1 -1
+    ${If} $R2 == "\"
+      StrCpy $R1 "$R1\"
+    ${EndIf}
+    StrCpy $RestartArguments '--data-dir $\"$R1$\"'
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/NOELEVATE" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --no-elevate"
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/NOINDEX" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --no-index"
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/NOHOTKEYS" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --no-hotkeys"
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/PRODUCTIONSHORTCUTS" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --production-shortcuts"
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/UPDATE" $R1
+  ${IfNot} ${Errors}
+    ClearErrors
+    ${GetOptions} $R0 "/PARENT=" $ParentPid
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP "Missing update parent process."
+      Abort
+    ${EndIf}
+    ${If} $ParentPid <= 0
+      MessageBox MB_ICONSTOP "Invalid update parent process."
+      Abort
+    ${EndIf}
+    ; Wait for the normal quit path to flush configuration and pin records.
+    System::Call 'kernel32::OpenProcess(i 0x100000, i 0, i $ParentPid) p.r1'
+    ${If} $1 != 0
+      System::Call 'kernel32::WaitForSingleObject(p r1, i 30000) i.r2'
+      System::Call 'kernel32::CloseHandle(p r1)'
+      ${If} $2 != 0
+        MessageBox MB_ICONSTOP "Rotor has not exited. Close it and retry the update."
+        Abort
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 Section "Rotor" SEC_MAIN

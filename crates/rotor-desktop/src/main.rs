@@ -234,6 +234,11 @@ fn show_search(cx: &mut App) -> Result<(), String> {
 }
 
 fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if matches!(&event, RuntimeEvent::Update(snapshot) if snapshot.phase == rotor_runtime::UpdatePhase::HandedOff)
+    {
+        cx.quit();
+        return;
+    }
     if let RuntimeEvent::SettingsCoordination(request) = event {
         match request {
             rotor_runtime::SettingsCoordination::Prepare {

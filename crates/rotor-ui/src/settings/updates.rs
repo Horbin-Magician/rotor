@@ -4,6 +4,8 @@ use rotor_runtime::UpdatePhase;
 impl SettingsView {
     pub(super) fn update_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let status = match self.update.phase {
+            UpdatePhase::Installing => self.t("正在启动安装程序…", "Starting installer…"),
+            UpdatePhase::HandedOff => self.t("安装程序已启动", "Installer started"),
             UpdatePhase::Idle => self.t("尚未检查", "Not checked"),
             UpdatePhase::Checking => self.t("正在检查…", "Checking…"),
             UpdatePhase::Current => self.t("已是最新版本", "Up to date"),
@@ -43,7 +45,10 @@ impl SettingsView {
                 );
             }
         }
-        if self.update.busy() {
+        if matches!(
+            self.update.phase,
+            UpdatePhase::Checking | UpdatePhase::Downloading
+        ) {
             if self.update.phase == UpdatePhase::Downloading {
                 let done = self.update.downloaded as f64 / 1048576.;
                 panel = panel.child(match self.update.total {
@@ -55,6 +60,20 @@ impl SettingsView {
                 Button::new("cancel-update")
                     .label(self.t("取消", "Cancel"))
                     .on_click(cx.listener(|this, _, _, _| this.services.cancel_update())),
+            );
+        }
+        #[cfg(target_os = "windows")]
+        if self.update.phase == UpdatePhase::Ready {
+            panel = panel.child(
+                Button::new("install-update")
+                    .label(self.t("退出并安装更新", "Quit and install update"))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if let Err(error) = this.services.install_update() {
+                            this.message = error;
+                        }
+                        this.update = this.services.update_snapshot();
+                        cx.notify();
+                    })),
             );
         }
         if let Some(error) = &self.update.error {

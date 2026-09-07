@@ -15,6 +15,8 @@ pub enum UpdatePhase {
     Available,
     Downloading,
     Ready,
+    Installing,
+    HandedOff,
     Failed,
 }
 #[derive(Clone, Debug)]
@@ -42,7 +44,13 @@ impl Default for UpdateSnapshot {
 }
 impl UpdateSnapshot {
     pub fn busy(&self) -> bool {
-        matches!(self.phase, UpdatePhase::Checking | UpdatePhase::Downloading)
+        matches!(
+            self.phase,
+            UpdatePhase::Checking
+                | UpdatePhase::Downloading
+                | UpdatePhase::Installing
+                | UpdatePhase::HandedOff
+        )
     }
 }
 pub(crate) struct UpdateService {
@@ -161,6 +169,51 @@ impl UpdateService {
         });
         Ok(())
     }
+    #[cfg(target_os = "windows")]
+    pub fn install(&self, profile: PathBuf, flags: Vec<String>) -> Result<(), String> {
+        let (path, release) = {
+            let mut state = lock(&self.state);
+            if self.shutdown.is_cancelled() {
+                return Err("Update service is stopped".into());
+            }
+            if state.phase != UpdatePhase::Ready {
+                return Err("Download and verify the update first".into());
+            }
+            let path = state.path.clone().ok_or("Update file is missing")?;
+            let release = state.release.clone().ok_or("Update release is missing")?;
+            state.phase = UpdatePhase::Installing;
+            state.error = None;
+            state.revision += 1;
+            let _ = self
+                .events
+                .try_send(RuntimeEvent::Update(Arc::new(state.clone())));
+            (path, release)
+        };
+        let state = self.state.clone();
+        let events = self.events.clone();
+        self.runtime.spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                rotor_updater::launch_verified_installer(
+                    &path,
+                    &release.artifact.signature,
+                    |path| rotor_platform::desktop::launch_update_installer(path, &profile, &flags),
+                )
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|result| result);
+            let snapshot = publish(&state, |state| match result {
+                Ok(()) => state.phase = UpdatePhase::HandedOff,
+                Err(error) => {
+                    state.phase = UpdatePhase::Ready;
+                    state.error = Some(error);
+                }
+            });
+            let _ = events.send(RuntimeEvent::Update(snapshot)).await;
+        });
+        Ok(())
+    }
+
     pub fn cancel(&self) {
         lock(&self.cancellation).cancel();
     }
@@ -186,6 +239,12 @@ mod tests {
         assert!(service.begin(UpdatePhase::Checking).is_err());
         publish(&service.state, |state| state.phase = UpdatePhase::Failed);
         let token = service.begin(UpdatePhase::Checking).unwrap();
+        publish(&service.state, |state| {
+            state.phase = UpdatePhase::Installing
+        });
+        assert!(service.begin(UpdatePhase::Checking).is_err());
+        publish(&service.state, |state| state.phase = UpdatePhase::HandedOff);
+        assert!(service.begin(UpdatePhase::Checking).is_err());
         service.shutdown();
         assert!(token.is_cancelled());
         publish(&service.state, |state| state.phase = UpdatePhase::Failed);

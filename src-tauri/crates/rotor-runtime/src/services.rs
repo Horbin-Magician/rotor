@@ -285,6 +285,13 @@ impl Services {
     pub fn download_update(&self) -> Result<(), String> {
         self.updates.download()
     }
+    #[cfg(target_os = "windows")]
+    pub fn install_update(&self) -> Result<(), String> {
+        self.updates.install(
+            self.data_directory.clone(),
+            lock(&self.startup_flags).clone(),
+        )
+    }
     pub fn cancel_update(&self) {
         self.updates.cancel();
     }

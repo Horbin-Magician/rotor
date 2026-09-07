@@ -180,6 +180,40 @@ pub fn verify_file(path: &Path, signature: &str, public_key: &str) -> Result<(),
     }
 }
 
+/// Hold the verified installer against modification/replacement until launch.
+#[cfg(target_os = "windows")]
+pub fn launch_verified_installer(
+    path: &Path,
+    signature: &str,
+    launch: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    with_verified_installer(path, signature, PUBLIC_KEY, launch)
+}
+
+#[cfg(target_os = "windows")]
+fn with_verified_installer(
+    path: &Path,
+    signature: &str,
+    public_key: &str,
+    launch: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let path = path.canonicalize().map_err(|error| error.to_string())?;
+    if path.extension().and_then(|extension| extension.to_str()) != Some("exe") {
+        return Err("Update installer must be an executable".into());
+    }
+    // FILE_SHARE_READ permits the loader, but excludes write and delete sharing.
+    let guard = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&path)
+        .map_err(|error| error.to_string())?;
+    verify_file(&path, signature, public_key)?;
+    let result = launch(&path);
+    drop(guard);
+    result
+}
+
 pub async fn download(
     release: &Release,
     directory: &Path,
@@ -339,6 +373,20 @@ mod tests {
             std::fs::write(file.path(), b"test").unwrap();
             verify(b"test", &signature, &key).unwrap();
             verify_file(file.path(), &signature, &key).unwrap();
+            #[cfg(target_os = "windows")]
+            {
+                let directory = tempfile::tempdir().unwrap();
+                let installer = directory.path().join("fixture.exe");
+                std::fs::write(&installer, b"test").unwrap();
+                with_verified_installer(&installer, &signature, &key, |path| {
+                    assert!(std::fs::write(path, b"tampered").is_err());
+                    assert!(std::fs::rename(path, directory.path().join("replacement.exe")).is_err());
+                    Ok(())
+                }).unwrap();
+                std::fs::write(&installer, b"tampered").unwrap();
+                assert!(with_verified_installer(&installer, &signature, &key, |_| panic!("must not launch unverified bytes")).is_err());
+            }
+
             std::fs::write(file.path(), b"Test").unwrap();
             assert!(verify_file(file.path(), &signature, &key).is_err());
             assert!(verify(b"test", &signature, PUBLIC_KEY).is_err());

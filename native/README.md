@@ -38,3 +38,11 @@ The native preview feed is `gpui-latest/gpui-latest.json`. It has not been
 published. Keep the existing Tauri `latest.json` channel until upgrade/rollback
 and both platform acceptance gates pass. The native verifier accepts the same
 public key and nested-base64 minisign signatures as the existing Tauri updater.
+
+The Windows update UI re-verifies a downloaded installer while holding it against
+write/delete sharing, starts it through the native elevation API, and quits only
+after successful launch. NSIS waits up to 30 seconds for the original process to
+exit. The finish page can restart with the same data directory and development
+shortcut/index/elevation flags. The custom resource-directory override is not
+carried into a newly installed package; packaged resource discovery applies.
+Actual UAC cancellation, installation, restart, and rollback remain untested.
