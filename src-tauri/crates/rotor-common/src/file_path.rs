@@ -1,6 +1,6 @@
 use std::{env, io, path::PathBuf, sync::OnceLock};
 
-static DATA_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+static DATA_DIRECTORY: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Set once, before configuration, indexes or screenshot records are opened.
 pub fn initialize_data_directory(path: PathBuf) -> io::Result<()> {
@@ -10,7 +10,7 @@ pub fn initialize_data_directory(path: PathBuf) -> io::Result<()> {
             "data directory must be absolute",
         ));
     }
-    DATA_DIRECTORY.set(path).map_err(|_| {
+    DATA_DIRECTORY.set(Some(path)).map_err(|_| {
         io::Error::new(
             io::ErrorKind::AlreadyExists,
             "data directory already initialized",
@@ -23,14 +23,15 @@ pub fn get_tmp_path() -> PathBuf {
 }
 
 pub fn get_userdata_path() -> Option<PathBuf> {
-    if let Some(path) = DATA_DIRECTORY.get() {
-        return Some(path.clone());
-    }
-    resolve_data_directory(
-        env::var_os("ROTOR_DATA_DIR").map(PathBuf::from),
-        env::home_dir(),
-        env::current_dir().ok(),
-    )
+    DATA_DIRECTORY
+        .get_or_init(|| {
+            resolve_data_directory(
+                env::var_os("ROTOR_DATA_DIR").map(PathBuf::from),
+                env::home_dir(),
+                env::current_dir().ok(),
+            )
+        })
+        .clone()
 }
 
 fn resolve_data_directory(
@@ -49,6 +50,13 @@ fn resolve_data_directory(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn data_directory_cannot_change_after_its_first_use() {
+        let original = get_userdata_path();
+        assert!(initialize_data_directory(env::temp_dir().join("too-late")).is_err());
+        assert_eq!(get_userdata_path(), original);
+    }
 
     #[test]
     fn explicit_data_directory_never_falls_back_to_real_profile() {
