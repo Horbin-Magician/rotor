@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+base64 = "0.22.1"
 gpui-kit.workspace = true
 gpui.workspace = true
 rotor-common.workspace = true

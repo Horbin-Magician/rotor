@@ -15,11 +15,13 @@ use tray_icon::{
 const SHOW: u8 = 1;
 const QUIT: u8 = 2;
 const TRANSLATE: u8 = 4;
+const SEARCH: u8 = 8;
 
 #[derive(Clone, Copy)]
 pub enum Command {
     ShowSettings,
     ShowTranslator,
+    ShowSearch,
     Quit,
 }
 
@@ -47,6 +49,7 @@ impl CommandBus {
                 Command::ShowSettings => SHOW,
                 Command::Quit => QUIT,
                 Command::ShowTranslator => TRANSLATE,
+                Command::ShowSearch => SEARCH,
             },
             Ordering::Release,
         );
@@ -56,6 +59,14 @@ impl CommandBus {
         let pending = self.pending.swap(0, Ordering::AcqRel);
         if pending & QUIT != 0 {
             Some(Command::Quit)
+        } else if pending & SEARCH != 0 {
+            if pending & SHOW != 0 {
+                self.request(Command::ShowSettings);
+            }
+            if pending & TRANSLATE != 0 {
+                self.request(Command::ShowTranslator);
+            }
+            Some(Command::ShowSearch)
         } else if pending & TRANSLATE != 0 {
             if pending & SHOW != 0 {
                 self.request(Command::ShowSettings);
@@ -109,11 +120,18 @@ impl SystemServices {
             Code::KeyW,
         );
         let translate_id = translate_hotkey.id();
+        let search_hotkey = HotKey::new(
+            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
+            Code::KeyF,
+        );
+        let search_id = search_hotkey.id();
         GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
             if event.id == id && event.state == HotKeyState::Pressed {
                 hotkey_bus.request(Command::ShowSettings);
             } else if event.id == translate_id && event.state == HotKeyState::Pressed {
                 hotkey_bus.request(Command::ShowTranslator);
+            } else if event.id == search_id && event.state == HotKeyState::Pressed {
+                hotkey_bus.request(Command::ShowSearch);
             }
         }));
         let mut warnings = Vec::new();
@@ -122,6 +140,7 @@ impl SystemServices {
             for (hotkey, name) in [
                 (hotkey, "Ctrl+Alt+Shift+G"),
                 (translate_hotkey, "Ctrl+Alt+Shift+W"),
+                (search_hotkey, "Ctrl+Alt+Shift+F"),
             ] {
                 match manager.register(hotkey) {
                     Ok(()) => registered_hotkeys.push(hotkey),
@@ -157,11 +176,21 @@ impl SystemServices {
             true,
             None,
         );
-        menu.append_items(&[&settings, &translate, &quit])
+        let search = MenuItem::new(
+            if chinese {
+                "文件搜索"
+            } else {
+                "File search"
+            },
+            true,
+            None,
+        );
+        menu.append_items(&[&settings, &search, &translate, &quit])
             .map_err(|error| error.to_string())?;
         let settings_id = settings.id().clone();
         let quit_id = quit.id().clone();
         let translate_id = translate.id().clone();
+        let search_id = search.id().clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             if event.id == settings_id {
                 commands.request(Command::ShowSettings);
@@ -169,6 +198,8 @@ impl SystemServices {
                 commands.request(Command::Quit);
             } else if event.id == translate_id {
                 commands.request(Command::ShowTranslator);
+            } else if event.id == search_id {
+                commands.request(Command::ShowSearch);
             }
         }));
         self.tray.set_menu(Some(Box::new(menu)));

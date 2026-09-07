@@ -15,11 +15,13 @@ use system::{Command, CommandBus, SystemServices};
 enum WindowRole {
     Settings,
     Translator,
+    Search,
 }
 
 enum WindowView {
     Settings(WeakEntity<rotor_ui::SettingsView>),
     Translator(WeakEntity<rotor_ui::TranslatorView>),
+    Search(WeakEntity<rotor_ui::SearchView>),
 }
 
 struct WindowSlot {
@@ -155,7 +157,71 @@ fn show_translator(cx: &mut App) -> Result<(), String> {
     Ok(())
 }
 
+fn show_search(cx: &mut App) -> Result<(), String> {
+    if let Some(handle) = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Search)
+        .map(|entry| entry.window)
+        && handle
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
+    {
+        return Ok(());
+    }
+    let services = cx.global::<ShellState>().services.clone();
+    cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::centered(size(px(680.), px(480.)), cx)),
+            titlebar: Some(TitlebarOptions {
+                title: Some("Rotor Search".into()),
+                ..Default::default()
+            }),
+            app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
+            ..Default::default()
+        },
+        |window, cx| {
+            let appearance = window.observe_window_appearance(|window, cx| {
+                if !matches!(
+                    cx.global::<ShellState>()
+                        .config
+                        .get("theme")
+                        .map(String::as_str),
+                    Some("1" | "2")
+                ) {
+                    Theme::sync_system_appearance(Some(window), cx);
+                }
+            });
+            let view = cx.new(|cx| rotor_ui::SearchView::new(services, window, cx));
+            cx.global_mut::<ShellState>().windows.insert(
+                WindowRole::Search,
+                WindowSlot {
+                    window: window.window_handle(),
+                    view: WindowView::Search(view.downgrade()),
+                    _appearance: appearance,
+                },
+            );
+            cx.new(|cx| Root::new(view, window, cx))
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if let Some((handle, view)) = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Search)
+        .and_then(|entry| match &entry.view {
+            WindowView::Search(view) => Some((entry.window, view.clone())),
+            _ => None,
+        })
+    {
+        let _ = handle.update(cx, |_, window, cx| {
+            let _ = view.update(cx, |view, cx| view.handle_event(&event, window, cx));
+        });
+    }
     if let RuntimeEvent::SettingsSaved {
         result: Ok(config), ..
     } = &event
@@ -327,6 +393,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     Command::ShowTranslator => {
                                         if let Err(error) = show_translator(cx) {
                                             eprintln!("Translator: {error}");
+                                        }
+                                    }
+                                    Command::ShowSearch => {
+                                        if let Err(error) = show_search(cx) {
+                                            eprintln!("Search: {error}");
                                         }
                                     }
                                 });

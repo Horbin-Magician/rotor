@@ -109,3 +109,11 @@
 
 - Windows 管理员打开改用 ShellExecuteW 的 runas verb，文件路径不再拼接到 PowerShell 代码；检查原生启动错误并拒绝 NUL。
 - 平台 crate 和旧 rotor check 通过；保留旧入口 3 项已记录警告。本轮未触发真实 UAC/文件启动交互。
+
+## P4 原生文件搜索
+
+- 接入搜索输入、虚拟结果列表、文件图标、上下键/Enter、Escape/失焦关闭、分页、打开文件/目录和 Windows 管理员打开；托盘和 Ctrl+Alt+Shift+F 开发热键可唤起。
+- 展示模型按 QueryId 和原始查询匹配，分页按路径去重，结果及图标缓存最多保留 100 项；新窗口先重置服务的分页查询，避免重开相同查询从旧页继续。
+- 文件打开通过后台 Services 发布类型化完成事件；启动失败保留窗口并显示错误，成功关闭。
+- 9 项 desktop/runtime/ui 单测和对应 clippy --no-deps -D warnings 通过，覆盖重复文本旧请求、分页去重和容量边界。测试发现 Windows HTTP fixture 接收 socket 继承非阻塞模式，已显式切换为带超时的阻塞读写。
+- G4 仍未通过：实际索引/IME/打开/分页 UI 验收、动态高度、光标定位和划词翻译继续补齐。

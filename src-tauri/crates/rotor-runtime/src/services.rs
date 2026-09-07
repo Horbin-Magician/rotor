@@ -52,6 +52,10 @@ pub enum RuntimeEvent {
         id: OperationId,
         result: Result<Config, String>,
     },
+    FileOpened {
+        id: OperationId,
+        result: Result<(), String>,
+    },
     Translation {
         id: OperationId,
         event: TranslateStreamEvent,
@@ -220,6 +224,21 @@ impl Services {
             move || Ok(reader.index_status()),
             None,
             |id, result| RuntimeEvent::IndexStatus { id, result },
+        )
+    }
+
+    pub fn open_file(&self, path: String, as_admin: bool) -> Result<OperationId, String> {
+        self.spawn_job(
+            move || {
+                if as_admin {
+                    rotor_platform::file_util::open_file_as_admin(path)
+                } else {
+                    rotor_platform::file_util::open_file(path)
+                }
+                .map_err(|error| error.to_string())
+            },
+            None,
+            |id, result| RuntimeEvent::FileOpened { id, result },
         )
     }
 
@@ -554,8 +573,14 @@ mod tests {
                     Err(error) => panic!("test HTTP server: {error}"),
                 }
             };
+            // Windows accepted sockets can inherit the listener's nonblocking
+            // mode. Use bounded blocking I/O for the HTTP fixture itself.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(3)))
                 .unwrap();
             let mut request = Vec::new();
             let mut buffer = [0; 1024];
