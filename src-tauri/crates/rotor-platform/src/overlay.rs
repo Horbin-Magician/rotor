@@ -4,6 +4,84 @@ pub fn settle_desktop() -> Result<(), String> {
     Ok(())
 }
 
+pub fn pointer_capture(
+    handle: raw_window_handle::WindowHandle<'_>,
+    capture: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::RawWindowHandle;
+        use windows::Win32::{
+            Foundation::HWND,
+            UI::Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SetCapture},
+        };
+        let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+            return Err("Expected a Windows window".into());
+        };
+        let hwnd = HWND(raw.hwnd.get() as *mut _);
+        unsafe {
+            if capture {
+                SetCapture(hwnd);
+                if GetCapture() != hwnd {
+                    return Err("Could not capture the pin pointer".into());
+                }
+            } else if GetCapture() == hwnd {
+                ReleaseCapture().map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (handle, capture);
+    }
+    Ok(())
+}
+
+pub fn set_client_bounds(
+    handle: raw_window_handle::WindowHandle<'_>,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    scale: f32,
+) -> Result<(), String> {
+    if !scale.is_finite() || scale <= 0. || width == 0 || height == 0 {
+        return Err("Invalid pin window bounds".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        fit_client_bounds(handle, x, y, width, height)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use raw_window_handle::RawWindowHandle;
+        let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
+            return Err("Expected an AppKit window".into());
+        };
+        let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
+        let window = view.window().ok_or("View is not attached to a window")?;
+        let client = window.convertRectToScreen(view.convertRect_toView(view.bounds(), None));
+        let mut frame = window.frame();
+        let primary_height = core_graphics::display::CGDisplay::main()
+            .bounds()
+            .size
+            .height;
+        let width = width as f64 / scale as f64;
+        let height = height as f64 / scale as f64;
+        frame.origin.x += x as f64 / scale as f64 - client.origin.x;
+        frame.origin.y += primary_height - y as f64 / scale as f64 - height - client.origin.y;
+        frame.size.width += width - client.size.width;
+        frame.size.height += height - client.size.height;
+        window.setFrame_display(frame, true);
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = (handle, x, y);
+        Err("Pin window resizing is unavailable".into())
+    }
+}
+
 pub fn hide_window(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {

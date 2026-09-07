@@ -1,5 +1,6 @@
 use super::PreparedImage;
 mod annotation;
+mod crop;
 use gpui_kit::{
     component::{Disableable, button::Button},
     prelude::*,
@@ -17,6 +18,15 @@ use std::{
 };
 
 pub type PinPositionReader = Rc<dyn Fn(&Window) -> Option<(i32, i32)>>;
+#[derive(Clone, Copy, Debug)]
+pub struct PinBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+pub type PinBoundsSetter = Rc<dyn Fn(&Window, PinBounds) -> Result<(), String>>;
+pub type PinPointerCapture = Rc<dyn Fn(&Window, bool) -> Result<(), String>>;
 pub struct PinInit {
     pub image: PreparedImage,
     pub config: ShotterConfig,
@@ -25,6 +35,8 @@ pub struct PinInit {
     pub error: Option<String>,
     pub position: PinPositionReader,
     pub content_scale: f32,
+    pub bounds: PinBoundsSetter,
+    pub pointer: PinPointerCapture,
 }
 pub struct PinView {
     services: Arc<Services>,
@@ -47,6 +59,11 @@ pub struct PinView {
     _activation: Subscription,
     canvas: annotation::CanvasState,
     content_scale: f32,
+    bounds: PinBoundsSetter,
+    pointer: PinPointerCapture,
+    pointer_owned: bool,
+    crop_drag: Option<crop::CropDrag>,
+    crop_hover: rotor_canvas::CropEdges,
 }
 impl PinView {
     pub fn new(
@@ -86,6 +103,11 @@ impl PinView {
             _activation: activation,
             canvas,
             content_scale: init.content_scale,
+            bounds: init.bounds,
+            pointer: init.pointer,
+            pointer_owned: false,
+            crop_drag: None,
+            crop_hover: Default::default(),
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
@@ -141,7 +163,7 @@ impl PinView {
         cx.notify();
     }
     fn record_position(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() || self.record.minimized {
+        if self.busy() || self.record.minimized || self.crop_drag.is_some() {
             return;
         }
         if let Some((x, y)) = (self.position)(window) {
@@ -171,7 +193,7 @@ impl PinView {
         }
     }
     pub fn flush(&mut self, cx: &mut Context<Self>) {
-        if !self.dirty {
+        if !self.dirty || self.crop_drag.is_some() {
             return;
         }
         if let Some(id) = self.id {
@@ -204,7 +226,7 @@ impl PinView {
         cx.notify();
     }
     fn export(&mut self, target: PinExportTarget, cx: &mut Context<Self>) {
-        if self.busy() || !self.canvas.ready() {
+        if self.busy() || !self.canvas.ready() || self.crop_drag.is_some() {
             return;
         }
         self.flush(cx);
@@ -237,7 +259,7 @@ impl PinView {
         cx.notify();
     }
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() || !self.canvas.ready() {
+        if self.busy() || !self.canvas.ready() || self.crop_drag.is_some() {
             return;
         }
         let stamp = SystemTime::now()
@@ -405,7 +427,7 @@ impl Render for PinView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_canvas(window, cx);
         let busy = self.busy();
-        let export_disabled = busy || !self.canvas.ready();
+        let export_disabled = busy || !self.canvas.ready() || self.crop_drag.is_some();
         div()
             .id("pin")
             .track_focus(&self.focus)

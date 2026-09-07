@@ -1,8 +1,10 @@
 //! Image-space geometry shared by native views and offscreen composition.
 //! These are source pixels, never desktop coordinates or window logical units.
 
+mod crop;
 mod document;
 mod renderer;
+pub use crop::{resize_crop, CropEdges};
 pub use document::{
     arrow_head, Annotation, Color, Document, Scene, StrokeStyle, ViewTransform, FONT_FAMILY,
 };

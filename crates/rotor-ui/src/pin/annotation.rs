@@ -154,10 +154,28 @@ impl CanvasState {
 }
 impl PinView {
     pub(super) fn cancel_pointer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.crop_drag.is_some() {
+            self.finish_crop(window, cx);
+        }
         if self.canvas.draft.take().is_some() {
             cx.notify();
         }
         window.release_pointer();
+        self.release_native_pointer(window);
+    }
+    pub(super) fn commit_canvas_crop(
+        &mut self,
+        crop: ImageRect,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.canvas.document.set_crop(crop) {
+            Ok(_) => {
+                self.canvas.rollback = None;
+                self.ensure_canvas(window, cx);
+            }
+            Err(error) => self.canvas.error = Some(error),
+        }
     }
     fn transform(&self, window: &Window) -> ViewTransform {
         let (x, y, width, height) = self.crop();
@@ -232,6 +250,7 @@ impl PinView {
         self.canvas.text_pending = false;
         self.focus.focus(window, cx);
         window.release_pointer();
+        self.release_native_pointer(window);
         cx.notify();
     }
     pub(super) fn cancel_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
@@ -262,18 +281,36 @@ impl PinView {
         cx.notify();
     }
     fn undo_canvas(&mut self, redo: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.canvas.rendering || self.canvas.editor.is_some() || self.canvas.draft.is_some() {
+        if self.canvas.rendering
+            || self.canvas.editor.is_some()
+            || self.canvas.draft.is_some()
+            || self.crop_drag.is_some()
+        {
             return;
         }
+        let before_crop = self.canvas.document.scene().crop;
         let changed = if redo {
             self.canvas.document.redo()
         } else {
             self.canvas.document.undo()
         };
         if changed {
+            let next_crop = self.canvas.document.scene().crop;
+            if next_crop != before_crop
+                && let Err(error) = self.apply_crop(next_crop, window, cx)
+            {
+                if redo {
+                    self.canvas.document.undo();
+                } else {
+                    self.canvas.document.redo();
+                }
+                self.message = error;
+                cx.notify();
+                return;
+            }
             self.canvas.error = None;
             self.canvas.preview = None;
-            self.canvas.rollback = Some((
+            self.canvas.rollback = (next_crop == before_crop).then_some((
                 self.canvas.document.revision(),
                 if redo { Rollback::Undo } else { Rollback::Redo },
             ));
@@ -287,11 +324,17 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.busy() || self.canvas.rendering || self.canvas.editor.is_some() {
+        if self.busy() || self.canvas.editor.is_some() {
             return false;
         }
         if self.canvas.tool == Tool::Move {
+            if self.crop_edges(point, window).any() {
+                return !self.canvas.rendering && self.begin_crop(point, window, cx);
+            }
             window.start_window_move();
+            return false;
+        }
+        if self.canvas.rendering {
             return false;
         }
         let transform = self.transform(window);
@@ -333,10 +376,27 @@ impl PinView {
             },
             _ => return false,
         });
+        if !self.capture_native_pointer(window) {
+            self.canvas.draft = None;
+            cx.notify();
+            return false;
+        }
         cx.notify();
         true
     }
     fn move_mark(&mut self, point: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.crop_drag.is_some() {
+            self.move_crop(point, window, cx);
+            return;
+        }
+        if self.canvas.tool == Tool::Move {
+            let edges = self.crop_edges(point, window);
+            if edges != self.crop_hover {
+                self.crop_hover = edges;
+                cx.notify();
+            }
+            return;
+        }
         let transform = self.transform(window);
         let Some(mut point) = transform.to_image(ImagePoint {
             x: point.x.as_f32() as f64,
@@ -364,10 +424,15 @@ impl PinView {
         cx.notify();
     }
     fn end_mark(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.crop_drag.is_some() {
+            self.finish_crop(window, cx);
+            return;
+        }
         let Some(annotation) = self.canvas.draft.take() else {
             return;
         };
         window.release_pointer();
+        self.release_native_pointer(window);
         if matches!(&annotation, Annotation::Rectangle { start, end, .. } if start.x == end.x || start.y == end.y)
             || matches!(&annotation, Annotation::Arrow { start, end, .. } if start == end)
         {
@@ -413,6 +478,11 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.crop_drag.is_some() && event.keystroke.key == "escape" {
+            self.cancel_crop(window, cx);
+            cx.stop_propagation();
+            return true;
+        }
         if let Some(input) = self.canvas.editor.clone() {
             let composing = input.update(cx, |input, cx| {
                 input.marked_text_range(window, cx).is_some()
@@ -444,7 +514,7 @@ impl PinView {
         false
     }
     pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let disabled = self.busy() || self.canvas.rendering;
+        let disabled = self.busy() || self.canvas.rendering || self.crop_drag.is_some();
         div()
             .flex()
             .flex_wrap()
@@ -513,6 +583,48 @@ impl PinView {
         let scale_y = transform.height / transform.crop.height as f64;
         let mut layer = div().size_full().overflow_hidden();
         if let Some((frame, key)) = self.canvas.frame.as_ref().zip(self.canvas.frame_key) {
+            let left = ((key.crop.x as f64 - transform.crop.x as f64) * scale_x)
+                .clamp(0., transform.width);
+            let top = ((key.crop.y as f64 - transform.crop.y as f64) * scale_y)
+                .clamp(0., transform.height);
+            let right = (((key.crop.x + key.crop.width) as f64 - transform.crop.x as f64)
+                * scale_x)
+                .clamp(0., transform.width);
+            let bottom = (((key.crop.y + key.crop.height) as f64 - transform.crop.y as f64)
+                * scale_y)
+                .clamp(0., transform.height);
+            let regions = if right <= left || bottom <= top {
+                vec![(0., 0., transform.width, transform.height)]
+            } else {
+                vec![
+                    (0., 0., transform.width, top),
+                    (0., bottom, transform.width, transform.height - bottom),
+                    (0., top, left, bottom - top),
+                    (right, top, transform.width - right, bottom - top),
+                ]
+            };
+            for (x, y, width, height) in regions {
+                if width <= 0. || height <= 0. {
+                    continue;
+                }
+                layer = layer.child(
+                    div()
+                        .absolute()
+                        .left(px(x as f32))
+                        .top(px(y as f32))
+                        .w(px(width as f32))
+                        .h(px(height as f32))
+                        .overflow_hidden()
+                        .child(
+                            img(self.image.render.clone())
+                                .absolute()
+                                .left(px((-(transform.crop.x as f64) * scale_x - x) as f32))
+                                .top(px((-(transform.crop.y as f64) * scale_y - y) as f32))
+                                .w(px((self.image.image.width() as f64 * scale_x) as f32))
+                                .h(px((self.image.image.height() as f64 * scale_y) as f32)),
+                        ),
+                );
+            }
             layer = layer.child(
                 img(frame.render.clone())
                     .absolute()
@@ -542,11 +654,17 @@ impl PinView {
             .as_ref()
             .or(self.canvas.preview.as_ref())
             .cloned();
-        let dragging = self.canvas.draft.is_some();
+        let dragging = self.canvas.draft.is_some() || self.crop_drag.is_some();
+        let cursor = match self.canvas.tool {
+            Tool::Move => self.crop_cursor(),
+            Tool::Text => CursorStyle::IBeam,
+            _ => CursorStyle::Crosshair,
+        };
         layer = layer.child(
             canvas(
                 |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
                 move |bounds, hitbox, window, _| {
+                    window.set_cursor_style(cursor, &hitbox);
                     if dragging {
                         window.capture_pointer(hitbox.id);
                     }

@@ -1,6 +1,5 @@
 use crate::{ShellState, WindowRole, WindowSlot, WindowView};
 use gpui_kit::{component::Root, *};
-#[cfg(target_os = "windows")]
 use raw_window_handle::HasWindowHandle;
 use rotor_runtime::{OperationId, PinEvent, RuntimeEvent, ShotterConfig};
 use rotor_ui::PreparedImage;
@@ -415,6 +414,22 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
             ))
         }
     });
+    let bounds_setter: rotor_ui::PinBoundsSetter = Rc::new(|window, bounds| {
+        rotor_platform::overlay::set_client_bounds(
+            HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+            bounds.x,
+            bounds.y,
+            bounds.width,
+            bounds.height,
+            window.scale_factor(),
+        )
+    });
+    let pointer: rotor_ui::PinPointerCapture = Rc::new(|window, capture| {
+        rotor_platform::overlay::pointer_capture(
+            HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+            capture,
+        )
+    });
     let handle = cx
         .open_window(
             WindowOptions {
@@ -442,6 +457,8 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             error,
                             position: reader,
                             content_scale,
+                            bounds: bounds_setter,
+                            pointer,
                         },
                         window,
                         cx,
