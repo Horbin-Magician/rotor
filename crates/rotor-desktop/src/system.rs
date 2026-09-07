@@ -14,10 +14,12 @@ use tray_icon::{
 
 const SHOW: u8 = 1;
 const QUIT: u8 = 2;
+const TRANSLATE: u8 = 4;
 
 #[derive(Clone, Copy)]
 pub enum Command {
     ShowSettings,
+    ShowTranslator,
     Quit,
 }
 
@@ -44,6 +46,7 @@ impl CommandBus {
             match command {
                 Command::ShowSettings => SHOW,
                 Command::Quit => QUIT,
+                Command::ShowTranslator => TRANSLATE,
             },
             Ordering::Release,
         );
@@ -53,6 +56,11 @@ impl CommandBus {
         let pending = self.pending.swap(0, Ordering::AcqRel);
         if pending & QUIT != 0 {
             Some(Command::Quit)
+        } else if pending & TRANSLATE != 0 {
+            if pending & SHOW != 0 {
+                self.request(Command::ShowSettings);
+            }
+            Some(Command::ShowTranslator)
         } else if pending & SHOW != 0 {
             Some(Command::ShowSettings)
         } else {
@@ -67,7 +75,7 @@ impl CommandBus {
 pub struct SystemServices {
     tray: TrayIcon,
     hotkeys: GlobalHotKeyManager,
-    settings_hotkey: Option<HotKey>,
+    registered_hotkeys: Vec<HotKey>,
     pub warning: Option<String>,
 }
 
@@ -96,28 +104,36 @@ impl SystemServices {
         );
         let hotkey_bus = commands.clone();
         let id = hotkey.id();
+        let translate_hotkey = HotKey::new(
+            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
+            Code::KeyW,
+        );
+        let translate_id = translate_hotkey.id();
         GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
             if event.id == id && event.state == HotKeyState::Pressed {
                 hotkey_bus.request(Command::ShowSettings);
+            } else if event.id == translate_id && event.state == HotKeyState::Pressed {
+                hotkey_bus.request(Command::ShowTranslator);
             }
         }));
-        let mut warning = None;
-        let settings_hotkey = if enable_hotkey {
-            match manager.register(hotkey) {
-                Ok(()) => Some(hotkey),
-                Err(error) => {
-                    warning = Some(format!("Ctrl+Alt+Shift+G: {error}"));
-                    None
+        let mut warnings = Vec::new();
+        let mut registered_hotkeys = Vec::new();
+        if enable_hotkey {
+            for (hotkey, name) in [
+                (hotkey, "Ctrl+Alt+Shift+G"),
+                (translate_hotkey, "Ctrl+Alt+Shift+W"),
+            ] {
+                match manager.register(hotkey) {
+                    Ok(()) => registered_hotkeys.push(hotkey),
+                    Err(error) => warnings.push(format!("{name}: {error}")),
                 }
             }
-        } else {
-            None
-        };
+        }
         let mut services = Self {
             tray,
             hotkeys: manager,
-            settings_hotkey,
-            warning,
+            registered_hotkeys,
+            warning: (!warnings.is_empty()).then(|| warnings.join("\n")),
         };
         services.update_menu(commands, config)?;
         Ok(services)
@@ -132,15 +148,27 @@ impl SystemServices {
         let chinese = rotor_common::i18n::language_for_config(config) == "zh-CN";
         let settings = MenuItem::new(if chinese { "设置" } else { "Settings" }, true, None);
         let quit = MenuItem::new(if chinese { "退出" } else { "Quit" }, true, None);
-        menu.append_items(&[&settings, &quit])
+        let translate = MenuItem::new(
+            if chinese {
+                "输入翻译"
+            } else {
+                "Translate text"
+            },
+            true,
+            None,
+        );
+        menu.append_items(&[&settings, &translate, &quit])
             .map_err(|error| error.to_string())?;
         let settings_id = settings.id().clone();
         let quit_id = quit.id().clone();
+        let translate_id = translate.id().clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             if event.id == settings_id {
                 commands.request(Command::ShowSettings);
             } else if event.id == quit_id {
                 commands.request(Command::Quit);
+            } else if event.id == translate_id {
+                commands.request(Command::ShowTranslator);
             }
         }));
         self.tray.set_menu(Some(Box::new(menu)));
@@ -148,7 +176,7 @@ impl SystemServices {
     }
 
     pub fn stop_events(&mut self) {
-        if let Some(hotkey) = self.settings_hotkey.take() {
+        for hotkey in self.registered_hotkeys.drain(..) {
             let _ = self.hotkeys.unregister(hotkey);
         }
         GlobalHotKeyEvent::set_event_handler(None::<fn(GlobalHotKeyEvent)>);
@@ -175,6 +203,19 @@ mod tests {
         bus.request(Command::Quit);
         assert_eq!(receiver.len(), 1);
         assert!(matches!(bus.take(), Some(Command::Quit)));
+        assert!(bus.take().is_none());
+    }
+
+    #[test]
+    fn distinct_window_requests_survive_a_single_wakeup() {
+        let (bus, receiver) = CommandBus::new();
+        bus.request(Command::ShowSettings);
+        bus.request(Command::ShowTranslator);
+        assert_eq!(receiver.len(), 1);
+        receiver.try_recv().unwrap();
+        assert!(matches!(bus.take(), Some(Command::ShowTranslator)));
+        receiver.try_recv().unwrap();
+        assert!(matches!(bus.take(), Some(Command::ShowSettings)));
         assert!(bus.take().is_none());
     }
 }

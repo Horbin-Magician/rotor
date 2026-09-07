@@ -14,11 +14,17 @@ use system::{Command, CommandBus, SystemServices};
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum WindowRole {
     Settings,
+    Translator,
+}
+
+enum WindowView {
+    Settings(WeakEntity<rotor_ui::SettingsView>),
+    Translator(WeakEntity<rotor_ui::TranslatorView>),
 }
 
 struct WindowSlot {
     window: AnyWindowHandle,
-    view: WeakEntity<rotor_ui::SettingsView>,
+    view: WindowView,
     _appearance: Subscription,
 }
 
@@ -87,7 +93,7 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
             WindowRole::Settings,
             WindowSlot {
                 window: window.window_handle(),
-                view: view.downgrade(),
+                view: WindowView::Settings(view.downgrade()),
                 _appearance: appearance,
             },
         );
@@ -95,6 +101,57 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
     })
     .map_err(|error| error.to_string())?;
     let _ = cx.global::<ShellState>().services.request_index_status();
+    Ok(())
+}
+
+fn show_translator(cx: &mut App) -> Result<(), String> {
+    if let Some(handle) = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Translator)
+        .map(|entry| entry.window)
+        && handle
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
+    {
+        return Ok(());
+    }
+    let services = cx.global::<ShellState>().services.clone();
+    cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::centered(size(px(560.), px(420.)), cx)),
+            titlebar: Some(TitlebarOptions {
+                title: Some("Rotor Translator".into()),
+                ..Default::default()
+            }),
+            app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
+            ..Default::default()
+        },
+        |window, cx| {
+            let appearance = window.observe_window_appearance(|window, cx| {
+                if !matches!(
+                    cx.global::<ShellState>()
+                        .config
+                        .get("theme")
+                        .map(String::as_str),
+                    Some("1" | "2")
+                ) {
+                    Theme::sync_system_appearance(Some(window), cx);
+                }
+            });
+            let view = cx.new(|cx| rotor_ui::TranslatorView::new(services, window, cx));
+            cx.global_mut::<ShellState>().windows.insert(
+                WindowRole::Translator,
+                WindowSlot {
+                    window: window.window_handle(),
+                    view: WindowView::Translator(view.downgrade()),
+                    _appearance: appearance,
+                },
+            );
+            cx.new(|cx| Root::new(view, window, cx))
+        },
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -115,7 +172,12 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
             if let Err(error) = state.system.update_menu(state.commands.clone(), config) {
                 eprintln!("Tray menu: {error}");
             }
-            let handles: Vec<_> = state.windows.values().map(|entry| entry.window).collect();
+            let handles: Vec<_> = state
+                .windows
+                .iter()
+                .filter(|(role, _)| **role == WindowRole::Settings)
+                .map(|(_, entry)| entry.window)
+                .collect();
             for handle in handles {
                 let _ = handle.update(cx, |_, window, _| {
                     window.set_window_title(rotor_ui::settings_title(config))
@@ -126,8 +188,22 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
     if let Some(view) = cx
         .global::<ShellState>()
         .windows
+        .get(&WindowRole::Translator)
+        .and_then(|entry| match &entry.view {
+            WindowView::Translator(view) => Some(view.clone()),
+            _ => None,
+        })
+    {
+        let _ = view.update(cx, |view, cx| view.handle_event(&event, cx));
+    }
+    if let Some(view) = cx
+        .global::<ShellState>()
+        .windows
         .get(&WindowRole::Settings)
-        .map(|entry| entry.view.clone())
+        .and_then(|entry| match &entry.view {
+            WindowView::Settings(view) => Some(view.clone()),
+            _ => None,
+        })
     {
         let _ = view.update(cx, |view, cx| view.handle_event(event, cx));
     }
@@ -248,6 +324,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                                         }
                                     }
                                     Command::Quit => cx.quit(),
+                                    Command::ShowTranslator => {
+                                        if let Err(error) = show_translator(cx) {
+                                            eprintln!("Translator: {error}");
+                                        }
+                                    }
                                 });
                                 if quit {
                                     break;
