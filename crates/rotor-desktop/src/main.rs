@@ -107,7 +107,7 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
             title: Some(rotor_ui::settings_title(&config).into()),
             ..Default::default()
         }),
-        app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
+        app_id: Some(rotor_common::native_app::IDENTIFIER.into()),
         ..Default::default()
     };
     cx.open_window(options, |window, cx| {
@@ -371,6 +371,10 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--build-info" {
+        println!("{}", rotor_common::native_app::build_info_json());
+        return Ok(());
+    }
     let option = |key: &str| -> Result<Option<String>, String> {
         let Some(index) = args.iter().position(|arg| arg == key) else {
             return Ok(None);
@@ -410,7 +414,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         None => std::env::home_dir()
             .ok_or("home directory unavailable")?
-            .join(".rotor-gpui"),
+            .join(rotor_common::native_app::PROFILE_DIRECTORY),
     };
     file_path::initialize_data_directory(directory.clone())?;
     if args.iter().any(|arg| arg == "--check-config") {
@@ -437,6 +441,15 @@ fn run() -> Result<(), Box<dyn Error>> {
         Instance::Primary(guard) => guard,
         Instance::ActivatedExisting => return Ok(()),
     };
+    let legacy_guard = if rotor_common::native_app::PRODUCTION {
+        let activate = commands.clone();
+        Some(rotor_platform::legacy_instance::LegacyLease::acquire(
+            rotor_common::native_app::IDENTIFIER,
+            move || activate.request(Command::ShowSettings),
+        )?)
+    } else {
+        None
+    };
     let _logging = match logging::initialize(&directory) {
         Ok(guard) => Some(guard),
         Err(error) => {
@@ -444,6 +457,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             None
         }
     };
+    if rotor_common::native_app::PRODUCTION
+        && let Some(backup) = rotor_common::profile_migration::prepare_native_profile(&directory)?
+    {
+        log::info!("Legacy profile backup retained at {}", backup.display());
+    }
     let _validated_config = ConfigService::load_from(&directory)?;
     let resources = match option("--resource-dir")? {
         Some(path) => ResourceLocator::from_root(std::path::Path::new(&path)),
@@ -477,6 +495,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         match rotor_platform::desktop::launch_elevated(&std::env::current_exe()?, &forwarded) {
             Ok(()) => {
+                drop(legacy_guard);
                 drop(instance);
                 return Ok(());
             }
@@ -484,6 +503,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
     let _instance = instance;
+    let _legacy_guard = legacy_guard;
     let font_resources = resources.clone();
     let (services, events) = Services::new(
         AppConfig::shared_global(),
@@ -505,11 +525,17 @@ fn run() -> Result<(), Box<dyn Error>> {
             .cloned()
             .collect(),
     );
+    if rotor_common::native_app::PRODUCTION
+        && let Err(error) = services.migrate_existing_startup()
+    {
+        log::warn!("Startup migration: {error}");
+    }
     let config = services.settings();
     let app_services = services.clone();
     let background = args.iter().any(|arg| arg == "--background");
     let enable_hotkeys = !args.iter().any(|arg| arg == "--no-hotkeys");
-    let development_shortcuts = !args.iter().any(|arg| arg == "--production-shortcuts");
+    let development_shortcuts = !rotor_common::native_app::PRODUCTION
+        && !args.iter().any(|arg| arg == "--production-shortcuts");
     let failed = Rc::new(Cell::new(false));
     let startup_failed = failed.clone();
     let application = gpui_kit::application()
@@ -789,6 +815,15 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn main() {
     if let Err(error) = run() {
         eprintln!("Rotor: {error}");
+        let diagnostic = std::env::args().any(|arg| {
+            matches!(
+                arg.as_str(),
+                "--check-config" | "--build-info" | "--apply-update" | "--update-ready"
+            )
+        });
+        if !diagnostic {
+            rotor_platform::desktop::show_startup_error(&error.to_string());
+        }
         std::process::exit(1);
     }
 }

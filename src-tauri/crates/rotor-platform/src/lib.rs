@@ -8,3 +8,4 @@ pub mod overlay;
 pub mod startup;
 pub mod desktop;
 pub mod single_instance;
+pub mod legacy_instance;

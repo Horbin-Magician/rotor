@@ -4,6 +4,9 @@ version.workspace = true
 edition = "2024"
 publish = false
 
+[features]
+production = ["rotor-common/production"]
+
 [dependencies]
 gpui-kit.workspace = true
 gpui.workspace = true

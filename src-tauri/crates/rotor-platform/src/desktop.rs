@@ -55,6 +55,44 @@ pub fn configure_background_application() -> Result<(), String> {
     Ok(())
 }
 
+pub fn show_startup_error(message: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::{
+            core::PCWSTR,
+            Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND},
+        };
+        let title: Vec<u16> = rotor_common::native_app::PRODUCT_NAME
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        let message: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
+        unsafe {
+            MessageBoxW(
+                None,
+                PCWSTR(message.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                MB_OK | MB_ICONERROR | MB_SETFOREGROUND,
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(main) = objc2_foundation::MainThreadMarker::new() {
+        objc2_app_kit::NSApplication::sharedApplication(main);
+        unsafe {
+            let alert = objc2_app_kit::NSAlert::new(main);
+            alert.setMessageText(&objc2_foundation::NSString::from_str(
+                rotor_common::native_app::PRODUCT_NAME,
+            ));
+            alert.setInformativeText(&objc2_foundation::NSString::from_str(message));
+            alert.setAlertStyle(objc2_app_kit::NSAlertStyle::Critical);
+            alert.runModal();
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    eprintln!("Rotor: {message}");
+}
+
 #[cfg(target_os = "windows")]
 pub fn is_elevated() -> bool {
     is_root::is_root()

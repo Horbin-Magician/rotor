@@ -1,6 +1,6 @@
 use std::path::Path;
 
-pub const STARTUP_NAME: &str = "Rotor GPUI Development";
+pub const STARTUP_NAME: &str = rotor_common::native_app::STARTUP_NAME;
 
 /// Windows argv quoting, not shell quoting.
 pub fn quote_argument(argument: &str) -> Result<String, String> {
@@ -29,6 +29,8 @@ pub fn quote_argument(argument: &str) -> Result<String, String> {
 }
 
 pub fn command_line(executable: &Path, arguments: &[String]) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    let executable = dunce::simplified(executable);
     let executable = executable
         .to_str()
         .ok_or("Executable path is not Unicode")?;
@@ -37,6 +39,79 @@ pub fn command_line(executable: &Path, arguments: &[String]) -> Result<String, S
         parts.push(quote_argument(argument)?);
     }
     Ok(parts.join(" "))
+}
+
+#[cfg(target_os = "windows")]
+pub fn migrate_existing(executable: &Path, arguments: &[String]) -> Result<bool, String> {
+    use winreg::{
+        enums::{HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE},
+        RegKey,
+    };
+    let user = RegKey::predef(HKEY_CURRENT_USER);
+    let key = match user.open_subkey_with_flags(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        KEY_QUERY_VALUE | KEY_SET_VALUE,
+    ) {
+        Ok(key) => key,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    let value: String = match key.get_value(STARTUP_NAME) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !value
+        .trim()
+        .eq_ignore_ascii_case(&command_line(executable, &[])?)
+    {
+        return Ok(false);
+    }
+    // Only rewrite the legacy bare-executable entry; preserve StartupApproved
+    // byte-for-byte, including Task Manager/policy-disabled states.
+    key.set_value(STARTUP_NAME, &command_line(executable, arguments)?)
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[cfg(target_os = "macos")]
+pub fn migrate_existing(executable: &Path, arguments: &[String]) -> Result<bool, String> {
+    let path = agent_path()?;
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    let value =
+        plist::Value::from_reader(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
+    let Some(dictionary) = value.as_dictionary() else {
+        return Ok(false);
+    };
+    let Some(previous) = dictionary
+        .get("ProgramArguments")
+        .and_then(plist::Value::as_array)
+    else {
+        return Ok(false);
+    };
+    if dictionary.len() != 3
+        || previous.len() != 1
+        || dictionary.get("Label").and_then(plist::Value::as_string)
+            != Some(rotor_common::native_app::LAUNCH_AGENT_LABEL)
+        || dictionary
+            .get("RunAtLoad")
+            .and_then(plist::Value::as_boolean)
+            != Some(true)
+        || previous[0].as_string() != executable.to_str()
+    {
+        return Ok(false);
+    }
+    set_enabled(true, executable, arguments)?;
+    Ok(true)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn migrate_existing(_: &Path, _: &[String]) -> Result<bool, String> {
+    Ok(false)
 }
 
 #[cfg(target_os = "windows")]
@@ -120,7 +195,11 @@ pub fn set_enabled(enable: bool, executable: &Path, arguments: &[String]) -> Res
 fn agent_path() -> Result<std::path::PathBuf, String> {
     Ok(std::env::home_dir()
         .ok_or("Home directory is unavailable")?
-        .join("Library/LaunchAgents/cc.fluctus.rotor.gpui-dev.plist"))
+        .join("Library/LaunchAgents")
+        .join(format!(
+            "{}.plist",
+            rotor_common::native_app::LAUNCH_AGENT_LABEL
+        )))
 }
 #[cfg(target_os = "macos")]
 fn agent(executable: &Path, arguments: &[String]) -> Result<plist::Value, String> {
@@ -134,7 +213,7 @@ fn agent(executable: &Path, arguments: &[String]) -> Result<plist::Value, String
     args.extend(arguments.iter().cloned().map(plist::Value::String));
     dictionary.insert(
         "Label".into(),
-        plist::Value::String("cc.fluctus.rotor.gpui-dev".into()),
+        plist::Value::String(rotor_common::native_app::LAUNCH_AGENT_LABEL.into()),
     );
     dictionary.insert("ProgramArguments".into(), plist::Value::Array(args));
     dictionary.insert("RunAtLoad".into(), plist::Value::Boolean(true));

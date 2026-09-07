@@ -323,3 +323,10 @@
 - 从已校验暂存目录生成卸载文件清单，逐文件删除并仅移除空目录；不再递归删除整个 assets，用户后来放入的文件会保留。NSIS 字符串转义避免资源文件名被当成变量。
 - 应用仍占用主程序时停止卸载；仅当当前用户启动项指向本安装目录时删除该启动项，资料目录仍保留。
 - 清单边界测试、xtask clippy 和使用既有暂存夹具的 NSIS 编译通过；没有实际执行卸载或修改启动项。
+
+## P8 正式身份运行模式
+
+- 新增显式 production feature：正式标识 cc.fluctus.rotor、默认 home/.rotor、Rotor/rotor 名称及原快捷键；开发构建默认仍隔离。窗口 app ID、标题、托盘及启动项名称跟随模式，正式模式不再附加开发用设置热键。
+- 首次正式模式写入前保留旧配置/完整贴图备份和迁移标记；损坏数据保留副本并停止，不因重试重复覆盖备份。Windows 保持旧 Tauri mutex，macOS 准备兼容 socket，避免两套壳同时写同一资料目录。
+- 核对旧 autostart 来源后沿用 Windows Rotor 项及 macOS Rotor.plist/Label；仅迁移旧版 bare-executable 记录，Windows StartupApproved 字节保持不变。普通启动失败可显示原生错误提示，诊断/更新辅助入口不弹窗。
+- common production 14 项测试、独立测试 namespace 的 Windows 互斥测试 2 项、runtime 20 项及新增快捷键 scope 测试通过；production clippy 通过。--build-info 实际返回正式身份，未进入 GUI/备份/启动项路径。没有改真实 .rotor 或系统启动项；Mac 实现仍未在 Mac 编译/验收。

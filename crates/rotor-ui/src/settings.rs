@@ -15,11 +15,15 @@ mod overview;
 mod updates;
 
 pub fn settings_title(config: &Config) -> &'static str {
-    text(
-        config,
-        "Rotor 设置（开发版）",
-        "Rotor Settings (Development)",
-    )
+    if rotor_common::native_app::PRODUCTION {
+        text(config, "Rotor 设置", "Rotor Settings")
+    } else {
+        text(
+            config,
+            "Rotor 设置（开发版）",
+            "Rotor Settings (Development)",
+        )
+    }
 }
 fn text(config: &Config, zh: &'static str, en: &'static str) -> &'static str {
     if rotor_common::i18n::language_for_config(config) == "zh-CN" {

@@ -19,6 +19,17 @@ fn main() {
             .parse::<u16>()
             .expect("Windows version component exceeds u16")
     });
+    let production = env::var_os("CARGO_FEATURE_PRODUCTION").is_some();
+    let product = if production {
+        "Rotor"
+    } else {
+        "Rotor GPUI Development"
+    };
+    let original = if production {
+        "rotor.exe"
+    } else {
+        "rotor-desktop.exe"
+    };
     let resource = format!(
         r#"
 #include <windows.h>
@@ -34,11 +45,11 @@ BEGIN
     BLOCK "040904b0"
     BEGIN
       VALUE "CompanyName", "Fluctus\0"
-      VALUE "FileDescription", "Rotor GPUI Development\0"
+      VALUE "FileDescription", "{product}\0"
       VALUE "FileVersion", "{version}\0"
-      VALUE "ProductName", "Rotor GPUI Development\0"
+      VALUE "ProductName", "{product}\0"
       VALUE "ProductVersion", "{version}\0"
-      VALUE "OriginalFilename", "rotor-desktop.exe\0"
+      VALUE "OriginalFilename", "{original}\0"
     END
   END
   BLOCK "VarFileInfo"

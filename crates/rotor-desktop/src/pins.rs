@@ -446,7 +446,7 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                 focus: false,
                 window_background: WindowBackgroundAppearance::Transparent,
                 window_min_size: Some(size(px(1.), px(1.))),
-                app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
+                app_id: Some(rotor_common::native_app::IDENTIFIER.into()),
                 ..Default::default()
             },
             |window, cx| {

@@ -172,7 +172,7 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                     show: false,
                     focus: false,
                     window_min_size: Some(size(px(1.), px(1.))),
-                    app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
+                    app_id: Some(rotor_common::native_app::IDENTIFIER.into()),
                     ..Default::default()
                 },
                 |window, cx| {

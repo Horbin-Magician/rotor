@@ -18,10 +18,13 @@ pub struct ShortcutBinding {
 }
 
 pub fn bindings(config: &Config, development: bool) -> Result<Vec<ShortcutBinding>, String> {
-    let mut bindings = vec![ShortcutBinding {
-        key: HotKey::from_str("Ctrl+Alt+Shift+G").map_err(|error| error.to_string())?,
-        action: ShortcutAction::Settings,
-    }];
+    let mut bindings = Vec::new();
+    if development {
+        bindings.push(ShortcutBinding {
+            key: HotKey::from_str("Ctrl+Alt+Shift+G").map_err(|error| error.to_string())?,
+            action: ShortcutAction::Settings,
+        });
+    }
     let configured = [
         ("shortcut_search", ShortcutAction::Search),
         ("shortcut_screenshot", ShortcutAction::Capture),
@@ -70,6 +73,25 @@ pub fn bindings(config: &Config, development: bool) -> Result<Vec<ShortcutBindin
 pub trait HotkeyBackend {
     fn register(&mut self, key: HotKey) -> Result<(), String>;
     fn unregister(&mut self, key: HotKey) -> Result<(), String>;
+}
+
+#[cfg(test)]
+mod scope_tests {
+    #[test]
+    fn production_bindings_do_not_add_the_development_settings_hotkey() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = rotor_common::ConfigService::load_from(directory.path())
+            .unwrap()
+            .get_all();
+        assert!(super::bindings(&config, true)
+            .unwrap()
+            .iter()
+            .any(|binding| binding.action == super::ShortcutAction::Settings));
+        assert!(!super::bindings(&config, false)
+            .unwrap()
+            .iter()
+            .any(|binding| binding.action == super::ShortcutAction::Settings));
+    }
 }
 
 #[derive(Default)]

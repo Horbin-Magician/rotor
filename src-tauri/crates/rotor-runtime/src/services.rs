@@ -305,6 +305,10 @@ impl Services {
     pub fn configure_startup_flags(&self, flags: Vec<String>) {
         *lock(&self.startup_flags) = flags;
     }
+    pub fn migrate_existing_startup(&self) -> Result<bool, String> {
+        let (executable, arguments) = self.startup_parameters()?;
+        rotor_platform::startup::migrate_existing(&executable, &arguments)
+    }
     fn startup_parameters(&self) -> Result<(std::path::PathBuf, Vec<String>), String> {
         let executable = std::env::current_exe().map_err(|error| error.to_string())?;
         let mut args = vec![

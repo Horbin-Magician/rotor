@@ -168,7 +168,7 @@ impl SystemServices {
             .map_err(|error| error.to_string())?;
         let tray = TrayIconBuilder::new()
             .with_icon(icon)
-            .with_tooltip("Rotor（开发版）")
+            .with_tooltip(rotor_common::native_app::PRODUCT_NAME)
             .build()
             .map_err(|error| error.to_string())?;
         let mut backend = NativeBackend {

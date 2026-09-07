@@ -175,24 +175,11 @@ fn validate(root: &Path) -> Result<()> {
     }
     Ok(())
 }
-/// Import only configuration and shotter data; indexes are rebuilt by the app.
-/// The source app must be closed. Hash checks also detect changes during copying.
-pub fn import(
-    source: &Path,
-    destination: &Path,
-    backup: &Path,
-    source_version: &str,
-) -> Result<Receipt> {
+pub fn backup_profile(source: &Path, backup: &Path, source_version: &str) -> Result<Receipt> {
     let source = source.canonicalize().map_err(|e| e.to_string())?;
-    let destination = new_path(destination)?;
     let backup = new_path(backup)?;
-    if !source.is_dir()
-        || destination.starts_with(&source)
-        || backup.starts_with(&source)
-        || destination.starts_with(&backup)
-        || backup.starts_with(&destination)
-    {
-        return Err("Source, backup and destination must be separate directories".into());
+    if !source.is_dir() || backup.starts_with(&source) {
+        return Err("Backup must be separate from its source profile".into());
     }
     if source_version.trim().is_empty() {
         return Err("Record the source version (or unknown)".into());
@@ -224,6 +211,83 @@ pub fn import(
             .as_secs(),
     };
     write_receipt(&backup, &receipt)?;
+    Ok(receipt)
+}
+
+/// Called with both native and legacy instance leases held, before first native writes.
+pub fn prepare_native_profile(directory: &Path) -> Result<Option<PathBuf>> {
+    #[derive(Serialize, Deserialize)]
+    struct Marker {
+        schema: u32,
+        initial_native_version: String,
+        backup: Option<PathBuf>,
+    }
+    let directory = directory.canonicalize().map_err(|e| e.to_string())?;
+    let marker = directory.join(".native-migration.json");
+    if marker.exists() {
+        if fs::metadata(&marker).map_err(|e| e.to_string())?.len() > 65536 {
+            return Err("Native migration marker is too large".into());
+        }
+        let value: Marker = serde_json::from_slice(&fs::read(&marker).map_err(|e| e.to_string())?)
+            .map_err(|_| "Invalid native migration marker; profile preserved")?;
+        if value.schema != 1 {
+            return Err("Unsupported native migration marker".into());
+        }
+        return Ok(value.backup);
+    }
+    let backup = if inventory(&directory)?.is_empty() {
+        None
+    } else {
+        let parent = directory
+            .parent()
+            .ok_or("Profile has no backup parent directory")?;
+        let root = tempfile::Builder::new()
+            .prefix(".rotor-backup-")
+            .tempdir_in(parent)
+            .map_err(|e| e.to_string())?
+            .keep();
+        let backup = root.join("data");
+        backup_profile(
+            &directory,
+            &backup,
+            "legacy profile; source version unknown",
+        )?;
+        validate(&backup).map_err(|error| format!("{error}. Backup: {}", backup.display()))?;
+        Some(backup)
+    };
+    let value = Marker {
+        schema: 1,
+        initial_native_version: env!("CARGO_PKG_VERSION").into(),
+        backup: backup.clone(),
+    };
+    crate::persistence::atomic_write_private(
+        &marker,
+        &serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(backup)
+}
+
+/// Import only configuration and shotter data; indexes are rebuilt by the app.
+/// The source app must be closed. Hash checks also detect changes during copying.
+pub fn import(
+    source: &Path,
+    destination: &Path,
+    backup: &Path,
+    source_version: &str,
+) -> Result<Receipt> {
+    let source = source.canonicalize().map_err(|e| e.to_string())?;
+    let destination = new_path(destination)?;
+    let backup = new_path(backup)?;
+    if !source.is_dir()
+        || destination.starts_with(&source)
+        || backup.starts_with(&source)
+        || destination.starts_with(&backup)
+        || backup.starts_with(&destination)
+    {
+        return Err("Source, backup and destination must be separate directories".into());
+    }
+    let receipt = backup_profile(&source, &backup, source_version)?;
     validate(&backup)?;
     let staging = tempfile::Builder::new()
         .prefix(".rotor-import-")
@@ -244,6 +308,22 @@ pub fn import(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn first_native_use_keeps_one_backup_and_does_not_modify_configuration() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("profile");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("config.toml"), "theme = '1'\nfuture = 'keep'").unwrap();
+        let original = fs::read(source.join("config.toml")).unwrap();
+        let backup = prepare_native_profile(&source).unwrap().unwrap();
+        assert_eq!(
+            prepare_native_profile(&source).unwrap(),
+            Some(backup.clone())
+        );
+        verify(&backup).unwrap();
+        assert_eq!(fs::read(source.join("config.toml")).unwrap(), original);
+        assert_eq!(fs::read(backup.join("config.toml")).unwrap(), original);
+    }
     #[test]
     fn import_keeps_unknown_keys_all_workspaces_and_original_bytes() {
         let temp = tempfile::tempdir().unwrap();

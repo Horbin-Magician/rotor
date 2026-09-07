@@ -26,7 +26,7 @@ objc2-foundation = "=0.2.2"
 plist = "=1.9.0"
 core-graphics = "0.23"
 core-foundation = "0.9"
-objc2-app-kit = { version = "0.2.2", features = ["NSPasteboard", "NSView", "NSWindow", "NSApplication"] }
+objc2-app-kit = { version = "0.2.2", features = ["NSPasteboard", "NSView", "NSWindow", "NSApplication", "NSAlert"] }
 libc = "0.2.186"
 
 [target."cfg(target_os = \"windows\")".dependencies]
@@ -35,6 +35,7 @@ dunce = "=1.0.5"
 is-root = "0.1.3"
 windows = { version = "0.61.3", features = [
   "Win32_Foundation",
+  "Win32_Security",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",

@@ -116,10 +116,12 @@ impl SettingsView {
                     ))
                 }
             }
-            panel = panel.child(self.t(
-                "开发版启动项使用独立名称和当前资料目录。",
-                "Development startup uses an independent entry and the current profile.",
-            ));
+            if !rotor_common::native_app::PRODUCTION {
+                panel = panel.child(self.t(
+                    "开发版启动项使用独立名称和当前资料目录。",
+                    "Development startup uses an independent entry and the current profile.",
+                ));
+            }
         } else {
             panel = panel.child(self.t("正在读取系统状态…", "Loading system status…"));
         }
