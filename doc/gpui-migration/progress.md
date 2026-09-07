@@ -317,3 +317,9 @@
 - Apple 数字版本字段与完整 preview SemVer 分开保存，避免 beta 版本的 bundle 字段与更新比较冲突。
 - xtask 4 项测试、updater 12 项测试及相关 clippy 通过；签名测试只用临时测试密钥。Cargo workspace check、旧 yarn build、两平台核心依赖图检查通过；旧 Tauri 保留 3 个既有 warning。远端 CI 与真实发布签名尚未执行。
 - 已静态检查旧 macOS 2.6.0 公共产物：CodeDirectory 标志 0x20002，仅有 slot 0，无 bundle CodeResources；依据 Apple 常量对应 linker/ad-hoc。证据见 evidence/v2.6.0-macos-signature.json，未声称 codesign/Gatekeeper/公证实机验收。
+
+## P8 Windows 卸载文件边界
+
+- 从已校验暂存目录生成卸载文件清单，逐文件删除并仅移除空目录；不再递归删除整个 assets，用户后来放入的文件会保留。NSIS 字符串转义避免资源文件名被当成变量。
+- 应用仍占用主程序时停止卸载；仅当当前用户启动项指向本安装目录时删除该启动项，资料目录仍保留。
+- 清单边界测试、xtask clippy 和使用既有暂存夹具的 NSIS 编译通过；没有实际执行卸载或修改启动项。

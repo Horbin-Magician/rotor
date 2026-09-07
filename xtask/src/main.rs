@@ -1,3 +1,4 @@
+mod installer;
 mod release;
 mod versions;
 use sha2::{Digest, Sha256};
@@ -218,6 +219,11 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
     let output = output.canonicalize()?;
     let directory = directory.canonicalize()?;
     if cfg!(windows) {
+        use std::io::Write;
+        let mut uninstall = tempfile::Builder::new().suffix(".nsh").tempfile()?;
+        uninstall
+            .write_all(installer::uninstall_script(&directory, "rotor-desktop.exe")?.as_bytes())?;
+        uninstall.flush()?;
         let compiler = std::env::var_os("NSIS_MAKENSIS").unwrap_or_else(|| "makensis.exe".into());
         let status = Command::new(compiler)
             .arg(format!("/DSTAGE_DIR={}", directory.display()))
@@ -228,6 +234,10 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
                     .display()
             ))
             .arg(format!("/DAPP_VERSION={version}"))
+            .arg(format!(
+                "/DUNINSTALL_INCLUDE={}",
+                uninstall.path().display()
+            ))
             .arg(root().join("native/windows.nsi"))
             .status()?;
         if !status.success() {

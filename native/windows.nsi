@@ -12,6 +12,9 @@ Unicode true
 !ifndef APP_VERSION
 !error "Pass /DAPP_VERSION=<workspace version>"
 !endif
+!ifndef UNINSTALL_INCLUDE
+!error "Pass /DUNINSTALL_INCLUDE=<generated package file list>"
+!endif
 Name "Rotor GPUI Development"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$PROGRAMFILES64\Rotor GPUI Development"
@@ -128,13 +131,20 @@ SectionEnd
 Section "Uninstall"
   SetRegView 64
   SetShellVarContext all
-  ; Only package-owned paths. User profiles are outside the install directory.
+  ClearErrors
   Delete "$INSTDIR\rotor-desktop.exe"
-  Delete "$INSTDIR\DirectML.dll"
-  Delete "$INSTDIR\resources.json"
-  Delete "$INSTDIR\native-app.toml"
-  Delete "$INSTDIR\update-public.key"
-  RMDir /r "$INSTDIR\assets"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Close Rotor before uninstalling."
+    Abort
+  ${EndIf}
+  ; Only package-owned files, followed by non-recursive empty-directory removal.
+  !include "${UNINSTALL_INCLUDE}"
+  ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Rotor GPUI Development"
+  StrLen $R1 '$\"$INSTDIR\rotor-desktop.exe$\"'
+  StrCpy $R2 $R0 $R1
+  ${If} $R2 == '$\"$INSTDIR\rotor-desktop.exe$\"'
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Rotor GPUI Development"
+  ${EndIf}
   Delete "$INSTDIR\uninstall.exe"
   Delete "$SMPROGRAMS\Rotor GPUI Development.lnk"
   RMDir "$INSTDIR"
