@@ -61,7 +61,7 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::centered(size(px(820.), px(600.)), cx)),
         titlebar: Some(TitlebarOptions {
-            title: Some("Rotor（开发版）".into()),
+            title: Some(rotor_ui::settings_title(&config).into()),
             ..Default::default()
         }),
         app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
@@ -79,7 +79,7 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
                 Theme::sync_system_appearance(Some(window), cx);
             }
         });
-        let view = cx.new(|_| rotor_ui::SettingsView::new(config, services));
+        let view = cx.new(|cx| rotor_ui::SettingsView::new(config, services, window, cx));
         if let Some(warning) = warning {
             view.update(cx, |view, cx| view.show_message(warning, cx));
         }
@@ -114,6 +114,12 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
             let state = cx.global_mut::<ShellState>();
             if let Err(error) = state.system.update_menu(state.commands.clone(), config) {
                 eprintln!("Tray menu: {error}");
+            }
+            let handles: Vec<_> = state.windows.values().map(|entry| entry.window).collect();
+            for handle in handles {
+                let _ = handle.update(cx, |_, window, _| {
+                    window.set_window_title(rotor_ui::settings_title(config))
+                });
             }
         }
     }
