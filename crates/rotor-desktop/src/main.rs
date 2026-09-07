@@ -1,3 +1,4 @@
+mod placement;
 mod system;
 
 use futures::future::{Either, select};
@@ -124,28 +125,26 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
 }
 
 fn show_translator(cx: &mut App) -> Result<(), String> {
-    if let Some(handle) = cx
+    if let Some((handle, view)) = cx
         .global::<ShellState>()
         .windows
         .get(&WindowRole::Translator)
-        .map(|entry| entry.window)
+        .and_then(|entry| match &entry.view {
+            WindowView::Translator(view) => Some((entry.window, view.clone())),
+            _ => None,
+        })
         && handle
-            .update(cx, |_, window, _| window.activate_window())
+            .update(cx, |_, window, cx| {
+                window.activate_window();
+                let _ = view.update(cx, |view, cx| view.begin_input(window, cx));
+            })
             .is_ok()
     {
         return Ok(());
     }
     let services = cx.global::<ShellState>().services.clone();
     cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::centered(size(px(560.), px(420.)), cx)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("Rotor Translator".into()),
-                ..Default::default()
-            }),
-            app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
-            ..Default::default()
-        },
+        placement::utility_options(size(px(560.), px(420.)), true, cx),
         |window, cx| {
             let appearance = window.observe_window_appearance(|window, cx| {
                 if !matches!(
@@ -188,15 +187,7 @@ fn show_search(cx: &mut App) -> Result<(), String> {
     }
     let services = cx.global::<ShellState>().services.clone();
     cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::centered(size(px(680.), px(480.)), cx)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("Rotor Search".into()),
-                ..Default::default()
-            }),
-            app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
-            ..Default::default()
-        },
+        placement::utility_options(size(px(680.), px(140.)), false, cx),
         |window, cx| {
             let appearance = window.observe_window_appearance(|window, cx| {
                 if !matches!(

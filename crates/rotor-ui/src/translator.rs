@@ -66,6 +66,18 @@ impl TranslatorView {
             self.services.cancel_translation_request(id);
         }
     }
+    pub fn begin_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel();
+        self.input.update(cx, |input, cx| {
+            input.set_value(String::new(), window, cx);
+            input.focus(window, cx);
+        });
+        self.translated.clear();
+        self.message.clear();
+        self.warning.clear();
+        self.suppress_enter = false;
+        cx.notify();
+    }
     pub fn translate_text(
         &mut self,
         text: String,

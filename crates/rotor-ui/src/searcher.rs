@@ -31,13 +31,12 @@ impl SearchView {
         let input = cx.new(|cx| InputState::new(window, cx));
         let input_events =
             cx.subscribe_in(&input, window, |this, _, event, window, cx| match event {
-                InputEvent::Change => this.search(false, cx),
+                InputEvent::Change => this.search(false, window, cx),
                 InputEvent::PressEnter { .. } => {
                     if !this.suppress_enter {
                         this.open(false, false, cx);
                     }
                     this.suppress_enter = false;
-                    let _ = window;
                 }
                 _ => {}
             });
@@ -60,7 +59,7 @@ impl SearchView {
             _activation: activation,
         }
     }
-    fn search(&mut self, append: bool, cx: &mut Context<Self>) {
+    fn search(&mut self, append: bool, window: &mut Window, cx: &mut Context<Self>) {
         if append
             && (self.results.loading
                 || self.results.exhausted
@@ -72,6 +71,7 @@ impl SearchView {
         if !append {
             self.results.reset();
             self.icons.clear();
+            self.resize(window, cx);
             self.scroll.scroll_to_item(0, ScrollStrategy::Top);
         }
         match self.services.search(query.clone()) {
@@ -132,6 +132,7 @@ impl SearchView {
                         );
                     }
                 }
+                self.resize(window, cx);
             }
             RuntimeEvent::FileOpened { id, result } if self.opening == Some(*id) => {
                 self.opening = None;
@@ -144,6 +145,17 @@ impl SearchView {
         }
         cx.notify();
     }
+    fn resize(&self, window: &mut Window, cx: &App) {
+        let desired = px(140. + 58. * self.results.items.len().min(6) as f32);
+        let available = window
+            .display(cx)
+            .map(|display| {
+                (display.visible_bounds().bottom() - window.bounds().top()).max(px(140.))
+            })
+            .unwrap_or(desired);
+        window.resize(size(window.viewport_size().width, desired.min(available)));
+    }
+
     fn rows(&mut self, range: Range<usize>, cx: &mut Context<Self>) -> Vec<AnyElement> {
         range
             .map(|index| {
@@ -270,7 +282,9 @@ impl Render for SearchView {
                                     || count == 0
                                     || count >= MAX_RESULTS,
                             )
-                            .on_click(cx.listener(|this, _, _, cx| this.search(true, cx))),
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.search(true, window, cx)),
+                            ),
                     ),
             )
             .child(if self.results.loading {
