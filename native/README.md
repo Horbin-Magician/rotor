@@ -163,3 +163,9 @@ for that process to exit, restores the old directory, keeps the failed new files
 and leaves user data untouched. Ordinary uninstalls never execute the rollback
 entry. File/registry permissions, UAC, actual process exit and rollback still need
 Windows installation tests; compilation is not an installation acceptance result.
+
+Snapshots also record a normalized digest of native source, Cargo inputs, assets
+and installer recipes. Build checks that inputs did not change during compilation;
+stage/package reject stale receipts even when the app version is unchanged. Git
+is used read-only to enumerate tracked and untracked non-ignored source inputs.
+Text line endings are normalized so Windows and macOS candidate receipts agree.

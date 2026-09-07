@@ -211,6 +211,10 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
         directory.join("native-build.json"),
         serde_json::to_vec_pretty(&info)?,
     )?;
+    fs::copy(
+        snapshot.join("source.sha256"),
+        directory.join("source.sha256"),
+    )?;
     write_manifest(directory, &version)?;
     verify_stage(directory)?;
     println!(
@@ -309,6 +313,10 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
     fs::write(
         output.join("native-build.json"),
         serde_json::to_vec_pretty(&info)?,
+    )?;
+    fs::copy(
+        directory.join("source.sha256"),
+        output.join("source.sha256"),
     )?;
     write_manifest(&output, &version)?;
     println!("Packaged {} at {}", info.product_name, output.display());
