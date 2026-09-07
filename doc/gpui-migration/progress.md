@@ -254,3 +254,10 @@
 - macOS 使用 accessory 策略隐藏 Dock，并响应再次打开应用显示设置；链接入口仅接受 HTTP/HTTPS。
 - Windows 启动保留既有提权尝试，--no-elevate 可跳过；提权保留资料/资源参数，子进程等待父实例释放锁，取消 UAC 后当前实例继续运行。
 - URL 拒绝测试、3 项实例/交接测试、native check 和 clippy 通过。没有实际启动外部链接、触发 UAC 或验证 macOS Dock；这些仍是实机门槛。
+
+## P8 更新校验基础
+
+- Rust 包版本统一继承根 workspace 2.6.0；新增 xtask 原生构建入口，旧前端版本镜像暂保留。
+- 独立 updater 使用与旧 Tauri 完全一致的公钥和嵌套 base64 minisign 格式；仅 HTTPS、限制清单/文件体积、流式落盘与预哈希验签、支持取消，校验成功后才发布暂存文件。进度最多每 100ms 加最终通知。
+- 原生预览使用独立 gpui-latest 地址，不改旧 latest 通道；地址尚未发布。
+- 5 项测试和 updater/xtask clippy 通过，包含真实公开签名向量、内容篡改、错钥、旧元数据、防降级及取消前不写盘。尚未下载旧正式产物做验签，也未接入安装/设置界面；G8 未通过。

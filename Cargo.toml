@@ -11,9 +11,14 @@ members = [
   "crates/rotor-desktop",
   "crates/rotor-ui",
   "crates/rotor-canvas",
+  "crates/rotor-updater",
+  "xtask",
 ]
 default-members = ["crates/rotor-desktop"]
 exclude = ["experiments/gpui-probe"]
+
+[workspace.package]
+version = "2.6.0"
 
 [workspace.dependencies]
 gpui-kit = { version = "=0.6.0", default-features = false, features = ["component", "assets"] }
@@ -27,6 +32,7 @@ futures = "0.3"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 rotor-ui = { path = "crates/rotor-ui" }
 rotor-canvas = { path = "crates/rotor-canvas" }
+rotor-updater = { path = "crates/rotor-updater" }
 
 [profile.release]
 lto = "thin"

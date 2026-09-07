@@ -1,6 +1,6 @@
 [package]
 name = "rotor-translator"
-version = "2.6.0"
+version.workspace = true
 edition = "2021"
 
 [dependencies]

@@ -8276,7 +8276,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-common"
-version = "2.3.3"
+version = "2.6.0"
 dependencies = [
  "log",
  "serde",
@@ -8411,6 +8411,24 @@ dependencies = [
  "rotor-canvas",
  "rotor-common",
  "rotor-runtime",
+]
+
+[[package]]
+name = "rotor-updater"
+version = "2.6.0"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "minisign-verify",
+ "reqwest",
+ "rustls",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "url",
 ]
 
 [[package]]
@@ -10609,6 +10627,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
@@ -13106,6 +13125,15 @@ name = "xmlwriter"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
+
+[[package]]
+name = "xtask"
+version = "2.6.0"
+dependencies = [
+ "serde_json",
+ "sha2 0.10.9",
+ "toml 0.8.23",
+]
 
 [[package]]
 name = "y4m"
