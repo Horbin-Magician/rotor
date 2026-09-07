@@ -209,6 +209,11 @@ impl UpdateService {
                         &path,
                         &release.artifact.signature,
                         |path| {
+                            rotor_platform::installer::verify(
+                                path,
+                                rotor_common::native_app::PRODUCT_NAME,
+                                &release.version,
+                            )?;
                             rotor_platform::desktop::launch_update_installer(path, &profile, &flags)
                         },
                     )

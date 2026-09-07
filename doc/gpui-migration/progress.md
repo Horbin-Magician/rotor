@@ -337,3 +337,8 @@
 - Windows 兼容旧 updater 缺少 /PARENT 的 /UPDATE 调用，等待旧互斥体释放或弃置；新客户端继续等待进程退出。开发/正式候选分用 gpui-latest.json 与 gpui-production-latest.json，旧通用 feed 不变。
 - Windows 两种 release 快照、暂存和 NSIS 包均生成并校验；正式包约 35.8 MiB。两种暂存程序从临时工作目录执行 --check-resources 成功，没有进入 GUI 或真实资料迁移。使用正式暂存模型/字体的合成 OCR 和 30 秒闲置释放检查通过。
 - 候选 CI 支持显式选择身份，暂存放在 runner 临时目录，避免缓存恢复旧暂存；macOS DMG 只呈现 app 与 Applications 链接。宏/清单及依赖检查通过；真正安装/覆盖/卸载、旧客户端接收与 Mac 实机仍待验收。
+
+## P8 Windows 安装包内部身份校验
+
+- 在签名校验的文件锁保护内读取 VERSIONINFO，核对 ProductName 与 ProductVersion 均匹配当前模式及选中版本，再允许启动；不只相信更新清单中的版本或文件名。
+- 已对实际生成的开发/正式安装包只读核验成功，交叉身份和伪高版本均被拒绝；损坏文件测试与 native clippy 通过。读取仅解析资源，没有加载执行安装包或触发 UAC。

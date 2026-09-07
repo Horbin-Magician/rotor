@@ -9,3 +9,5 @@ pub mod startup;
 pub mod desktop;
 pub mod single_instance;
 pub mod legacy_instance;
+#[cfg(target_os = "windows")]
+pub mod installer;
