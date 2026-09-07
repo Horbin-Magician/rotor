@@ -228,6 +228,27 @@ fn show_search(cx: &mut App) -> Result<(), String> {
 }
 
 fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if let RuntimeEvent::SettingsCoordination(request) = event {
+        match request {
+            rotor_runtime::SettingsCoordination::Prepare {
+                id,
+                candidate,
+                reply,
+            } => {
+                let result = cx.global_mut::<ShellState>().system.prepare(id, &candidate);
+                let _ = reply.send(result);
+            }
+            rotor_runtime::SettingsCoordination::Finish {
+                id,
+                committed,
+                reply,
+            } => {
+                let result = cx.global_mut::<ShellState>().system.finish(id, committed);
+                let _ = reply.send(result);
+            }
+        }
+        return;
+    }
     if let RuntimeEvent::CaptureFinished { id, result } = event {
         capture::completed(id, result, cx);
         return;
@@ -386,6 +407,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let app_services = services.clone();
     let background = args.iter().any(|arg| arg == "--background");
     let enable_hotkeys = !args.iter().any(|arg| arg == "--no-hotkeys");
+    let development_shortcuts = !args.iter().any(|arg| arg == "--production-shortcuts");
     let failed = Rc::new(Cell::new(false));
     let startup_failed = failed.clone();
     gpui_kit::application()
@@ -394,7 +416,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         .run(move |cx| {
             gpui_kit::init(cx);
             apply_theme(&config, cx);
-            let system = match SystemServices::new(commands.clone(), &config, enable_hotkeys) {
+            let system = match SystemServices::new(
+                commands.clone(),
+                &config,
+                enable_hotkeys,
+                development_shortcuts,
+            ) {
                 Ok(system) => system,
                 Err(error) => {
                     eprintln!("System services: {error}");
@@ -403,6 +430,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     return;
                 }
             };
+            app_services.coordinate_shortcuts(development_shortcuts);
             cx.set_global(ShellState {
                 windows: HashMap::new(),
                 config,
@@ -472,6 +500,39 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if let Some(command) = commands.take() {
                                 let quit = matches!(command, Command::Quit);
                                 cx.update(|cx| {
+                                    let command = if let Command::Shortcut { key, generation } =
+                                        command
+                                    {
+                                        use rotor_runtime::shortcuts::ShortcutAction;
+                                        match cx
+                                            .global::<ShellState>()
+                                            .system
+                                            .resolve(key, generation)
+                                        {
+                                            Some(ShortcutAction::Settings) => Command::ShowSettings,
+                                            Some(ShortcutAction::Search) => Command::ShowSearch,
+                                            Some(ShortcutAction::Capture) => Command::Capture,
+                                            Some(ShortcutAction::TranslateSelection) => {
+                                                Command::SelectText
+                                            }
+                                            Some(ShortcutAction::TranslateInput) => {
+                                                Command::ShowTranslator
+                                            }
+                                            Some(ShortcutAction::Quick(id)) => {
+                                                if let Err(error) = cx
+                                                    .global::<ShellState>()
+                                                    .services
+                                                    .run_quick_action(id)
+                                                {
+                                                    eprintln!("Quick action: {error}");
+                                                }
+                                                return;
+                                            }
+                                            None => return,
+                                        }
+                                    } else {
+                                        command
+                                    };
                                     if !matches!(command, Command::Capture | Command::Quit)
                                         && cx
                                             .global::<ShellState>()
@@ -522,6 +583,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                                             }
                                         }
                                         Command::ShowPins => pins::show_all(cx),
+                                        Command::Shortcut { .. } => {
+                                            unreachable!("shortcut was resolved before dispatch")
+                                        }
                                     }
                                 });
                                 if quit {

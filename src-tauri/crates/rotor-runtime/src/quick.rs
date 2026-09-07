@@ -266,7 +266,18 @@ fn append_missing_default_actions(actions: &mut Vec<QuickAction>) {
     }
 }
 
-fn run_command(command: &str) -> Result<(), Box<dyn Error>> {
+pub fn actions_from_config(config: &rotor_common::Config) -> Result<Vec<QuickAction>, String> {
+    let actions = config
+        .get("quick_actions")
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_QUICK_ACTIONS);
+    normalize_actions(
+        serde_json::from_str(actions).map_err(|error| format!("Invalid quick actions: {error}"))?,
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub fn run_command(command: &str) -> Result<(), Box<dyn Error>> {
     let command = command.trim();
     if command.is_empty() {
         return Err("Quick action command is empty".into());

@@ -48,6 +48,12 @@ pub struct CaptureBundle {
 }
 
 pub enum RuntimeEvent {
+    SettingsCoordination(SettingsCoordination),
+    QuickFinished {
+        id: OperationId,
+        action_id: String,
+        result: Result<(), String>,
+    },
     Pin(crate::PinEvent),
     Search(SearchBatch),
     IndexState(IndexState),
@@ -95,6 +101,19 @@ enum SettingsCommand {
     Flush(oneshot::Sender<()>),
 }
 
+pub enum SettingsCoordination {
+    Prepare {
+        id: OperationId,
+        candidate: Config,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Finish {
+        id: OperationId,
+        committed: bool,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+}
+
 #[derive(Clone, Copy)]
 pub struct ServiceOptions {
     pub index_files: bool,
@@ -121,6 +140,8 @@ pub struct Services {
     background: Mutex<Vec<JoinHandle<()>>>,
     slots: Arc<Semaphore>,
     canvas_fonts: Arc<Mutex<Option<Arc<rotor_canvas::Renderer>>>>,
+    coordinate_shortcuts: Arc<AtomicBool>,
+    development_shortcuts: AtomicBool,
     stopped: Arc<AtomicBool>,
 }
 
@@ -145,11 +166,13 @@ impl Services {
             .to_path_buf();
         let pins = PinService::new(&runtime, data_directory, events.clone());
         let published_config = Arc::new(Mutex::new(lock(&config).get_all()));
+        let coordinate_shortcuts = Arc::new(AtomicBool::new(false));
         let settings_worker = runtime.spawn(settings_loop(
             config,
             published_config.clone(),
             settings_receiver,
             events.clone(),
+            coordinate_shortcuts.clone(),
         ));
         let searcher = options.index_files.then(|| {
             let results = events.clone();
@@ -180,6 +203,8 @@ impl Services {
                 background: Mutex::new(Vec::new()),
                 slots: Arc::new(Semaphore::new(BACKGROUND_LIMIT)),
                 canvas_fonts: Arc::new(Mutex::new(None)),
+                coordinate_shortcuts,
+                development_shortcuts: AtomicBool::new(true),
                 stopped: Arc::new(AtomicBool::new(false)),
             },
             receiver,
@@ -188,6 +213,44 @@ impl Services {
 
     pub fn settings(&self) -> Config {
         lock(&self.published_config).clone()
+    }
+    pub fn coordinate_shortcuts(&self, development: bool) {
+        self.development_shortcuts
+            .store(development, Ordering::Release);
+        self.coordinate_shortcuts.store(true, Ordering::Release);
+    }
+    pub fn uses_development_shortcuts(&self) -> bool {
+        self.development_shortcuts.load(Ordering::Acquire)
+    }
+    pub fn quick_actions(&self) -> Result<Vec<crate::QuickAction>, String> {
+        crate::quick::actions_from_config(&self.settings())
+    }
+    pub fn save_quick_actions(
+        &self,
+        actions: Vec<crate::QuickAction>,
+    ) -> Result<OperationId, String> {
+        let actions =
+            crate::quick::normalize_actions(actions).map_err(|error| error.to_string())?;
+        self.save_settings(vec![(
+            "quick_actions".into(),
+            serde_json::to_string(&actions).map_err(|error| error.to_string())?,
+        )])
+    }
+    pub fn run_quick_action(&self, action_id: String) -> Result<OperationId, String> {
+        let action = self
+            .quick_actions()?
+            .into_iter()
+            .find(|action| action.id == action_id && action.enabled)
+            .ok_or("Quick action is missing or disabled")?;
+        self.spawn_job(
+            move || crate::quick::run_command(&action.command).map_err(|error| error.to_string()),
+            None,
+            move |id, result| RuntimeEvent::QuickFinished {
+                id,
+                action_id,
+                result,
+            },
+        )
     }
 
     pub async fn render_canvas(
@@ -674,12 +737,79 @@ async fn settings_loop(
     published: Arc<Mutex<Config>>,
     receiver: Receiver<SettingsCommand>,
     events: Sender<RuntimeEvent>,
+    coordinate_shortcuts: Arc<AtomicBool>,
 ) {
     while let Ok(command) = receiver.recv().await {
         match command {
-            SettingsCommand::Save { id, changes } => {
+            SettingsCommand::Save { id, mut changes } => {
+                let coordinated = coordinate_shortcuts.load(Ordering::Acquire)
+                    && changes.iter().any(|(key, _)| {
+                        (key.starts_with("shortcut_") && !key.starts_with("shortcut_pinwin_"))
+                            || key == "quick_actions"
+                    });
+                if let Some((_, json)) = changes.iter_mut().find(|(key, _)| key == "quick_actions")
+                {
+                    let normalized = serde_json::from_str::<Vec<crate::QuickAction>>(json)
+                        .map_err(|error| error.to_string())
+                        .and_then(|actions| {
+                            crate::quick::normalize_actions(actions)
+                                .map_err(|error| error.to_string())
+                        })
+                        .and_then(|actions| {
+                            serde_json::to_string(&actions).map_err(|error| error.to_string())
+                        });
+                    match normalized {
+                        Ok(value) => {
+                            *json = value;
+                            changes.push((
+                                "quick_actions_revision".into(),
+                                rotor_common::DEFAULT_QUICK_ACTIONS_REVISION.into(),
+                            ));
+                        }
+                        Err(error) => {
+                            let _ = events
+                                .send(RuntimeEvent::SettingsSaved {
+                                    id,
+                                    result: Err(error),
+                                })
+                                .await;
+                            continue;
+                        }
+                    }
+                }
+                if coordinated {
+                    let mut candidate = lock(&published).clone();
+                    candidate.extend(changes.clone());
+                    let (reply, response) = oneshot::channel();
+                    let result = if events
+                        .send(RuntimeEvent::SettingsCoordination(
+                            SettingsCoordination::Prepare {
+                                id,
+                                candidate,
+                                reply,
+                            },
+                        ))
+                        .await
+                        .is_ok()
+                    {
+                        response
+                            .await
+                            .unwrap_or_else(|_| Err("Shortcut coordinator stopped".into()))
+                    } else {
+                        Err("Shortcut coordinator is unavailable".into())
+                    };
+                    if let Err(error) = result {
+                        let _ = events
+                            .send(RuntimeEvent::SettingsSaved {
+                                id,
+                                result: Err(error),
+                            })
+                            .await;
+                        continue;
+                    }
+                }
                 let config = config.clone();
-                let result = tokio::task::spawn_blocking(move || {
+                let mut result = tokio::task::spawn_blocking(move || {
                     let mut config = lock(&config);
                     config
                         .set_many(changes)
@@ -691,6 +821,32 @@ async fn settings_loop(
                 .and_then(|result| result);
                 if let Ok(snapshot) = &result {
                     *lock(&published) = snapshot.clone();
+                }
+                if coordinated {
+                    let (reply, response) = oneshot::channel();
+                    let finished = if events
+                        .send(RuntimeEvent::SettingsCoordination(
+                            SettingsCoordination::Finish {
+                                id,
+                                committed: result.is_ok(),
+                                reply,
+                            },
+                        ))
+                        .await
+                        .is_ok()
+                    {
+                        response
+                            .await
+                            .unwrap_or_else(|_| Err("Shortcut coordinator stopped".into()))
+                    } else {
+                        Err("Shortcut coordinator is unavailable".into())
+                    };
+                    if let Err(error) = finished {
+                        result = Err(match result {
+                            Ok(_) => error,
+                            Err(original) => format!("{original}; {error}"),
+                        });
+                    }
                 }
                 let _ = events
                     .send(RuntimeEvent::SettingsSaved { id, result })
@@ -1079,6 +1235,80 @@ mod tests {
             .load_pins();
         assert!(warnings.is_empty());
         assert_eq!(pins[0].config.offset, (123, -321));
+    }
+
+    #[test]
+    fn failed_settings_write_requests_shortcut_rollback() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let before = services.settings();
+        services.coordinate_shortcuts(true);
+        std::fs::create_dir(directory.path().join("config.toml")).unwrap();
+        let id = services
+            .save_settings(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
+            .unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Prepare {
+            id: staged,
+            candidate,
+            reply,
+        }) = receive()
+        else {
+            panic!("expected shortcut preparation");
+        };
+        assert_eq!(id, staged);
+        assert_eq!(candidate["shortcut_search"], "Ctrl+Shift+X");
+        reply.send(Ok(())).unwrap();
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Finish {
+            id: finished,
+            committed,
+            reply,
+        }) = receive()
+        else {
+            panic!("expected rollback");
+        };
+        assert_eq!(id, finished);
+        assert!(!committed);
+        reply.send(Ok(())).unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::SettingsSaved { id: result, result: Err(_) } if result == id)
+        );
+        assert_eq!(services.settings(), before);
+    }
+
+    #[test]
+    fn shortcut_prepare_rejection_does_not_touch_disk() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        services.coordinate_shortcuts(true);
+        services
+            .save_settings(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
+            .unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Prepare { reply, .. }) =
+            receive()
+        else {
+            panic!("expected shortcut preparation");
+        };
+        reply.send(Err("already occupied".into())).unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::SettingsSaved { result: Err(error), .. } if error == "already occupied")
+        );
+        assert!(!directory.path().join("config.toml").exists());
     }
 
     #[test]

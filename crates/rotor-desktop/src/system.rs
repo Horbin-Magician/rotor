@@ -1,26 +1,25 @@
 use async_channel::{Receiver, Sender};
-use global_hotkey::{
-    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
-    hotkey::{Code, HotKey, Modifiers},
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
+use rotor_runtime::{
+    OperationId,
+    shortcuts::{
+        self, HotkeyBackend, ShortcutAction, ShortcutBinding, ShortcutDebounce, ShortcutTransaction,
+    },
 };
-use std::sync::{
-    Arc,
-    atomic::{AtomicU8, Ordering},
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU8, Ordering},
+    },
+    time::Instant,
 };
 use tray_icon::{
     TrayIcon, TrayIconBuilder,
     menu::{Menu, MenuEvent, MenuItem},
 };
 
-const SHOW: u8 = 1;
-const QUIT: u8 = 2;
-const TRANSLATE: u8 = 4;
-const SEARCH: u8 = 8;
-const SELECT: u8 = 16;
-const CAPTURE: u8 = 32;
-const PINS: u8 = 64;
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
     ShowSettings,
     ShowTranslator,
@@ -29,15 +28,24 @@ pub enum Command {
     Capture,
     ShowPins,
     Quit,
+    Shortcut { key: u32, generation: u64 },
 }
+const CONTROLS: [(u8, Command); 7] = [
+    (1, Command::Quit),
+    (2, Command::Capture),
+    (4, Command::ShowPins),
+    (8, Command::ShowSearch),
+    (16, Command::ShowTranslator),
+    (32, Command::SelectText),
+    (64, Command::ShowSettings),
+];
 
-/// Coalesced wakeups retain activation/exit intent even if the wake queue fills.
 #[derive(Clone)]
 pub struct CommandBus {
     wake: Sender<()>,
     pending: Arc<AtomicU8>,
+    shortcuts: Arc<Mutex<VecDeque<Command>>>,
 }
-
 impl CommandBus {
     pub fn new() -> (Self, Receiver<()>) {
         let (wake, receiver) = async_channel::bounded(1);
@@ -45,180 +53,261 @@ impl CommandBus {
             Self {
                 wake,
                 pending: Arc::new(AtomicU8::new(0)),
+                shortcuts: Arc::new(Mutex::new(VecDeque::new())),
             },
             receiver,
         )
     }
     pub fn request(&self, command: Command) {
-        self.pending.fetch_or(
-            match command {
-                Command::ShowSettings => SHOW,
-                Command::Quit => QUIT,
-                Command::ShowTranslator => TRANSLATE,
-                Command::ShowSearch => SEARCH,
-                Command::SelectText => SELECT,
-                Command::Capture => CAPTURE,
-                Command::ShowPins => PINS,
-            },
-            Ordering::Release,
-        );
+        if let Some((bit, _)) = CONTROLS.iter().find(|(_, value)| *value == command) {
+            self.pending.fetch_or(*bit, Ordering::Release);
+        } else {
+            let mut queued = self
+                .shortcuts
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if queued.len() == 32 {
+                eprintln!("Shortcut dispatch queue is full");
+                return;
+            }
+            queued.push_back(command);
+        }
         let _ = self.wake.try_send(());
     }
     pub fn take(&self) -> Option<Command> {
         let pending = self.pending.swap(0, Ordering::AcqRel);
-        if pending & QUIT != 0 {
-            Some(Command::Quit)
-        } else if pending & CAPTURE != 0 {
-            for (bit, command) in [
-                (SHOW, Command::ShowSettings),
-                (TRANSLATE, Command::ShowTranslator),
-                (SEARCH, Command::ShowSearch),
-                (SELECT, Command::SelectText),
-                (PINS, Command::ShowPins),
-            ] {
-                if pending & bit != 0 {
-                    self.request(command);
-                }
+        let mut chosen = None;
+        for (bit, command) in CONTROLS {
+            if pending & bit == 0 {
+                continue;
             }
-            Some(Command::Capture)
-        } else if pending & PINS != 0 {
-            for (bit, command) in [
-                (SHOW, Command::ShowSettings),
-                (TRANSLATE, Command::ShowTranslator),
-                (SEARCH, Command::ShowSearch),
-                (SELECT, Command::SelectText),
-            ] {
-                if pending & bit != 0 {
-                    self.request(command);
-                }
+            if chosen.is_none() {
+                chosen = Some(command);
+            } else {
+                self.pending.fetch_or(bit, Ordering::Release);
             }
-            Some(Command::ShowPins)
-        } else if pending & SEARCH != 0 {
-            if pending & SELECT != 0 {
-                self.request(Command::SelectText);
-            }
-            if pending & SHOW != 0 {
-                self.request(Command::ShowSettings);
-            }
-            if pending & TRANSLATE != 0 {
-                self.request(Command::ShowTranslator);
-            }
-            Some(Command::ShowSearch)
-        } else if pending & TRANSLATE != 0 {
-            if pending & SELECT != 0 {
-                self.request(Command::SelectText);
-            }
-            if pending & SHOW != 0 {
-                self.request(Command::ShowSettings);
-            }
-            Some(Command::ShowTranslator)
-        } else if pending & SELECT != 0 {
-            if pending & SHOW != 0 {
-                self.request(Command::ShowSettings);
-            }
-            Some(Command::SelectText)
-        } else if pending & SHOW != 0 {
-            Some(Command::ShowSettings)
-        } else {
-            None
         }
+        let mut queued = self
+            .shortcuts
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if chosen == Some(Command::Quit) {
+            queued.clear();
+            self.pending.store(0, Ordering::Release);
+            return chosen;
+        }
+        if chosen.is_none() {
+            chosen = queued.pop_front();
+        }
+        if !queued.is_empty() || self.pending.load(Ordering::Acquire) != 0 {
+            let _ = self.wake.try_send(());
+        }
+        chosen
     }
     pub fn close(&self) {
         self.wake.close();
     }
 }
-
+struct NativeBackend {
+    manager: GlobalHotKeyManager,
+    enabled: bool,
+}
+impl HotkeyBackend for NativeBackend {
+    fn register(&mut self, key: HotKey) -> Result<(), String> {
+        if self.enabled {
+            self.manager
+                .register(key)
+                .map_err(|error| format!("{key}: {error}"))?;
+        }
+        Ok(())
+    }
+    fn unregister(&mut self, key: HotKey) -> Result<(), String> {
+        if self.enabled {
+            self.manager
+                .unregister(key)
+                .map_err(|error| format!("{key}: {error}"))?;
+        }
+        Ok(())
+    }
+}
+struct ActiveBindings {
+    generation: u64,
+    bindings: Vec<ShortcutBinding>,
+}
+struct Pending {
+    id: OperationId,
+    transaction: ShortcutTransaction,
+    bindings: Vec<ShortcutBinding>,
+    previous: Vec<HotKey>,
+}
 pub struct SystemServices {
     tray: TrayIcon,
-    hotkeys: GlobalHotKeyManager,
-    registered_hotkeys: Vec<HotKey>,
+    backend: NativeBackend,
+    registered: Vec<HotKey>,
+    active: Arc<Mutex<ActiveBindings>>,
+    paused: Arc<AtomicBool>,
+    pending: Option<Pending>,
+    development: bool,
     pub warning: Option<String>,
 }
-
 impl SystemServices {
     pub fn new(
         commands: CommandBus,
         config: &rotor_common::Config,
-        enable_hotkey: bool,
+        enable_hotkeys: bool,
+        development: bool,
     ) -> Result<Self, String> {
-        let icon =
+        let image =
             image::load_from_memory(include_bytes!("../../../src-tauri/assets/icons/32x32.png"))
                 .map_err(|error| error.to_string())?
                 .into_rgba8();
-        let (width, height) = icon.dimensions();
-        let icon = tray_icon::Icon::from_rgba(icon.into_raw(), width, height)
+        let (width, height) = image.dimensions();
+        let icon = tray_icon::Icon::from_rgba(image.into_raw(), width, height)
             .map_err(|error| error.to_string())?;
         let tray = TrayIconBuilder::new()
             .with_icon(icon)
             .with_tooltip("Rotor（开发版）")
             .build()
             .map_err(|error| error.to_string())?;
-        let manager = GlobalHotKeyManager::new().map_err(|error| error.to_string())?;
-        let hotkey = HotKey::new(
-            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
-            Code::KeyG,
-        );
-        let hotkey_bus = commands.clone();
-        let id = hotkey.id();
-        let translate_hotkey = HotKey::new(
-            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
-            Code::KeyW,
-        );
-        let translate_id = translate_hotkey.id();
-        let search_hotkey = HotKey::new(
-            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
-            Code::KeyF,
-        );
-        let search_id = search_hotkey.id();
-        let select_hotkey = HotKey::new(
-            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
-            Code::KeyD,
-        );
-        let select_id = select_hotkey.id();
-        let capture_hotkey = HotKey::new(
-            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
-            Code::KeyS,
-        );
-        let capture_id = capture_hotkey.id();
-        GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
-            if event.id == id && event.state == HotKeyState::Pressed {
-                hotkey_bus.request(Command::ShowSettings);
-            } else if event.id == translate_id && event.state == HotKeyState::Pressed {
-                hotkey_bus.request(Command::ShowTranslator);
-            } else if event.id == search_id && event.state == HotKeyState::Pressed {
-                hotkey_bus.request(Command::ShowSearch);
-            } else if event.id == select_id && event.state == HotKeyState::Pressed {
-                hotkey_bus.request(Command::SelectText);
-            } else if event.id == capture_id && event.state == HotKeyState::Pressed {
-                hotkey_bus.request(Command::Capture);
-            }
-        }));
+        let mut backend = NativeBackend {
+            manager: GlobalHotKeyManager::new().map_err(|error| error.to_string())?,
+            enabled: enable_hotkeys,
+        };
         let mut warnings = Vec::new();
-        let mut registered_hotkeys = Vec::new();
-        if enable_hotkey {
-            for (hotkey, name) in [
-                (hotkey, "Ctrl+Alt+Shift+G"),
-                (translate_hotkey, "Ctrl+Alt+Shift+W"),
-                (search_hotkey, "Ctrl+Alt+Shift+F"),
-                (select_hotkey, "Ctrl+Alt+Shift+D"),
-                (capture_hotkey, "Ctrl+Alt+Shift+S"),
-            ] {
-                match manager.register(hotkey) {
-                    Ok(()) => registered_hotkeys.push(hotkey),
-                    Err(error) => warnings.push(format!("{name}: {error}")),
+        let planned = shortcuts::bindings(config, development).unwrap_or_else(|error| {
+            warnings.push(error);
+            vec![ShortcutBinding {
+                key: "Ctrl+Alt+Shift+G".parse().expect("fixed settings shortcut"),
+                action: ShortcutAction::Settings,
+            }]
+        });
+        let mut registered = Vec::new();
+        let mut bindings = Vec::new();
+        for binding in planned {
+            match backend.register(binding.key) {
+                Ok(()) => {
+                    registered.push(binding.key);
+                    bindings.push(binding);
                 }
+                Err(error) => warnings.push(error),
             }
         }
-        let mut services = Self {
+        let active = Arc::new(Mutex::new(ActiveBindings {
+            generation: 1,
+            bindings,
+        }));
+        let paused = Arc::new(AtomicBool::new(false));
+        let callback_active = active.clone();
+        let callback_paused = paused.clone();
+        let debounce = Mutex::new(ShortcutDebounce::default());
+        let dispatch = commands.clone();
+        GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
+            let mut debounce = debounce.lock().unwrap_or_else(|error| error.into_inner());
+            if event.state == HotKeyState::Released {
+                debounce.release(event.id);
+                return;
+            }
+            if callback_paused.load(Ordering::Acquire) {
+                return;
+            }
+            let active = callback_active
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if !active
+                .bindings
+                .iter()
+                .any(|binding| binding.key.id() == event.id)
+                || !debounce.press(event.id, Instant::now())
+            {
+                return;
+            }
+            dispatch.request(Command::Shortcut {
+                key: event.id,
+                generation: active.generation,
+            });
+        }));
+        let mut system = Self {
             tray,
-            hotkeys: manager,
-            registered_hotkeys,
+            backend,
+            registered,
+            active,
+            paused,
+            pending: None,
+            development,
             warning: (!warnings.is_empty()).then(|| warnings.join("\n")),
         };
-        services.update_menu(commands, config)?;
-        Ok(services)
+        system.update_menu(commands, config)?;
+        Ok(system)
     }
-
+    pub fn resolve(&self, key: u32, generation: u64) -> Option<ShortcutAction> {
+        if self.paused.load(Ordering::Acquire) {
+            return None;
+        }
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.generation != generation {
+            return None;
+        }
+        active
+            .bindings
+            .iter()
+            .find(|binding| binding.key.id() == key)
+            .map(|binding| binding.action.clone())
+    }
+    pub fn prepare(
+        &mut self,
+        id: OperationId,
+        config: &rotor_common::Config,
+    ) -> Result<(), String> {
+        if self.pending.is_some() {
+            return Err("Another shortcut transaction is active".into());
+        }
+        let bindings = shortcuts::bindings(config, self.development)?;
+        let desired: Vec<_> = bindings.iter().map(|binding| binding.key).collect();
+        self.paused.store(true, Ordering::Release);
+        match ShortcutTransaction::prepare(&mut self.backend, &self.registered, &desired) {
+            Ok(transaction) => {
+                let previous = std::mem::replace(&mut self.registered, desired);
+                self.pending = Some(Pending {
+                    id,
+                    transaction,
+                    bindings,
+                    previous,
+                });
+                Ok(())
+            }
+            Err(error) => {
+                self.paused.store(false, Ordering::Release);
+                self.warning = Some(error.clone());
+                Err(error)
+            }
+        }
+    }
+    pub fn finish(&mut self, id: OperationId, committed: bool) -> Result<(), String> {
+        if self.pending.as_ref().is_none_or(|pending| pending.id != id) {
+            return Err("Shortcut transaction no longer exists".into());
+        }
+        let pending = self.pending.take().unwrap();
+        let result = if committed {
+            let mut active = self
+                .active
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            active.generation = active.generation.wrapping_add(1);
+            active.bindings = pending.bindings;
+            Ok(())
+        } else {
+            self.registered = pending.previous;
+            pending.transaction.rollback(&mut self.backend)
+        };
+        self.paused.store(false, Ordering::Release);
+        if let Err(error) = &result {
+            self.warning = Some(error.clone());
+        }
+        result
+    }
     pub fn update_menu(
         &mut self,
         commands: CommandBus,
@@ -226,64 +315,47 @@ impl SystemServices {
     ) -> Result<(), String> {
         let menu = Menu::new();
         let chinese = rotor_common::i18n::language_for_config(config) == "zh-CN";
-        let settings = MenuItem::new(if chinese { "设置" } else { "Settings" }, true, None);
-        let quit = MenuItem::new(if chinese { "退出" } else { "Quit" }, true, None);
-        let translate = MenuItem::new(
-            if chinese {
-                "输入翻译"
-            } else {
-                "Translate text"
-            },
-            true,
-            None,
-        );
-        let search = MenuItem::new(
-            if chinese {
-                "文件搜索"
-            } else {
-                "File search"
-            },
-            true,
-            None,
-        );
-        let capture = MenuItem::new(if chinese { "截图" } else { "Screenshot" }, true, None);
-        let pins = MenuItem::new(if chinese { "显示贴图" } else { "Show pins" }, true, None);
-        menu.append_items(&[&settings, &search, &translate, &capture, &pins, &quit])
-            .map_err(|error| error.to_string())?;
-        let settings_id = settings.id().clone();
-        let quit_id = quit.id().clone();
-        let translate_id = translate.id().clone();
-        let search_id = search.id().clone();
-        let capture_id = capture.id().clone();
-        let pins_id = pins.id().clone();
+        let items: Vec<_> = [
+            ("设置", "Settings", Command::ShowSettings),
+            ("文件搜索", "File search", Command::ShowSearch),
+            ("输入翻译", "Translate text", Command::ShowTranslator),
+            ("截图", "Screenshot", Command::Capture),
+            ("显示贴图", "Show pins", Command::ShowPins),
+            ("退出", "Quit", Command::Quit),
+        ]
+        .into_iter()
+        .map(|(zh, en, command)| {
+            (
+                MenuItem::new(if chinese { zh } else { en }, true, None),
+                command,
+            )
+        })
+        .collect();
+        for (item, _) in &items {
+            menu.append(item).map_err(|error| error.to_string())?;
+        }
+        let actions: Vec<_> = items
+            .iter()
+            .map(|(item, command)| (item.id().clone(), *command))
+            .collect();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-            if event.id == settings_id {
-                commands.request(Command::ShowSettings);
-            } else if event.id == quit_id {
-                commands.request(Command::Quit);
-            } else if event.id == translate_id {
-                commands.request(Command::ShowTranslator);
-            } else if event.id == search_id {
-                commands.request(Command::ShowSearch);
-            } else if event.id == capture_id {
-                commands.request(Command::Capture);
-            } else if event.id == pins_id {
-                commands.request(Command::ShowPins);
+            if let Some((_, command)) = actions.iter().find(|(id, _)| *id == event.id) {
+                commands.request(*command);
             }
         }));
         self.tray.set_menu(Some(Box::new(menu)));
         Ok(())
     }
-
     pub fn stop_events(&mut self) {
-        for hotkey in self.registered_hotkeys.drain(..) {
-            let _ = self.hotkeys.unregister(hotkey);
+        self.paused.store(true, Ordering::Release);
+        for key in self.registered.drain(..) {
+            let _ = self.backend.unregister(key);
         }
+        self.pending = None;
         GlobalHotKeyEvent::set_event_handler(None::<fn(GlobalHotKeyEvent)>);
         MenuEvent::set_event_handler(None::<fn(MenuEvent)>);
     }
 }
-
 impl Drop for SystemServices {
     fn drop(&mut self) {
         self.stop_events();
@@ -293,29 +365,45 @@ impl Drop for SystemServices {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn exit_is_not_lost_when_activation_wakeups_are_coalesced() {
         let (bus, receiver) = CommandBus::new();
         for _ in 0..100 {
             bus.request(Command::ShowSettings);
         }
+        bus.request(Command::Shortcut {
+            key: 1,
+            generation: 1,
+        });
         bus.request(Command::Quit);
         assert_eq!(receiver.len(), 1);
-        assert!(matches!(bus.take(), Some(Command::Quit)));
+        assert_eq!(bus.take(), Some(Command::Quit));
         assert!(bus.take().is_none());
     }
-
     #[test]
     fn distinct_window_requests_survive_a_single_wakeup() {
         let (bus, receiver) = CommandBus::new();
         bus.request(Command::ShowSettings);
         bus.request(Command::ShowTranslator);
-        assert_eq!(receiver.len(), 1);
         receiver.try_recv().unwrap();
-        assert!(matches!(bus.take(), Some(Command::ShowTranslator)));
+        assert_eq!(bus.take(), Some(Command::ShowTranslator));
         receiver.try_recv().unwrap();
-        assert!(matches!(bus.take(), Some(Command::ShowSettings)));
-        assert!(bus.take().is_none());
+        assert_eq!(bus.take(), Some(Command::ShowSettings));
+    }
+    #[test]
+    fn shortcut_payloads_keep_generation_and_order() {
+        let (bus, _) = CommandBus::new();
+        let first = Command::Shortcut {
+            key: 4,
+            generation: 7,
+        };
+        let second = Command::Shortcut {
+            key: 5,
+            generation: 8,
+        };
+        bus.request(first);
+        bus.request(second);
+        assert_eq!(bus.take(), Some(first));
+        assert_eq!(bus.take(), Some(second));
     }
 }
