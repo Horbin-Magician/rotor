@@ -85,6 +85,9 @@ impl CanvasState {
     pub(super) fn frame(&self) -> Option<&PreparedImage> {
         self.frame.as_ref()
     }
+    pub(super) fn can_request_export(&self) -> bool {
+        self.draft.is_none() && self.editor.is_none()
+    }
     pub(super) fn ready(&self) -> bool {
         !self.rendering
             && self.draft.is_none()
@@ -249,10 +252,16 @@ impl PinView {
                 }
                 Err(error) => Err(error),
             };
-            let _ = view.update(cx, |this, cx| {
-                if this.canvas.accept_render(epoch, key, prepared) {
-                    cx.notify();
-                }
+            let _ = cx.update(|window, cx| {
+                view.update(cx, |this, cx| {
+                    if this.canvas.accept_render(epoch, key, prepared) {
+                        if this.canvas.error.is_some() && this.queued_export.take().is_some() {
+                            this.message = this.canvas.error.clone().unwrap();
+                        }
+                        this.resume_export(window, cx);
+                        cx.notify();
+                    }
+                })
             });
         }));
     }
@@ -294,7 +303,8 @@ impl PinView {
         cx.notify();
     }
     fn undo_canvas(&mut self, redo: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.canvas.rendering
+        if self.busy()
+            || self.canvas.rendering
             || self.canvas.editor.is_some()
             || self.canvas.draft.is_some()
             || self.crop_drag.is_some()

@@ -39,6 +39,10 @@ pub struct PinInit {
     pub bounds: PinBoundsSetter,
     pub pointer: PinPointerCapture,
 }
+enum ExportIntent {
+    Save,
+    Target(PinExportTarget),
+}
 pub struct PinView {
     services: Arc<Services>,
     settings: Config,
@@ -48,6 +52,7 @@ pub struct PinView {
     pending_create: Option<OperationId>,
     pending_update: Option<OperationId>,
     pending_finish: Option<OperationId>,
+    queued_export: Option<ExportIntent>,
     remember_directory: Option<String>,
     dialog: bool,
     hovered: bool,
@@ -93,6 +98,7 @@ impl PinView {
             pending_create: init.pending,
             pending_update: None,
             pending_finish: None,
+            queued_export: None,
             remember_directory: None,
             dialog: false,
             hovered: false,
@@ -121,7 +127,10 @@ impl PinView {
         }
     }
     fn busy(&self) -> bool {
-        self.pending_create.is_some() || self.pending_finish.is_some() || self.dialog
+        self.pending_create.is_some()
+            || self.pending_finish.is_some()
+            || self.dialog
+            || self.queued_export.is_some()
     }
     pub fn config(&self) -> &ShotterConfig {
         &self.record
@@ -218,6 +227,7 @@ impl PinView {
         self.flush(cx);
     }
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.queued_export = None;
         if self.busy() {
             return;
         }
@@ -231,8 +241,83 @@ impl PinView {
         }
         cx.notify();
     }
-    fn export(&mut self, target: PinExportTarget, cx: &mut Context<Self>) {
-        if self.busy() || !self.canvas.ready() || self.crop_drag.is_some() {
+    fn export(&mut self, target: PinExportTarget, window: &mut Window, cx: &mut Context<Self>) {
+        self.request_export(ExportIntent::Target(target), window, cx);
+    }
+    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.request_export(ExportIntent::Save, window, cx);
+    }
+    fn request_export(
+        &mut self,
+        intent: ExportIntent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_finish.is_some()
+            || self.dialog
+            || self.queued_export.is_some()
+            || self.crop_drag.is_some()
+            || !self.canvas.can_request_export()
+        {
+            return;
+        }
+        self.ensure_canvas(window, cx);
+        if !self.canvas.ready() && !self.canvas.rendering {
+            self.message = self
+                .canvas
+                .error
+                .clone()
+                .unwrap_or_else(|| self.t("图像尚未就绪", "Image is not ready").into());
+            cx.notify();
+            return;
+        }
+        if self.pending_create.is_some() || !self.canvas.ready() {
+            self.queued_export = Some(intent);
+            self.message = self.t("正在准备导出…", "Preparing export…").into();
+            cx.notify();
+            return;
+        }
+        self.finish_export_request(intent, window, cx);
+    }
+    fn resume_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.queued_export.is_none() || self.pending_create.is_some() {
+            return;
+        }
+        if self.canvas.ready() {
+            let intent = self.queued_export.take().unwrap();
+            self.finish_export_request(intent, window, cx);
+        } else if !self.canvas.rendering {
+            self.queued_export = None;
+            self.message = self
+                .canvas
+                .error
+                .clone()
+                .unwrap_or_else(|| self.t("图像尚未就绪", "Image is not ready").into());
+        }
+    }
+    fn finish_export_request(
+        &mut self,
+        intent: ExportIntent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.message.clear();
+        match intent {
+            ExportIntent::Save => self.save_ready(window, cx),
+            ExportIntent::Target(target) => {
+                if let Some(frame) = self.canvas.frame() {
+                    self.export_frame(target, frame.image.clone(), cx);
+                }
+            }
+        }
+    }
+    fn export_frame(
+        &mut self,
+        target: PinExportTarget,
+        image: Arc<image::RgbaImage>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_create.is_some() || self.pending_finish.is_some() || self.dialog {
             return;
         }
         self.flush(cx);
@@ -249,13 +334,7 @@ impl PinView {
             }
             _ => None,
         };
-        let Some(frame) = self.canvas.frame() else {
-            return;
-        };
-        match self
-            .services
-            .export_pin_frame(self.id, frame.image.clone(), target)
-        {
+        match self.services.export_pin_frame(self.id, image, target) {
             Ok(request) => {
                 self.pending_finish = Some(request);
                 self.message = self.t("正在导出…", "Exporting…").into();
@@ -264,10 +343,13 @@ impl PinView {
         }
         cx.notify();
     }
-    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn save_ready(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy() || !self.canvas.ready() || self.crop_drag.is_some() {
             return;
         }
+        let Some(frame) = self.canvas.frame().map(|frame| frame.image.clone()) else {
+            return;
+        };
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -284,7 +366,7 @@ impl PinView {
             .is_some_and(|value| value == "false")
             && let Some(directory) = configured.as_ref()
         {
-            self.export(PinExportTarget::File(directory.join(name)), cx);
+            self.export_frame(PinExportTarget::File(directory.join(name)), frame, cx);
             return;
         }
         let directory = configured.or_else(std::env::home_dir).unwrap_or_default();
@@ -301,13 +383,13 @@ impl PinView {
                             .extension()
                             .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
                         {
-                            this.export(PinExportTarget::File(path), cx);
+                            this.export_frame(PinExportTarget::File(path), frame, cx);
                         } else {
                             this.message =
                                 this.t("请使用 .png 文件名", "Use a .png filename").into();
                         }
                     }
-                    Ok(Ok(None)) => {}
+                    Ok(Ok(None)) => this.message.clear(),
                     Ok(Err(error)) => this.message = error.to_string(),
                     Err(error) => this.message = error.to_string(),
                 }
@@ -414,6 +496,7 @@ impl PinView {
             } => self.settings = config.clone(),
             _ => return,
         }
+        self.resume_export(window, cx);
         cx.notify();
     }
 }
@@ -483,8 +566,8 @@ impl Render for PinView {
                                             .tooltip(self.t("复制", "Copy"))
                                             .compact()
                                             .disabled(export_disabled)
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.export(PinExportTarget::Clipboard, cx)
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.export(PinExportTarget::Clipboard, window, cx)
                                             })),
                                     )
                                     .child(
@@ -559,7 +642,7 @@ impl Render for PinView {
                     &event.keystroke,
                     this.settings.get("shortcut_pinwin_copy"),
                 ) {
-                    this.export(PinExportTarget::Clipboard, cx);
+                    this.export(PinExportTarget::Clipboard, window, cx);
                 } else if shortcut_matches(
                     &event.keystroke,
                     this.settings.get("shortcut_pinwin_close"),
