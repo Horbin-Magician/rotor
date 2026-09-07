@@ -9,6 +9,7 @@ use std::{
     sync::Arc,
 };
 
+#[derive(Clone)]
 pub struct StoredPin {
     pub id: u32,
     pub config: ShotterConfig,
@@ -36,25 +37,52 @@ fn table<'a>(document: &'a mut toml::Value, path: &[&str]) -> Result<&'a mut tom
 }
 
 fn validate(config: &ShotterConfig, width: u32, height: u32) -> Result<(), String> {
-    let (x, y, w, h) = config
-        .image_rect
-        .unwrap_or((0, 0, config.rect.2, config.rect.3));
+    source_crop(config, width, height).map(|_| ())
+}
+
+/// image_rect is the PNG's origin/extent in the original monitor image, not a
+/// crop inside the PNG. Older records without it contain the full monitor PNG.
+pub fn source_crop(
+    config: &ShotterConfig,
+    width: u32,
+    height: u32,
+) -> Result<(u32, u32, u32, u32), String> {
+    let (origin_x, origin_y, source_width, source_height) =
+        config
+            .image_rect
+            .unwrap_or((0, 0, config.monitor_size.0, config.monitor_size.1));
+    if (source_width, source_height) != (width, height)
+        || width == 0
+        || height == 0
+        || config.zoom_factor == 0
+    {
+        return Err("Pin PNG dimensions or zoom do not match its source record".into());
+    }
+    let x = config
+        .rect
+        .0
+        .checked_sub(origin_x)
+        .ok_or("Pin crop starts before its PNG origin")?;
+    let y = config
+        .rect
+        .1
+        .checked_sub(origin_y)
+        .ok_or("Pin crop starts before its PNG origin")?;
+    let (w, h) = (config.rect.2, config.rect.3);
     if w == 0
         || h == 0
         || x.checked_add(w).is_none_or(|right| right > width)
         || y.checked_add(h).is_none_or(|bottom| bottom > height)
-        || config.zoom_factor == 0
+        || origin_x.checked_add(source_width).is_none()
+        || origin_y.checked_add(source_height).is_none()
     {
-        return Err("Pin crop or zoom is outside its source image".into());
+        return Err("Pin crop is outside its source PNG".into());
     }
-    Ok(())
+    Ok((x, y, w, h))
 }
 
 pub fn crop_image(image: &RgbaImage, config: &ShotterConfig) -> Result<RgbaImage, String> {
-    validate(config, image.width(), image.height())?;
-    let (x, y, width, height) = config
-        .image_rect
-        .unwrap_or((0, 0, config.rect.2, config.rect.3));
+    let (x, y, width, height) = source_crop(config, image.width(), image.height())?;
     Ok(image::imageops::crop_imm(image, x, y, width, height).to_image())
 }
 
@@ -237,8 +265,8 @@ mod tests {
     fn config() -> ShotterConfig {
         ShotterConfig {
             monitor_pos: (-1920, 0),
-            monitor_size: (1920, 1080),
-            rect: (10, 20, 2, 3),
+            monitor_size: (2, 3),
+            rect: (0, 0, 2, 3),
             image_rect: None,
             offset: (0, 0),
             zoom_factor: 100,
@@ -312,5 +340,40 @@ mod tests {
         fs::write(&path, "broken = [").unwrap();
         assert!(PinStore::load_from(directory.path()).is_err());
         assert_eq!(fs::read_to_string(path).unwrap(), "broken = [");
+    }
+
+    #[test]
+    fn cropped_legacy_png_uses_image_rect_as_source_origin() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = PinStore::load_from(directory.path()).unwrap();
+        let image = RgbaImage::from_fn(4, 3, |x, y| {
+            image::Rgba([x as u8 * 10, y as u8 * 10, 7, 128])
+        });
+        let mut record = config();
+        record.monitor_size = (1920, 1080);
+        record.rect = (100, 200, 4, 3);
+        record.image_rect = Some((100, 200, 4, 3));
+        let id = store.create(&image, record.clone()).unwrap();
+        let (pins, warnings) = PinStore::load_from(directory.path()).unwrap().load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(crop_image(&pins[0].image, &pins[0].config).unwrap(), image);
+        record.rect = (101, 201, 2, 2);
+        store.update(id, record.clone()).unwrap();
+        assert_eq!(
+            crop_image(&image, &record).unwrap(),
+            image::imageops::crop_imm(&image, 1, 1, 2, 2).to_image()
+        );
+        record.image_rect = None;
+        assert!(store.update(id, record).is_err());
+    }
+
+    #[test]
+    fn old_full_monitor_png_crops_from_monitor_origin() {
+        let image = RgbaImage::new(4, 3);
+        let mut record = config();
+        record.monitor_size = (4, 3);
+        record.rect = (1, 1, 2, 2);
+        assert_eq!(source_crop(&record, 4, 3).unwrap(), (1, 1, 2, 2));
+        assert_eq!(crop_image(&image, &record).unwrap().dimensions(), (2, 2));
     }
 }

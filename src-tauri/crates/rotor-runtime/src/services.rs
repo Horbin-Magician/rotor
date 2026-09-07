@@ -669,7 +669,7 @@ mod tests {
             monitor_pos: (0, 0),
             monitor_size: (1920, 1080),
             rect: (0, 0, 2, 3),
-            image_rect: None,
+            image_rect: Some((0, 0, 2, 3)),
             offset: (0, 0),
             zoom_factor: 100,
             mask_label: "ssmask-1".into(),
