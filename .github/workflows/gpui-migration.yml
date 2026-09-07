@@ -11,9 +11,16 @@ on:
       - 'xtask/**'
       - 'src-tauri/**'
       - '.github/workflows/gpui-migration.yml'
+      - '.github/workflows/sync-to-gitee.yml'
+      - '.github/scripts/**'
 permissions:
   contents: read
 jobs:
+  release-metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/test-prepare-gitee-release.py
   native:
     strategy:
       fail-fast: false
