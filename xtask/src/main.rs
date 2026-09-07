@@ -1,3 +1,5 @@
+mod release;
+mod versions;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -74,6 +76,9 @@ fn write_manifest(directory: &Path, version: &str) -> Result<()> {
     files(directory, &mut paths)?;
     let mut entries = serde_json::Map::new();
     for path in paths {
+        if path == directory.join("resources.json") {
+            continue;
+        }
         entries.insert(
             path.strip_prefix(directory)?
                 .to_string_lossy()
@@ -115,6 +120,11 @@ fn verify_stage(directory: &Path) -> Result<()> {
 }
 fn stage(directory: &Path) -> Result<()> {
     let version = version()?;
+    let parsed_version = semver::Version::parse(&version)?;
+    let mac_version = format!(
+        "{}.{}.{}",
+        parsed_version.major, parsed_version.minor, parsed_version.patch
+    );
     let config: toml::Value = fs::read_to_string(root().join("native/app.toml"))?.parse()?;
     let release = root().join("target/release");
     let binary = if cfg!(windows) {
@@ -143,8 +153,9 @@ fn stage(directory: &Path) -> Result<()> {
 <key>CFBundleIdentifier</key><string>{}</string>
 <key>CFBundleName</key><string>Rotor GPUI Development</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>{version}</string>
-<key>CFBundleVersion</key><string>{version}</string>
+<key>CFBundleShortVersionString</key><string>{mac_version}</string>
+<key>CFBundleVersion</key><string>{mac_version}</string>
+<key>RotorVersion</key><string>{version}</string>
 <key>CFBundleIconFile</key><string>icon.icns</string>
 <key>LSMinimumSystemVersion</key><string>{}</string>
 <key>LSUIElement</key><true/>
@@ -268,6 +279,10 @@ fn main() -> Result<()> {
             let receipt = rotor_common::profile_migration::verify(Path::new(&args[1]))?;
             println!("Verified {} profile files from {}", receipt.files.len(), receipt.source_version);
         }
+        Some("set-version") if args.len() == 2 || (args.len() == 3 && args[2] == "--dry-run") => versions::set(&args[1], args.len() == 3)?,
+        Some("sign") if args.len() == 2 => release::sign(Path::new(&args[1]))?,
+        Some("release-manifest") if args.len() == 5 => release::manifest(Path::new(&args[1]), &args[2], Path::new(&args[3]), Path::new(&args[4]))?,
+        Some("inventory") if args.len() == 2 => write_manifest(Path::new(&args[1]), &version()?)?,
         Some("version") => println!("{}", version()?),
         Some("build") => {
             version()?;
@@ -277,7 +292,7 @@ fn main() -> Result<()> {
         Some("package") if args.len() == 3 => package(Path::new(&args[1]), Path::new(&args[2]))?,
         Some("stage") if args.len() == 2 => stage(Path::new(&args[1]))?,
         Some("verify") if args.len() == 2 => verify_stage(Path::new(&args[1]))?,
-        _ => return Err("usage: cargo run -p xtask -- version | build [cargo options] | stage <new directory> | verify <directory> | package <stage directory> <new output directory> | import-profile <source> <new destination> <new backup> <source version> | verify-profile <directory>".into()),
+        _ => return Err("usage: cargo run -p xtask -- version | build [cargo options] | stage <new directory> | verify <directory> | package <stage directory> <new output directory> | import-profile <source> <new destination> <new backup> <source version> | verify-profile <directory> | inventory <directory> | set-version <semver> [--dry-run] | sign <artifact> | release-manifest <artifacts> <https base> <notes file> <new output>".into()),
     }
     Ok(())
 }
@@ -296,6 +311,8 @@ mod tests {
         fs::write(&path, b"model").unwrap();
         fs::write(directory.path().join("extra"), b"extra").unwrap();
         assert!(verify_stage(directory.path()).is_err());
+        write_manifest(directory.path(), "2.6.0").unwrap();
+        verify_stage(directory.path()).unwrap();
         fs::remove_file(directory.path().join("extra")).unwrap();
         fs::remove_file(path).unwrap();
         assert!(verify_stage(directory.path()).is_err());

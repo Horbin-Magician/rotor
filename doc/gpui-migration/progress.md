@@ -308,3 +308,12 @@
 - macOS 更新页通过独立辅助进程预验签/解包，准备完成后主进程才退出；辅助进程等待正常退出，再替换 app 并等待新进程的启动确认。超时/早退恢复旧包并重新启动旧版，错误和恢复路径保留在更新收据中。
 - 辅助入口在 GPUI/单实例初始化前处理，不创建额外窗口；重启参数仅允许原资料目录和既有开发选项。新包检查必要模型、词表及字体/许可证资源；解压规范目录/执行权限。
 - 11 项 updater 测试、native Windows check 和 native/updater clippy 通过。可移植交接逻辑在 Windows 测试构建中完成类型检查，macOS kill/应用启动及主程序 Mac 分支仍需要 macOS CI 和实机执行；没有将这些检查冒充 macOS 编译或更新成功。
+
+## P8 原生版本、签名与候选工作流
+
+- xtask set-version 更新 workspace/package 镜像和 lock；失败尝试恢复，只有显式后续命令才提交/打标签/push。旧 release:bump 脚本改为代理此入口；dry-run 已验证，实际版本仍为 2.6.0。
+- 原生签名工具复用 TAURI_SIGNING_PRIVATE_KEY/PASSWORD，签名后以现有公钥验证，生成兼容 .sig；双平台清单必须两边产物均验签，保留旧平台别名和多行说明。更新签名不等同于 Apple/Windows 平台代码签名。
+- native-candidate 手动工作流在 Windows/macOS arm64 构建开发包，可选择复用现有 secrets 签名；只上传审查产物，不创建发布或改线上 feed。构建/签名流程不需要 Node/Yarn。
+- Apple 数字版本字段与完整 preview SemVer 分开保存，避免 beta 版本的 bundle 字段与更新比较冲突。
+- xtask 4 项测试、updater 12 项测试及相关 clippy 通过；签名测试只用临时测试密钥。Cargo workspace check、旧 yarn build、两平台核心依赖图检查通过；旧 Tauri 保留 3 个既有 warning。远端 CI 与真实发布签名尚未执行。
+- 已静态检查旧 macOS 2.6.0 公共产物：CodeDirectory 标志 0x20002，仅有 slot 0，无 bundle CodeResources；依据 Apple 常量对应 linker/ad-hoc。证据见 evidence/v2.6.0-macos-signature.json，未声称 codesign/Gatekeeper/公证实机验收。

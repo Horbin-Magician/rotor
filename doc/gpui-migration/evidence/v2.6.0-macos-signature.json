@@ -1,0 +1,20 @@
+{
+  "artifact": "Rotor_aarch64.app.tar.gz",
+  "sha256": "e002a58ce20655473ce6a1953bddb82296f02a5167cdf2e7ad79ac379e782150",
+  "binary": "Rotor.app/Contents/MacOS/rotor",
+  "cpu_type": "0x100000c",
+  "code_directories": [
+    {
+      "flags": "0x20002",
+      "identifier": "rotor-71e654bf5384a219",
+      "ad_hoc": true,
+      "linker_signed": true
+    }
+  ],
+  "signature_slots": [
+    0
+  ],
+  "bundle_code_resources": [],
+  "interpretation": "Static Mach-O inspection only; macOS codesign/Gatekeeper/notarization validation not performed.",
+  "flag_reference": "https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/osfmk/kern/cs_blobs.h"
+}

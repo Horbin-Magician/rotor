@@ -12,6 +12,7 @@ on:
       - 'src-tauri/**'
       - '.github/workflows/gpui-migration.yml'
       - '.github/workflows/sync-to-gitee.yml'
+      - '.github/workflows/native-candidate.yml'
       - '.github/scripts/**'
 permissions:
   contents: read

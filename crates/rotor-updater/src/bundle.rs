@@ -78,8 +78,11 @@ pub fn inspect(app: &Path) -> Result<BundleInfo> {
     if string("CFBundleExecutable")? != "rotor-desktop" {
         return Err("Bundle has an unexpected executable".into());
     }
-    let version =
-        semver::Version::parse(string("CFBundleShortVersionString")?).map_err(|e| e.to_string())?;
+    let full_version = values
+        .get("RotorVersion")
+        .and_then(plist::Value::as_string)
+        .unwrap_or(string("CFBundleShortVersionString")?);
+    let version = semver::Version::parse(full_version).map_err(|e| e.to_string())?;
     let executable = app.join("Contents/MacOS/rotor-desktop");
     let mut header = [0u8; 8];
     fs::File::open(&executable)
@@ -420,5 +423,20 @@ mod tests {
         let destination = tempfile::tempdir().unwrap();
         let extracted = extract(&bytes[..], destination.path()).unwrap();
         assert_eq!(inspect(&extracted).unwrap().version.to_string(), "2.7.0");
+    }
+
+    #[test]
+    fn preview_version_is_distinct_from_numeric_apple_bundle_version() {
+        let root = tempfile::tempdir().unwrap();
+        let app = root.path().join("Rotor.app");
+        fixture(&app, "2.7.0");
+        let path = app.join("Contents/Info.plist");
+        let mut value = plist::Value::from_file(&path).unwrap();
+        value
+            .as_dictionary_mut()
+            .unwrap()
+            .insert("RotorVersion".into(), "2.7.0-beta.1".into());
+        value.to_file_xml(path).unwrap();
+        assert_eq!(inspect(&app).unwrap().version.to_string(), "2.7.0-beta.1");
     }
 }

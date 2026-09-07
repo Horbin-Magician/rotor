@@ -5,10 +5,16 @@ edition = "2021"
 publish = false
 
 [dependencies]
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.8"
 sha2 = "0.10"
 rotor-common.workspace = true
+rotor-updater.workspace = true
+minisign = "=0.9.1"
+base64 = "0.22.1"
+semver = "1"
+toml_edit = "=0.22.27"
+url = "2.5"
 
 [dev-dependencies]
 tempfile = "=3.27.0"

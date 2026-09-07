@@ -1,0 +1,100 @@
+name: native-candidate
+on:
+  workflow_dispatch:
+    inputs:
+      sign_updates:
+        description: 'Sign candidate artifacts with the existing updater key'
+        required: true
+        type: boolean
+        default: false
+      notes:
+        description: 'Preview release notes'
+        required: true
+        type: string
+        default: 'GPUI preview candidate; platform acceptance is pending.'
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.0'
+      - uses: swatinem/rust-cache@v2
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --version=3.11 --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
+      - run: cargo test -p xtask -p rotor-updater --locked
+      - run: cargo run -p xtask --locked -- build
+      - run: cargo run -p xtask --locked -- stage target/native-stage
+      - name: Build development packages
+        shell: pwsh
+        run: |
+          if ($IsWindows) { $env:NSIS_MAKENSIS = 'C:\Program Files (x86)\NSIS\makensis.exe' }
+          cargo run -p xtask --locked -- package target/native-stage target/native-package
+          if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed' }
+      - name: Sign updater artifacts
+        if: inputs.sign_updates
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Existing updater signing key is unavailable' }
+          $signer = if ($IsWindows) { './target/debug/xtask.exe' } else { './target/debug/xtask' }
+          $artifacts = Get-ChildItem target/native-package -File | Where-Object { $_.Extension -in '.exe', '.dmg' -or $_.Name.EndsWith('.app.tar.gz') }
+          foreach ($artifact in $artifacts) {
+            & $signer sign $artifact.FullName
+            if ($LASTEXITCODE -ne 0) { throw 'Updater signing failed' }
+          }
+      - name: Verify final package inventory
+        shell: pwsh
+        run: |
+          cargo run -p xtask --locked -- inventory target/native-package
+          if ($LASTEXITCODE -ne 0) { throw 'Inventory failed' }
+          cargo run -p xtask --locked -- verify target/native-package
+          if ($LASTEXITCODE -ne 0) { throw 'Final package verification failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-candidate-${{ matrix.os }}
+          path: target/native-package
+          if-no-files-found: error
+  update-metadata:
+    if: inputs.sign_updates
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.0'
+      - uses: swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-candidate-*
+          path: collected
+      - name: Generate verified preview metadata
+        env:
+          RELEASE_NOTES: ${{ inputs.notes }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir merged
+          find collected -type f ! -name resources.json -exec cp -n '{}' merged/ \;
+          printf '%s\n' "$RELEASE_NOTES" > notes.txt
+          cargo run -p xtask --locked -- release-manifest merged \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/gpui-latest/" \
+            notes.txt merged/gpui-latest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-preview-signed
+          path: merged
+          if-no-files-found: error

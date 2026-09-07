@@ -12,8 +12,8 @@ $env:NSIS_MAKENSIS = 'C:\path\to\NSIS\makensis.exe'
 cargo run -p xtask -- package target/native-stage target/native-package
 ```
 
-Stage and package destinations must not already exist. No command installs,
-launches, publishes, signs, or deletes a previous build. Staging copies the release
+Stage and package destinations must not already exist. Build/stage/package
+generate local artifacts; signing uses the separate command below. Staging copies the release
 executable, native dynamic libraries, all model/font/icon assets, native metadata,
 and the update public key. `resources.json` records every staged file's size and
 SHA-256; packaging verifies it before reading the files. This checksum manifest is
@@ -84,3 +84,43 @@ Startup failure restores and reopens the previous app; failed bundles and update
 receipts are retained. It requires write access to the app's parent directory.
 This code has portable fixture coverage and Windows type checks; macOS process
 control, bundle launch, signing, and real rollback still require Mac validation.
+
+## Versions, updater signatures and candidate CI
+
+```powershell
+cargo run -p xtask -- set-version 2.7.0-beta.1 --dry-run
+# To edit, run without --dry-run from a clean working tree, then review the diff.
+cargo run -p xtask -- sign target/native-package/Rotor-GPUI_2.6.0_x64-setup.exe
+cargo run -p xtask -- inventory target/native-package
+```
+
+Version editing updates the root workspace, package.json mirror and Cargo.lock.
+It does not commit, tag or push. The legacy `yarn release:bump` entry point now
+delegates to this local-only tool. macOS uses numeric Apple version fields and
+stores the full preview SemVer in `RotorVersion` for updater comparisons.
+
+`sign` reads the existing `TAURI_SIGNING_PRIVATE_KEY` (base64 value or key-file
+path) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` environment variables. It uses
+[minisign 0.9.1](https://docs.rs/minisign/0.9.1/minisign/fn.sign.html), writes a
+Tauri-compatible base64 `.sig`, and verifies it against the unchanged app public
+key before publishing the signature file. Existing valid signatures can be reused.
+Signing never prints key material and does not prompt for a password.
+
+```powershell
+cargo run -p xtask -- release-manifest merged-artifacts https://github.com/Horbin-Magician/rotor/releases/download/gpui-latest/ notes.txt gpui-latest.json
+```
+
+Metadata generation requires both platform archives and their valid signatures.
+The manually dispatched `native-candidate` workflow builds development packages
+without Node/Yarn and optionally signs them using existing updater secrets. It
+uploads review artifacts and preview metadata; it never creates a release or
+updates a published feed. Real production signatures and remote CI have not been
+run in the migration workspace.
+
+Static inspection of the old 2.6.0 macOS archive found a single CodeDirectory
+with flags `0x20002` (ad-hoc and linker-signed per Apple's
+[code-signing definitions](https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/osfmk/kern/cs_blobs.h)),
+without a bundle CodeResources file. The evidence is recorded under
+`doc/gpui-migration/evidence/v2.6.0-macos-signature.json`. This records the old
+artifact's structure; macOS signature validation, Gatekeeper and notarization
+acceptance remain pending. No new Developer ID certificate requirement is imposed.
