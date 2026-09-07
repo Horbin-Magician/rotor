@@ -1,0 +1,5 @@
+[package]
+name = "rotor-canvas"
+version = "2.6.0"
+edition = "2021"
+publish = false

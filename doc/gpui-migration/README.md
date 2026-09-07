@@ -316,4 +316,4 @@ G9：最终代码和发布产物只使用 GPUI UI 路径；所有必测项有结
 
 建议提交序列：`docs: migration plan` → `chore: GPUI probe` → `refactor: decouple core` → `feat: desktop lifecycle` → 各模块 `feat` → `build: native packaging and updater` → `refactor: remove Tauri frontend`。合入 master 的前提是 G9 完成；开发过程中可持续形成小范围可审查差异。
 
-P0 的 Windows 原型、锁定依赖、打包和早期证据已落地，后续先补齐 dependency-baseline.md 中的未测项；G0 尚未通过，不直接进入 P1。创建原型或编译成功不等同于迁移阶段完整验收。
+P0 Windows 原型已落地。根据用户 2026-09-07 的继续实施指令，后续可逆开发持续推进并分步提交，进度见 [实施记录](progress.md)。G0–G9 的实机验收独立记录，缺少证据的项目不因代码已实现而勾选。

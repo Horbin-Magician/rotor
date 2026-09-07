@@ -1,0 +1,46 @@
+name: gpui-migration
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'crates/**'
+      - 'src-tauri/**'
+      - '.github/workflows/gpui-migration.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.0'
+          components: rustfmt, clippy
+      - uses: swatinem/rust-cache@v2
+      - run: cargo fmt -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-common -- --check
+      - run: cargo test -p rotor-common -p rotor-canvas --locked
+      - run: cargo clippy -p rotor-desktop -p rotor-ui -p rotor-canvas --all-targets --locked -- -D warnings
+      - run: cargo build -p rotor-desktop --release --locked
+  legacy:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.0'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: yarn
+      - uses: swatinem/rust-cache@v2
+      - run: yarn install --frozen-lockfile
+      - run: yarn build
+      - run: cargo check -p rotor --locked

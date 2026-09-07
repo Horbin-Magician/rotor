@@ -5,23 +5,7 @@ description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
 
-[workspace]
-members = [
-  ".",
-  "crates/rotor-common",
-  "crates/rotor-platform",
-  "crates/rotor-searcher",
-  "crates/rotor-screenshot",
-  "crates/rotor-runtime",
-  "crates/rotor-translator",
-]
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[profile.release]
-lto = "thin"
-codegen-units = 1
-strip = "symbols"
 
 [lib]
 name = "rotor_tauri_lib"

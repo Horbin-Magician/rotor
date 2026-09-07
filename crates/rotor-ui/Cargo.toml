@@ -1,0 +1,11 @@
+[package]
+name = "rotor-ui"
+version = "2.6.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui-kit.workspace = true
+gpui.workspace = true
+rotor-common.workspace = true
+rotor-canvas.workspace = true

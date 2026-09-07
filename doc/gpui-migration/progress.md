@@ -4,6 +4,7 @@
 
 ## 已提交
 
+- `57c1f6a`：P1 配置事务和数据目录隔离。
 - `25f2b56`：P0 独立原型、依赖锁定、Windows 实机证据、试验打包和采样工具。跨平台/完整基线缺口见 dependency-baseline.md。
 
 ## P1 数据服务
@@ -15,3 +16,15 @@
 - 验证：`cargo test --manifest-path src-tauri/Cargo.toml -p rotor-common --offline`，6 项通过（包括写入失败回滚、损坏文件保留、未知键往返和路径隔离）。旧依赖版本没有升级，锁文件只增加已有 tempfile 的测试引用。
 
 下一步：根 workspace、正式 desktop/ui/canvas crate；随后逐项迁出旧壳适配，接入原生窗口和业务服务。P1 完成门槛尚未通过。
+
+## P1 根 workspace
+
+- 根 workspace 包含 10 个成员，default-members 为 rotor-desktop；新增 rotor-ui、rotor-canvas。P0 experiment 保持独立排除。
+- 旧 src-tauri/Cargo.lock 迁至根，旧 release profile 原样上移，旧 manifest/前端/Tauri CLI 入口保留。构建产物改为根 target，旧发布 CI 缓存同步更新。
+- 从旧锁文件解析，补齐缺失缓存后保留绝大多数旧版本；必要变化集中在 futures 家族（GPUI 要求至少 0.3.32，配套解析 0.3.34）、regex-automata（新 globset 要求 0.4.18）以及新增 Linux 桌面依赖带来的 zbus_names/zvariant 家族。没有进行全量 cargo update。
+- 正式原生入口先接真实 ConfigService 读取；默认使用 home/.rotor-gpui，ROTOR_DATA_DIR 可指定隔离副本；--check-config 只输出路径/键数量，不输出凭据。
+- 当前原生设置视图只显示基础配置快照，不是 P3 完整设置交付。
+- 验证：native check、3 个新增 crate 的 clippy -D warnings、common/canvas 共 7 项测试、旧 rotor check 全部通过。旧入口现有 Windows setup 的 unused app 警告记录保留。
+- 本机预装 stable 实际为 rustc 1.97.0，验证使用 cargo +stable；仓库和 CI 固定命名工具链 1.97.0。
+
+开发入口：在根运行 cargo run -p rotor-desktop（原生），旧版仍使用 yarn tauri dev；P0 则在 experiments/gpui-probe 独立运行。不得把基础窗口当成已完成的功能迁移。
