@@ -18,6 +18,7 @@ pub struct TranslatorView {
     active: Option<OperationId>,
     translated: String,
     message: String,
+    warning: String,
     suppress_enter: bool,
     _input_events: Subscription,
     _activation: Subscription,
@@ -47,6 +48,7 @@ impl TranslatorView {
             active: None,
             translated: String::new(),
             message: String::new(),
+            warning: String::new(),
             suppress_enter: false,
             _input_events: input_events,
             _activation: activation,
@@ -63,6 +65,18 @@ impl TranslatorView {
         if let Some(id) = self.active.take() {
             self.services.cancel_translation_request(id);
         }
+    }
+    pub fn translate_text(
+        &mut self,
+        text: String,
+        warning: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.input
+            .update(cx, |input, cx| input.set_value(text, window, cx));
+        self.warning = warning.unwrap_or_default();
+        self.submit(window, cx);
     }
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.input.update(cx, |input, cx| {
@@ -180,5 +194,6 @@ impl Render for TranslatorView {
                     .child(self.translated.clone()),
             )
             .child(self.message.clone())
+            .child(self.warning.clone())
     }
 }

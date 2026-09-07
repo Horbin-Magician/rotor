@@ -56,6 +56,10 @@ pub enum RuntimeEvent {
         id: OperationId,
         result: Result<(), String>,
     },
+    SelectionFinished {
+        id: OperationId,
+        result: Result<rotor_platform::clipboard::SelectedText, String>,
+    },
     Translation {
         id: OperationId,
         event: TranslateStreamEvent,
@@ -104,6 +108,7 @@ pub struct Services {
     searcher: Option<Searcher>,
     translation: Mutex<Option<JoinHandle<()>>>,
     translation_id: Arc<AtomicU64>,
+    selection: Mutex<Option<Arc<AtomicBool>>>,
     capture_id: Arc<AtomicU64>,
     background: Mutex<Vec<JoinHandle<()>>>,
     slots: Arc<Semaphore>,
@@ -155,6 +160,7 @@ impl Services {
                 searcher,
                 translation: Mutex::new(None),
                 translation_id: Arc::new(AtomicU64::new(0)),
+                selection: Mutex::new(None),
                 capture_id: Arc::new(AtomicU64::new(0)),
                 background: Mutex::new(Vec::new()),
                 slots: Arc::new(Semaphore::new(BACKGROUND_LIMIT)),
@@ -225,6 +231,31 @@ impl Services {
             None,
             |id, result| RuntimeEvent::IndexStatus { id, result },
         )
+    }
+
+    pub fn capture_selection(&self) -> Result<OperationId, String> {
+        let mut selection = lock(&self.selection);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = cancelled.clone();
+        let id = self.spawn_job(
+            move || {
+                rotor_platform::clipboard::capture_selected_text(|| {
+                    worker_cancelled.load(Ordering::Acquire)
+                })
+            },
+            None,
+            |id, result| RuntimeEvent::SelectionFinished { id, result },
+        )?;
+        if let Some(previous) = selection.replace(cancelled) {
+            previous.store(true, Ordering::Release);
+        }
+        Ok(id)
+    }
+
+    pub fn cancel_selection(&self) {
+        if let Some(cancelled) = lock(&self.selection).take() {
+            cancelled.store(true, Ordering::Release);
+        }
     }
 
     pub fn open_file(&self, path: String, as_admin: bool) -> Result<OperationId, String> {
@@ -404,6 +435,7 @@ impl Services {
             return;
         }
         self.cancel_translation();
+        self.cancel_selection();
         self.cancel_capture();
         if let Some(searcher) = &self.searcher {
             searcher.shutdown();

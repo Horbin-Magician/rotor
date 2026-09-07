@@ -7,7 +7,7 @@ use gpui_kit::{
 };
 use rotor_common::{AppConfig, Config, ConfigService, ResourceLocator, file_path};
 use rotor_platform::single_instance::{Instance, InstanceGuard};
-use rotor_runtime::{RuntimeEvent, ServiceOptions, Services};
+use rotor_runtime::{OperationId, RuntimeEvent, ServiceOptions, Services};
 use std::{cell::Cell, collections::HashMap, error::Error, path::PathBuf, rc::Rc, sync::Arc};
 use system::{Command, CommandBus, SystemServices};
 
@@ -39,6 +39,7 @@ struct ShellState {
     _task: Option<Task<()>>,
     _closed: Option<Subscription>,
     _quit: Option<Subscription>,
+    pending_selection: Option<OperationId>,
 }
 impl Global for ShellState {}
 
@@ -51,6 +52,22 @@ fn apply_theme(config: &Config, cx: &mut App) {
 }
 
 fn show_settings(cx: &mut App) -> Result<(), String> {
+    if let Some((view, warning)) = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Settings)
+        .and_then(|entry| match &entry.view {
+            WindowView::Settings(view) => cx
+                .global::<ShellState>()
+                .system
+                .warning
+                .clone()
+                .map(|warning| (view.clone(), warning)),
+            _ => None,
+        })
+    {
+        let _ = view.update(cx, |view, cx| view.show_message(warning, cx));
+    }
     if let Some(handle) = cx
         .global::<ShellState>()
         .windows
@@ -209,6 +226,42 @@ fn show_search(cx: &mut App) -> Result<(), String> {
 }
 
 fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if let RuntimeEvent::SelectionFinished { id, result } = event {
+        if cx.global::<ShellState>().pending_selection != Some(id) {
+            return;
+        }
+        cx.global_mut::<ShellState>().pending_selection = None;
+        match result {
+            Ok(selected) => {
+                if let Err(error) = show_translator(cx) {
+                    eprintln!("Translator: {error}");
+                    return;
+                }
+                if let Some((handle, view)) = cx
+                    .global::<ShellState>()
+                    .windows
+                    .get(&WindowRole::Translator)
+                    .and_then(|entry| match &entry.view {
+                        WindowView::Translator(view) => Some((entry.window, view.clone())),
+                        _ => None,
+                    })
+                {
+                    let _ = handle.update(cx, |_, window, cx| {
+                        let _ = view.update(cx, |view, cx| {
+                            view.translate_text(selected.text, selected.restore_warning, window, cx)
+                        });
+                    });
+                }
+            }
+            Err(error) => {
+                cx.global_mut::<ShellState>().system.warning = Some(error);
+                if let Err(error) = show_settings(cx) {
+                    eprintln!("Selection: {error}");
+                }
+            }
+        }
+        return;
+    }
     if let Some((handle, view)) = cx
         .global::<ShellState>()
         .windows
@@ -351,6 +404,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 _task: None,
                 _closed: None,
                 _quit: None,
+                pending_selection: None,
             });
             let closed = cx.on_window_closed(|cx, id| {
                 if cx.try_global::<ShellState>().is_some() {
@@ -383,21 +437,40 @@ fn run() -> Result<(), Box<dyn Error>> {
                         Either::Left((Ok(()), _)) => {
                             if let Some(command) = commands.take() {
                                 let quit = matches!(command, Command::Quit);
-                                cx.update(|cx| match command {
-                                    Command::ShowSettings => {
-                                        if let Err(error) = show_settings(cx) {
-                                            eprintln!("Settings: {error}");
-                                        }
+                                cx.update(|cx| {
+                                    if !matches!(command, Command::SelectText) {
+                                        let state = cx.global_mut::<ShellState>();
+                                        state.services.cancel_selection();
+                                        state.pending_selection = None;
                                     }
-                                    Command::Quit => cx.quit(),
-                                    Command::ShowTranslator => {
-                                        if let Err(error) = show_translator(cx) {
-                                            eprintln!("Translator: {error}");
+                                    match command {
+                                        Command::ShowSettings => {
+                                            if let Err(error) = show_settings(cx) {
+                                                eprintln!("Settings: {error}");
+                                            }
                                         }
-                                    }
-                                    Command::ShowSearch => {
-                                        if let Err(error) = show_search(cx) {
-                                            eprintln!("Search: {error}");
+                                        Command::Quit => cx.quit(),
+                                        Command::ShowTranslator => {
+                                            if let Err(error) = show_translator(cx) {
+                                                eprintln!("Translator: {error}");
+                                            }
+                                        }
+                                        Command::ShowSearch => {
+                                            if let Err(error) = show_search(cx) {
+                                                eprintln!("Search: {error}");
+                                            }
+                                        }
+                                        Command::SelectText => {
+                                            let state = cx.global_mut::<ShellState>();
+                                            if state.pending_selection.is_none() {
+                                                match state.services.capture_selection() {
+                                                    Ok(id) => state.pending_selection = Some(id),
+                                                    Err(error) => {
+                                                        state.system.warning = Some(error);
+                                                        let _ = show_settings(cx);
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 });

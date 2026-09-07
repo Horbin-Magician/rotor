@@ -4,12 +4,15 @@
 use std::error::Error;
 
 #[cfg(target_os = "windows")]
-pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn simulate_copy_if(cancelled: impl Fn() -> bool) -> Result<(), Box<dyn Error + Send + Sync>> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_C, VK_CONTROL,
     };
 
     wait_for_modifiers_release()?;
+    if cancelled() {
+        return Err("Selection capture cancelled".into());
+    }
 
     let input = |vk: u16, key_up: bool| INPUT {
         r#type: INPUT_KEYBOARD,
@@ -47,7 +50,7 @@ pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
 /// Ctrl+Shift+C (which opens DevTools in Chrome instead of copying). Wait
 /// until all modifiers are released before injecting the copy keystroke.
 #[cfg(target_os = "windows")]
-fn wait_for_modifiers_release() -> std::io::Result<()> {
+pub fn wait_for_modifiers_release() -> std::io::Result<()> {
     use std::time::Duration;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
@@ -68,7 +71,7 @@ fn wait_for_modifiers_release() -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn simulate_copy_if(cancelled: impl Fn() -> bool) -> Result<(), Box<dyn Error + Send + Sync>> {
     use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
@@ -80,6 +83,9 @@ pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     wait_for_modifiers_release()?;
+    if cancelled() {
+        return Err("Selection capture cancelled".into());
+    }
 
     let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
         .map_err(|_| std::io::Error::other("Failed to create CGEventSource"))?;
@@ -116,7 +122,7 @@ fn request_accessibility_permission() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn wait_for_modifiers_release() -> std::io::Result<()> {
+pub fn wait_for_modifiers_release() -> std::io::Result<()> {
     use core_graphics::event::{CGEvent, CGEventFlags};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
     use std::time::Duration;
@@ -208,6 +214,10 @@ mod tests {
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn simulate_copy_if(_: impl Fn() -> bool) -> Result<(), Box<dyn Error + Send + Sync>> {
     Err("Simulated copy is not supported on this platform".into())
+}
+
+pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
+    simulate_copy_if(|| false)
 }

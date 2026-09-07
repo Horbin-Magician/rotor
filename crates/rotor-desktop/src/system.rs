@@ -16,12 +16,14 @@ const SHOW: u8 = 1;
 const QUIT: u8 = 2;
 const TRANSLATE: u8 = 4;
 const SEARCH: u8 = 8;
+const SELECT: u8 = 16;
 
 #[derive(Clone, Copy)]
 pub enum Command {
     ShowSettings,
     ShowTranslator,
     ShowSearch,
+    SelectText,
     Quit,
 }
 
@@ -50,6 +52,7 @@ impl CommandBus {
                 Command::Quit => QUIT,
                 Command::ShowTranslator => TRANSLATE,
                 Command::ShowSearch => SEARCH,
+                Command::SelectText => SELECT,
             },
             Ordering::Release,
         );
@@ -60,6 +63,9 @@ impl CommandBus {
         if pending & QUIT != 0 {
             Some(Command::Quit)
         } else if pending & SEARCH != 0 {
+            if pending & SELECT != 0 {
+                self.request(Command::SelectText);
+            }
             if pending & SHOW != 0 {
                 self.request(Command::ShowSettings);
             }
@@ -68,10 +74,18 @@ impl CommandBus {
             }
             Some(Command::ShowSearch)
         } else if pending & TRANSLATE != 0 {
+            if pending & SELECT != 0 {
+                self.request(Command::SelectText);
+            }
             if pending & SHOW != 0 {
                 self.request(Command::ShowSettings);
             }
             Some(Command::ShowTranslator)
+        } else if pending & SELECT != 0 {
+            if pending & SHOW != 0 {
+                self.request(Command::ShowSettings);
+            }
+            Some(Command::SelectText)
         } else if pending & SHOW != 0 {
             Some(Command::ShowSettings)
         } else {
@@ -125,6 +139,11 @@ impl SystemServices {
             Code::KeyF,
         );
         let search_id = search_hotkey.id();
+        let select_hotkey = HotKey::new(
+            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
+            Code::KeyD,
+        );
+        let select_id = select_hotkey.id();
         GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
             if event.id == id && event.state == HotKeyState::Pressed {
                 hotkey_bus.request(Command::ShowSettings);
@@ -132,6 +151,8 @@ impl SystemServices {
                 hotkey_bus.request(Command::ShowTranslator);
             } else if event.id == search_id && event.state == HotKeyState::Pressed {
                 hotkey_bus.request(Command::ShowSearch);
+            } else if event.id == select_id && event.state == HotKeyState::Pressed {
+                hotkey_bus.request(Command::SelectText);
             }
         }));
         let mut warnings = Vec::new();
@@ -141,6 +162,7 @@ impl SystemServices {
                 (hotkey, "Ctrl+Alt+Shift+G"),
                 (translate_hotkey, "Ctrl+Alt+Shift+W"),
                 (search_hotkey, "Ctrl+Alt+Shift+F"),
+                (select_hotkey, "Ctrl+Alt+Shift+D"),
             ] {
                 match manager.register(hotkey) {
                     Ok(()) => registered_hotkeys.push(hotkey),
