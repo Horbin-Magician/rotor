@@ -8338,6 +8338,7 @@ dependencies = [
  "global-hotkey",
  "image",
  "log",
+ "rotor-canvas",
  "rotor-common",
  "rotor-platform",
  "rotor-screenshot",

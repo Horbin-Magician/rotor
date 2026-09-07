@@ -166,6 +166,7 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                     display_id: Some(display.id()),
                     titlebar: None,
                     kind: WindowKind::PopUp,
+                    is_resizable: false,
                     show: false,
                     focus: false,
                     window_min_size: Some(size(px(1.), px(1.))),

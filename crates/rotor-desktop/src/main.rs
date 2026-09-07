@@ -1,4 +1,5 @@
 mod capture;
+mod fonts;
 mod pins;
 mod placement;
 mod system;
@@ -50,6 +51,7 @@ struct ShellState {
     capture: capture::CaptureState,
     pins: pins::PinWindows,
     monitors: Vec<rotor_runtime::MonitorConfig>,
+    fonts: Option<Task<()>>,
 }
 impl Global for ShellState {}
 
@@ -371,6 +373,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let resources = ResourceLocator::for_current_process()
         .map_err(|error| eprintln!("OCR resources: {error}"))
         .ok();
+    let font_resources = resources.clone();
     let (services, events) = Services::new(
         AppConfig::shared_global(),
         resources,
@@ -413,6 +416,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 capture: capture::CaptureState::default(),
                 pins: pins::PinWindows::default(),
                 monitors: Vec::new(),
+                fonts: None,
             });
             let closed = cx.on_window_closed(|cx, id| {
                 if cx.try_global::<ShellState>().is_some() {
@@ -436,12 +440,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                     }
                 }
             });
+            let font_task = fonts::load(font_resources, cx);
+            cx.global_mut::<ShellState>().fonts = Some(font_task);
             cx.global_mut::<ShellState>()._closed = Some(closed);
             let quit = cx.on_app_quit(|cx| {
                 pins::flush(cx);
                 capture::stop(cx);
                 pins::stop(cx);
                 let state = cx.global_mut::<ShellState>();
+                state.fonts = None;
                 state.commands.close();
                 state.system.stop_events();
                 state.services.shutdown();

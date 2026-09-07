@@ -120,6 +120,7 @@ pub struct Services {
     capture_id: Arc<AtomicU64>,
     background: Mutex<Vec<JoinHandle<()>>>,
     slots: Arc<Semaphore>,
+    canvas_fonts: Arc<Mutex<Option<Arc<rotor_canvas::Renderer>>>>,
     stopped: Arc<AtomicBool>,
 }
 
@@ -178,6 +179,7 @@ impl Services {
                 capture_id: Arc::new(AtomicU64::new(0)),
                 background: Mutex::new(Vec::new()),
                 slots: Arc::new(Semaphore::new(BACKGROUND_LIMIT)),
+                canvas_fonts: Arc::new(Mutex::new(None)),
                 stopped: Arc::new(AtomicBool::new(false)),
             },
             receiver,
@@ -186,6 +188,51 @@ impl Services {
 
     pub fn settings(&self) -> Config {
         lock(&self.published_config).clone()
+    }
+
+    pub async fn render_canvas(
+        &self,
+        image: Arc<RgbaImage>,
+        scene: rotor_canvas::Scene,
+        output: rotor_canvas::ImageSize,
+    ) -> Result<Arc<RgbaImage>, String> {
+        self.ensure_running()?;
+        let permit = self
+            .slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| "canvas rendering service is closed")?;
+        self.ensure_running()?;
+        let resources = self.resources.clone();
+        let fonts = self.canvas_fonts.clone();
+        self.runtime()
+            .spawn_blocking(move || {
+                let _permit = permit;
+                if scene.has_text() {
+                    let renderer = {
+                        let mut loaded = lock(&fonts);
+                        if loaded.is_none() {
+                            let path = resources
+                                .as_ref()
+                                .ok_or("Annotation resources are unavailable")?
+                                .resolve(Path::new("fonts/NotoSansCJKsc-Regular.otf"))
+                                .map_err(|error| error.to_string())?;
+                            let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+                            *loaded =
+                                Some(Arc::new(rotor_canvas::Renderer::with_font(bytes, true)?));
+                        }
+                        loaded.as_ref().unwrap().clone()
+                    };
+                    renderer.render(&image, &scene, output).map(Arc::new)
+                } else {
+                    rotor_canvas::Renderer::without_fonts()
+                        .render(&image, &scene, output)
+                        .map(Arc::new)
+                }
+            })
+            .await
+            .map_err(|error| error.to_string())?
     }
 
     pub fn restore_pins(&self) -> Result<OperationId, String> {
@@ -246,6 +293,23 @@ impl Services {
             pin_id,
             image,
             config,
+            target,
+        })?;
+        Ok(id)
+    }
+
+    pub fn export_pin_frame(
+        &self,
+        pin_id: Option<u32>,
+        image: Arc<RgbaImage>,
+        target: crate::PinExportTarget,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::ExportFrame {
+            id,
+            pin_id,
+            image,
             target,
         })?;
         Ok(id)
@@ -523,6 +587,7 @@ impl Services {
             return;
         }
         self.cancel_translation();
+        self.slots.close();
         self.cancel_selection();
         self.cancel_capture();
         if let Some(searcher) = &self.searcher {
@@ -831,6 +896,103 @@ mod tests {
             image::imageops::crop_imm(image.as_ref(), 1, 1, 2, 2).to_image()
         );
         assert_eq!(pins[0].config.image_rect, Some((1, 1, 2, 2)));
+    }
+
+    #[test]
+    fn exported_canvas_frame_keeps_its_viewport_size_and_pixels() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let source = Arc::new(RgbaImage::from_pixel(2, 3, image::Rgba([20, 40, 80, 128])));
+        services.create_pin(source.clone(), pin_config()).unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            result: Ok(pin), ..
+        }) = receive()
+        else {
+            panic!("expected created pin");
+        };
+        let scene = rotor_canvas::Document::new(
+            rotor_canvas::ImageSize {
+                width: 2,
+                height: 3,
+            },
+            rotor_canvas::ImageRect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 3,
+            },
+        )
+        .unwrap();
+        let frame = services
+            .runtime()
+            .block_on(services.render_canvas(
+                source,
+                scene.scene().clone(),
+                rotor_canvas::ImageSize {
+                    width: 4,
+                    height: 6,
+                },
+            ))
+            .unwrap();
+        let path = directory.path().join("scaled.png");
+        let id = services
+            .export_pin_frame(
+                Some(pin.id),
+                frame.clone(),
+                crate::PinExportTarget::File(path.clone()),
+            )
+            .unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::Pin(crate::PinEvent::Exported { id: returned, result: Ok(()) }) if returned == id)
+        );
+        let image = image::open(path).unwrap().into_rgba8();
+        assert_eq!(image.dimensions(), (4, 6));
+        assert_eq!(image, *frame);
+    }
+
+    #[test]
+    fn shutdown_wakes_canvas_requests_waiting_for_capacity() {
+        use std::{
+            future::Future,
+            task::{Context, Waker},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let _permits: Vec<_> = (0..BACKGROUND_LIMIT)
+            .map(|_| services.slots.clone().try_acquire_owned().unwrap())
+            .collect();
+        let scene = rotor_canvas::Document::new(
+            rotor_canvas::ImageSize {
+                width: 2,
+                height: 3,
+            },
+            rotor_canvas::ImageRect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 3,
+            },
+        )
+        .unwrap();
+        let mut request = Box::pin(services.render_canvas(
+            Arc::new(RgbaImage::new(2, 3)),
+            scene.scene().clone(),
+            scene.scene().size,
+        ));
+        assert!(request
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        services.shutdown();
+        assert!(services.runtime().block_on(request).is_err());
     }
 
     #[test]

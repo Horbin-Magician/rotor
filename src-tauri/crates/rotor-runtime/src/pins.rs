@@ -44,6 +44,12 @@ pub enum PinEvent {
 }
 
 pub(crate) enum PinCommand {
+    ExportFrame {
+        id: OperationId,
+        pin_id: Option<u32>,
+        image: Arc<RgbaImage>,
+        target: PinExportTarget,
+    },
     CreateFromCapture {
         id: OperationId,
         image: Arc<RgbaImage>,
@@ -79,7 +85,7 @@ pub(crate) enum PinCommand {
 impl PinCommand {
     fn failure(&self, error: String) -> PinEvent {
         match self {
-            Self::Export { id, .. } => PinEvent::Exported {
+            Self::Export { id, .. } | Self::ExportFrame { id, .. } => PinEvent::Exported {
                 id: *id,
                 result: Err(error),
             },
@@ -157,8 +163,44 @@ async fn run(directory: PathBuf, commands: Receiver<PinCommand>, events: Sender<
     }
 }
 
+fn export_frame(
+    store: &mut Result<PinStore, String>,
+    pin_id: Option<u32>,
+    image: &RgbaImage,
+    target: PinExportTarget,
+) -> Result<(), String> {
+    if image.width() == 0 || image.height() == 0 {
+        return Err("Cannot export an empty pin frame".into());
+    }
+    match target {
+        PinExportTarget::Clipboard => rotor_platform::clipboard::write_image(image)?,
+        PinExportTarget::File(path) => {
+            let bytes = rotor_screenshot::pin_store::png_bytes(image)?;
+            rotor_common::persistence::atomic_write(&path, &bytes)
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    if let Some(pin_id) = pin_id {
+        store
+            .as_mut()
+            .map_err(|error| error.clone())?
+            .delete(pin_id)
+            .map_err(|error| format!("Image exported, but pin removal failed: {error}"))?;
+    }
+    Ok(())
+}
+
 fn execute(store: &mut Result<PinStore, String>, command: PinCommand) -> PinEvent {
     match command {
+        PinCommand::ExportFrame {
+            id,
+            pin_id,
+            image,
+            target,
+        } => PinEvent::Exported {
+            id,
+            result: export_frame(store, pin_id, &image, target),
+        },
         PinCommand::CreateFromCapture { id, image, config } => PinEvent::Created {
             id,
             result: (|| {
@@ -198,24 +240,7 @@ fn execute(store: &mut Result<PinStore, String>, command: PinCommand) -> PinEven
             id,
             result: (|| {
                 let image = rotor_screenshot::pin_store::crop_image(&image, &config)?;
-                match target {
-                    PinExportTarget::Clipboard => rotor_platform::clipboard::write_image(&image)?,
-                    PinExportTarget::File(path) => {
-                        let bytes = rotor_screenshot::pin_store::png_bytes(&image)?;
-                        rotor_common::persistence::atomic_write(&path, &bytes)
-                            .map_err(|error| error.to_string())?;
-                    }
-                }
-                if let Some(pin_id) = pin_id {
-                    store
-                        .as_mut()
-                        .map_err(|error| error.clone())?
-                        .delete(pin_id)
-                        .map_err(|error| {
-                            format!("Image exported, but pin removal failed: {error}")
-                        })?;
-                }
-                Ok(())
+                export_frame(store, pin_id, &image, target)
             })(),
         },
         PinCommand::Restore { id } => PinEvent::Restored {

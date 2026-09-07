@@ -1,4 +1,5 @@
 use super::PreparedImage;
+mod annotation;
 use gpui_kit::{
     component::{Disableable, button::Button},
     prelude::*,
@@ -23,6 +24,7 @@ pub struct PinInit {
     pub pending: Option<OperationId>,
     pub error: Option<String>,
     pub position: PinPositionReader,
+    pub content_scale: f32,
 }
 pub struct PinView {
     services: Arc<Services>,
@@ -42,6 +44,9 @@ pub struct PinView {
     position: PinPositionReader,
     save_task: Option<Task<()>>,
     _bounds: Subscription,
+    _activation: Subscription,
+    canvas: annotation::CanvasState,
+    content_scale: f32,
 }
 impl PinView {
     pub fn new(
@@ -54,6 +59,12 @@ impl PinView {
         focus.focus(window, cx);
         let bounds =
             cx.observe_window_bounds(window, |this, window, cx| this.record_position(window, cx));
+        let canvas = annotation::CanvasState::new(&init.image, &init.config);
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active() {
+                this.cancel_pointer(window, cx);
+            }
+        });
         Self {
             settings: services.settings(),
             services,
@@ -72,6 +83,9 @@ impl PinView {
             position: init.position,
             save_task: None,
             _bounds: bounds,
+            _activation: activation,
+            canvas,
+            content_scale: init.content_scale,
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
@@ -119,7 +133,11 @@ impl PinView {
         self.dirty = true;
         self.flush(cx);
         window.activate_window();
-        self.focus.focus(window, cx);
+        if let Some(input) = self.canvas.editor.clone() {
+            input.update(cx, |input, cx| input.focus(window, cx));
+        } else {
+            self.focus.focus(window, cx);
+        }
         cx.notify();
     }
     fn record_position(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -186,7 +204,7 @@ impl PinView {
         cx.notify();
     }
     fn export(&mut self, target: PinExportTarget, cx: &mut Context<Self>) {
-        if self.busy() {
+        if self.busy() || !self.canvas.ready() {
             return;
         }
         self.flush(cx);
@@ -203,12 +221,13 @@ impl PinView {
             }
             _ => None,
         };
-        match self.services.export_pin(
-            self.id,
-            self.image.image.clone(),
-            self.record.clone(),
-            target,
-        ) {
+        let Some(frame) = self.canvas.frame() else {
+            return;
+        };
+        match self
+            .services
+            .export_pin_frame(self.id, frame.image.clone(), target)
+        {
             Ok(request) => {
                 self.pending_finish = Some(request);
                 self.message = self.t("正在导出…", "Exporting…").into();
@@ -218,7 +237,7 @@ impl PinView {
         cx.notify();
     }
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() {
+        if self.busy() || !self.canvas.ready() {
             return;
         }
         let stamp = SystemTime::now()
@@ -289,7 +308,9 @@ impl PinView {
             .unwrap_or(2)
             .clamp(1, 25);
         let (_, _, width, height) = self.crop();
-        let maximum = (8192. / width.max(height).max(1) as f32 * 100.)
+        let maximum = (8192. / width.max(height).max(1) as f32 * self.content_scale
+            / window.scale_factor()
+            * 100.)
             .floor()
             .clamp(1., 500.) as i64;
         let factor = (self.record.zoom_factor as i64
@@ -297,8 +318,11 @@ impl PinView {
         .clamp(5.min(maximum), maximum) as u32;
         self.record.zoom_factor = factor;
         self.dirty = true;
-        let scale = factor as f32 / 100. / window.scale_factor();
-        window.resize(size(px(width as f32 * scale), px(height as f32 * scale)));
+        let scale = factor as f32 / 100. / self.content_scale;
+        window.resize(size(
+            px((width as f32 * scale).round().max(1.)),
+            px((height as f32 * scale).round().max(1.)),
+        ));
         self.record_position(window, cx);
         cx.notify();
     }
@@ -379,37 +403,21 @@ fn shortcut_matches(event: &Keystroke, configured: Option<&String>) -> bool {
 }
 impl Render for PinView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (x, y, _, _) = self.crop();
-        let scale = self.record.zoom_factor as f32 / 100. / window.scale_factor();
+        self.ensure_canvas(window, cx);
         let busy = self.busy();
+        let export_disabled = busy || !self.canvas.ready();
         div()
             .id("pin")
             .track_focus(&self.focus)
             .size_full()
             .overflow_hidden()
-            .child(
-                div()
-                    .size_full()
-                    .overflow_hidden()
-                    .child(
-                        img(self.image.render.clone())
-                            .absolute()
-                            .left(px(-(x as f32) * scale))
-                            .top(px(-(y as f32) * scale))
-                            .w(px(self.image.image.width() as f32 * scale))
-                            .h(px(self.image.image.height() as f32 * scale)),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, window, _| {
-                            if !this.busy() {
-                                window.start_window_move();
-                            }
-                        }),
-                    ),
-            )
+            .child(self.canvas_element(window, cx))
             .when(
-                self.hovered || !self.message.is_empty() || self.pending_create.is_some(),
+                self.hovered
+                    || !self.message.is_empty()
+                    || self.pending_create.is_some()
+                    || self.canvas.error.is_some()
+                    || self.canvas.editing(),
                 |root| {
                     root.child(
                         div()
@@ -421,15 +429,17 @@ impl Render for PinView {
                             .max_w_full()
                             .bg(rgba(0x222222dd))
                             .text_color(rgba(0xffffffff))
+                            .occlude()
                             .child(
                                 div()
                                     .flex()
+                                    .flex_wrap()
                                     .child(
                                         Button::new("pin-save")
                                             .label("S")
                                             .tooltip(self.t("保存", "Save"))
                                             .compact()
-                                            .disabled(busy)
+                                            .disabled(export_disabled)
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.save(window, cx)
                                             })),
@@ -439,7 +449,7 @@ impl Render for PinView {
                                             .label("C")
                                             .tooltip(self.t("复制", "Copy"))
                                             .compact()
-                                            .disabled(busy)
+                                            .disabled(export_disabled)
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.export(PinExportTarget::Clipboard, cx)
                                             })),
@@ -465,7 +475,13 @@ impl Render for PinView {
                                             })),
                                     ),
                             )
-                            .child(div().text_xs().child(self.message.clone())),
+                            .child(self.canvas_tools(cx))
+                            .child(div().text_xs().child(self.message.clone()))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .child(self.canvas.error.clone().unwrap_or_default()),
+                            ),
                     )
                 },
             )
@@ -480,10 +496,18 @@ impl Render for PinView {
                 cx.notify();
             }))
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
-                this.zoom(event.delta.pixel_delta(px(16.)).y.as_f32(), window, cx);
+                if this.canvas.editor.is_none() {
+                    this.zoom(event.delta.pixel_delta(px(16.)).y.as_f32(), window, cx);
+                }
                 cx.stop_propagation();
             }))
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                this.canvas_keys(event, window, cx);
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.canvas.editor.is_some() {
+                    return;
+                }
                 if shortcut_matches(&event.keystroke, this.settings.get("shortcut_pinwin_save")) {
                     this.save(window, cx);
                 } else if shortcut_matches(

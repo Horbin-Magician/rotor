@@ -1,0 +1,776 @@
+use super::*;
+use gpui_kit::component::input::{Textarea, TextareaState};
+use rotor_canvas::{
+    Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, StrokeStyle, ViewTransform,
+};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Tool {
+    Move,
+    Pen,
+    Rectangle,
+    Arrow,
+    Text,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FrameKey {
+    revision: u64,
+    crop: ImageRect,
+    output: ImageSize,
+}
+#[derive(Clone, Copy)]
+enum Rollback {
+    Undo,
+    Redo,
+}
+
+pub(super) struct CanvasState {
+    document: Document,
+    tool: Tool,
+    draft: Option<Annotation>,
+    preview: Option<Annotation>,
+    pub(super) editor: Option<Entity<TextareaState>>,
+    editor_origin: ImagePoint,
+    frame: Option<PreparedImage>,
+    frame_key: Option<FrameKey>,
+    requested: Option<FrameKey>,
+    pub(super) rendering: bool,
+    pub(super) error: Option<String>,
+    epoch: u64,
+    task: Option<Task<()>>,
+    rollback: Option<(u64, Rollback)>,
+    text_pending: bool,
+}
+impl CanvasState {
+    pub(super) fn new(image: &PreparedImage, record: &ShotterConfig) -> Self {
+        let (x, y, width, height) =
+            rotor_runtime::pin_source_crop(record, image.image.width(), image.image.height())
+                .expect("validated pin source");
+        Self {
+            document: Document::new(
+                ImageSize {
+                    width: image.image.width(),
+                    height: image.image.height(),
+                },
+                ImageRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+            )
+            .expect("validated crop"),
+            tool: Tool::Move,
+            draft: None,
+            preview: None,
+            editor: None,
+            editor_origin: ImagePoint { x: 0., y: 0. },
+            frame: None,
+            frame_key: None,
+            requested: None,
+            rendering: false,
+            error: None,
+            epoch: 0,
+            task: None,
+            rollback: None,
+            text_pending: false,
+        }
+    }
+    pub(super) fn frame(&self) -> Option<&PreparedImage> {
+        self.frame.as_ref()
+    }
+    pub(super) fn ready(&self) -> bool {
+        !self.rendering
+            && self.draft.is_none()
+            && self.editor.is_none()
+            && self.frame_key.is_some()
+            && self.frame_key == self.requested
+    }
+    pub(super) fn editing(&self) -> bool {
+        self.tool != Tool::Move || self.editor.is_some() || self.draft.is_some()
+    }
+}
+impl CanvasState {
+    fn accept_render(
+        &mut self,
+        epoch: u64,
+        key: FrameKey,
+        prepared: Result<PreparedImage, String>,
+    ) -> bool {
+        let prepared = prepared.and_then(|frame| {
+            if frame.image.dimensions() == (key.output.width, key.output.height) {
+                Ok(frame)
+            } else {
+                Err("Rendered frame dimensions differ from its viewport".into())
+            }
+        });
+        if self.epoch != epoch {
+            return false;
+        }
+        self.rendering = false;
+        match prepared {
+            Ok(frame) => {
+                self.frame = Some(frame);
+                self.frame_key = Some(key);
+                self.preview = None;
+                self.rollback = None;
+                if self.editor.is_none() || self.text_pending {
+                    self.error = None;
+                }
+                if self.text_pending {
+                    self.editor = None;
+                    self.text_pending = false;
+                }
+            }
+            Err(error) => {
+                self.error = Some(error);
+                self.text_pending = false;
+                if let Some((revision, rollback)) = self.rollback.take()
+                    && revision == self.document.revision()
+                {
+                    match rollback {
+                        Rollback::Undo => {
+                            self.document.undo();
+                        }
+                        Rollback::Redo => {
+                            self.document.redo();
+                        }
+                    }
+                    self.preview = None;
+                    self.requested = None;
+                    if let Some(mut old) = self.frame_key
+                        && old.crop == key.crop
+                        && old.output == key.output
+                    {
+                        old.revision = self.document.revision();
+                        self.frame_key = Some(old);
+                        self.requested = Some(old);
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+impl PinView {
+    pub(super) fn cancel_pointer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.canvas.draft.take().is_some() {
+            cx.notify();
+        }
+        window.release_pointer();
+    }
+    fn transform(&self, window: &Window) -> ViewTransform {
+        let (x, y, width, height) = self.crop();
+        ViewTransform {
+            crop: ImageRect {
+                x,
+                y,
+                width,
+                height,
+            },
+            width: window.viewport_size().width.as_f32() as f64,
+            height: window.viewport_size().height.as_f32() as f64,
+        }
+    }
+    pub(super) fn ensure_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let transform = self.transform(window);
+        let size = window.viewport_size();
+        let output = ImageSize {
+            width: (size.width.as_f32() * window.scale_factor())
+                .round()
+                .max(1.) as u32,
+            height: (size.height.as_f32() * window.scale_factor())
+                .round()
+                .max(1.) as u32,
+        };
+        let key = FrameKey {
+            revision: self.canvas.document.revision(),
+            crop: transform.crop,
+            output,
+        };
+        if self.canvas.requested == Some(key) {
+            return;
+        }
+        let debounce = self
+            .canvas
+            .requested
+            .is_some_and(|previous| previous.revision == key.revision);
+        self.canvas.epoch = self.canvas.epoch.wrapping_add(1);
+        let epoch = self.canvas.epoch;
+        self.canvas.requested = Some(key);
+        self.canvas.rendering = true;
+        let mut scene = self.canvas.document.scene().clone();
+        scene.crop = key.crop;
+        let source = self.image.image.clone();
+        let services = self.services.clone();
+        self.canvas.task = Some(cx.spawn_in(window, async move |view, cx| {
+            if debounce {
+                cx.background_executor()
+                    .timer(Duration::from_millis(40))
+                    .await;
+            }
+            let result = services.render_canvas(source, scene, output).await;
+            let prepared = match result {
+                Ok(image) => {
+                    cx.background_executor()
+                        .spawn(async move { crate::prepare_image(image) })
+                        .await
+                }
+                Err(error) => Err(error),
+            };
+            let _ = view.update(cx, |this, cx| {
+                if this.canvas.accept_render(epoch, key, prepared) {
+                    cx.notify();
+                }
+            });
+        }));
+    }
+    fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
+        self.canvas.tool = tool;
+        self.canvas.draft = None;
+        self.canvas.editor = None;
+        self.canvas.text_pending = false;
+        self.focus.focus(window, cx);
+        window.release_pointer();
+        cx.notify();
+    }
+    pub(super) fn cancel_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.canvas.editing() {
+            return false;
+        }
+        self.set_tool(Tool::Move, window, cx);
+        true
+    }
+    fn add_annotation(
+        &mut self,
+        annotation: Annotation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.canvas.document.add(annotation.clone()) {
+            Ok(()) => {
+                self.canvas.preview = Some(annotation);
+                self.canvas.error = None;
+                self.canvas.rollback = Some((self.canvas.document.revision(), Rollback::Undo));
+                self.ensure_canvas(window, cx);
+            }
+            Err(error) => {
+                self.canvas.error = Some(error);
+                self.canvas.text_pending = false;
+            }
+        }
+        cx.notify();
+    }
+    fn undo_canvas(&mut self, redo: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.canvas.rendering || self.canvas.editor.is_some() || self.canvas.draft.is_some() {
+            return;
+        }
+        let changed = if redo {
+            self.canvas.document.redo()
+        } else {
+            self.canvas.document.undo()
+        };
+        if changed {
+            self.canvas.error = None;
+            self.canvas.preview = None;
+            self.canvas.rollback = Some((
+                self.canvas.document.revision(),
+                if redo { Rollback::Undo } else { Rollback::Redo },
+            ));
+            self.ensure_canvas(window, cx);
+            cx.notify();
+        }
+    }
+    fn begin_mark(
+        &mut self,
+        point: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.busy() || self.canvas.rendering || self.canvas.editor.is_some() {
+            return false;
+        }
+        if self.canvas.tool == Tool::Move {
+            window.start_window_move();
+            return false;
+        }
+        let transform = self.transform(window);
+        let Some(origin) = transform.to_image(ImagePoint {
+            x: point.x.as_f32() as f64,
+            y: point.y.as_f32() as f64,
+        }) else {
+            return false;
+        };
+        let width = 3. * transform.crop.width as f64 / transform.width;
+        let style = StrokeStyle {
+            color: Color::RED,
+            width,
+        };
+        self.canvas.error = None;
+        if self.canvas.tool == Tool::Text {
+            let input = cx.new(|cx| TextareaState::new(window, cx));
+            input.update(cx, |input, cx| input.focus(window, cx));
+            self.canvas.editor = Some(input);
+            self.canvas.text_pending = false;
+            self.canvas.editor_origin = origin;
+            cx.notify();
+            return false;
+        }
+        self.canvas.draft = Some(match self.canvas.tool {
+            Tool::Pen => Annotation::Pen {
+                points: vec![origin],
+                style,
+            },
+            Tool::Rectangle => Annotation::Rectangle {
+                start: origin,
+                end: origin,
+                style,
+            },
+            Tool::Arrow => Annotation::Arrow {
+                start: origin,
+                end: origin,
+                style,
+            },
+            _ => return false,
+        });
+        cx.notify();
+        true
+    }
+    fn move_mark(&mut self, point: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        let transform = self.transform(window);
+        let Some(mut point) = transform.to_image(ImagePoint {
+            x: point.x.as_f32() as f64,
+            y: point.y.as_f32() as f64,
+        }) else {
+            return;
+        };
+        point.x = point.x.clamp(
+            transform.crop.x as f64,
+            (transform.crop.x + transform.crop.width) as f64,
+        );
+        point.y = point.y.clamp(
+            transform.crop.y as f64,
+            (transform.crop.y + transform.crop.height) as f64,
+        );
+        match self.canvas.draft.as_mut() {
+            Some(Annotation::Pen { points, .. }) => {
+                if points.len() < 65536 && points.last() != Some(&point) {
+                    points.push(point);
+                }
+            }
+            Some(Annotation::Rectangle { end, .. } | Annotation::Arrow { end, .. }) => *end = point,
+            _ => return,
+        }
+        cx.notify();
+    }
+    fn end_mark(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(annotation) = self.canvas.draft.take() else {
+            return;
+        };
+        window.release_pointer();
+        if matches!(&annotation, Annotation::Rectangle { start, end, .. } if start.x == end.x || start.y == end.y)
+            || matches!(&annotation, Annotation::Arrow { start, end, .. } if start == end)
+        {
+            cx.notify();
+            return;
+        }
+        self.add_annotation(annotation, window, cx);
+    }
+    fn finish_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.canvas.rendering {
+            return;
+        }
+        let Some(input) = self.canvas.editor.clone() else {
+            return;
+        };
+        if input.update(cx, |input, cx| {
+            input.marked_text_range(window, cx).is_some()
+        }) {
+            return;
+        }
+        let text = input.read(cx).value().to_string();
+        if text.trim().is_empty() {
+            self.canvas.editor = None;
+            cx.notify();
+            return;
+        }
+        let transform = self.transform(window);
+        self.canvas.text_pending = true;
+        self.add_annotation(
+            Annotation::Text {
+                origin: self.canvas.editor_origin,
+                text,
+                font_size: 16. * transform.crop.height as f64 / transform.height,
+                color: Color::RED,
+            },
+            window,
+            cx,
+        );
+    }
+    pub(super) fn canvas_keys(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if let Some(input) = self.canvas.editor.clone() {
+            let composing = input.update(cx, |input, cx| {
+                input.marked_text_range(window, cx).is_some()
+            });
+            if event.keystroke.key == "escape" && !composing {
+                self.set_tool(Tool::Move, window, cx);
+                cx.stop_propagation();
+            } else if event.keystroke.key == "enter"
+                && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
+                && !composing
+            {
+                self.finish_text(window, cx);
+                cx.stop_propagation();
+            }
+            return true;
+        }
+        if event.keystroke.key == "escape" && self.canvas.editing() {
+            self.cancel_editing(window, cx);
+            cx.stop_propagation();
+            return true;
+        }
+        if event.keystroke.key.eq_ignore_ascii_case("z")
+            && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
+        {
+            self.undo_canvas(event.keystroke.modifiers.shift, window, cx);
+            cx.stop_propagation();
+            return true;
+        }
+        false
+    }
+    pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let disabled = self.busy() || self.canvas.rendering;
+        div()
+            .flex()
+            .flex_wrap()
+            .children(
+                [
+                    (Tool::Move, "M", "移动", "Move"),
+                    (Tool::Pen, "P", "画笔", "Pen"),
+                    (Tool::Rectangle, "▭", "矩形", "Rectangle"),
+                    (Tool::Arrow, "→", "箭头", "Arrow"),
+                    (Tool::Text, "T", "文字", "Text"),
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(index, (tool, label, zh, en))| {
+                    Button::new(("canvas-tool", index))
+                        .label(label)
+                        .tooltip(self.t(zh, en))
+                        .compact()
+                        .disabled(disabled || self.canvas.tool == tool)
+                        .on_click(
+                            cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)),
+                        )
+                }),
+            )
+            .child(
+                Button::new("canvas-undo")
+                    .label("↶")
+                    .tooltip(self.t("撤销", "Undo"))
+                    .compact()
+                    .disabled(
+                        disabled
+                            || !self.canvas.document.can_undo()
+                            || self.canvas.editor.is_some(),
+                    )
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.undo_canvas(false, window, cx)),
+                    ),
+            )
+            .child(
+                Button::new("canvas-redo")
+                    .label("↷")
+                    .tooltip(self.t("重做", "Redo"))
+                    .compact()
+                    .disabled(
+                        disabled
+                            || !self.canvas.document.can_redo()
+                            || self.canvas.editor.is_some(),
+                    )
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.undo_canvas(true, window, cx)),
+                    ),
+            )
+            .when(self.canvas.editor.is_some(), |row| {
+                row.child(
+                    Button::new("canvas-text-done")
+                        .label("✓")
+                        .compact()
+                        .disabled(disabled)
+                        .on_click(cx.listener(|this, _, window, cx| this.finish_text(window, cx))),
+                )
+            })
+    }
+    pub(super) fn canvas_element(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let transform = self.transform(window);
+        let scale_x = transform.width / transform.crop.width as f64;
+        let scale_y = transform.height / transform.crop.height as f64;
+        let mut layer = div().size_full().overflow_hidden();
+        if let Some((frame, key)) = self.canvas.frame.as_ref().zip(self.canvas.frame_key) {
+            layer = layer.child(
+                img(frame.render.clone())
+                    .absolute()
+                    .left(px(
+                        (key.crop.x as f64 - transform.crop.x as f64) as f32 * scale_x as f32
+                    ))
+                    .top(px(
+                        (key.crop.y as f64 - transform.crop.y as f64) as f32 * scale_y as f32
+                    ))
+                    .w(px((key.crop.width as f64 * scale_x) as f32))
+                    .h(px((key.crop.height as f64 * scale_y) as f32)),
+            );
+        } else {
+            layer = layer.child(
+                img(self.image.render.clone())
+                    .absolute()
+                    .left(px(-(transform.crop.x as f64 * scale_x) as f32))
+                    .top(px(-(transform.crop.y as f64 * scale_y) as f32))
+                    .w(px((self.image.image.width() as f64 * scale_x) as f32))
+                    .h(px((self.image.image.height() as f64 * scale_y) as f32)),
+            );
+        }
+        let weak = cx.weak_entity();
+        let preview = self
+            .canvas
+            .draft
+            .as_ref()
+            .or(self.canvas.preview.as_ref())
+            .cloned();
+        let dragging = self.canvas.draft.is_some();
+        layer = layer.child(
+            canvas(
+                |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                move |bounds, hitbox, window, _| {
+                    if dragging {
+                        window.capture_pointer(hitbox.id);
+                    }
+                    if let Some(annotation) = &preview {
+                        paint_preview(annotation, transform, bounds.origin, window);
+                    }
+                    let down_view = weak.clone();
+                    let down_hitbox = hitbox.clone();
+                    window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+                        if phase == DispatchPhase::Bubble
+                            && event.button == MouseButton::Left
+                            && down_hitbox.is_hovered(window)
+                        {
+                            let capture = down_view
+                                .update(cx, |this, cx| {
+                                    this.begin_mark(event.position - bounds.origin, window, cx)
+                                })
+                                .unwrap_or(false);
+                            if capture {
+                                window.capture_pointer(down_hitbox.id);
+                            }
+                            cx.stop_propagation();
+                        }
+                    });
+                    let move_view = weak.clone();
+                    let move_hitbox = hitbox.clone();
+                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                        if phase == DispatchPhase::Bubble && move_hitbox.is_hovered(window) {
+                            let _ = move_view.update(cx, |this, cx| {
+                                this.move_mark(event.position - bounds.origin, window, cx)
+                            });
+                        }
+                    });
+                    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                        if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+                            let _ = weak.update(cx, |this, cx| this.end_mark(window, cx));
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .size_full(),
+        );
+        if let Some(input) = &self.canvas.editor {
+            let origin = transform
+                .to_view(self.canvas.editor_origin)
+                .unwrap_or(ImagePoint { x: 0., y: 0. });
+            layer = layer.child(
+                div()
+                    .absolute()
+                    .left(px(origin.x as f32))
+                    .top(px(origin.y as f32))
+                    .w(px((transform.width - origin.x).max(40.) as f32))
+                    .font_family(rotor_canvas::FONT_FAMILY)
+                    .text_size(px(16.))
+                    .occlude()
+                    .child(
+                        Textarea::new(input)
+                            .h(px(80.))
+                            .disabled(self.canvas.rendering),
+                    ),
+            );
+        }
+        layer.into_any_element()
+    }
+}
+fn paint_preview(
+    annotation: &Annotation,
+    transform: ViewTransform,
+    origin: Point<Pixels>,
+    window: &mut Window,
+) {
+    let point = |point| {
+        transform
+            .to_view(point)
+            .map(|point| origin + gpui_kit::point(px(point.x as f32), px(point.y as f32)))
+    };
+    let (points, style, closed) = match annotation {
+        Annotation::Pen { points, style } => (points.clone(), *style, false),
+        Annotation::Rectangle { start, end, style } => (
+            vec![
+                *start,
+                ImagePoint {
+                    x: end.x,
+                    y: start.y,
+                },
+                *end,
+                ImagePoint {
+                    x: start.x,
+                    y: end.y,
+                },
+                *start,
+            ],
+            *style,
+            true,
+        ),
+        Annotation::Arrow { start, end, style } => {
+            let head = rotor_canvas::arrow_head(*start, *end, style.width);
+            let mut fill = PathBuilder::fill();
+            if let Some(tip) = point(head[0]) {
+                fill.move_to(tip);
+            }
+            if let Some(left) = point(head[1]) {
+                fill.line_to(left);
+            }
+            if let Some(right) = point(head[2]) {
+                fill.line_to(right);
+            }
+            fill.close();
+            if let Ok(path) = fill.build() {
+                window.paint_path(path, rgba(u32::from_be_bytes(style.color.0)));
+            }
+            (vec![*start, *end], *style, false)
+        }
+        Annotation::Text { .. } => return,
+    };
+    let width = style.width * transform.width / transform.crop.width as f64;
+    let mut path = PathBuilder::stroke(px(width as f32));
+    for (index, position) in points.into_iter().filter_map(point).enumerate() {
+        if index == 0 {
+            path.move_to(position);
+        } else {
+            path.line_to(position);
+        }
+    }
+    if closed {
+        path.close();
+    }
+    if let Ok(path) = path.build() {
+        window.paint_path(path, rgba(u32::from_be_bytes(style.color.0)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CanvasState, FrameKey, Rollback};
+    use rotor_canvas::{Annotation, Color, ImagePoint, StrokeStyle};
+    use rotor_runtime::ShotterConfig;
+    use std::sync::Arc;
+
+    fn state() -> (CanvasState, FrameKey) {
+        let image = crate::prepare_image(Arc::new(image::RgbaImage::from_pixel(
+            4,
+            4,
+            image::Rgba([10, 20, 30, 128]),
+        )))
+        .unwrap();
+        let record = ShotterConfig {
+            monitor_pos: (0, 0),
+            monitor_size: (4, 4),
+            rect: (0, 0, 4, 4),
+            image_rect: None,
+            offset: (0, 0),
+            zoom_factor: 100,
+            mask_label: "ssmask-1".into(),
+            minimized: false,
+        };
+        let mut state = CanvasState::new(&image, &record);
+        let key = FrameKey {
+            revision: 0,
+            crop: state.document.scene().crop,
+            output: state.document.scene().size,
+        };
+        state.frame = Some(image);
+        state.frame_key = Some(key);
+        state.requested = Some(key);
+        (state, key)
+    }
+    #[test]
+    fn stale_render_cannot_replace_the_current_frame_or_error() {
+        let (mut state, key) = state();
+        state.epoch = 2;
+        state.rendering = true;
+        assert!(!state.accept_render(1, key, Err("late failure".into())));
+        assert!(state.error.is_none());
+        assert!(state.rendering);
+        assert_eq!(
+            state.frame.unwrap().image.get_pixel(0, 0).0,
+            [10, 20, 30, 128]
+        );
+    }
+    #[test]
+    fn failed_edit_restores_exportable_pixels_and_keeps_redo() {
+        let (mut state, mut key) = state();
+        state
+            .document
+            .add(Annotation::Pen {
+                points: vec![ImagePoint { x: 1., y: 1. }],
+                style: StrokeStyle {
+                    color: Color::RED,
+                    width: 1.,
+                },
+            })
+            .unwrap();
+        key.revision = state.document.revision();
+        state.requested = Some(key);
+        state.epoch = 1;
+        state.rendering = true;
+        state.rollback = Some((key.revision, Rollback::Undo));
+        assert!(state.accept_render(1, key, Err("renderer unavailable".into())));
+        assert!(state.document.scene().annotations.is_empty());
+        assert!(state.document.can_redo());
+        assert!(state.ready());
+        assert!(state.error.is_some());
+    }
+    #[test]
+    fn failed_resize_does_not_undo_committed_annotations_or_export_stale_size() {
+        let (mut state, mut key) = state();
+        state
+            .document
+            .add(Annotation::Pen {
+                points: vec![ImagePoint { x: 1., y: 1. }],
+                style: StrokeStyle {
+                    color: Color::RED,
+                    width: 1.,
+                },
+            })
+            .unwrap();
+        key.revision = state.document.revision();
+        key.output.width = 8;
+        state.requested = Some(key);
+        state.epoch = 3;
+        state.accept_render(3, key, Err("resize failed".into()));
+        assert_eq!(state.document.scene().annotations.len(), 1);
+        assert!(!state.ready());
+    }
+}

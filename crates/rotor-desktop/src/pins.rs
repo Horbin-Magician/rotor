@@ -336,16 +336,34 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
     if !scale.is_finite() || scale <= 0. {
         return Err("Invalid pin display scale".into());
     }
+    let content_scale = state
+        .monitors
+        .iter()
+        .find(|source| {
+            (source.x, source.y) == config.monitor_pos
+                && (source.width, source.height) == config.monitor_size
+        })
+        .map(|source| source.scale_factor)
+        .filter(|scale| scale.is_finite() && *scale > 0.)
+        .unwrap_or(scale);
     let (_, _, width, height) =
         rotor_runtime::pin_source_crop(&config, image.image.width(), image.image.height())?;
-    let maximum_zoom = (8192. / width.max(height) as f32 * 100.)
+    let maximum_zoom = (8192. / width.max(height) as f32 * content_scale / scale * 100.)
         .floor()
         .clamp(1., 500.) as u32;
     config.zoom_factor = config.zoom_factor.clamp(5.min(maximum_zoom), maximum_zoom);
     config.mask_label = format!("ssmask-{}", monitor.id);
     let dimensions = size(
-        px(width as f32 * config.zoom_factor as f32 / 100. / scale),
-        px(height as f32 * config.zoom_factor as f32 / 100. / scale),
+        px(
+            (width as f32 * config.zoom_factor as f32 / 100. / content_scale)
+                .round()
+                .max(1.),
+        ),
+        px(
+            (height as f32 * config.zoom_factor as f32 / 100. / content_scale)
+                .round()
+                .max(1.),
+        ),
     );
     let position = point(px(saved_x as f32 / scale), px(saved_y as f32 / scale));
     let work = display.visible_bounds();
@@ -404,6 +422,7 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                 display_id: Some(display.id()),
                 titlebar: None,
                 kind: WindowKind::PopUp,
+                is_resizable: false,
                 show: false,
                 focus: false,
                 window_background: WindowBackgroundAppearance::Transparent,
@@ -422,6 +441,7 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             pending: None,
                             error,
                             position: reader,
+                            content_scale,
                         },
                         window,
                         cx,

@@ -31,6 +31,7 @@ pub fn utility_options(requested: Size<Pixels>, near_cursor: bool, cx: &App) -> 
         display_id: display.map(|display| display.id()),
         titlebar: None,
         kind: WindowKind::PopUp,
+        is_resizable: false,
         app_id: Some("cc.fluctus.rotor.gpui-dev".into()),
         ..Default::default()
     }
