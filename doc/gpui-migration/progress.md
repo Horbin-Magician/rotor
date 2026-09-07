@@ -104,3 +104,8 @@
 - 窗口失焦/关闭取消所属请求，事件按 OperationId 匹配；新的视图不会接收已关闭视图的旧流。
 - 托盘增加输入翻译，开发热键 Ctrl+Alt+Shift+W；类型化窗口注册表区分设置/翻译。合并事件队列保留不同窗口的唤起请求，退出优先。
 - native check、两项桌面事件单测与 desktop/ui clippy 通过；仅代码验证 IME 防护，真实候选确认/失焦/连续唤起未验收。光标附近位置、划词翻译、动态高度仍待接入，G4 尚未通过。
+
+## P4 搜索打开适配修正
+
+- Windows 管理员打开改用 ShellExecuteW 的 runas verb，文件路径不再拼接到 PowerShell 代码；检查原生启动错误并拒绝 NUL。
+- 平台 crate 和旧 rotor check 通过；保留旧入口 3 项已记录警告。本轮未触发真实 UAC/文件启动交互。
