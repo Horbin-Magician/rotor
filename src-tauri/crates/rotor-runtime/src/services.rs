@@ -583,9 +583,14 @@ impl Services {
     }
 
     pub fn shutdown(&self) {
+        self.shutdown_with_pin_updates(Vec::new());
+    }
+
+    pub fn shutdown_with_pin_updates(&self, updates: Vec<(u32, crate::ShotterConfig)>) {
         if self.stopped.swap(true, Ordering::AcqRel) {
             return;
         }
+        *lock(&self.pins.final_updates) = updates;
         self.cancel_translation();
         self.slots.close();
         self.cancel_selection();
@@ -993,6 +998,55 @@ mod tests {
             .is_pending());
         services.shutdown();
         assert!(services.runtime().block_on(request).is_err());
+    }
+
+    #[test]
+    fn final_pin_snapshot_bypasses_full_command_and_event_queues() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), pin_config())
+            .unwrap();
+        let created = services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            result: Ok(pin), ..
+        }) = created
+        else {
+            panic!("expected created pin");
+        };
+        let queued = EVENT_CAPACITY + services.pins.sender.capacity().unwrap() + 1;
+        services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                for _ in 0..queued {
+                    services
+                        .pins
+                        .sender
+                        .send(PinCommand::Restore {
+                            id: next_operation(),
+                        })
+                        .await
+                        .unwrap();
+                }
+            })
+            .await
+            .unwrap();
+        });
+        assert!(services.pins.sender.is_full());
+        assert!(events.is_full());
+        let mut latest = pin.config;
+        latest.offset = (123, -321);
+        services.shutdown_with_pin_updates(vec![(pin.id, latest)]);
+        drop(services);
+        let (pins, warnings) = rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+            .unwrap()
+            .load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins[0].config.offset, (123, -321));
     }
 
     #[test]

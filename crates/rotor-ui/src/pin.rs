@@ -126,6 +126,9 @@ impl PinView {
     pub fn persisted_id(&self) -> Option<u32> {
         self.id
     }
+    pub fn shutdown_record(&self) -> Option<(u32, ShotterConfig)> {
+        self.id.map(|id| (id, self.committed_crop_record()))
+    }
     pub fn start_persistence(&mut self, cx: &mut Context<Self>) {
         if self.id.is_some() || self.pending_create.is_some() {
             return;

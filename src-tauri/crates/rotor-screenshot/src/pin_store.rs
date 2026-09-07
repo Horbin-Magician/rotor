@@ -257,6 +257,45 @@ impl PinStore {
         }
         Ok(())
     }
+
+    pub fn update_existing_batch(
+        &mut self,
+        updates: Vec<(u32, ShotterConfig)>,
+    ) -> Result<Vec<String>, String> {
+        let mut candidate = self.document.clone();
+        let mut warnings = Vec::new();
+        let mut changed = false;
+        for (id, config) in updates {
+            let Some(record) = table(&mut candidate, &["workspaces", "default", "shotters"])?
+                .get_mut(&id.to_string())
+                .and_then(toml::Value::as_table_mut)
+            else {
+                continue;
+            };
+            let prepare = || -> Result<toml::Table, String> {
+                let (width, height) = image::image_dimensions(self.image_path(id))
+                    .map_err(|error| error.to_string())?;
+                validate(&config, width, height)?;
+                toml::Value::try_from(&config)
+                    .map_err(|error| error.to_string())?
+                    .as_table()
+                    .cloned()
+                    .ok_or_else(|| "Invalid pin configuration".into())
+            };
+            match prepare() {
+                Ok(known) => {
+                    record.remove("image_rect");
+                    record.extend(known);
+                    changed = true;
+                }
+                Err(error) => warnings.push(format!("Pin {id}: {error}")),
+            }
+        }
+        if changed {
+            self.commit(candidate)?;
+        }
+        Ok(warnings)
+    }
 }
 
 #[cfg(test)]
@@ -375,5 +414,25 @@ mod tests {
         record.rect = (1, 1, 2, 2);
         assert_eq!(source_crop(&record, 4, 3).unwrap(), (1, 1, 2, 2));
         assert_eq!(crop_image(&image, &record).unwrap().dimensions(), (2, 2));
+    }
+
+    #[test]
+    fn final_batch_does_not_resurrect_deleted_records() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = PinStore::load_from(directory.path()).unwrap();
+        let image = RgbaImage::new(2, 3);
+        let kept = store.create(&image, config()).unwrap();
+        let deleted = store.create(&image, config()).unwrap();
+        store.delete(deleted).unwrap();
+        let mut latest = config();
+        latest.offset = (99, -42);
+        assert!(store
+            .update_existing_batch(vec![(kept, latest.clone()), (deleted, latest)])
+            .unwrap()
+            .is_empty());
+        let (pins, warnings) = PinStore::load_from(directory.path()).unwrap().load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].config.offset, (99, -42));
     }
 }

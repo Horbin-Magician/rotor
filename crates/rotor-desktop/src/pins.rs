@@ -45,10 +45,14 @@ fn views(cx: &App) -> Vec<(AnyWindowHandle, WeakEntity<rotor_ui::PinView>)> {
         })
         .collect()
 }
-pub fn flush(cx: &mut App) {
-    for (_, view) in views(cx) {
-        let _ = view.update(cx, |view, cx| view.flush(cx));
-    }
+pub fn final_records(cx: &App) -> Vec<(u32, ShotterConfig)> {
+    views(cx)
+        .into_iter()
+        .filter_map(|(_, view)| {
+            view.upgrade()
+                .and_then(|view| view.read(cx).shutdown_record())
+        })
+        .collect()
 }
 pub fn show_all(cx: &mut App) {
     drain_deferred(cx);

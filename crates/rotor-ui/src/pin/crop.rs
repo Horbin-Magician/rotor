@@ -11,6 +11,13 @@ pub(super) struct CropDrag {
     record: ShotterConfig,
 }
 impl PinView {
+    pub(super) fn committed_crop_record(&self) -> ShotterConfig {
+        self.crop_drag
+            .as_ref()
+            .map(|drag| &drag.record)
+            .unwrap_or(&self.record)
+            .clone()
+    }
     pub(super) fn crop_edges(&self, local: Point<Pixels>, window: &Window) -> CropEdges {
         let size = window.viewport_size();
         if size.width < px(24.) || size.height < px(24.) {

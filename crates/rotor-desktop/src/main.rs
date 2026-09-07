@@ -444,14 +444,14 @@ fn run() -> Result<(), Box<dyn Error>> {
             cx.global_mut::<ShellState>().fonts = Some(font_task);
             cx.global_mut::<ShellState>()._closed = Some(closed);
             let quit = cx.on_app_quit(|cx| {
-                pins::flush(cx);
+                let final_records = pins::final_records(cx);
                 capture::stop(cx);
                 pins::stop(cx);
                 let state = cx.global_mut::<ShellState>();
                 state.fonts = None;
                 state.commands.close();
                 state.system.stop_events();
-                state.services.shutdown();
+                state.services.shutdown_with_pin_updates(final_records);
                 async {}
             });
             cx.global_mut::<ShellState>()._quit = Some(quit);

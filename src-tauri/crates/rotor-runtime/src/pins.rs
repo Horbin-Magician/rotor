@@ -5,7 +5,10 @@ use rotor_screenshot::{
     pin_store::{PinStore, StoredPin},
     shotter_record::ShotterConfig,
 };
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use tokio::{runtime::Runtime, sync::oneshot, task::JoinHandle};
 
 pub struct RestoredPins {
@@ -115,15 +118,18 @@ impl PinCommand {
 pub(crate) struct PinService {
     pub sender: Sender<PinCommand>,
     pub worker: Option<JoinHandle<()>>,
+    pub final_updates: Arc<Mutex<Vec<(u32, ShotterConfig)>>>,
 }
 
 impl PinService {
     pub fn new(runtime: &Runtime, directory: PathBuf, events: Sender<RuntimeEvent>) -> Self {
         let (sender, receiver) = async_channel::bounded(8);
-        let worker = runtime.spawn(run(directory, receiver, events));
+        let final_updates = Arc::new(Mutex::new(Vec::new()));
+        let worker = runtime.spawn(run(directory, receiver, events, final_updates.clone()));
         Self {
             sender,
             worker: Some(worker),
+            final_updates,
         }
     }
     pub fn submit(&self, command: PinCommand) -> Result<(), String> {
@@ -133,7 +139,12 @@ impl PinService {
     }
 }
 
-async fn run(directory: PathBuf, commands: Receiver<PinCommand>, events: Sender<RuntimeEvent>) {
+async fn run(
+    directory: PathBuf,
+    commands: Receiver<PinCommand>,
+    events: Sender<RuntimeEvent>,
+    final_updates: Arc<Mutex<Vec<(u32, ShotterConfig)>>>,
+) {
     let mut store = tokio::task::spawn_blocking(move || PinStore::load_from(&directory))
         .await
         .map_err(|error| error.to_string())
@@ -160,6 +171,29 @@ async fn run(directory: PathBuf, commands: Receiver<PinCommand>, events: Sender<
         };
         store = next;
         let _ = events.send(RuntimeEvent::Pin(event)).await;
+    }
+    let updates = std::mem::take(
+        &mut *final_updates
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()),
+    );
+    if !updates.is_empty() {
+        let result = tokio::task::spawn_blocking(move || {
+            store
+                .as_mut()
+                .map_err(|error| error.clone())?
+                .update_existing_batch(updates)
+        })
+        .await;
+        match result {
+            Ok(Ok(warnings)) => {
+                for warning in warnings {
+                    log::warn!("Final pin update: {warning}");
+                }
+            }
+            Ok(Err(error)) => log::error!("Final pin snapshot failed: {error}"),
+            Err(error) => log::error!("Final pin snapshot task failed: {error}"),
+        }
     }
 }
 
