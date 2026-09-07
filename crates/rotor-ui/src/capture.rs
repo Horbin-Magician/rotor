@@ -92,6 +92,7 @@ pub struct MaskView {
     focus: FocusHandle,
     armed: bool,
     _bounds: Subscription,
+    detected: Vec<ImageRect>,
 }
 impl MaskView {
     pub fn new(
@@ -115,6 +116,7 @@ impl MaskView {
             focus,
             armed: false,
             _bounds: bounds,
+            detected: Vec::new(),
         }
     }
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -127,6 +129,14 @@ impl MaskView {
         cx: &mut Context<Self>,
     ) {
         self.move_pointer(point, window, cx);
+    }
+    pub fn set_detected_rectangles(&mut self, rectangles: Vec<ImageRect>, cx: &mut Context<Self>) {
+        let size = self.dimensions();
+        self.detected = rectangles
+            .into_iter()
+            .filter_map(|rect| rect.clipped(size))
+            .collect();
+        cx.notify();
     }
     pub fn arm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.armed = true;
@@ -164,16 +174,14 @@ impl MaskView {
         }
     }
     fn auto_selection(&self) -> Option<ImageRect> {
-        self.capture
-            .windows
-            .iter()
-            .filter(|(_, rect)| rect.contains(self.point))
-            .max_by(|(a_z, a), (b_z, b)| {
-                a_z.max(&0).cmp(b_z.max(&0)).then_with(|| {
-                    (b.width as u64 * b.height as u64).cmp(&(a.width as u64 * a.height as u64))
-                })
-            })
-            .map(|(_, rect)| *rect)
+        choose_rectangle(
+            self.point,
+            self.capture
+                .windows
+                .iter()
+                .copied()
+                .chain(self.detected.iter().map(|rect| (-1, *rect))),
+        )
     }
     fn selected(&self) -> Option<ImageRect> {
         if let Some(start) = self.start {
@@ -235,6 +243,35 @@ impl MaskView {
         let [r, g, b, _] = self.pixel(0, 0);
         format!("#{r:02x}{g:02x}{b:02x}")
     }
+}
+
+fn choose_rectangle(
+    point: ImagePoint,
+    rectangles: impl Iterator<Item = (i32, ImageRect)>,
+) -> Option<ImageRect> {
+    rectangles
+        .filter(|(_, rect)| rect.contains(point))
+        .fold(None, |best: Option<(i32, ImageRect)>, current| {
+            let Some(previous) = best else {
+                return Some(current);
+            };
+            if current.0 >= 0 && current.0 != previous.0 {
+                Some(if previous.0 > current.0 {
+                    previous
+                } else {
+                    current
+                })
+            } else {
+                let previous_area = previous.1.width as u64 * previous.1.height as u64;
+                let current_area = current.1.width as u64 * current.1.height as u64;
+                Some(if previous_area < current_area {
+                    previous
+                } else {
+                    current
+                })
+            }
+        })
+        .map(|(_, rect)| rect)
 }
 fn shade(x: f32, y: f32, width: f32, height: f32) -> Div {
     div()
@@ -368,7 +405,7 @@ impl Render for MaskView {
 
 #[cfg(test)]
 mod tests {
-    use super::{prepare_capture, prepare_image};
+    use super::{choose_rectangle, prepare_capture, prepare_image};
     use image::RgbaImage;
     use rotor_canvas::ImageRect;
     use rotor_runtime::{CaptureBundle, MonitorConfig};
@@ -415,6 +452,40 @@ mod tests {
                     height: 3
                 }
             )]
+        );
+    }
+
+    #[test]
+    fn image_contours_can_refine_the_frontmost_window() {
+        let background = ImageRect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        };
+        let foreground = ImageRect {
+            x: 10,
+            y: 10,
+            width: 80,
+            height: 80,
+        };
+        let contour = ImageRect {
+            x: 20,
+            y: 20,
+            width: 20,
+            height: 20,
+        };
+        let point = rotor_canvas::ImagePoint { x: 25., y: 25. };
+        assert_eq!(
+            choose_rectangle(point, [(1, background), (2, foreground)].into_iter()),
+            Some(foreground)
+        );
+        assert_eq!(
+            choose_rectangle(
+                point,
+                [(1, background), (2, foreground), (-1, contour)].into_iter()
+            ),
+            Some(contour)
         );
     }
 }

@@ -489,6 +489,38 @@ impl Services {
         )
     }
 
+    pub async fn detect_capture_rectangles(
+        &self,
+        image: Arc<RgbaImage>,
+    ) -> Result<Vec<rotor_canvas::ImageRect>, String> {
+        self.ensure_running()?;
+        if image.width() == 0 || image.height() == 0 {
+            return Err("Capture image is empty".into());
+        }
+        let permit = self
+            .slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| "capture detection is stopped")?;
+        self.ensure_running()?;
+        self.runtime()
+            .spawn_blocking(move || {
+                let _permit = permit;
+                img_util::detect_rect(&image)
+                    .into_iter()
+                    .map(|(x, y, width, height)| rotor_canvas::ImageRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                    })
+                    .collect()
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     pub fn cancel_capture(&self) {
         self.capture_id.store(next_operation().0, Ordering::Release);
     }

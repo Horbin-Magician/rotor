@@ -10,6 +10,7 @@ pub struct CaptureState {
     pub session: NativeSession,
     frames: HashMap<u32, Arc<PreparedCapture>>,
     preparing: Option<Task<()>>,
+    detecting: Option<Task<()>>,
 }
 pub fn report(error: String, cx: &mut App) {
     eprintln!("Capture: {error}");
@@ -73,6 +74,7 @@ pub fn stop(cx: &mut App) {
     let state = cx.global_mut::<ShellState>();
     state.capture.session.cancel();
     state.capture.preparing = None;
+    state.capture.detecting = None;
     state.capture.frames.clear();
     state.services.cancel_capture();
 }
@@ -243,6 +245,55 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
             })
             .map_err(|error| error.to_string())?;
     }
+    let frames: Vec<_> = cx
+        .global::<ShellState>()
+        .capture
+        .frames
+        .values()
+        .cloned()
+        .collect();
+    let services = cx.global::<ShellState>().services.clone();
+    let task = cx.spawn(async move |cx| {
+        for frame in frames {
+            let monitor = frame.monitor.id;
+            let rectangles = services
+                .detect_capture_rectangles(frame.image.image.clone())
+                .await;
+            let current = cx.update(|cx| {
+                if !cx
+                    .global::<ShellState>()
+                    .capture
+                    .session
+                    .is_ready(session, monitor)
+                {
+                    return false;
+                }
+                match rectangles {
+                    Ok(rectangles) => {
+                        if let Some(view) = cx
+                            .global::<ShellState>()
+                            .windows
+                            .get(&WindowRole::Mask { session, monitor })
+                            .and_then(|entry| match &entry.view {
+                                WindowView::Mask(view) => Some(view.clone()),
+                                _ => None,
+                            })
+                        {
+                            let _ = view.update(cx, |view, cx| {
+                                view.set_detected_rectangles(rectangles, cx)
+                            });
+                        }
+                    }
+                    Err(error) => eprintln!("Capture rectangle detection: {error}"),
+                }
+                true
+            });
+            if !current {
+                break;
+            }
+        }
+    });
+    cx.global_mut::<ShellState>().capture.detecting = Some(task);
     Ok(())
 }
 fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
