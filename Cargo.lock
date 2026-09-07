@@ -8353,6 +8353,7 @@ dependencies = [
  "rotor-common",
  "rotor-platform",
  "serde",
+ "tempfile",
  "toml 0.8.23",
  "xcap",
 ]
