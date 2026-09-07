@@ -1,5 +1,6 @@
 //! UI-independent use cases. Publishers wake a bounded receiver; the shell owns
 //! window lookup and generation checks, never a worker or an IPC string router.
+use crate::pins::{PinCommand, PinService};
 use async_channel::{Receiver, Sender};
 use image::{DynamicImage, RgbaImage};
 use rotor_common::{Config, ConfigService, ResourceLocator};
@@ -42,6 +43,7 @@ pub struct CapturedMonitor {
 }
 
 pub enum RuntimeEvent {
+    Pin(crate::PinEvent),
     Search(SearchBatch),
     IndexState(IndexState),
     IndexStatus {
@@ -105,6 +107,7 @@ pub struct Services {
     events: Sender<RuntimeEvent>,
     settings: Sender<SettingsCommand>,
     settings_worker: Option<JoinHandle<()>>,
+    pins: PinService,
     searcher: Option<Searcher>,
     translation: Mutex<Option<JoinHandle<()>>>,
     translation_id: Arc<AtomicU64>,
@@ -123,13 +126,18 @@ impl Services {
     ) -> Result<(Self, Receiver<RuntimeEvent>), String> {
         let runtime = Builder::new_multi_thread()
             .worker_threads(2)
-            .max_blocking_threads(BACKGROUND_LIMIT + 1)
+            .max_blocking_threads(BACKGROUND_LIMIT + 2)
             .thread_name("rotor-worker")
             .enable_all()
             .build()
             .map_err(|error| error.to_string())?;
         let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
         let (settings, settings_receiver) = async_channel::bounded(SETTINGS_CAPACITY);
+        let data_directory = lock(&config)
+            .data_directory()
+            .ok_or("configuration data directory unavailable")?
+            .to_path_buf();
+        let pins = PinService::new(&runtime, data_directory, events.clone());
         let published_config = Arc::new(Mutex::new(lock(&config).get_all()));
         let settings_worker = runtime.spawn(settings_loop(
             config,
@@ -157,6 +165,7 @@ impl Services {
                 events,
                 settings,
                 settings_worker: Some(settings_worker),
+                pins,
                 searcher,
                 translation: Mutex::new(None),
                 translation_id: Arc::new(AtomicU64::new(0)),
@@ -172,6 +181,51 @@ impl Services {
 
     pub fn settings(&self) -> Config {
         lock(&self.published_config).clone()
+    }
+
+    pub fn restore_pins(&self) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Restore { id })?;
+        Ok(id)
+    }
+    pub fn create_pin(
+        &self,
+        image: Arc<RgbaImage>,
+        config: crate::ShotterConfig,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Create { id, image, config })?;
+        Ok(id)
+    }
+    pub fn update_pin(
+        &self,
+        pin_id: u32,
+        config: crate::ShotterConfig,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins
+            .submit(PinCommand::Update { id, pin_id, config })?;
+        Ok(id)
+    }
+    pub fn delete_pin(&self, pin_id: u32) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Delete { id, pin_id })?;
+        Ok(id)
+    }
+    pub async fn flush_pins(&self) -> Result<(), String> {
+        let (sender, receiver) = oneshot::channel();
+        self.pins
+            .sender
+            .send(PinCommand::Flush(sender))
+            .await
+            .map_err(|_| "pin persistence queue is closed")?;
+        receiver
+            .await
+            .map_err(|_| "pin persistence worker stopped".into())
     }
 
     /// Accepted patches execute serially, including when fields are edited fast.
@@ -441,6 +495,7 @@ impl Services {
             searcher.shutdown();
         }
         self.settings.close();
+        self.pins.sender.close();
         // Unblock callback publishers before waiting for accepted disk writes.
         self.events.close();
         for task in lock(&self.background).drain(..) {
@@ -458,6 +513,13 @@ impl Drop for Services {
                     .block_on(async { tokio::time::timeout(Duration::from_secs(2), worker).await });
                 if !matches!(flushed, Ok(Ok(()))) {
                     log::error!("Configuration worker did not finish during shutdown");
+                }
+            }
+            if let Some(worker) = self.pins.worker.take() {
+                let flushed = runtime
+                    .block_on(async { tokio::time::timeout(Duration::from_secs(2), worker).await });
+                if !matches!(flushed, Ok(Ok(()))) {
+                    log::error!("Pin persistence worker did not finish during shutdown");
                 }
             }
             runtime.shutdown_timeout(Duration::from_secs(2));
@@ -571,6 +633,73 @@ mod tests {
         let config = ConfigService::load_from(directory.path()).unwrap();
         assert_eq!(config.get_user("theme").map(String::as_str), Some("2"));
         assert_eq!(config.get_user("unknown").map(String::as_str), Some("kept"));
+    }
+
+    fn pin_config() -> crate::ShotterConfig {
+        crate::ShotterConfig {
+            monitor_pos: (0, 0),
+            monitor_size: (1920, 1080),
+            rect: (0, 0, 2, 3),
+            image_rect: None,
+            offset: (0, 0),
+            zoom_factor: 100,
+            mask_label: "ssmask-1".into(),
+            minimized: false,
+        }
+    }
+
+    #[test]
+    fn shutdown_drains_accepted_pin_creation_without_an_event_consumer() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), pin_config())
+            .unwrap();
+        services.shutdown();
+        assert!(services.restore_pins().is_err());
+        drop(services);
+        let store = rotor_screenshot::pin_store::PinStore::load_from(directory.path()).unwrap();
+        let (pins, warnings) = store.load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+    }
+
+    #[test]
+    fn pin_update_and_delete_follow_submission_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let request = services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), pin_config())
+            .unwrap();
+        let created = services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        let RuntimeEvent::Pin(crate::PinEvent::Created { id, result }) = created else {
+            panic!("expected created pin");
+        };
+        assert_eq!(id, request);
+        let pin = result.unwrap();
+        let mut config = pin.config;
+        config.offset = (5, -8);
+        let updated = services.update_pin(pin.id, config).unwrap();
+        let deleted = services.delete_pin(pin.id).unwrap();
+        services.runtime().block_on(services.flush_pins()).unwrap();
+        assert!(
+            matches!(events.try_recv().unwrap(), RuntimeEvent::Pin(crate::PinEvent::Updated { id, result: Ok(_), .. }) if id == updated)
+        );
+        assert!(
+            matches!(events.try_recv().unwrap(), RuntimeEvent::Pin(crate::PinEvent::Deleted { id, result: Ok(()), .. }) if id == deleted)
+        );
+        assert!(
+            rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+                .unwrap()
+                .load_pins()
+                .0
+                .is_empty()
+        );
     }
 
     #[test]

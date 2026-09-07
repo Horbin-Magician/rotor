@@ -198,6 +198,10 @@ impl AppConfig {
         merged.extend(self.config.clone());
         merged
     }
+
+    pub fn data_directory(&self) -> Option<&Path> {
+        self.path.as_deref().and_then(Path::parent)
+    }
 }
 
 static INSTANCE: LazyLock<Arc<Mutex<AppConfig>>> =

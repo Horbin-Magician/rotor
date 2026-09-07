@@ -1,6 +1,9 @@
+mod pins;
 pub mod quick;
 pub mod services;
+pub use pins::{PinEvent, RestoredPins};
 pub use quick::{Quick, QuickAction};
+pub use rotor_screenshot::{pin_store::StoredPin, shotter_record::ShotterConfig};
 pub use rotor_searcher::file_data::SearchIndexStatus;
 pub use rotor_searcher::{file_data::SearchResultItem, SearchBatch};
 pub use rotor_searcher::{IndexState, QueryId};
