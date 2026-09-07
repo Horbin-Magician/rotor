@@ -1,3 +1,5 @@
+pub mod bundle;
+
 use base64::prelude::*;
 use futures_util::StreamExt;
 use minisign_verify::{PublicKey, Signature};

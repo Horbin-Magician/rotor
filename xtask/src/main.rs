@@ -225,6 +225,7 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
     } else if cfg!(target_os = "macos") {
         let archive = output.join(format!("Rotor-GPUI_{version}_aarch64.app.tar.gz"));
         let status = Command::new("tar")
+            .env("COPYFILE_DISABLE", "1")
             .arg("-czf")
             .arg(archive)
             .arg("-C")

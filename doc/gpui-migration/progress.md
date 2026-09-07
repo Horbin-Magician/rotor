@@ -295,3 +295,10 @@
 - verify-profile 校验不可变备份/新导入副本；活动副本正常写盘后哈希会变化。回退导入另一新目录，不覆盖迁移后截图或删除备份。
 - 合成图片/旧 TOML → 原生 PinStore 和 ConfigService 写回 → 旧 ShotterRecord 读取器验证 → 第二次副本导入全流程通过，保留 unknown keys、其他 workspace、image_rect/crop、负坐标、缩放与 PNG 字节。夹具与备份位于 target/profile-roundtrip-p8，未接触真实用户截图。
 - common 12 项测试、common/xtask clippy、CLI 备份验证通过；CI 增加副本演练。旧正式安装版 GUI 的实际双向数据验收和不同版本安装包演练仍未完成，G8 未通过。
+
+## P8 macOS 归档与恢复基础
+
+- 对 app.tar.gz 先复制到私有暂存目录并验签，再限量解压；拒绝绝对/父路径、链接、特殊文件、重复文件和多个根。校验 Rotor bundle ID、版本及 arm64 Mach-O 头。
+- 应用替换验证同身份且版本递增，使用独立备份/失败目录；替换失败恢复旧包，新进程启动失败时保留失败新包并恢复旧包。暂存与目标同文件系统，备份不删除。
+- 10 项 updater 测试和 updater/xtask clippy 通过，包括正常归档、路径攻击、成功备份、防降级及模拟启动失败恢复。这里只验证跨平台文件逻辑，尚未在 macOS 编译或执行真实 app 替换/重启。
+- macOS tar 配方关闭 AppleDouble 元数据副本，匹配单 app 根的归档规则；签名、公证/隔离属性与真实分发方式仍待 Mac 环境验收。
