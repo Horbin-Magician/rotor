@@ -10,6 +10,7 @@ image = "0.25.6"
 log = "0.4.27"
 rotor-common = { path = "../rotor-common" }
 rotor-canvas = { path = "../../../crates/rotor-canvas" }
+rotor-updater.workspace = true
 rotor-platform = { path = "../rotor-platform" }
 rotor-screenshot = { path = "../rotor-screenshot" }
 rotor-searcher = { path = "../rotor-searcher" }

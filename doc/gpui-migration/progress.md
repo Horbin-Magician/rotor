@@ -269,3 +269,9 @@
 - macOS app/tar.gz/DMG 配方已写入，未在 Mac 编译、运行、签名或公证；CI 增加暂存校验和归档上传，尚未执行远端 CI。
 - Windows release 构建、desktop/xtask clippy、资源篡改测试和暂存/产物校验通过。暂存 exe 版本 2.6.0、PE subsystem 2，从临时工作目录执行 --check-config 返回 0。
 - 本地产物 target/native-package-p8/Rotor-GPUI_2.6.0_x64-setup.exe，37,413,343 bytes，SHA-256 caa25c40d74cc9c4164f854b181687569a64a0191da3f0555d15e37435f5b386。仅构建，未安装、签名或发布；安装/卸载/覆盖升级仍待实机验收。
+
+## P8 原生更新页
+
+- 设置新增预览更新检查、版本说明、下载进度、取消与打开下载目录。后台保留状态，重新打开设置能恢复；有界事件队列、状态 revision 防止迟到事件回退界面。
+- 一次只允许一项检查/下载；退出取消工作，校验成功才显示下载完成。尚未接入安装与重启交接。
+- native check、runtime 状态测试和 desktop/ui/runtime/updater clippy 通过。新增只验签、不执行文件的 verify_artifact 示例；已对下载的 v2.6.0 Windows 正式安装包验签成功（18,195,706 bytes）。预览通道尚未发布，未操作更新页 GUI。

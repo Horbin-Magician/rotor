@@ -8350,6 +8350,7 @@ dependencies = [
  "rotor-screenshot",
  "rotor-searcher",
  "rotor-translator",
+ "rotor-updater",
  "serde",
  "serde_json",
  "tempfile",

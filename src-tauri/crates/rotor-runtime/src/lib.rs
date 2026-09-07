@@ -2,6 +2,7 @@ mod pins;
 pub mod quick;
 pub mod services;
 pub mod shortcuts;
+mod updates;
 pub use pins::{PinEvent, PinExportTarget, RestoredPins};
 pub use quick::{Quick, QuickAction};
 pub use rotor_screenshot::img_util::ocr_cache_loaded;
@@ -18,3 +19,4 @@ pub use services::{
     CaptureBundle, CapturedMonitor, OperationId, Overview, RuntimeEvent, ServiceOptions, Services,
     SettingsCoordination,
 };
+pub use updates::{UpdatePhase, UpdateSnapshot};

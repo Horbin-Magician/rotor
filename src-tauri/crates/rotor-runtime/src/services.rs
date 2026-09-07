@@ -48,6 +48,7 @@ pub struct CaptureBundle {
 }
 
 pub enum RuntimeEvent {
+    Update(Arc<crate::UpdateSnapshot>),
     Overview {
         id: OperationId,
         result: Result<Overview, String>,
@@ -144,6 +145,7 @@ impl Default for ServiceOptions {
 }
 
 pub struct Services {
+    updates: crate::updates::UpdateService,
     runtime: Option<Runtime>,
     published_config: Arc<Mutex<Config>>,
     resources: Option<ResourceLocator>,
@@ -242,6 +244,11 @@ impl Services {
         });
         Ok((
             Self {
+                updates: crate::updates::UpdateService::new(
+                    runtime.handle().clone(),
+                    events.clone(),
+                    data_directory.join("updates"),
+                ),
                 runtime: Some(runtime),
                 published_config,
                 resources,
@@ -267,6 +274,19 @@ impl Services {
             },
             receiver,
         ))
+    }
+
+    pub fn update_snapshot(&self) -> Arc<crate::UpdateSnapshot> {
+        self.updates.snapshot()
+    }
+    pub fn check_updates(&self) -> Result<(), String> {
+        self.updates.check()
+    }
+    pub fn download_update(&self) -> Result<(), String> {
+        self.updates.download()
+    }
+    pub fn cancel_update(&self) {
+        self.updates.cancel();
     }
 
     pub fn settings(&self) -> Config {
@@ -824,6 +844,7 @@ impl Services {
         if self.stopped.swap(true, Ordering::AcqRel) {
             return;
         }
+        self.updates.shutdown();
         *lock(&self.pins.final_updates) = updates;
         self.cancel_translation();
         self.slots.close();
