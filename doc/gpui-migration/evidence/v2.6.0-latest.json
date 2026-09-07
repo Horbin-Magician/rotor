@@ -1,0 +1,23 @@
+{
+  "version": "2.6.0",
+  "notes": "See the assets to download this version and install.",
+  "pub_date": "2026-08-04T07:18:33.580Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZ3VrUk9RZTd3Mk4rdjJ3dnNMYTFiMmozRW5HRG5ZYldBRnpNWC9XbTZBVnV1U0RFYXk0VjJsMjM2NzBoeGlHOVlTTXhHcjBlZjJTUlBrU0pWT1VIS0had2s5RlN5NHcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1ODI3ODA3CWZpbGU6Um90b3IuYXBwLnRhci5negpReXJRb0FoSDFob0dqRlhXbit1RE4wVXBDblFmZXY5T3Jjb3dMOEswbTdjejRzeS9vOFBia3lIK1ZpTkpTZUpQRHBZOGxlb08xb1dUOVo5MXRNUW9EZz09Cg==",
+      "url": "https://github.com/Horbin-Magician/rotor/releases/download/v2.6.0/Rotor_aarch64.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZ3VrUk9RZTd3Mk4rdjJ3dnNMYTFiMmozRW5HRG5ZYldBRnpNWC9XbTZBVnV1U0RFYXk0VjJsMjM2NzBoeGlHOVlTTXhHcjBlZjJTUlBrU0pWT1VIS0had2s5RlN5NHcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1ODI3ODA3CWZpbGU6Um90b3IuYXBwLnRhci5negpReXJRb0FoSDFob0dqRlhXbit1RE4wVXBDblFmZXY5T3Jjb3dMOEswbTdjejRzeS9vOFBia3lIK1ZpTkpTZUpQRHBZOGxlb08xb1dUOVo5MXRNUW9EZz09Cg==",
+      "url": "https://github.com/Horbin-Magician/rotor/releases/download/v2.6.0/Rotor_aarch64.app.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZ3VrUk9RZTd3MkozNnhQSVhTZUJjU2JvbEVJMjkrUEs5dTVhYnM0YTJWSUhiMzFnSUh0MEcwR2NEU1FmWWlKNzZvUzNBZ0FzbWRQRFBVTFQrRkt3MFhQQkNaMVFKVFFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1ODI3OTA5CWZpbGU6Um90b3JfMi42LjBfeDY0LXNldHVwLmV4ZQpDbkJuaUhzWU0wbU9aZ2IvREFab3dxTlM1a0RCbjdxMnZsS1Y2Tldkd1Z1VW8vcUJMZWdEaG1QaytKcDRHa3VwZVVGNGlBenZwaXhyQVVQVnJidVJEUT09Cg==",
+      "url": "https://github.com/Horbin-Magician/rotor/releases/download/v2.6.0/Rotor_2.6.0_x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZ3VrUk9RZTd3MkozNnhQSVhTZUJjU2JvbEVJMjkrUEs5dTVhYnM0YTJWSUhiMzFnSUh0MEcwR2NEU1FmWWlKNzZvUzNBZ0FzbWRQRFBVTFQrRkt3MFhQQkNaMVFKVFFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1ODI3OTA5CWZpbGU6Um90b3JfMi42LjBfeDY0LXNldHVwLmV4ZQpDbkJuaUhzWU0wbU9aZ2IvREFab3dxTlM1a0RCbjdxMnZsS1Y2Tldkd1Z1VW8vcUJMZWdEaG1QaytKcDRHa3VwZVVGNGlBenZwaXhyQVVQVnJidVJEUT09Cg==",
+      "url": "https://github.com/Horbin-Magician/rotor/releases/download/v2.6.0/Rotor_2.6.0_x64-setup.exe"
+    }
+  }
+}

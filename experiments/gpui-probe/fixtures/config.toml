@@ -1,0 +1,10 @@
+# Synthetic compatibility sample, NOT a copy of private user configuration.
+language = "0"
+theme = "0"
+zoom_delta = "2"
+translator_engine = "google"
+translator_target_lang = "auto"
+translator_custom_key = ""
+translator_deepseek_api_key = ""
+quick_actions = "[]"
+quick_actions_revision = "2"

@@ -2,7 +2,7 @@
 
 制定日期：2026-09-07。开发分支：`refactor/gpui`。代码基线：`master` 的 `40addee065765ed343e665d6a712b3e9cbe2bdcc`（`chore: release v2.6.0`）。
 
-本次交付是开发计划，尚未实现 GPUI 应用、安装新依赖或完成平台验证。以下任务、工期、性能目标均为后续实施安排；只有附有测试证据的任务才能标记完成。
+P0 已开始实施，独立原型位于 [experiments/gpui-probe](../../experiments/gpui-probe/README.md)。当前实现与验证结果见 [依赖基线](dependency-baseline.md)、[旧版基线记录](baseline.md) 和 [更新交接草案](update-handoff.md)。以下任务只有附有完整测试证据才能标记完成；原型代码交付不等于 G0 通过。
 
 配套文档：
 
@@ -316,4 +316,4 @@ G9：最终代码和发布产物只使用 GPUI UI 路径；所有必测项有结
 
 建议提交序列：`docs: migration plan` → `chore: GPUI probe` → `refactor: decouple core` → `feat: desktop lifecycle` → 各模块 `feat` → `build: native packaging and updater` → `refactor: remove Tauri frontend`。合入 master 的前提是 G9 完成；开发过程中可持续形成小范围可审查差异。
 
-本计划的后续执行起点是 P0-01/P0-02。写完计划、创建分支或原型编译成功，都不等同于任何功能迁移阶段已经完成。
+P0 的 Windows 原型、锁定依赖、打包和早期证据已落地，后续先补齐 dependency-baseline.md 中的未测项；G0 尚未通过，不直接进入 P1。创建原型或编译成功不等同于迁移阶段完整验收。

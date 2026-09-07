@@ -1,6 +1,6 @@
 # 验证、性能与发布验收
 
-返回 [迁移计划](README.md)；功能 ID 见 [功能对照](feature-parity.md)。本文件定义后续实施的验收要求；当前未执行这里的功能测试或基准测试。
+返回 [迁移计划](README.md)；功能 ID 见 [功能对照](feature-parity.md)。本文件定义完整验收要求；已执行的 P0 Windows 子集见 [实机证据](evidence/p0-windows.md)，完整跨平台矩阵尚未完成。
 
 ## 1. 测试环境与证据
 
@@ -101,7 +101,7 @@ V09 的细化输入必须包含：Windows 微软拼音、macOS 拼音；常见�
 
 ## 5. 构建与 CI 门槛
 
-当前计划仅改 Markdown，无需构建应用。下面是后续实施命令，不表示当前分支已存在新 crate 或 xtask。
+P0 独立 workspace 已建立，按下面的 P0 命令验证。P1 之后的根 workspace 和 xtask 仍为后续阶段安排，不能作为已存在的入口运行。
 
 ### P0 原型
 
@@ -186,4 +186,4 @@ cargo tree -p rotor-desktop --edges normal,build
 - [ ] 最终正常/构建依赖闭包、产物和 CI 已移除 Tauri/WebView/JS；无 Node/Yarn 环境可构建。
 - [ ] README 中英文、AGENTS.md、开发命令、平台要求和发布恢复说明与新工程一致。
 
-完成定义针对 GPUI 正式候选；本次编写计划的完成不勾选上述迁移验收项。
+完成定义针对 GPUI 正式候选；P0 原型及单机测试不能代替上述完整迁移验收。
