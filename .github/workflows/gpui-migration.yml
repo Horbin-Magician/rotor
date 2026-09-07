@@ -33,6 +33,7 @@ jobs:
         run: ./.github/scripts/check-core-dependencies.ps1
       - run: cargo clippy --no-deps -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-runtime --all-targets --locked -- -D warnings
       - run: cargo build -p rotor-desktop --release --locked
+      - run: cargo run -p rotor-desktop --example ocr_smoke --release --locked -- --wait-idle
   legacy:
     runs-on: windows-latest
     steps:

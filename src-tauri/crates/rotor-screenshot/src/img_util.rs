@@ -20,6 +20,13 @@ struct OcrCache {
 static OCR_PIPELINE: OnceLock<Mutex<OcrCache>> = OnceLock::new();
 static OCR_REAPER: Mutex<Option<mpsc::Sender<()>>> = Mutex::new(None);
 
+/// Nonblocking status for diagnostics; None means the pipeline is busy or poisoned.
+pub fn ocr_cache_loaded() -> Option<bool> {
+    OCR_PIPELINE.get().map_or(Some(false), |cache| {
+        cache.try_lock().ok().map(|cache| cache.pipeline.is_some())
+    })
+}
+
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let original_width = original_img.width();
     let original_height = original_img.height();

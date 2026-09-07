@@ -1,6 +1,7 @@
 use super::PreparedImage;
 mod annotation;
 mod crop;
+mod ocr;
 use gpui_kit::{
     component::{Disableable, button::Button},
     prelude::*,
@@ -64,6 +65,7 @@ pub struct PinView {
     pointer_owned: bool,
     crop_drag: Option<crop::CropDrag>,
     crop_hover: rotor_canvas::CropEdges,
+    ocr: ocr::OcrState,
 }
 impl PinView {
     pub fn new(
@@ -108,6 +110,7 @@ impl PinView {
             pointer_owned: false,
             crop_drag: None,
             crop_hover: Default::default(),
+            ocr: Default::default(),
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
@@ -357,6 +360,7 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.ocr_event(event, window, cx);
         match event {
             RuntimeEvent::Pin(PinEvent::Created { id, result })
                 if self.pending_create == Some(*id) =>
@@ -437,12 +441,16 @@ impl Render for PinView {
             .size_full()
             .overflow_hidden()
             .child(self.canvas_element(window, cx))
+            .when(self.ocr.active, |root| {
+                root.child(self.ocr_layer(window, cx))
+            })
             .when(
                 self.hovered
                     || !self.message.is_empty()
                     || self.pending_create.is_some()
                     || self.canvas.error.is_some()
-                    || self.canvas.editing(),
+                    || self.canvas.editing()
+                    || self.ocr.active,
                 |root| {
                     root.child(
                         div()
@@ -500,7 +508,17 @@ impl Render for PinView {
                                             })),
                                     ),
                             )
-                            .child(self.canvas_tools(cx))
+                            .child(
+                                Button::new("pin-ocr")
+                                    .label("OCR")
+                                    .compact()
+                                    .disabled(export_disabled)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.start_ocr(window, cx)
+                                    })),
+                            )
+                            .when(self.ocr.active, |root| root.child(self.ocr_tools(cx)))
+                            .when(!self.ocr.active, |root| root.child(self.canvas_tools(cx)))
                             .child(div().text_xs().child(self.message.clone()))
                             .child(
                                 div()
@@ -527,10 +545,12 @@ impl Render for PinView {
                 cx.stop_propagation();
             }))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                this.canvas_keys(event, window, cx);
+                if !this.ocr_keys(event, window, cx) {
+                    this.canvas_keys(event, window, cx);
+                }
             }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if this.canvas.editor.is_some() {
+                if this.canvas.editor.is_some() || this.ocr.active {
                     return;
                 }
                 if shortcut_matches(&event.keystroke, this.settings.get("shortcut_pinwin_save")) {

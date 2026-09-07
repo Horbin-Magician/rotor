@@ -42,6 +42,12 @@ pub(super) struct CanvasState {
     text_pending: bool,
 }
 impl CanvasState {
+    pub(super) fn content_revision(&self) -> u64 {
+        self.document.revision()
+    }
+    pub(super) fn frame_revision(&self) -> u64 {
+        self.epoch
+    }
     pub(super) fn new(image: &PreparedImage, record: &ShotterConfig) -> Self {
         let (x, y, width, height) =
             rotor_runtime::pin_source_crop(record, image.image.width(), image.image.height())
@@ -206,6 +212,13 @@ impl PinView {
             crop: transform.crop,
             output,
         };
+        if self
+            .ocr
+            .signature
+            .is_some_and(|signature| signature != (key.revision, key.crop))
+        {
+            self.clear_ocr(window);
+        }
         if self.canvas.requested == Some(key) {
             return;
         }
