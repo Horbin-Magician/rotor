@@ -26,6 +26,12 @@ enum NativePhase {
 }
 
 impl NativeSession {
+    pub fn generation(&self) -> Option<u64> {
+        match self.phase {
+            NativePhase::Idle => None,
+            NativePhase::Capturing(id) | NativePhase::Ready { id, .. } => Some(id),
+        }
+    }
     pub fn begin(&mut self, id: u64) {
         self.phase = NativePhase::Capturing(id);
     }

@@ -1,3 +1,5 @@
+mod capture;
+mod pins;
 mod placement;
 mod system;
 
@@ -17,18 +19,22 @@ enum WindowRole {
     Settings,
     Translator,
     Search,
+    Mask { session: u64, monitor: u32 },
+    Pin(u64),
 }
 
 enum WindowView {
     Settings(WeakEntity<rotor_ui::SettingsView>),
     Translator(WeakEntity<rotor_ui::TranslatorView>),
     Search(WeakEntity<rotor_ui::SearchView>),
+    Mask(WeakEntity<rotor_ui::MaskView>),
+    Pin(WeakEntity<rotor_ui::PinView>),
 }
 
 struct WindowSlot {
     window: AnyWindowHandle,
     view: WindowView,
-    _appearance: Subscription,
+    _appearance: Option<Subscription>,
 }
 
 struct ShellState {
@@ -41,6 +47,9 @@ struct ShellState {
     _closed: Option<Subscription>,
     _quit: Option<Subscription>,
     pending_selection: Option<OperationId>,
+    capture: capture::CaptureState,
+    pins: pins::PinWindows,
+    monitors: Vec<rotor_runtime::MonitorConfig>,
 }
 impl Global for ShellState {}
 
@@ -114,7 +123,7 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
             WindowSlot {
                 window: window.window_handle(),
                 view: WindowView::Settings(view.downgrade()),
-                _appearance: appearance,
+                _appearance: Some(appearance),
             },
         );
         cx.new(|cx| Root::new(view, window, cx))
@@ -163,7 +172,7 @@ fn show_translator(cx: &mut App) -> Result<(), String> {
                 WindowSlot {
                     window: window.window_handle(),
                     view: WindowView::Translator(view.downgrade()),
-                    _appearance: appearance,
+                    _appearance: Some(appearance),
                 },
             );
             cx.new(|cx| Root::new(view, window, cx))
@@ -206,7 +215,7 @@ fn show_search(cx: &mut App) -> Result<(), String> {
                 WindowSlot {
                     window: window.window_handle(),
                     view: WindowView::Search(view.downgrade()),
-                    _appearance: appearance,
+                    _appearance: Some(appearance),
                 },
             );
             cx.new(|cx| Root::new(view, window, cx))
@@ -217,6 +226,11 @@ fn show_search(cx: &mut App) -> Result<(), String> {
 }
 
 fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if let RuntimeEvent::CaptureFinished { id, result } = event {
+        capture::completed(id, result, cx);
+        return;
+    }
+    pins::handle_event(&event, cx);
     if let RuntimeEvent::SelectionFinished { id, result } = event {
         if cx.global::<ShellState>().pending_selection != Some(id) {
             return;
@@ -396,16 +410,37 @@ fn run() -> Result<(), Box<dyn Error>> {
                 _closed: None,
                 _quit: None,
                 pending_selection: None,
+                capture: capture::CaptureState::default(),
+                pins: pins::PinWindows::default(),
+                monitors: Vec::new(),
             });
             let closed = cx.on_window_closed(|cx, id| {
                 if cx.try_global::<ShellState>().is_some() {
+                    let role = cx
+                        .global::<ShellState>()
+                        .windows
+                        .iter()
+                        .find(|(_, entry)| entry.window.window_id() == id)
+                        .map(|(role, _)| *role);
                     cx.global_mut::<ShellState>()
                         .windows
                         .retain(|_, entry| entry.window.window_id() != id);
+                    if let Some(WindowRole::Mask { session, .. }) = role {
+                        cx.defer(move |cx| {
+                            if cx.global::<ShellState>().capture.session.generation()
+                                == Some(session)
+                            {
+                                let _ = capture::cancel(None, cx);
+                            }
+                        });
+                    }
                 }
             });
             cx.global_mut::<ShellState>()._closed = Some(closed);
             let quit = cx.on_app_quit(|cx| {
+                pins::flush(cx);
+                capture::stop(cx);
+                pins::stop(cx);
                 let state = cx.global_mut::<ShellState>();
                 state.commands.close();
                 state.system.stop_events();
@@ -413,6 +448,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 async {}
             });
             cx.global_mut::<ShellState>()._quit = Some(quit);
+            let _ = cx.global::<ShellState>().services.restore_pins();
             if !background && let Err(error) = show_settings(cx) {
                 eprintln!("Settings: {error}");
                 startup_failed.set(true);
@@ -429,6 +465,16 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if let Some(command) = commands.take() {
                                 let quit = matches!(command, Command::Quit);
                                 cx.update(|cx| {
+                                    if !matches!(command, Command::Capture | Command::Quit)
+                                        && cx
+                                            .global::<ShellState>()
+                                            .capture
+                                            .session
+                                            .generation()
+                                            .is_some()
+                                    {
+                                        let _ = capture::cancel(None, cx);
+                                    }
                                     if !matches!(command, Command::SelectText) {
                                         let state = cx.global_mut::<ShellState>();
                                         state.services.cancel_selection();
@@ -463,6 +509,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                                                 }
                                             }
                                         }
+                                        Command::Capture => {
+                                            if let Err(error) = capture::begin(cx) {
+                                                capture::report(error, cx);
+                                            }
+                                        }
+                                        Command::ShowPins => pins::show_all(cx),
                                     }
                                 });
                                 if quit {

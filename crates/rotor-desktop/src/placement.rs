@@ -36,7 +36,7 @@ pub fn utility_options(requested: Size<Pixels>, near_cursor: bool, cx: &App) -> 
     }
 }
 
-fn cursor_display(
+pub(super) fn cursor_display(
     cx: &App,
 ) -> (
     Option<std::rc::Rc<dyn PlatformDisplay>>,

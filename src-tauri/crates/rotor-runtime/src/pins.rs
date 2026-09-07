@@ -44,6 +44,11 @@ pub enum PinEvent {
 }
 
 pub(crate) enum PinCommand {
+    CreateFromCapture {
+        id: OperationId,
+        image: Arc<RgbaImage>,
+        config: ShotterConfig,
+    },
     Export {
         id: OperationId,
         pin_id: Option<u32>,
@@ -82,7 +87,7 @@ impl PinCommand {
                 id: *id,
                 result: Err(error),
             },
-            Self::Create { id, .. } => PinEvent::Created {
+            Self::Create { id, .. } | Self::CreateFromCapture { id, .. } => PinEvent::Created {
                 id: *id,
                 result: Err(error),
             },
@@ -154,6 +159,35 @@ async fn run(directory: PathBuf, commands: Receiver<PinCommand>, events: Sender<
 
 fn execute(store: &mut Result<PinStore, String>, command: PinCommand) -> PinEvent {
     match command {
+        PinCommand::CreateFromCapture { id, image, config } => PinEvent::Created {
+            id,
+            result: (|| {
+                let (x, y, width, height) = config
+                    .image_rect
+                    .ok_or("Capture selection has no source rectangle")?;
+                if width == 0
+                    || height == 0
+                    || x.checked_add(width)
+                        .is_none_or(|right| right > image.width())
+                    || y.checked_add(height)
+                        .is_none_or(|bottom| bottom > image.height())
+                {
+                    return Err("Capture selection is outside the monitor image".into());
+                }
+                let cropped = Arc::new(
+                    image::imageops::crop_imm(image.as_ref(), x, y, width, height).to_image(),
+                );
+                let pin_id = store
+                    .as_mut()
+                    .map_err(|error| error.clone())?
+                    .create(&cropped, config.clone())?;
+                Ok(StoredPin {
+                    id: pin_id,
+                    config,
+                    image: cropped,
+                })
+            })(),
+        },
         PinCommand::Export {
             id,
             pin_id,

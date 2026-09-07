@@ -8292,6 +8292,8 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "image",
+ "raw-window-handle",
+ "rotor-canvas",
  "rotor-common",
  "rotor-platform",
  "rotor-runtime",

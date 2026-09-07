@@ -17,6 +17,8 @@ const QUIT: u8 = 2;
 const TRANSLATE: u8 = 4;
 const SEARCH: u8 = 8;
 const SELECT: u8 = 16;
+const CAPTURE: u8 = 32;
+const PINS: u8 = 64;
 
 #[derive(Clone, Copy)]
 pub enum Command {
@@ -24,6 +26,8 @@ pub enum Command {
     ShowTranslator,
     ShowSearch,
     SelectText,
+    Capture,
+    ShowPins,
     Quit,
 }
 
@@ -53,6 +57,8 @@ impl CommandBus {
                 Command::ShowTranslator => TRANSLATE,
                 Command::ShowSearch => SEARCH,
                 Command::SelectText => SELECT,
+                Command::Capture => CAPTURE,
+                Command::ShowPins => PINS,
             },
             Ordering::Release,
         );
@@ -62,6 +68,31 @@ impl CommandBus {
         let pending = self.pending.swap(0, Ordering::AcqRel);
         if pending & QUIT != 0 {
             Some(Command::Quit)
+        } else if pending & CAPTURE != 0 {
+            for (bit, command) in [
+                (SHOW, Command::ShowSettings),
+                (TRANSLATE, Command::ShowTranslator),
+                (SEARCH, Command::ShowSearch),
+                (SELECT, Command::SelectText),
+                (PINS, Command::ShowPins),
+            ] {
+                if pending & bit != 0 {
+                    self.request(command);
+                }
+            }
+            Some(Command::Capture)
+        } else if pending & PINS != 0 {
+            for (bit, command) in [
+                (SHOW, Command::ShowSettings),
+                (TRANSLATE, Command::ShowTranslator),
+                (SEARCH, Command::ShowSearch),
+                (SELECT, Command::SelectText),
+            ] {
+                if pending & bit != 0 {
+                    self.request(command);
+                }
+            }
+            Some(Command::ShowPins)
         } else if pending & SEARCH != 0 {
             if pending & SELECT != 0 {
                 self.request(Command::SelectText);
@@ -144,6 +175,11 @@ impl SystemServices {
             Code::KeyD,
         );
         let select_id = select_hotkey.id();
+        let capture_hotkey = HotKey::new(
+            Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
+            Code::KeyS,
+        );
+        let capture_id = capture_hotkey.id();
         GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
             if event.id == id && event.state == HotKeyState::Pressed {
                 hotkey_bus.request(Command::ShowSettings);
@@ -153,6 +189,8 @@ impl SystemServices {
                 hotkey_bus.request(Command::ShowSearch);
             } else if event.id == select_id && event.state == HotKeyState::Pressed {
                 hotkey_bus.request(Command::SelectText);
+            } else if event.id == capture_id && event.state == HotKeyState::Pressed {
+                hotkey_bus.request(Command::Capture);
             }
         }));
         let mut warnings = Vec::new();
@@ -163,6 +201,7 @@ impl SystemServices {
                 (translate_hotkey, "Ctrl+Alt+Shift+W"),
                 (search_hotkey, "Ctrl+Alt+Shift+F"),
                 (select_hotkey, "Ctrl+Alt+Shift+D"),
+                (capture_hotkey, "Ctrl+Alt+Shift+S"),
             ] {
                 match manager.register(hotkey) {
                     Ok(()) => registered_hotkeys.push(hotkey),
@@ -207,12 +246,16 @@ impl SystemServices {
             true,
             None,
         );
-        menu.append_items(&[&settings, &search, &translate, &quit])
+        let capture = MenuItem::new(if chinese { "截图" } else { "Screenshot" }, true, None);
+        let pins = MenuItem::new(if chinese { "显示贴图" } else { "Show pins" }, true, None);
+        menu.append_items(&[&settings, &search, &translate, &capture, &pins, &quit])
             .map_err(|error| error.to_string())?;
         let settings_id = settings.id().clone();
         let quit_id = quit.id().clone();
         let translate_id = translate.id().clone();
         let search_id = search.id().clone();
+        let capture_id = capture.id().clone();
+        let pins_id = pins.id().clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             if event.id == settings_id {
                 commands.request(Command::ShowSettings);
@@ -222,6 +265,10 @@ impl SystemServices {
                 commands.request(Command::ShowTranslator);
             } else if event.id == search_id {
                 commands.request(Command::ShowSearch);
+            } else if event.id == capture_id {
+                commands.request(Command::Capture);
+            } else if event.id == pins_id {
+                commands.request(Command::ShowPins);
             }
         }));
         self.tray.set_menu(Some(Box::new(menu)));

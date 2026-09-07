@@ -43,6 +43,41 @@ pub fn hide_window(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), St
     }
 }
 
+pub fn show_window(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::RawWindowHandle;
+        use windows::Win32::{
+            Foundation::HWND,
+            UI::WindowsAndMessaging::{ShowWindow, SW_SHOWNOACTIVATE},
+        };
+        let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+            return Err("Expected a Windows window".into());
+        };
+        unsafe {
+            let _ = ShowWindow(HWND(raw.hwnd.get() as *mut _), SW_SHOWNOACTIVATE);
+        }
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use raw_window_handle::RawWindowHandle;
+        let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
+            return Err("Expected an AppKit window".into());
+        };
+        let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
+        view.window()
+            .ok_or("View is not attached to a window")?
+            .orderFront(None);
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = handle;
+        Err("Native overlay showing is unavailable".into())
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn client_origin(handle: raw_window_handle::WindowHandle<'_>) -> Result<(i32, i32), String> {
     use raw_window_handle::RawWindowHandle;

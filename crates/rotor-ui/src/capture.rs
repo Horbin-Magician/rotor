@@ -71,6 +71,9 @@ pub enum MaskAction {
     Cancel {
         session: u64,
     },
+    Invalidated {
+        session: u64,
+    },
     Choose {
         session: u64,
         monitor: u32,
@@ -87,6 +90,8 @@ pub struct MaskView {
     start: Option<ImagePoint>,
     click_selection: Option<ImageRect>,
     focus: FocusHandle,
+    armed: bool,
+    _bounds: Subscription,
 }
 impl MaskView {
     pub fn new(
@@ -98,6 +103,8 @@ impl MaskView {
     ) -> Self {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
+        let bounds =
+            cx.observe_window_bounds(window, |this, window, cx| this.check_geometry(window, cx));
         Self {
             session,
             capture,
@@ -106,10 +113,49 @@ impl MaskView {
             start: None,
             click_selection: None,
             focus,
+            armed: false,
+            _bounds: bounds,
         }
     }
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
+    }
+    pub fn set_cursor(
+        &mut self,
+        point: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.move_pointer(point, window, cx);
+    }
+    pub fn arm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.armed = true;
+        self.check_geometry(window, cx);
+    }
+    fn check_geometry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.armed {
+            return;
+        }
+        let scale = window.scale_factor();
+        let viewport = window.viewport_size();
+        let changed = (viewport.width.as_f32() * scale - self.capture.monitor.width as f32).abs()
+            > 1.
+            || (viewport.height.as_f32() * scale - self.capture.monitor.height as f32).abs() > 1.
+            || (scale - self.capture.monitor.scale_factor).abs() > 0.01
+            || window
+                .display(cx)
+                .is_none_or(|display| u64::from(display.id()) as u32 != self.capture.monitor.id);
+        if changed {
+            self.armed = false;
+            let callback = self.callback.clone();
+            callback(
+                MaskAction::Invalidated {
+                    session: self.session,
+                },
+                window,
+                cx,
+            );
+        }
     }
     fn dimensions(&self) -> ImageSize {
         ImageSize {

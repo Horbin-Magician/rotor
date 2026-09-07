@@ -17,3 +17,5 @@ image.workspace = true
 global-hotkey = "=0.7.0"
 tray-icon = "=0.21.3"
 rotor-ui.workspace = true
+rotor-canvas.workspace = true
+raw-window-handle = "=0.6.2"

@@ -204,6 +204,17 @@ impl Services {
         self.pins.submit(PinCommand::Create { id, image, config })?;
         Ok(id)
     }
+    pub fn create_pin_from_capture(
+        &self,
+        image: Arc<RgbaImage>,
+        config: crate::ShotterConfig,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins
+            .submit(PinCommand::CreateFromCapture { id, image, config })?;
+        Ok(id)
+    }
     pub fn update_pin(
         &self,
         pin_id: u32,
@@ -792,6 +803,34 @@ mod tests {
                 .0
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn confirmed_capture_is_cropped_and_persisted_before_shutdown() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let image = Arc::new(RgbaImage::from_fn(4, 4, |x, y| {
+            image::Rgba([x as u8, y as u8, 42, 255])
+        }));
+        let mut config = pin_config();
+        config.monitor_size = (4, 4);
+        config.rect = (1, 1, 2, 2);
+        config.image_rect = Some((1, 1, 2, 2));
+        services
+            .create_pin_from_capture(image.clone(), config)
+            .unwrap();
+        services.shutdown();
+        drop(services);
+        let (pins, warnings) = rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+            .unwrap()
+            .load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+        assert_eq!(
+            *pins[0].image,
+            image::imageops::crop_imm(image.as_ref(), 1, 1, 2, 2).to_image()
+        );
+        assert_eq!(pins[0].config.image_rect, Some((1, 1, 2, 2)));
     }
 
     #[test]
