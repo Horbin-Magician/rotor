@@ -169,7 +169,7 @@ impl UpdateService {
         });
         Ok(())
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub fn install(&self, profile: PathBuf, flags: Vec<String>) -> Result<(), String> {
         let (path, release) = {
             let mut state = lock(&self.state);
@@ -193,11 +193,26 @@ impl UpdateService {
         let events = self.events.clone();
         self.runtime.spawn(async move {
             let result = tokio::task::spawn_blocking(move || {
-                rotor_updater::launch_verified_installer(
-                    &path,
-                    &release.artifact.signature,
-                    |path| rotor_platform::desktop::launch_update_installer(path, &profile, &flags),
-                )
+                #[cfg(target_os = "macos")]
+                {
+                    rotor_updater::launch_handoff(
+                        &path,
+                        &release.artifact.signature,
+                        &release.version,
+                        &profile,
+                        &flags,
+                    )
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    rotor_updater::launch_verified_installer(
+                        &path,
+                        &release.artifact.signature,
+                        |path| {
+                            rotor_platform::desktop::launch_update_installer(path, &profile, &flags)
+                        },
+                    )
+                }
             })
             .await
             .map_err(|error| error.to_string())

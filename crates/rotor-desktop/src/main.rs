@@ -381,6 +381,20 @@ fn run() -> Result<(), Box<dyn Error>> {
             .map(Some)
             .ok_or_else(|| format!("Missing value for {key}"))
     };
+    #[cfg(target_os = "macos")]
+    if let Some(job) = option("--apply-update")? {
+        if args.len() != 3 || args[1] != "--apply-update" {
+            return Err("Invalid update helper arguments".into());
+        }
+        return rotor_updater::run_helper(std::path::Path::new(&job)).map_err(Into::into);
+    }
+    #[cfg(target_os = "macos")]
+    let update_ready = option("--update-ready")?.map(PathBuf::from);
+    #[cfg(target_os = "macos")]
+    let update_warning = option("--update-error-file")?.and_then(|path| {
+        rotor_updater::handoff_error(std::path::Path::new(&path))
+            .unwrap_or_else(|error| Some(format!("Cannot read update result: {error}")))
+    });
     let directory_override = option("--data-dir")?
         .map(std::ffi::OsString::from)
         .or_else(|| std::env::var_os("ROTOR_DATA_DIR"));
@@ -528,6 +542,13 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         };
         if let Some(warning) = app_services.startup_warning() {
+            system.warning = Some(match system.warning.take() {
+                Some(previous) => format!("{previous}\n{warning}"),
+                None => warning,
+            });
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(warning) = update_warning {
             system.warning = Some(match system.warning.take() {
                 Some(previous) => format!("{previous}\n{warning}"),
                 None => warning,
@@ -739,6 +760,23 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         });
         cx.global_mut::<ShellState>()._task = Some(task);
+        #[cfg(target_os = "macos")]
+        if let Some(path) = update_ready {
+            std::thread::spawn(move || {
+                use std::io::Write;
+                let result = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .and_then(|mut file| {
+                        file.write_all(b"native-startup-ready")?;
+                        file.sync_all()
+                    });
+                if let Err(error) = result {
+                    log::error!("Update startup acknowledgement: {error}");
+                }
+            });
+        }
     });
     services.shutdown();
     log::logger().flush();

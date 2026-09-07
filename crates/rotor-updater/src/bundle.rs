@@ -41,6 +41,24 @@ pub fn inspect(app: &Path) -> Result<BundleInfo> {
             return Err("Bundle resource escapes the app".into());
         }
     }
+    for relative in [
+        "Contents/Resources/assets/model/pp-ocrv6_tiny_det.onnx",
+        "Contents/Resources/assets/model/pp-ocrv6_tiny_rec.onnx",
+        "Contents/Resources/assets/model/ppocrv6_tiny_dict.txt",
+        "Contents/Resources/assets/fonts/NotoSansCJKsc-Regular.otf",
+        "Contents/Resources/assets/fonts/LICENSE-NotoSansCJK.txt",
+    ] {
+        let resource = app
+            .join(relative)
+            .canonicalize()
+            .map_err(|_| format!("Missing bundled resource {relative}"))?;
+        if !resource.starts_with(&canonical)
+            || !resource.is_file()
+            || fs::metadata(resource).map_err(|e| e.to_string())?.len() == 0
+        {
+            return Err(format!("Invalid bundled resource {relative}"));
+        }
+    }
     let metadata =
         plist::Value::from_file(app.join("Contents/Info.plist")).map_err(|e| e.to_string())?;
     let values = metadata.as_dictionary().ok_or("Invalid bundle metadata")?;
@@ -146,7 +164,22 @@ fn extract(reader: impl Read, destination: &Path) -> Result<PathBuf> {
             .map_err(|e| e.to_string())?;
         }
     }
-    Ok(destination.join(root.ok_or("Empty update archive")?))
+    let app = destination.join(root.ok_or("Empty update archive")?);
+    #[cfg(unix)]
+    fn directory_permissions(path: &Path) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+                directory_permissions(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
+    #[cfg(unix)]
+    directory_permissions(&app)?;
+    Ok(app)
 }
 
 pub fn prepare(
@@ -263,6 +296,17 @@ mod tests {
             [0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 1],
         )
         .unwrap();
+        for relative in [
+            "model/pp-ocrv6_tiny_det.onnx",
+            "model/pp-ocrv6_tiny_rec.onnx",
+            "model/ppocrv6_tiny_dict.txt",
+            "fonts/NotoSansCJKsc-Regular.otf",
+            "fonts/LICENSE-NotoSansCJK.txt",
+        ] {
+            let resource = path.join("Contents/Resources/assets").join(relative);
+            fs::create_dir_all(resource.parent().unwrap()).unwrap();
+            fs::write(resource, b"synthetic resource fixture").unwrap();
+        }
         let value = plist::Value::Dictionary(plist::Dictionary::from_iter([
             ("CFBundleIdentifier", "cc.fluctus.rotor.gpui-dev"),
             ("CFBundleExecutable", "rotor-desktop"),

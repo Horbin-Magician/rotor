@@ -76,3 +76,11 @@ cargo run -p rotor-screenshot --example profile_roundtrip -- target/profile-roun
 This retained synthetic fixture exercises native writes and the legacy Rust
 record reader without screenshots or windows. It is not the installed Tauri
 client's full upgrade/rollback acceptance test.
+
+The macOS update path prepares a verified app in a private sibling staging
+directory before the current app quits. A helper waits for process exit, retains
+the previous app, and requires a startup acknowledgement from the replacement.
+Startup failure restores and reopens the previous app; failed bundles and update
+receipts are retained. It requires write access to the app's parent directory.
+This code has portable fixture coverage and Windows type checks; macOS process
+control, bundle launch, signing, and real rollback still require Mac validation.

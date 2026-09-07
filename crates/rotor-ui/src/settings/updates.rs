@@ -62,7 +62,7 @@ impl SettingsView {
                     .on_click(cx.listener(|this, _, _, _| this.services.cancel_update())),
             );
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         if self.update.phase == UpdatePhase::Ready {
             panel = panel.child(
                 Button::new("install-update")

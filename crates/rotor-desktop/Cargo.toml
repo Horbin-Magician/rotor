@@ -18,6 +18,7 @@ global-hotkey = "=0.7.0"
 tray-icon = "=0.21.3"
 rotor-ui.workspace = true
 rotor-canvas.workspace = true
+rotor-updater.workspace = true
 raw-window-handle = "=0.6.2"
 log = { version = "0.4", features = ["std"] }
 

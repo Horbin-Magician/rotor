@@ -285,7 +285,7 @@ impl Services {
     pub fn download_update(&self) -> Result<(), String> {
         self.updates.download()
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub fn install_update(&self) -> Result<(), String> {
         self.updates.install(
             self.data_directory.clone(),

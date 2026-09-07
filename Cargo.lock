@@ -8306,6 +8306,7 @@ dependencies = [
  "rotor-platform",
  "rotor-runtime",
  "rotor-ui",
+ "rotor-updater",
  "tray-icon 0.21.3",
 ]
 
