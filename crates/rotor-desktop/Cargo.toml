@@ -9,4 +9,5 @@ gpui-kit.workspace = true
 gpui.workspace = true
 gpui-platform.workspace = true
 rotor-common.workspace = true
+rotor-runtime.workspace = true
 rotor-ui.workspace = true

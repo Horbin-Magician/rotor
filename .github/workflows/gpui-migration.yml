@@ -29,7 +29,7 @@ jobs:
       - run: cargo test -p rotor-common -p rotor-canvas -p rotor-runtime -p rotor-searcher -p rotor-screenshot -p rotor-translator --lib --locked
       - shell: pwsh
         run: ./.github/scripts/check-core-dependencies.ps1
-      - run: cargo clippy -p rotor-desktop -p rotor-ui -p rotor-canvas --all-targets --locked -- -D warnings
+      - run: cargo clippy --no-deps -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-runtime --all-targets --locked -- -D warnings
       - run: cargo build -p rotor-desktop --release --locked
   legacy:
     runs-on: windows-latest

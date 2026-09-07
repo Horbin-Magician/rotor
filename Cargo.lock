@@ -8249,6 +8249,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "rotor-common",
+ "rotor-runtime",
  "rotor-ui",
 ]
 
@@ -8276,6 +8277,7 @@ dependencies = [
 name = "rotor-runtime"
 version = "2.6.0"
 dependencies = [
+ "async-channel",
  "global-hotkey",
  "image",
  "log",
@@ -8285,6 +8287,7 @@ dependencies = [
  "rotor-translator",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -8339,6 +8342,7 @@ dependencies = [
  "gpui-pre",
  "rotor-canvas",
  "rotor-common",
+ "rotor-runtime",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::{
     collections::HashMap,
     fs,
@@ -156,6 +156,10 @@ impl AppConfig {
         &INSTANCE
     }
 
+    pub fn shared_global() -> Arc<Mutex<AppConfig>> {
+        Arc::clone(&INSTANCE)
+    }
+
     pub fn lock_global() -> MutexGuard<'static, AppConfig> {
         INSTANCE.lock().unwrap_or_else(|poisoned| {
             log::error!("AppConfig lock poisoned; recovering inner state");
@@ -196,7 +200,8 @@ impl AppConfig {
     }
 }
 
-static INSTANCE: LazyLock<Mutex<AppConfig>> = LazyLock::new(|| Mutex::new(AppConfig::new()));
+static INSTANCE: LazyLock<Arc<Mutex<AppConfig>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(AppConfig::new())));
 
 #[cfg(test)]
 mod tests {

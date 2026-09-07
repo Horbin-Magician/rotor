@@ -20,6 +20,7 @@ gpui-kit = { version = "=0.6.0", default-features = false, features = ["componen
 gpui = { package = "gpui-pre", version = "=0.3.3" }
 gpui-platform = { package = "gpui-pre-platform", version = "=0.3.3" }
 rotor-common = { path = "src-tauri/crates/rotor-common" }
+rotor-runtime = { path = "src-tauri/crates/rotor-runtime" }
 rotor-ui = { path = "crates/rotor-ui" }
 rotor-canvas = { path = "crates/rotor-canvas" }
 

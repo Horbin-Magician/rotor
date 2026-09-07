@@ -41,8 +41,22 @@ pub struct EngineConfig {
 }
 
 impl EngineConfig {
+    pub fn redact_error(&self, mut message: String) -> String {
+        for key in [&self.custom_key, &self.deepseek_api_key] {
+            let key = key.trim();
+            if !key.is_empty() {
+                message = message.replace(key, "[redacted]");
+                message = message.replace(&urlencoding_encode(key), "[redacted]");
+            }
+        }
+        message
+    }
     pub fn from_app_config() -> EngineConfig {
         let config = rotor_common::AppConfig::lock_global();
+        Self::from_config(&config.get_all())
+    }
+
+    pub fn from_config(config: &rotor_common::Config) -> EngineConfig {
         EngineConfig {
             engine: config
                 .get("translator_engine")
@@ -81,16 +95,26 @@ pub async fn translate<F>(
 where
     F: Fn(TranslateStreamEvent) + Send + Sync,
 {
+    translate_with_config(&EngineConfig::from_app_config(), text, on_event).await
+}
+
+pub async fn translate_with_config<F>(
+    engine_config: &EngineConfig,
+    text: &str,
+    on_event: F,
+) -> Result<TranslateResult, Box<dyn Error + Send + Sync>>
+where
+    F: Fn(TranslateStreamEvent) + Send + Sync,
+{
     // reqwest is built with `rustls-no-provider`, so install the ring
     // provider process-wide (mirrors what tauri-plugin-updater does).
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let engine_config = EngineConfig::from_app_config();
     let to = resolve_target_lang(&engine_config.target_lang, text);
 
     match engine_config.engine.as_str() {
-        "deepseek" => translate_deepseek(&engine_config, text, &to, &on_event).await,
-        "custom" => translate_custom(&engine_config, text, &to).await,
+        "deepseek" => translate_deepseek(engine_config, text, &to, &on_event).await,
+        "custom" => translate_custom(engine_config, text, &to).await,
         _ => translate_google(text, &to).await,
     }
 }
@@ -401,6 +425,14 @@ fn urlencoding_encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn errors_redact_raw_and_url_encoded_credentials() {
+        let config = EngineConfig::from_config(&rotor_common::Config::from([
+            ("translator_custom_key".into(), " a& b ".into()),
+        ]));
+        assert_eq!(config.redact_error("raw a& b encoded a%26%20b".into()), "raw [redacted] encoded [redacted]");
+    }
 
     #[test]
     fn resolve_target_lang_prefers_configured_value() {

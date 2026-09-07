@@ -8,4 +8,5 @@ publish = false
 gpui-kit.workspace = true
 gpui.workspace = true
 rotor-common.workspace = true
+rotor-runtime.workspace = true
 rotor-canvas.workspace = true
