@@ -1,5 +1,6 @@
 mod capture;
 mod fonts;
+mod logging;
 mod pins;
 mod placement;
 mod system;
@@ -399,11 +400,25 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     let (commands, command_receiver) = CommandBus::new();
     let activate = commands.clone();
-    let _instance = match InstanceGuard::acquire(&directory, move || {
-        activate.request(Command::ShowSettings)
-    })? {
+    let acquire = if args.iter().any(|arg| arg == "--wait-for-instance") {
+        InstanceGuard::acquire_after_exit(
+            &directory,
+            std::time::Duration::from_secs(8),
+            move || activate.request(Command::ShowSettings),
+        )
+    } else {
+        InstanceGuard::acquire(&directory, move || activate.request(Command::ShowSettings))
+    };
+    let instance = match acquire? {
         Instance::Primary(guard) => guard,
         Instance::ActivatedExisting => return Ok(()),
+    };
+    let _logging = match logging::initialize(&directory) {
+        Ok(guard) => Some(guard),
+        Err(error) => {
+            eprintln!("Logging: {error}");
+            None
+        }
     };
     let _validated_config = ConfigService::load_from(&directory)?;
     let resources = match option("--resource-dir")? {
@@ -412,6 +427,39 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     .map_err(|error| eprintln!("OCR resources: {error}"))
     .ok();
+    #[cfg(target_os = "windows")]
+    if !args.iter().any(|arg| arg == "--no-elevate") && !rotor_platform::desktop::is_elevated() {
+        let mut forwarded = vec![
+            "--wait-for-instance".into(),
+            "--data-dir".into(),
+            directory.to_string_lossy().into_owned(),
+        ];
+        if let Some(resources) = &resources {
+            forwarded.extend([
+                "--resource-dir".into(),
+                resources.root().to_string_lossy().into_owned(),
+            ]);
+        }
+        let mut index = 1;
+        while index < args.len() {
+            if matches!(args[index].as_str(), "--data-dir" | "--resource-dir") {
+                index += 2;
+                continue;
+            }
+            if args[index] != "--wait-for-instance" {
+                forwarded.push(args[index].clone());
+            }
+            index += 1;
+        }
+        match rotor_platform::desktop::launch_elevated(&std::env::current_exe()?, &forwarded) {
+            Ok(()) => {
+                drop(instance);
+                return Ok(());
+            }
+            Err(error) => log::warn!("{error}"),
+        }
+    }
+    let _instance = instance;
     let font_resources = resources.clone();
     let (services, events) = Services::new(
         AppConfig::shared_global(),
@@ -427,7 +475,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             .filter(|arg| {
                 matches!(
                     arg.as_str(),
-                    "--no-index" | "--no-hotkeys" | "--production-shortcuts"
+                    "--no-index" | "--no-hotkeys" | "--production-shortcuts" | "--no-elevate"
                 )
             })
             .cloned()
@@ -440,250 +488,250 @@ fn run() -> Result<(), Box<dyn Error>> {
     let development_shortcuts = !args.iter().any(|arg| arg == "--production-shortcuts");
     let failed = Rc::new(Cell::new(false));
     let startup_failed = failed.clone();
-    gpui_kit::application()
+    let application = gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
-        .with_quit_mode(QuitMode::Explicit)
-        .run(move |cx| {
-            gpui_kit::init(cx);
-            apply_theme(&config, cx);
-            let mut system = match SystemServices::new(
-                commands.clone(),
-                &config,
-                enable_hotkeys,
-                development_shortcuts,
-                app_services.shortcut_recording_flag(),
-            ) {
-                Ok(system) => system,
-                Err(error) => {
-                    eprintln!("System services: {error}");
-                    startup_failed.set(true);
-                    cx.quit();
-                    return;
-                }
-            };
-            if let Some(warning) = app_services.startup_warning() {
-                system.warning = Some(match system.warning.take() {
-                    Some(previous) => format!("{previous}\n{warning}"),
-                    None => warning,
-                });
-            }
-            app_services.coordinate_shortcuts(development_shortcuts);
-            cx.set_global(ShellState {
-                windows: HashMap::new(),
-                config,
-                services: app_services,
-                commands: commands.clone(),
-                system,
-                _task: None,
-                _closed: None,
-                _quit: None,
-                pending_selection: None,
-                capture: capture::CaptureState::default(),
-                pins: pins::PinWindows::default(),
-                monitors: Vec::new(),
-                fonts: None,
-            });
-            let closed = cx.on_window_closed(|cx, id| {
-                if cx.try_global::<ShellState>().is_some() {
-                    let role = cx
-                        .global::<ShellState>()
-                        .windows
-                        .iter()
-                        .find(|(_, entry)| entry.window.window_id() == id)
-                        .map(|(role, _)| *role);
-                    cx.global_mut::<ShellState>()
-                        .windows
-                        .retain(|_, entry| entry.window.window_id() != id);
-                    if let Some(WindowRole::Mask { session, .. }) = role {
-                        cx.defer(move |cx| {
-                            if cx.global::<ShellState>().capture.session.generation()
-                                == Some(session)
-                            {
-                                let _ = capture::cancel(None, cx);
-                            }
-                        });
-                    }
-                }
-            });
-            let font_task = fonts::load(font_resources, cx);
-            cx.global_mut::<ShellState>().fonts = Some(font_task);
-            cx.global_mut::<ShellState>()._closed = Some(closed);
-            let quit = cx.on_app_quit(|cx| {
-                let final_records = pins::final_records(cx);
-                capture::stop(cx);
-                pins::stop(cx);
-                let state = cx.global_mut::<ShellState>();
-                state.fonts = None;
-                state.commands.close();
-                state.system.stop_events();
-                state.services.shutdown_with_pin_updates(final_records);
-                async {}
-            });
-            cx.global_mut::<ShellState>()._quit = Some(quit);
-            let _ = cx.global::<ShellState>().services.restore_pins();
-            if !background && let Err(error) = show_settings(cx) {
-                eprintln!("Settings: {error}");
+        .with_quit_mode(QuitMode::Explicit);
+    application.on_reopen(|cx| {
+        if cx.try_global::<ShellState>().is_some() {
+            let _ = show_settings(cx);
+        }
+    });
+    application.run(move |cx| {
+        gpui_kit::init(cx);
+        if let Err(error) = rotor_platform::desktop::configure_background_application() {
+            log::warn!("Application policy: {error}");
+        }
+        apply_theme(&config, cx);
+        let mut system = match SystemServices::new(
+            commands.clone(),
+            &config,
+            enable_hotkeys,
+            development_shortcuts,
+            app_services.shortcut_recording_flag(),
+        ) {
+            Ok(system) => system,
+            Err(error) => {
+                eprintln!("System services: {error}");
                 startup_failed.set(true);
                 cx.quit();
                 return;
             }
-            let task = cx.spawn(async move |cx| {
-                loop {
-                    let command = command_receiver.recv();
-                    let event = events.recv();
-                    futures::pin_mut!(command, event);
-                    match select(command, event).await {
-                        Either::Left((Ok(()), _)) => {
-                            if let Some(command) = commands.take() {
-                                let quit = matches!(command, Command::Quit);
-                                cx.update(|cx| {
-                                    let command = match command {
-                                        Command::Shortcut { key, generation }
-                                            if cx
-                                                .global::<ShellState>()
-                                                .services
-                                                .is_shortcut_recording() =>
-                                        {
-                                            Command::RecordedShortcut { key, generation }
-                                        }
-                                        other => other,
-                                    };
-                                    if let Command::RecordedShortcut { key, generation } = command {
-                                        if let Some(value) = cx
-                                            .global::<ShellState>()
-                                            .system
-                                            .shortcut_label(key, generation)
-                                            && let Some((handle, view)) = cx
-                                                .global::<ShellState>()
-                                                .windows
-                                                .get(&WindowRole::Settings)
-                                                .and_then(|entry| match &entry.view {
-                                                    WindowView::Settings(view) => {
-                                                        Some((entry.window, view.clone()))
-                                                    }
-                                                    _ => None,
-                                                })
-                                        {
-                                            let _ = handle.update(cx, |_, window, cx| {
-                                                let _ = view.update(cx, |view, cx| {
-                                                    view.receive_recorded_shortcut(
-                                                        value, window, cx,
-                                                    )
-                                                });
-                                            });
-                                        }
-                                        return;
-                                    }
-                                    let command = if let Command::Shortcut { key, generation } =
-                                        command
-                                    {
+        };
+        if let Some(warning) = app_services.startup_warning() {
+            system.warning = Some(match system.warning.take() {
+                Some(previous) => format!("{previous}\n{warning}"),
+                None => warning,
+            });
+        }
+        app_services.coordinate_shortcuts(development_shortcuts);
+        cx.set_global(ShellState {
+            windows: HashMap::new(),
+            config,
+            services: app_services,
+            commands: commands.clone(),
+            system,
+            _task: None,
+            _closed: None,
+            _quit: None,
+            pending_selection: None,
+            capture: capture::CaptureState::default(),
+            pins: pins::PinWindows::default(),
+            monitors: Vec::new(),
+            fonts: None,
+        });
+        let closed = cx.on_window_closed(|cx, id| {
+            if cx.try_global::<ShellState>().is_some() {
+                let role = cx
+                    .global::<ShellState>()
+                    .windows
+                    .iter()
+                    .find(|(_, entry)| entry.window.window_id() == id)
+                    .map(|(role, _)| *role);
+                cx.global_mut::<ShellState>()
+                    .windows
+                    .retain(|_, entry| entry.window.window_id() != id);
+                if let Some(WindowRole::Mask { session, .. }) = role {
+                    cx.defer(move |cx| {
+                        if cx.global::<ShellState>().capture.session.generation() == Some(session) {
+                            let _ = capture::cancel(None, cx);
+                        }
+                    });
+                }
+            }
+        });
+        let font_task = fonts::load(font_resources, cx);
+        cx.global_mut::<ShellState>().fonts = Some(font_task);
+        cx.global_mut::<ShellState>()._closed = Some(closed);
+        let quit = cx.on_app_quit(|cx| {
+            let final_records = pins::final_records(cx);
+            capture::stop(cx);
+            pins::stop(cx);
+            let state = cx.global_mut::<ShellState>();
+            state.fonts = None;
+            state.commands.close();
+            state.system.stop_events();
+            state.services.shutdown_with_pin_updates(final_records);
+            async {}
+        });
+        cx.global_mut::<ShellState>()._quit = Some(quit);
+        let _ = cx.global::<ShellState>().services.restore_pins();
+        if !background && let Err(error) = show_settings(cx) {
+            eprintln!("Settings: {error}");
+            startup_failed.set(true);
+            cx.quit();
+            return;
+        }
+        let task = cx.spawn(async move |cx| {
+            loop {
+                let command = command_receiver.recv();
+                let event = events.recv();
+                futures::pin_mut!(command, event);
+                match select(command, event).await {
+                    Either::Left((Ok(()), _)) => {
+                        if let Some(command) = commands.take() {
+                            let quit = matches!(command, Command::Quit);
+                            cx.update(|cx| {
+                                let command = match command {
+                                    Command::Shortcut { key, generation }
                                         if cx
                                             .global::<ShellState>()
                                             .services
-                                            .shortcut_recording_flag()
-                                            .quiet(std::time::Instant::now())
-                                        {
+                                            .is_shortcut_recording() =>
+                                    {
+                                        Command::RecordedShortcut { key, generation }
+                                    }
+                                    other => other,
+                                };
+                                if let Command::RecordedShortcut { key, generation } = command {
+                                    if let Some(value) = cx
+                                        .global::<ShellState>()
+                                        .system
+                                        .shortcut_label(key, generation)
+                                        && let Some((handle, view)) = cx
+                                            .global::<ShellState>()
+                                            .windows
+                                            .get(&WindowRole::Settings)
+                                            .and_then(|entry| match &entry.view {
+                                                WindowView::Settings(view) => {
+                                                    Some((entry.window, view.clone()))
+                                                }
+                                                _ => None,
+                                            })
+                                    {
+                                        let _ = handle.update(cx, |_, window, cx| {
+                                            let _ = view.update(cx, |view, cx| {
+                                                view.receive_recorded_shortcut(value, window, cx)
+                                            });
+                                        });
+                                    }
+                                    return;
+                                }
+                                let command = if let Command::Shortcut { key, generation } = command
+                                {
+                                    if cx
+                                        .global::<ShellState>()
+                                        .services
+                                        .shortcut_recording_flag()
+                                        .quiet(std::time::Instant::now())
+                                    {
+                                        return;
+                                    }
+                                    use rotor_runtime::shortcuts::ShortcutAction;
+                                    match cx.global::<ShellState>().system.resolve(key, generation)
+                                    {
+                                        Some(ShortcutAction::Settings) => Command::ShowSettings,
+                                        Some(ShortcutAction::Search) => Command::ShowSearch,
+                                        Some(ShortcutAction::Capture) => Command::Capture,
+                                        Some(ShortcutAction::TranslateSelection) => {
+                                            Command::SelectText
+                                        }
+                                        Some(ShortcutAction::TranslateInput) => {
+                                            Command::ShowTranslator
+                                        }
+                                        Some(ShortcutAction::Quick(id)) => {
+                                            if let Err(error) = cx
+                                                .global::<ShellState>()
+                                                .services
+                                                .run_quick_action(id)
+                                            {
+                                                eprintln!("Quick action: {error}");
+                                            }
                                             return;
                                         }
-                                        use rotor_runtime::shortcuts::ShortcutAction;
-                                        match cx
-                                            .global::<ShellState>()
-                                            .system
-                                            .resolve(key, generation)
-                                        {
-                                            Some(ShortcutAction::Settings) => Command::ShowSettings,
-                                            Some(ShortcutAction::Search) => Command::ShowSearch,
-                                            Some(ShortcutAction::Capture) => Command::Capture,
-                                            Some(ShortcutAction::TranslateSelection) => {
-                                                Command::SelectText
-                                            }
-                                            Some(ShortcutAction::TranslateInput) => {
-                                                Command::ShowTranslator
-                                            }
-                                            Some(ShortcutAction::Quick(id)) => {
-                                                if let Err(error) = cx
-                                                    .global::<ShellState>()
-                                                    .services
-                                                    .run_quick_action(id)
-                                                {
-                                                    eprintln!("Quick action: {error}");
-                                                }
-                                                return;
-                                            }
-                                            None => return,
-                                        }
-                                    } else {
-                                        command
-                                    };
-                                    if !matches!(command, Command::Capture | Command::Quit)
-                                        && cx
-                                            .global::<ShellState>()
-                                            .capture
-                                            .session
-                                            .generation()
-                                            .is_some()
-                                    {
-                                        let _ = capture::cancel(None, cx);
+                                        None => return,
                                     }
-                                    if !matches!(command, Command::SelectText) {
-                                        let state = cx.global_mut::<ShellState>();
-                                        state.services.cancel_selection();
-                                        state.pending_selection = None;
-                                    }
-                                    match command {
-                                        Command::ShowSettings => {
-                                            if let Err(error) = show_settings(cx) {
-                                                eprintln!("Settings: {error}");
-                                            }
-                                        }
-                                        Command::Quit => cx.quit(),
-                                        Command::ShowTranslator => {
-                                            if let Err(error) = show_translator(cx) {
-                                                eprintln!("Translator: {error}");
-                                            }
-                                        }
-                                        Command::ShowSearch => {
-                                            if let Err(error) = show_search(cx) {
-                                                eprintln!("Search: {error}");
-                                            }
-                                        }
-                                        Command::SelectText => {
-                                            let state = cx.global_mut::<ShellState>();
-                                            if state.pending_selection.is_none() {
-                                                match state.services.capture_selection() {
-                                                    Ok(id) => state.pending_selection = Some(id),
-                                                    Err(error) => {
-                                                        state.system.warning = Some(error);
-                                                        let _ = show_settings(cx);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Command::Capture => {
-                                            if let Err(error) = capture::begin(cx) {
-                                                capture::report(error, cx);
-                                            }
-                                        }
-                                        Command::ShowPins => pins::show_all(cx),
-                                        Command::Shortcut { .. }
-                                        | Command::RecordedShortcut { .. } => {
-                                            unreachable!("shortcut was resolved before dispatch")
-                                        }
-                                    }
-                                });
-                                if quit {
-                                    break;
+                                } else {
+                                    command
+                                };
+                                if !matches!(command, Command::Capture | Command::Quit)
+                                    && cx
+                                        .global::<ShellState>()
+                                        .capture
+                                        .session
+                                        .generation()
+                                        .is_some()
+                                {
+                                    let _ = capture::cancel(None, cx);
                                 }
+                                if !matches!(command, Command::SelectText) {
+                                    let state = cx.global_mut::<ShellState>();
+                                    state.services.cancel_selection();
+                                    state.pending_selection = None;
+                                }
+                                match command {
+                                    Command::ShowSettings => {
+                                        if let Err(error) = show_settings(cx) {
+                                            eprintln!("Settings: {error}");
+                                        }
+                                    }
+                                    Command::Quit => cx.quit(),
+                                    Command::ShowTranslator => {
+                                        if let Err(error) = show_translator(cx) {
+                                            eprintln!("Translator: {error}");
+                                        }
+                                    }
+                                    Command::ShowSearch => {
+                                        if let Err(error) = show_search(cx) {
+                                            eprintln!("Search: {error}");
+                                        }
+                                    }
+                                    Command::SelectText => {
+                                        let state = cx.global_mut::<ShellState>();
+                                        if state.pending_selection.is_none() {
+                                            match state.services.capture_selection() {
+                                                Ok(id) => state.pending_selection = Some(id),
+                                                Err(error) => {
+                                                    state.system.warning = Some(error);
+                                                    let _ = show_settings(cx);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Command::Capture => {
+                                        if let Err(error) = capture::begin(cx) {
+                                            capture::report(error, cx);
+                                        }
+                                    }
+                                    Command::ShowPins => pins::show_all(cx),
+                                    Command::Shortcut { .. } | Command::RecordedShortcut { .. } => {
+                                        unreachable!("shortcut was resolved before dispatch")
+                                    }
+                                }
+                            });
+                            if quit {
+                                break;
                             }
                         }
-                        Either::Right((Ok(event), _)) => cx.update(|cx| handle_event(event, cx)),
-                        _ => break,
                     }
+                    Either::Right((Ok(event), _)) => cx.update(|cx| handle_event(event, cx)),
+                    _ => break,
                 }
-            });
-            cx.global_mut::<ShellState>()._task = Some(task);
+            }
         });
+        cx.global_mut::<ShellState>()._task = Some(task);
+    });
     services.shutdown();
+    log::logger().flush();
     if failed.get() {
         return Err("native application startup failed".into());
     }

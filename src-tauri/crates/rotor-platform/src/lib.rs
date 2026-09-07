@@ -6,4 +6,5 @@ pub mod clipboard;
 pub mod cursor;
 pub mod overlay;
 pub mod startup;
+pub mod desktop;
 pub mod single_instance;

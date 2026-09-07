@@ -14,6 +14,19 @@ impl SettingsView {
                 .label(self.t("刷新概览", "Refresh overview"))
                 .on_click(cx.listener(|this, _, _, cx| this.refresh_overview(cx))),
         );
+        panel = panel.child(
+            Button::new("project-home")
+                .label(self.t("项目主页", "Project home"))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if let Err(error) = this
+                        .services
+                        .open_url("https://github.com/Horbin-Magician/rotor".into())
+                    {
+                        this.message = error;
+                        cx.notify();
+                    }
+                })),
+        );
         if let Some(overview) = &self.overview {
             panel = panel
                 .child(format!(

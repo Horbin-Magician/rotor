@@ -247,3 +247,10 @@
 - Windows HKCU Run 与 macOS LaunchAgent 使用独立开发名称；参数固定当前数据/资源目录并保留开发选项，新增 --data-dir/--resource-dir 入口。参数正确引用，plist 使用结构化编码；Windows 后续步骤失败尝试恢复原 Run 值。
 - macOS 辅助功能权限仅查询，不在概览触发授权弹窗；缩放步长补齐旧 1–10 范围。
 - native check、clippy 和 Windows 参数引用测试通过；没有修改本机启动项。登录重启、macOS LaunchAgent 和权限交互仍未验收。
+
+## P2 原生壳补齐
+
+- 日志在当前资料目录异步写入并限量轮转，只接收 Rotor 自身 info/warn/error；UI 日志投递不等待磁盘。
+- macOS 使用 accessory 策略隐藏 Dock，并响应再次打开应用显示设置；链接入口仅接受 HTTP/HTTPS。
+- Windows 启动保留既有提权尝试，--no-elevate 可跳过；提权保留资料/资源参数，子进程等待父实例释放锁，取消 UAC 后当前实例继续运行。
+- URL 拒绝测试、3 项实例/交接测试、native check 和 clippy 通过。没有实际启动外部链接、触发 UAC 或验证 macOS Dock；这些仍是实机门槛。

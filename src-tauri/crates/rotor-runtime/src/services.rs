@@ -337,6 +337,13 @@ impl Services {
     pub fn open_data_directory(&self) -> Result<OperationId, String> {
         self.open_file(self.data_directory.to_string_lossy().into_owned(), false)
     }
+    pub fn open_url(&self, url: String) -> Result<OperationId, String> {
+        self.spawn_job(
+            move || rotor_platform::desktop::open_url(&url),
+            None,
+            |id, result| RuntimeEvent::FileOpened { id, result },
+        )
+    }
     pub fn coordinate_shortcuts(&self, development: bool) {
         self.development_shortcuts
             .store(development, Ordering::Release);

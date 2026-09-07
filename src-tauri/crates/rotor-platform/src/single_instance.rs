@@ -38,6 +38,22 @@ pub struct InstanceGuard {
 
 impl InstanceGuard {
     pub fn acquire(directory: &Path, activate: impl Fn() + Send + 'static) -> io::Result<Instance> {
+        Self::acquire_mode(directory, activate, None)
+    }
+
+    pub fn acquire_after_exit(
+        directory: &Path,
+        timeout: Duration,
+        activate: impl Fn() + Send + 'static,
+    ) -> io::Result<Instance> {
+        Self::acquire_mode(directory, activate, Some(timeout))
+    }
+
+    fn acquire_mode(
+        directory: &Path,
+        activate: impl Fn() + Send + 'static,
+        wait: Option<Duration>,
+    ) -> io::Result<Instance> {
         fs::create_dir_all(directory)?;
         let directory = directory.canonicalize()?;
         let metadata = directory.join(".native-instance.json");
@@ -47,12 +63,15 @@ impl InstanceGuard {
             .read(true)
             .write(true)
             .open(directory.join(".native-instance.lock"))?;
-        for _ in 0..8 {
+        let attempts = wait
+            .map(|duration| (duration.as_millis() / 50).max(1) as usize)
+            .unwrap_or(8);
+        for _ in 0..attempts {
             match file.try_lock() {
                 Ok(()) => return Self::start(file, metadata, activate).map(Instance::Primary),
                 Err(TryLockError::Error(error)) => return Err(error),
                 Err(TryLockError::WouldBlock) => {
-                    if forward(&metadata).is_ok() {
+                    if wait.is_none() && forward(&metadata).is_ok() {
                         return Ok(Instance::ActivatedExisting);
                     }
                     thread::sleep(Duration::from_millis(50));
@@ -171,6 +190,29 @@ fn forward(metadata: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restart_waits_for_lock_release_without_activating_the_old_process() {
+        let directory = tempfile::tempdir().unwrap();
+        let (notice, received) = std::sync::mpsc::channel();
+        let Instance::Primary(primary) = InstanceGuard::acquire(directory.path(), move || {
+            let _ = notice.send(());
+        })
+        .unwrap() else {
+            panic!("expected primary");
+        };
+        let path = directory.path().to_path_buf();
+        let waiting = std::thread::spawn(move || {
+            InstanceGuard::acquire_after_exit(&path, Duration::from_secs(2), || {})
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(received.try_recv().is_err());
+        drop(primary);
+        assert!(matches!(
+            waiting.join().unwrap().unwrap(),
+            Instance::Primary(_)
+        ));
+    }
     use std::sync::mpsc;
 
     #[test]
