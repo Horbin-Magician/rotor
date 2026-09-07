@@ -29,6 +29,7 @@ pub enum Command {
     ShowPins,
     Quit,
     Shortcut { key: u32, generation: u64 },
+    RecordedShortcut { key: u32, generation: u64 },
 }
 const CONTROLS: [(u8, Command); 7] = [
     (1, Command::Quit),
@@ -156,6 +157,7 @@ impl SystemServices {
         config: &rotor_common::Config,
         enable_hotkeys: bool,
         development: bool,
+        recording: Arc<shortcuts::ShortcutRecording>,
     ) -> Result<Self, String> {
         let image =
             image::load_from_memory(include_bytes!("../../../src-tauri/assets/icons/32x32.png"))
@@ -213,17 +215,27 @@ impl SystemServices {
             let active = callback_active
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
+            let recording_now = recording.active();
             if !active
                 .bindings
                 .iter()
                 .any(|binding| binding.key.id() == event.id)
-                || !debounce.press(event.id, Instant::now())
+                || (!recording_now
+                    && (recording.quiet(Instant::now())
+                        || !debounce.press(event.id, Instant::now())))
             {
                 return;
             }
-            dispatch.request(Command::Shortcut {
-                key: event.id,
-                generation: active.generation,
+            dispatch.request(if recording_now {
+                Command::RecordedShortcut {
+                    key: event.id,
+                    generation: active.generation,
+                }
+            } else {
+                Command::Shortcut {
+                    key: event.id,
+                    generation: active.generation,
+                }
             });
         }));
         let mut system = Self {
@@ -255,6 +267,20 @@ impl SystemServices {
             .iter()
             .find(|binding| binding.key.id() == key)
             .map(|binding| binding.action.clone())
+    }
+    pub fn shortcut_label(&self, key: u32, generation: u64) -> Option<String> {
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.generation != generation {
+            return None;
+        }
+        active
+            .bindings
+            .iter()
+            .find(|binding| binding.key.id() == key)
+            .map(|binding| binding.key.to_string())
     }
     pub fn prepare(
         &mut self,

@@ -343,16 +343,18 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
     {
         let _ = view.update(cx, |view, cx| view.handle_event(&event, cx));
     }
-    if let Some(view) = cx
+    if let Some((handle, view)) = cx
         .global::<ShellState>()
         .windows
         .get(&WindowRole::Settings)
         .and_then(|entry| match &entry.view {
-            WindowView::Settings(view) => Some(view.clone()),
+            WindowView::Settings(view) => Some((entry.window, view.clone())),
             _ => None,
         })
     {
-        let _ = view.update(cx, |view, cx| view.handle_event(event, cx));
+        let _ = handle.update(cx, |_, window, cx| {
+            let _ = view.update(cx, |view, cx| view.handle_event(event, window, cx));
+        });
     }
 }
 
@@ -390,7 +392,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         Instance::Primary(guard) => guard,
         Instance::ActivatedExisting => return Ok(()),
     };
-    let config = ConfigService::load_from(&directory)?.get_all();
+    let _validated_config = ConfigService::load_from(&directory)?;
     let resources = ResourceLocator::for_current_process()
         .map_err(|error| eprintln!("OCR resources: {error}"))
         .ok();
@@ -404,6 +406,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     )
     .map_err(std::io::Error::other)?;
     let services = Arc::new(services);
+    let config = services.settings();
     let app_services = services.clone();
     let background = args.iter().any(|arg| arg == "--background");
     let enable_hotkeys = !args.iter().any(|arg| arg == "--no-hotkeys");
@@ -416,11 +419,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         .run(move |cx| {
             gpui_kit::init(cx);
             apply_theme(&config, cx);
-            let system = match SystemServices::new(
+            let mut system = match SystemServices::new(
                 commands.clone(),
                 &config,
                 enable_hotkeys,
                 development_shortcuts,
+                app_services.shortcut_recording_flag(),
             ) {
                 Ok(system) => system,
                 Err(error) => {
@@ -430,6 +434,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                     return;
                 }
             };
+            if let Some(warning) = app_services.startup_warning() {
+                system.warning = Some(match system.warning.take() {
+                    Some(previous) => format!("{previous}\n{warning}"),
+                    None => warning,
+                });
+            }
             app_services.coordinate_shortcuts(development_shortcuts);
             cx.set_global(ShellState {
                 windows: HashMap::new(),
@@ -500,9 +510,54 @@ fn run() -> Result<(), Box<dyn Error>> {
                             if let Some(command) = commands.take() {
                                 let quit = matches!(command, Command::Quit);
                                 cx.update(|cx| {
+                                    let command = match command {
+                                        Command::Shortcut { key, generation }
+                                            if cx
+                                                .global::<ShellState>()
+                                                .services
+                                                .is_shortcut_recording() =>
+                                        {
+                                            Command::RecordedShortcut { key, generation }
+                                        }
+                                        other => other,
+                                    };
+                                    if let Command::RecordedShortcut { key, generation } = command {
+                                        if let Some(value) = cx
+                                            .global::<ShellState>()
+                                            .system
+                                            .shortcut_label(key, generation)
+                                            && let Some((handle, view)) = cx
+                                                .global::<ShellState>()
+                                                .windows
+                                                .get(&WindowRole::Settings)
+                                                .and_then(|entry| match &entry.view {
+                                                    WindowView::Settings(view) => {
+                                                        Some((entry.window, view.clone()))
+                                                    }
+                                                    _ => None,
+                                                })
+                                        {
+                                            let _ = handle.update(cx, |_, window, cx| {
+                                                let _ = view.update(cx, |view, cx| {
+                                                    view.receive_recorded_shortcut(
+                                                        value, window, cx,
+                                                    )
+                                                });
+                                            });
+                                        }
+                                        return;
+                                    }
                                     let command = if let Command::Shortcut { key, generation } =
                                         command
                                     {
+                                        if cx
+                                            .global::<ShellState>()
+                                            .services
+                                            .shortcut_recording_flag()
+                                            .quiet(std::time::Instant::now())
+                                        {
+                                            return;
+                                        }
                                         use rotor_runtime::shortcuts::ShortcutAction;
                                         match cx
                                             .global::<ShellState>()
@@ -583,7 +638,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                                             }
                                         }
                                         Command::ShowPins => pins::show_all(cx),
-                                        Command::Shortcut { .. } => {
+                                        Command::Shortcut { .. }
+                                        | Command::RecordedShortcut { .. } => {
                                             unreachable!("shortcut was resolved before dispatch")
                                         }
                                     }

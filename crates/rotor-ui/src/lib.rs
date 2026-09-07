@@ -3,6 +3,7 @@ mod pin;
 mod search_results;
 mod searcher;
 mod settings;
+mod shortcut;
 mod translator;
 pub use capture::{
     MaskAction, MaskCallback, MaskView, PreparedCapture, PreparedImage, prepare_capture,

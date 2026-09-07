@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 base64 = "0.22.1"
 image.workspace = true
+global-hotkey = "=0.7.0"
 gpui-kit.workspace = true
 gpui.workspace = true
 rotor-common.workspace = true

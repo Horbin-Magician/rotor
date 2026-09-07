@@ -73,6 +73,35 @@ pub trait HotkeyBackend {
 }
 
 #[derive(Default)]
+pub struct ShortcutRecording {
+    active: std::sync::atomic::AtomicBool,
+    quiet_until: std::sync::Mutex<Option<std::time::Instant>>,
+}
+impl ShortcutRecording {
+    pub fn set(&self, active: bool) {
+        let previous = self
+            .active
+            .swap(active, std::sync::atomic::Ordering::AcqRel);
+        if previous && !active {
+            *self
+                .quiet_until
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) =
+                Some(std::time::Instant::now() + std::time::Duration::from_millis(500));
+        }
+    }
+    pub fn active(&self) -> bool {
+        self.active.load(std::sync::atomic::Ordering::Acquire)
+    }
+    pub fn quiet(&self, now: std::time::Instant) -> bool {
+        self.quiet_until
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_some_and(|until| now < until)
+    }
+}
+
+#[derive(Default)]
 pub struct ShortcutDebounce {
     pressed: HashSet<u32>,
     last: std::collections::HashMap<u32, std::time::Instant>,
@@ -213,5 +242,18 @@ mod tests {
         assert!(state.press(1, now + std::time::Duration::from_secs(1)));
         assert!(!state.press(1, now + std::time::Duration::from_secs(2)));
         assert!(state.press(1, now + std::time::Duration::from_secs(4)));
+    }
+
+    #[test]
+    fn recording_exit_has_a_quiet_period_without_muting_ordinary_window_closes() {
+        let state = ShortcutRecording::default();
+        state.set(false);
+        assert!(!state.quiet(std::time::Instant::now()));
+        state.set(true);
+        assert!(state.active());
+        state.set(false);
+        assert!(!state.active());
+        assert!(state.quiet(std::time::Instant::now()));
+        assert!(!state.quiet(std::time::Instant::now() + std::time::Duration::from_secs(1)));
     }
 }

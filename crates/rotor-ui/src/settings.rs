@@ -10,6 +10,7 @@ use gpui_kit::{
 use rotor_common::Config;
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, SearchIndexStatus, Services};
 use std::sync::Arc;
+mod actions;
 
 pub fn settings_title(config: &Config) -> &'static str {
     text(
@@ -31,6 +32,8 @@ enum Section {
     Search,
     Pin,
     Translation,
+    Shortcuts,
+    Quick,
 }
 struct Field {
     key: &'static str,
@@ -50,6 +53,12 @@ pub struct SettingsView {
     pending_exclusions: bool,
     choosing_path: bool,
     message: String,
+    actions: Vec<actions::ActionFields>,
+    recording: Option<actions::Recording>,
+    pending_keys: Vec<String>,
+    pending_run: Option<OperationId>,
+    focus: FocusHandle,
+    _activation: Subscription,
 }
 impl SettingsView {
     pub fn show_message(&mut self, message: String, cx: &mut Context<Self>) {
@@ -63,6 +72,54 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let definitions = [
+            (
+                "shortcut_search",
+                Section::Shortcuts,
+                ("搜索快捷键", "Search shortcut"),
+                false,
+            ),
+            (
+                "shortcut_screenshot",
+                Section::Shortcuts,
+                ("截图快捷键", "Screenshot shortcut"),
+                false,
+            ),
+            (
+                "shortcut_translate_select",
+                Section::Shortcuts,
+                ("划词翻译快捷键", "Selection translation shortcut"),
+                false,
+            ),
+            (
+                "shortcut_translate_input",
+                Section::Shortcuts,
+                ("输入翻译快捷键", "Input translation shortcut"),
+                false,
+            ),
+            (
+                "shortcut_pinwin_save",
+                Section::Shortcuts,
+                ("贴图保存", "Pin save"),
+                false,
+            ),
+            (
+                "shortcut_pinwin_copy",
+                Section::Shortcuts,
+                ("贴图复制", "Pin copy"),
+                false,
+            ),
+            (
+                "shortcut_pinwin_close",
+                Section::Shortcuts,
+                ("贴图关闭", "Pin close"),
+                false,
+            ),
+            (
+                "shortcut_pinwin_hide",
+                Section::Shortcuts,
+                ("贴图隐藏", "Pin hide"),
+                false,
+            ),
             (
                 "save_path",
                 Section::Pin,
@@ -118,6 +175,20 @@ impl SettingsView {
                     .unwrap_or_default(),
             )
         });
+        let action_result = services.quick_actions();
+        let message = action_result.as_ref().err().cloned().unwrap_or_default();
+        let actions = action_result
+            .unwrap_or_default()
+            .into_iter()
+            .map(|action| actions::ActionFields::new(action, window, cx))
+            .collect();
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active() && this.recording.take().is_some() {
+                this.services.set_shortcut_recording(false);
+                this.message.clear();
+                cx.notify();
+            }
+        });
         Self {
             config,
             services,
@@ -129,13 +200,24 @@ impl SettingsView {
             pending: None,
             pending_exclusions: false,
             choosing_path: false,
-            message: String::new(),
+            message,
+            actions,
+            recording: None,
+            pending_keys: Vec::new(),
+            pending_run: None,
+            focus: cx.focus_handle(),
+            _activation: activation,
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
         text(&self.config, zh, en)
     }
-    pub fn handle_event(&mut self, event: RuntimeEvent, cx: &mut Context<Self>) {
+    pub fn handle_event(
+        &mut self,
+        event: RuntimeEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match event {
             RuntimeEvent::SettingsSaved { id, result } => {
                 let own = self.pending == Some(id);
@@ -146,6 +228,7 @@ impl SettingsView {
                     Ok(config) => {
                         self.config = config;
                         if own {
+                            self.sync_saved_fields(window, cx);
                             self.message = self.t("设置已保存", "Settings saved").into();
                             if self.pending_exclusions {
                                 self.services.rebuild_search();
@@ -157,9 +240,17 @@ impl SettingsView {
                 }
                 if own {
                     self.pending_exclusions = false;
+                    self.pending_keys.clear();
                 }
             }
             RuntimeEvent::IndexState(state) => self.index_state = state,
+            RuntimeEvent::QuickFinished { id, result, .. } if self.pending_run == Some(id) => {
+                self.pending_run = None;
+                self.message = match result {
+                    Ok(()) => self.t("命令已启动", "Command launched").into(),
+                    Err(error) => error,
+                };
+            }
             RuntimeEvent::IndexStatus { result, .. } => match result {
                 Ok(status) => {
                     self.index_state = status.state;
@@ -176,9 +267,11 @@ impl SettingsView {
             return;
         }
         let exclusions = changes.iter().any(|(key, _)| key == "search_excluded_dirs");
+        let keys = changes.iter().map(|(key, _)| key.clone()).collect();
         match self.services.save_settings(changes) {
             Ok(id) => {
                 self.pending = Some(id);
+                self.pending_keys = keys;
                 self.pending_exclusions = exclusions;
                 self.message = self.t("正在保存…", "Saving…").into();
             }
@@ -187,6 +280,10 @@ impl SettingsView {
         cx.notify();
     }
     fn save_fields(&mut self, cx: &mut Context<Self>) {
+        if self.section == Section::Quick {
+            self.save_actions(cx);
+            return;
+        }
         let changes = if self.section == Section::Search {
             vec![(
                 "search_excluded_dirs".into(),
@@ -416,12 +513,29 @@ impl Render for SettingsView {
                         cx,
                     ));
             }
+            Section::Shortcuts => {
+                content = content.child(if self.services.uses_development_shortcuts() {
+                    self.t(
+                        "开发模式会为全局快捷键加入 Alt；贴图按键不变。",
+                        "Development mode adds Alt to global shortcuts; pin keys are unchanged.",
+                    )
+                } else {
+                    self.t(
+                        "全局快捷键使用下面保存的组合。",
+                        "Global shortcuts use the combinations saved below.",
+                    )
+                });
+            }
+            Section::Quick => {
+                content = content.child(self.action_editor(cx));
+            }
         }
         content = content.children(
             self.fields
                 .iter()
                 .filter(|field| field.section == self.section)
                 .map(|field| {
+                    let key = field.key;
                     div()
                         .flex()
                         .flex_col()
@@ -431,6 +545,20 @@ impl Render for SettingsView {
                             Input::new(&field.state)
                                 .disabled(self.pending.is_some() || self.choosing_path),
                         )
+                        .when(self.section == Section::Shortcuts, |row| {
+                            row.child(
+                                Button::new((key, 0usize))
+                                    .label(self.t("录制快捷键", "Record shortcut"))
+                                    .disabled(self.pending.is_some())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.start_recording(
+                                            actions::Recording::Setting(key),
+                                            window,
+                                            cx,
+                                        )
+                                    })),
+                            )
+                        })
                 }),
         );
         if self.section == Section::Pin {
@@ -452,11 +580,22 @@ impl Render for SettingsView {
             );
         }
         div()
+            .id("settings")
+            .track_focus(&self.focus)
             .flex()
             .flex_col()
             .p_6()
             .gap_4()
             .size_full()
+            .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
+                if this.recording.take().is_some() {
+                    this.services.set_shortcut_recording(false);
+                    cx.notify();
+                }
+            }))
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                this.record_key(event, window, cx)
+            }))
             .child(div().text_2xl().child("Rotor"))
             .child(
                 div().flex().gap_2().children(
@@ -465,6 +604,8 @@ impl Render for SettingsView {
                         ("search", Section::Search, "搜索", "Search"),
                         ("pin", Section::Pin, "贴图", "Pinned screenshots"),
                         ("translation", Section::Translation, "翻译", "Translation"),
+                        ("shortcuts", Section::Shortcuts, "快捷键", "Shortcuts"),
+                        ("quick", Section::Quick, "快捷操作", "Quick actions"),
                     ]
                     .into_iter()
                     .map(|(id, section, zh, en)| {
@@ -487,10 +628,28 @@ impl Render for SettingsView {
                     .child(content),
             )
             .child(self.message.clone())
+            .when(self.recording.is_some(), |root| {
+                root.child(
+                    Button::new("cancel-recording")
+                        .label(self.t("取消录制", "Cancel recording"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.recording = None;
+                            this.services.set_shortcut_recording(false);
+                            this.message.clear();
+                            cx.notify();
+                        })),
+                )
+            })
             .child(
                 Button::new("close")
                     .label(self.t("关闭", "Close"))
                     .on_click(|_, window, _| window.remove_window()),
             )
+    }
+}
+
+impl Drop for SettingsView {
+    fn drop(&mut self) {
+        self.services.set_shortcut_recording(false);
     }
 }

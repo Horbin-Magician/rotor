@@ -251,11 +251,39 @@ fn load_actions_from_config() -> Vec<QuickAction> {
     actions
 }
 
-fn default_actions() -> Vec<QuickAction> {
+pub fn default_actions() -> Vec<QuickAction> {
     serde_json::from_str::<Vec<QuickAction>>(DEFAULT_QUICK_ACTIONS).unwrap_or_else(|error| {
         log::warn!("Invalid default quick actions config: {error}");
         Vec::new()
     })
+}
+
+pub fn migrate_actions(
+    json: &str,
+    revision: Option<&str>,
+) -> Result<Option<Vec<QuickAction>>, String> {
+    if revision == Some(DEFAULT_QUICK_ACTIONS_REVISION) {
+        return Ok(None);
+    }
+    let mut actions = normalize_actions(
+        serde_json::from_str(json).map_err(|error| format!("Invalid quick actions: {error}"))?,
+    )
+    .map_err(|error| error.to_string())?;
+    let used: HashSet<_> = parse_shortcuts(&actions)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|(_, key)| key.id())
+        .collect();
+    for default in default_actions() {
+        if actions.iter().any(|action| action.id == default.id) {
+            continue;
+        }
+        let key = Shortcut::from_str(&default.shortcut).map_err(|error| error.to_string())?;
+        if !used.contains(&key.id()) {
+            actions.push(default);
+        }
+    }
+    Ok(Some(actions))
 }
 
 fn append_missing_default_actions(actions: &mut Vec<QuickAction>) {
@@ -313,6 +341,32 @@ mod tests {
             shortcut: shortcut.into(),
             enabled,
         }
+    }
+
+    #[test]
+    fn revision_migration_keeps_custom_commands_and_occupied_default_shortcuts() {
+        let default = default_actions().remove(0);
+        let custom = QuickAction {
+            id: "custom".into(),
+            name: "Mine".into(),
+            shortcut: default.shortcut,
+            command: "custom command".into(),
+            enabled: true,
+        };
+        let json = serde_json::to_string(&vec![custom]).unwrap();
+        let migrated = migrate_actions(&json, Some("1")).unwrap().unwrap();
+        assert_eq!(
+            migrated
+                .iter()
+                .find(|action| action.id == "custom")
+                .unwrap()
+                .command,
+            "custom command"
+        );
+        assert!(!migrated.iter().any(|action| action.id == default.id));
+        assert!(migrate_actions(&json, Some(DEFAULT_QUICK_ACTIONS_REVISION))
+            .unwrap()
+            .is_none());
     }
 
     #[test]

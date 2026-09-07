@@ -142,6 +142,8 @@ pub struct Services {
     canvas_fonts: Arc<Mutex<Option<Arc<rotor_canvas::Renderer>>>>,
     coordinate_shortcuts: Arc<AtomicBool>,
     development_shortcuts: AtomicBool,
+    shortcut_recording: Arc<crate::shortcuts::ShortcutRecording>,
+    startup_warning: Option<String>,
     stopped: Arc<AtomicBool>,
 }
 
@@ -151,6 +153,37 @@ impl Services {
         resources: Option<ResourceLocator>,
         options: ServiceOptions,
     ) -> Result<(Self, Receiver<RuntimeEvent>), String> {
+        let startup_warning = {
+            let mut config = lock(&config);
+            if let Some(json) = config.get_user("quick_actions").cloned() {
+                let migration = crate::quick::migrate_actions(
+                    &json,
+                    config
+                        .get_user("quick_actions_revision")
+                        .map(String::as_str),
+                )
+                .and_then(|actions| {
+                    if let Some(actions) = actions {
+                        let json =
+                            serde_json::to_string(&actions).map_err(|error| error.to_string())?;
+                        config
+                            .set_many([
+                                ("quick_actions".into(), json),
+                                (
+                                    "quick_actions_revision".into(),
+                                    rotor_common::DEFAULT_QUICK_ACTIONS_REVISION.into(),
+                                ),
+                            ])
+                            .map_err(|error| error.to_string())
+                    } else {
+                        Ok(())
+                    }
+                });
+                migration.err()
+            } else {
+                None
+            }
+        };
         let runtime = Builder::new_multi_thread()
             .worker_threads(2)
             .max_blocking_threads(BACKGROUND_LIMIT + 2)
@@ -205,6 +238,8 @@ impl Services {
                 canvas_fonts: Arc::new(Mutex::new(None)),
                 coordinate_shortcuts,
                 development_shortcuts: AtomicBool::new(true),
+                shortcut_recording: Arc::new(crate::shortcuts::ShortcutRecording::default()),
+                startup_warning,
                 stopped: Arc::new(AtomicBool::new(false)),
             },
             receiver,
@@ -214,6 +249,9 @@ impl Services {
     pub fn settings(&self) -> Config {
         lock(&self.published_config).clone()
     }
+    pub fn startup_warning(&self) -> Option<String> {
+        self.startup_warning.clone()
+    }
     pub fn coordinate_shortcuts(&self, development: bool) {
         self.development_shortcuts
             .store(development, Ordering::Release);
@@ -221,6 +259,15 @@ impl Services {
     }
     pub fn uses_development_shortcuts(&self) -> bool {
         self.development_shortcuts.load(Ordering::Acquire)
+    }
+    pub fn shortcut_recording_flag(&self) -> Arc<crate::shortcuts::ShortcutRecording> {
+        self.shortcut_recording.clone()
+    }
+    pub fn set_shortcut_recording(&self, recording: bool) {
+        self.shortcut_recording.set(recording);
+    }
+    pub fn is_shortcut_recording(&self) -> bool {
+        self.shortcut_recording.active()
     }
     pub fn quick_actions(&self) -> Result<Vec<crate::QuickAction>, String> {
         crate::quick::actions_from_config(&self.settings())

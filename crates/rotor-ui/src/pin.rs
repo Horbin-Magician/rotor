@@ -421,15 +421,15 @@ fn shortcut_matches(event: &Keystroke, configured: Option<&String>) -> bool {
     let Some(configured) = configured else {
         return false;
     };
-    let normalized = configured
-        .to_ascii_lowercase()
-        .replace("command", "cmd")
-        .replace("control", "ctrl")
-        .replace('+', "-");
-    Keystroke::parse(&normalized).is_ok_and(|key| {
-        key.modifiers == event.modifiers && key.key.eq_ignore_ascii_case(&event.key)
-    })
+    use std::str::FromStr;
+    let expected = global_hotkey::hotkey::HotKey::from_str(configured).ok();
+    let actual = crate::shortcut::recorded_key(event, true)
+        .ok()
+        .flatten()
+        .and_then(|value| global_hotkey::hotkey::HotKey::from_str(&value).ok());
+    expected.is_some() && expected == actual
 }
+
 impl Render for PinView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_canvas(window, cx);
@@ -575,5 +575,26 @@ impl Render for PinView {
                 }
                 cx.stop_propagation();
             }))
+    }
+}
+
+#[cfg(test)]
+mod shortcut_tests {
+    use super::shortcut_matches;
+    use gpui_kit::Keystroke;
+    #[test]
+    fn canonical_recorded_key_names_work_for_local_shortcuts() {
+        assert!(shortcut_matches(
+            &Keystroke::parse("s").unwrap(),
+            Some(&"KeyS".into())
+        ));
+        assert!(shortcut_matches(
+            &Keystroke::parse("ctrl-s").unwrap(),
+            Some(&"Ctrl+KeyS".into())
+        ));
+        assert!(!shortcut_matches(
+            &Keystroke::parse("s").unwrap(),
+            Some(&"Ctrl+KeyS".into())
+        ));
     }
 }
