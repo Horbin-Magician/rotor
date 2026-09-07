@@ -11,8 +11,6 @@ pinyin = { version = "0.11.0", default-features = false, features = ["plain"] }
 rotor-common = { path = "../rotor-common" }
 rotor-platform = { path = "../rotor-platform" }
 serde = { version = "1", features = ["derive"] }
-tauri = { version = "2", features = ["macos-private-api"] }
-tauri-plugin-global-shortcut = "2"
 walkdir = "2.5.0"
 
 [target."cfg(target_os = \"windows\")".dependencies]

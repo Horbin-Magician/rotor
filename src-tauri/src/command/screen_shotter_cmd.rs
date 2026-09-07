@@ -5,9 +5,9 @@ use tauri::path::BaseDirectory;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::integration::Application;
 use rotor_common::AppConfig;
 use rotor_platform::sys_util;
-use rotor_runtime::Application;
 use rotor_screenshot::img_util::{self, TextResult};
 use rotor_screenshot::shotter_record::ShotterConfig;
 
@@ -38,7 +38,7 @@ fn lock_app() -> std::sync::MutexGuard<'static, Application> {
 // Returns raw RGBA bytes for a screenshot mask or pin window label
 #[tauri::command]
 pub async fn get_screenshot_data(label: String) -> Result<tauri::ipc::Response, String> {
-    let data = rotor_runtime::fetch_screenshot_data(&label).await?;
+    let data = crate::integration::fetch_screenshot_data(&label).await?;
     Ok(tauri::ipc::Response::new(data))
 }
 
@@ -141,7 +141,7 @@ pub async fn get_screen_rects(
 
 #[tauri::command]
 pub async fn change_current_mask(handle: tauri::AppHandle) {
-    rotor_screenshot::focus_mask_window_at_cursor(&handle);
+    crate::integration::screenshot::focus_mask_window_at_cursor(&handle);
 }
 
 #[tauri::command]

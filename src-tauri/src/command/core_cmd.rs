@@ -3,8 +3,8 @@ use std::sync::{LazyLock, Mutex};
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
+use crate::integration::Application;
 use rotor_common::{AppConfig, Config};
-use rotor_runtime::Application;
 
 static GLOBAL_SHORTCUT_UPDATE: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -166,7 +166,7 @@ pub async fn get_overview_info() -> Result<OverviewInfo, String> {
 }
 
 #[tauri::command]
-pub fn take_shortcut_registration_notices() -> Vec<rotor_runtime::ShortcutRegistrationNotice> {
+pub fn take_shortcut_registration_notices() -> Vec<crate::integration::ShortcutRegistrationNotice> {
     Application::lock_global().take_shortcut_registration_notices()
 }
 

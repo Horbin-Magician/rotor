@@ -1,8 +1,8 @@
 use std::{collections::HashSet, error::Error, fmt, process::Command, str::FromStr};
 
+use global_hotkey::hotkey::HotKey as Shortcut;
 use rotor_common::{AppConfig, DEFAULT_QUICK_ACTIONS, DEFAULT_QUICK_ACTIONS_REVISION};
 use serde::{Deserialize, Serialize};
-use tauri_plugin_global_shortcut::Shortcut;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -288,4 +288,45 @@ fn run_command(command: &str) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn action(id: &str, shortcut: &str, enabled: bool) -> QuickAction {
+        QuickAction {
+            id: id.into(),
+            name: " Test ".into(),
+            command: " echo test ".into(),
+            shortcut: shortcut.into(),
+            enabled,
+        }
+    }
+
+    #[test]
+    fn equivalent_enabled_shortcuts_conflict_after_normalization() {
+        let actions = vec![
+            action("one", "Ctrl+Shift+T", true),
+            action("two", "Shift+Ctrl+T", true),
+        ];
+        assert!(matches!(
+            normalize_actions(actions),
+            Err(QuickActionError::DuplicateShortcut { .. })
+        ));
+    }
+
+    #[test]
+    fn disabled_actions_keep_unregistered_shortcuts_and_normalize_text() {
+        let actions = normalize_actions(vec![
+            action(" one ", "Ctrl+Shift+T", true),
+            action("two", "not-a-shortcut", false),
+        ])
+        .unwrap();
+        assert_eq!(actions[0].id, "one");
+        assert_eq!(actions[0].name, "Test");
+        assert_eq!(actions[0].command, "echo test");
+        assert_eq!(parse_shortcuts(&actions).unwrap().len(), 1);
+        assert_eq!(actions[1].shortcut, "not-a-shortcut");
+    }
 }

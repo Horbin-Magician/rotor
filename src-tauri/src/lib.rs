@@ -1,4 +1,5 @@
 mod command;
+mod integration;
 
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
@@ -6,7 +7,9 @@ use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_log::fern::colors::ColoredLevelConfig;
 use tauri_plugin_log::{Target, TargetKind};
 
-use command::{core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd, shared_image_cmd, translator_cmd};
+use command::{
+    core_cmd, quick_cmd, screen_shotter_cmd, searcher_cmd, shared_image_cmd, translator_cmd,
+};
 
 fn format_plain_log(
     out: tauri_plugin_log::fern::FormatCallback,
@@ -97,7 +100,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(rotor_runtime::handle_global_hotkey_event)
+                .with_handler(integration::handle_global_hotkey_event)
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
@@ -150,7 +153,7 @@ pub fn run() {
         }
     };
 
-    if let Err(e) = rotor_runtime::Application::lock_global().init(app.app_handle().clone()) {
+    if let Err(e) = integration::Application::lock_global().init(app.app_handle().clone()) {
         log::error!("Error while init rotor application: {e}");
     }
 

@@ -4,6 +4,20 @@ This file provides guidance to Codex when working with code in this repository.
 
 ## Project Overview
 
+### Active GPUI migration
+
+The Rust workspace now lives at the repository root. `rotor-desktop` is the
+default native target; `rotor-ui` and `rotor-canvas` are under `crates/`. The
+native shell uses `.rotor-gpui` by default, or an explicit `ROTOR_DATA_DIR`.
+The independent P0 workspace remains under `experiments/gpui-probe`.
+
+Shared business crates must remain free of Tauri, GPUI and WebView dependencies.
+The old Tauri window/lifecycle/IPC adapters are now in
+`src-tauri/src/integration`; do not move them back into the shared crates.
+The historical module map below describes the old shell. Follow
+`doc/gpui-migration/progress.md` for current implementation and validation state.
+Code implementation and cross-platform acceptance are tracked separately.
+
 Rotor is a fast, low-occupancy desktop toolbox for Windows and macOS. It is built with Tauri 2, a Rust backend, and a Vue 3 + TypeScript frontend. Current user-facing modules include file search, screenshots, pinned screenshot windows, screenshot OCR, text translation (selection and input), settings/overview, and configurable quick actions.
 
 ## Technology Stack

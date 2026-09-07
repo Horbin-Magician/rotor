@@ -5,15 +5,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rotor_screenshot::ScreenShotter;
-use rotor_searcher::{file_data::SearchResultItem, Searcher};
-use rotor_translator::Translator;
+use super::screenshot::ScreenShotter;
+use super::searcher::Searcher;
+use super::translator::Translator;
+use rotor_searcher::file_data::SearchResultItem;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
-use crate::quick::Quick;
-use crate::tray::Tray;
+use super::tray::Tray;
+use rotor_runtime::Quick;
 
 const SHORTCUT_TRIGGER_DEBOUNCE: Duration = Duration::from_millis(500);
 const PRESSED_SHORTCUT_STALE_AFTER: Duration = Duration::from_secs(3);

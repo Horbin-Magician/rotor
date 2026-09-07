@@ -4,6 +4,8 @@
 
 ## 已提交
 
+- `0c6e182`：P1 根 workspace、正式 native/ui/canvas 入口和双壳 CI。
+
 - `57c1f6a`：P1 配置事务和数据目录隔离。
 - `25f2b56`：P0 独立原型、依赖锁定、Windows 实机证据、试验打包和采样工具。跨平台/完整基线缺口见 dependency-baseline.md。
 
@@ -28,3 +30,14 @@
 - 本机预装 stable 实际为 rustc 1.97.0，验证使用 cargo +stable；仓库和 CI 固定命名工具链 1.97.0。
 
 开发入口：在根运行 cargo run -p rotor-desktop（原生），旧版仍使用 yarn tauri dev；P0 则在 experiments/gpui-probe 独立运行。不得把基础窗口当成已完成的功能迁移。
+
+## P1 旧壳适配与核心边界
+
+- 旧 application/tray/screenshot_data、搜索/翻译窗口和截图窗口适配集中到 src-tauri/src/integration；IPC 命令名、事件名、payload 和快捷键语义保持。
+- 搜索器保留后台索引/查询核心，旧窗口包装委托核心；截图捕获、缓存、记录、OCR 和会话恢复判断仍在截图 crate；翻译引擎独立，模拟复制下沉 rotor-platform。
+- rotor-runtime 的快捷动作解析改用与原插件同版本的独立 global-hotkey 类型；不依赖 Tauri 插件。
+- 全部共享核心 crate 已移除 Tauri/GPUI/WebView normal/build 依赖，Windows/macOS 两个目标闭包已通过脚本检查，已接入 CI。
+- 验证：旧 rotor check 通过；runtime 2、screenshot 7、searcher 12、translator 9，共 30 项核心单测通过。所有测试使用隔离数据目录。
+- 正式 native release 构建通过，--check-config 成功读取隔离 ConfigService。窗口创建及可访问性树可见，但桌面已锁定，视觉/交互复测暂未完成；继续命令行与代码实现。
+
+下一步补齐类型化请求、过期结果隔离、后台任务生命周期和 GPUI 事件桥，再进入完整原生桌面服务和功能界面。

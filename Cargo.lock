@@ -8199,6 +8199,7 @@ name = "rotor"
 version = "2.6.0"
 dependencies = [
  "chrono",
+ "cocoa 0.25.0",
  "image",
  "log",
  "rotor-common",
@@ -8222,6 +8223,7 @@ dependencies = [
  "tokio",
  "webview2-com",
  "windows-core 0.61.2",
+ "xcap",
 ]
 
 [[package]]
@@ -8255,6 +8257,7 @@ name = "rotor-platform"
 version = "2.6.0"
 dependencies = [
  "base64 0.22.1",
+ "core-foundation 0.9.4",
  "core-graphics 0.23.2",
  "encoding_rs",
  "file_icon_provider",
@@ -8262,6 +8265,7 @@ dependencies = [
  "is-root",
  "libc",
  "log",
+ "objc2-app-kit 0.2.2",
  "rotor-common",
  "serde",
  "windows 0.61.3",
@@ -8272,6 +8276,7 @@ dependencies = [
 name = "rotor-runtime"
 version = "2.6.0"
 dependencies = [
+ "global-hotkey",
  "image",
  "log",
  "rotor-common",
@@ -8280,8 +8285,6 @@ dependencies = [
  "rotor-translator",
  "serde",
  "serde_json",
- "tauri",
- "tauri-plugin-global-shortcut",
  "tokio",
 ]
 
@@ -8289,7 +8292,6 @@ dependencies = [
 name = "rotor-screenshot"
 version = "2.6.0"
 dependencies = [
- "cocoa 0.25.0",
  "image",
  "log",
  "oar-ocr",
@@ -8297,8 +8299,6 @@ dependencies = [
  "rotor-common",
  "rotor-platform",
  "serde",
- "tauri",
- "tauri-plugin-global-shortcut",
  "toml 0.8.23",
  "xcap",
 ]
@@ -8314,8 +8314,6 @@ dependencies = [
  "rotor-common",
  "rotor-platform",
  "serde",
- "tauri",
- "tauri-plugin-global-shortcut",
  "walkdir",
  "windows 0.61.3",
 ]
@@ -8324,20 +8322,12 @@ dependencies = [
 name = "rotor-translator"
 version = "2.6.0"
 dependencies = [
- "core-foundation 0.9.4",
- "core-graphics 0.23.2",
  "log",
- "objc2-app-kit 0.2.2",
  "reqwest",
  "rotor-common",
- "rotor-platform",
  "rustls",
  "serde",
  "serde_json",
- "tauri",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-global-shortcut",
- "windows 0.61.3",
 ]
 
 [[package]]

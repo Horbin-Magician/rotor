@@ -1,8 +1,9 @@
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
+use crate::integration::Application;
 use rotor_common::{AppConfig, DEFAULT_QUICK_ACTIONS_REVISION};
-use rotor_runtime::{Application, QuickAction};
+use rotor_runtime::QuickAction;
 
 #[tauri::command]
 pub fn get_quick_actions() -> Vec<QuickAction> {

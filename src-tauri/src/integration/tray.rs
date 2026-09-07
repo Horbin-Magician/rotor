@@ -6,7 +6,7 @@ use tauri::{
 };
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-use crate::ShortcutRegistrationNotice;
+use super::ShortcutRegistrationNotice;
 use rotor_common::i18n;
 
 pub struct Tray;

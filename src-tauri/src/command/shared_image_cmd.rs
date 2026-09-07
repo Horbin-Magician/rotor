@@ -10,13 +10,13 @@ mod imp {
     };
     use windows_core::{Interface, PCWSTR};
 
-    use rotor_runtime::ScreenshotImage;
+    use crate::integration::ScreenshotImage;
 
     pub async fn get_screenshot_data_shared(
         window: tauri::WebviewWindow,
         request_id: String,
     ) -> Result<(), String> {
-        let image = rotor_runtime::resolve_screenshot_image(window.label()).await?;
+        let image = crate::integration::resolve_screenshot_image(window.label()).await?;
         let (width, height) = image.dimensions();
         let length = image.bytes().len();
 

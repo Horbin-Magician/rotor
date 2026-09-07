@@ -26,7 +26,9 @@ jobs:
           components: rustfmt, clippy
       - uses: swatinem/rust-cache@v2
       - run: cargo fmt -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-common -- --check
-      - run: cargo test -p rotor-common -p rotor-canvas --locked
+      - run: cargo test -p rotor-common -p rotor-canvas -p rotor-runtime -p rotor-searcher -p rotor-screenshot -p rotor-translator --lib --locked
+      - shell: pwsh
+        run: ./.github/scripts/check-core-dependencies.ps1
       - run: cargo clippy -p rotor-desktop -p rotor-ui -p rotor-canvas --all-targets --locked -- -D warnings
       - run: cargo build -p rotor-desktop --release --locked
   legacy:

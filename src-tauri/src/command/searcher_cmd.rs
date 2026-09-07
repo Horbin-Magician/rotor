@@ -1,4 +1,4 @@
-use rotor_runtime::Application;
+use crate::integration::Application;
 use rotor_searcher::file_data::SearchIndexStatus;
 
 #[tauri::command]

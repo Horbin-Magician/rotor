@@ -11,10 +11,5 @@ rayon = "1.10"
 rotor-common = { path = "../rotor-common" }
 rotor-platform = { path = "../rotor-platform" }
 serde = { version = "1", features = ["derive"] }
-tauri = { version = "2", features = ["macos-private-api"] }
-tauri-plugin-global-shortcut = "2"
 toml = "0.8.23"
 xcap = "0.7.0"
-
-[target."cfg(target_os = \"macos\")".dependencies]
-cocoa = "0.25"

@@ -9,7 +9,7 @@ use xcap::Monitor;
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct MonitorConfig {
+pub struct MonitorConfig {
     pub id: u32,
     pub x: i32,
     pub y: i32,
@@ -31,23 +31,23 @@ impl MonitorConfig {
     }
 }
 
-pub(crate) fn mask_label(id: u32) -> String {
+pub fn mask_label(id: u32) -> String {
     format!("ssmask-{id}")
 }
 
-pub(crate) fn current_configs() -> Result<Vec<MonitorConfig>, Box<dyn Error>> {
+pub fn current_configs() -> Result<Vec<MonitorConfig>, Box<dyn Error>> {
     Monitor::all()?
         .iter()
         .map(MonitorConfig::from_monitor)
         .collect()
 }
 
-pub(crate) fn sorted_configs(mut configs: Vec<MonitorConfig>) -> Vec<MonitorConfig> {
+pub fn sorted_configs(mut configs: Vec<MonitorConfig>) -> Vec<MonitorConfig> {
     configs.sort_by_key(|config| config.id);
     configs
 }
 
-pub(crate) fn capture_all(monitors: Vec<Monitor>) -> Result<HashMap<String, RgbaImage>, String> {
+pub fn capture_all(monitors: Vec<Monitor>) -> Result<HashMap<String, RgbaImage>, String> {
     capture_all_inner(monitors)
 }
 

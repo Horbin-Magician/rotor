@@ -2,7 +2,7 @@ use image::{DynamicImage, RgbaImage};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::application::Application;
+use super::application::Application;
 
 const IMAGE_RETRY_COUNT: usize = 20;
 const IMAGE_RETRY_DELAY: Duration = Duration::from_millis(20);
