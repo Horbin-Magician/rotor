@@ -50,6 +50,7 @@ jobs:
           name: native-stage-${{ matrix.os }}
           path: target/native-stage.tar.gz
       - run: cargo run -p rotor-desktop --example ocr_smoke --release --locked -- --wait-idle
+      - run: cargo run -p rotor-screenshot --example profile_roundtrip --locked -- target/profile-roundtrip
   legacy:
     runs-on: windows-latest
     steps:

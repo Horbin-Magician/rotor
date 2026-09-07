@@ -46,3 +46,33 @@ exit. The finish page can restart with the same data directory and development
 shortcut/index/elevation flags. The custom resource-directory override is not
 carried into a newly installed package; packaged resource discovery applies.
 Actual UAC cancellation, installation, restart, and rollback remain untested.
+
+## Offline profile copies
+
+Close the source application before copying. Import into a new directory, keeping
+the original and a separate backup; the command never replaces an existing
+profile or backup. Record the source version, or `unknown` if it is unavailable.
+
+```powershell
+cargo run -p xtask -- import-profile C:/Users/me/.rotor target/profile-copy target/profile-backup 2.6.0
+cargo run -p xtask -- verify-profile target/profile-backup
+cargo run -p rotor-desktop -- --data-dir target/profile-copy
+```
+
+Only `config.toml` and the complete `shotter` directory are copied, including
+other workspaces and unknown fields. Search indexes rebuild. The importer checks
+hashes before and after copying, rejects symlinks/nested destinations, retains
+backups on validation failure, and publishes the new directory after verification.
+Checksums detect changes; they are not a substitute for closing the source app.
+`migration-receipt.json` records version/time and file hashes without config
+values. Verify immutable backups or a freshly imported copy; ordinary app writes
+will legitimately change the active copy's hashes. Rollback imports the selected
+backup into another new directory, keeping current data and both backups.
+
+```powershell
+cargo run -p rotor-screenshot --example profile_roundtrip -- target/profile-roundtrip
+```
+
+This retained synthetic fixture exercises native writes and the legacy Rust
+record reader without screenshots or windows. It is not the installed Tauri
+client's full upgrade/rollback acceptance test.

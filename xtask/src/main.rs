@@ -259,6 +259,14 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("import-profile") if args.len() == 5 => {
+            let receipt = rotor_common::profile_migration::import(Path::new(&args[1]), Path::new(&args[2]), Path::new(&args[3]), &args[4])?;
+            println!("Imported {} files. Original and backup retained; indexes will rebuild.", receipt.files.len());
+        }
+        Some("verify-profile") if args.len() == 2 => {
+            let receipt = rotor_common::profile_migration::verify(Path::new(&args[1]))?;
+            println!("Verified {} profile files from {}", receipt.files.len(), receipt.source_version);
+        }
         Some("version") => println!("{}", version()?),
         Some("build") => {
             version()?;
@@ -268,7 +276,7 @@ fn main() -> Result<()> {
         Some("package") if args.len() == 3 => package(Path::new(&args[1]), Path::new(&args[2]))?,
         Some("stage") if args.len() == 2 => stage(Path::new(&args[1]))?,
         Some("verify") if args.len() == 2 => verify_stage(Path::new(&args[1]))?,
-        _ => return Err("usage: cargo run -p xtask -- version | build [cargo options] | stage <new directory> | verify <directory> | package <stage directory> <new output directory>".into()),
+        _ => return Err("usage: cargo run -p xtask -- version | build [cargo options] | stage <new directory> | verify <directory> | package <stage directory> <new output directory> | import-profile <source> <new destination> <new backup> <source version> | verify-profile <directory>".into()),
     }
     Ok(())
 }

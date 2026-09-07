@@ -288,3 +288,10 @@
 - 同步明确使用 release 事件标签；手动执行要求指定已发布标签，不再选取仓库“最新 tag”。下载前校验发布状态和安全文件名，下载后核对完整资产集合、大小及 GitHub 提供的 digest。
 - 发布标题/多行正文全程使用 JSON 文件和 jq 数据参数，不把发布内容插入 shell。结构化改写 latest.json/gpui-latest.json 的平台下载地址；其他资源和签名字节保持不变。创建/上传失败立即停止，已有 Gitee 发布不会被自动覆盖。
 - 3 项离线测试及 workflow YAML 解析通过，CI 加入同样测试。没有实际镜像仓库、创建发布或上传文件；Gitee API 联调、已有发布的人工恢复及正式/预览通道切换仍待发布环境验收。
+
+## P8 数据备份与副本演练
+
+- xtask import-profile 要求独立的新目标与备份目录；保留 config.toml 和完整 shotter 树，校验复制前后哈希，拒绝符号链接/嵌套路径，验证后发布目标。索引缓存不复制，启动后重建。备份记录来源版本/时间与哈希，不写配置值到日志；损坏 TOML 保留原件和备份。
+- verify-profile 校验不可变备份/新导入副本；活动副本正常写盘后哈希会变化。回退导入另一新目录，不覆盖迁移后截图或删除备份。
+- 合成图片/旧 TOML → 原生 PinStore 和 ConfigService 写回 → 旧 ShotterRecord 读取器验证 → 第二次副本导入全流程通过，保留 unknown keys、其他 workspace、image_rect/crop、负坐标、缩放与 PNG 字节。夹具与备份位于 target/profile-roundtrip-p8，未接触真实用户截图。
+- common 12 项测试、common/xtask clippy、CLI 备份验证通过；CI 增加副本演练。旧正式安装版 GUI 的实际双向数据验收和不同版本安装包演练仍未完成，G8 未通过。

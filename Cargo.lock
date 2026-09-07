@@ -8280,6 +8280,8 @@ version = "2.6.0"
 dependencies = [
  "log",
  "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "sys-locale",
  "tempfile",
  "toml 0.8.23",
@@ -13133,6 +13135,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 name = "xtask"
 version = "2.6.0"
 dependencies = [
+ "rotor-common",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
