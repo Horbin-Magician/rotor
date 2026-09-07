@@ -11,6 +11,7 @@ use rotor_common::Config;
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, SearchIndexStatus, Services};
 use std::sync::Arc;
 mod actions;
+mod overview;
 
 pub fn settings_title(config: &Config) -> &'static str {
     text(
@@ -28,6 +29,7 @@ fn text(config: &Config, zh: &'static str, en: &'static str) -> &'static str {
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
+    Overview,
     General,
     Search,
     Pin,
@@ -59,6 +61,9 @@ pub struct SettingsView {
     pending_run: Option<OperationId>,
     focus: FocusHandle,
     _activation: Subscription,
+    overview: Option<rotor_runtime::Overview>,
+    overview_request: Option<OperationId>,
+    startup_request: Option<OperationId>,
 }
 impl SettingsView {
     pub fn show_message(&mut self, message: String, cx: &mut Context<Self>) {
@@ -176,6 +181,7 @@ impl SettingsView {
             )
         });
         let action_result = services.quick_actions();
+        let overview_request = services.request_overview().ok();
         let message = action_result.as_ref().err().cloned().unwrap_or_default();
         let actions = action_result
             .unwrap_or_default()
@@ -192,7 +198,7 @@ impl SettingsView {
         Self {
             config,
             services,
-            section: Section::General,
+            section: Section::Overview,
             fields,
             excluded,
             index_state: IndexState::Unavailable,
@@ -207,6 +213,9 @@ impl SettingsView {
             pending_run: None,
             focus: cx.focus_handle(),
             _activation: activation,
+            overview: None,
+            overview_request,
+            startup_request: None,
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
@@ -219,6 +228,20 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) {
         match event {
+            RuntimeEvent::Overview { id, result } if self.overview_request == Some(id) => {
+                match result {
+                    Ok(overview) => self.overview = Some(overview),
+                    Err(error) => self.message = error,
+                }
+            }
+            RuntimeEvent::StartupChanged { id, result } if self.startup_request == Some(id) => {
+                self.startup_request = None;
+                self.message = match result {
+                    Ok(_) => self.t("启动项已更新", "Startup entry updated").into(),
+                    Err(error) => error,
+                };
+                self.refresh_overview(cx);
+            }
             RuntimeEvent::SettingsSaved { id, result } => {
                 let own = self.pending == Some(id);
                 if own {
@@ -380,6 +403,9 @@ impl Render for SettingsView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut content = div().flex().flex_col().gap_4();
         match self.section {
+            Section::Overview => {
+                content = content.child(self.overview_panel(cx));
+            }
             Section::General => {
                 content = content
                     .child(self.choices(
@@ -482,7 +508,13 @@ impl Render for SettingsView {
                         &[
                             ("1", "1", "1"),
                             ("2", "2", "2"),
+                            ("3", "3", "3"),
+                            ("4", "4", "4"),
                             ("5", "5", "5"),
+                            ("6", "6", "6"),
+                            ("7", "7", "7"),
+                            ("8", "8", "8"),
+                            ("9", "9", "9"),
                             ("10", "10", "10"),
                         ],
                         cx,
@@ -571,7 +603,7 @@ impl Render for SettingsView {
                     ),
             );
         }
-        if self.section != Section::General {
+        if !matches!(self.section, Section::General | Section::Overview) {
             content = content.child(
                 Button::new("save-fields")
                     .label(self.t("保存", "Save"))
@@ -600,6 +632,7 @@ impl Render for SettingsView {
             .child(
                 div().flex().gap_2().children(
                     [
+                        ("overview", Section::Overview, "概览", "Overview"),
                         ("general", Section::General, "通用", "General"),
                         ("search", Section::Search, "搜索", "Search"),
                         ("pin", Section::Pin, "贴图", "Pinned screenshots"),

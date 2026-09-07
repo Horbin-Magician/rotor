@@ -15,6 +15,6 @@ pub use rotor_searcher::{file_data::SearchResultItem, SearchBatch};
 pub use rotor_searcher::{IndexState, QueryId};
 pub use rotor_translator::engine::TranslateStreamEvent;
 pub use services::{
-    CaptureBundle, CapturedMonitor, OperationId, RuntimeEvent, ServiceOptions, Services,
+    CaptureBundle, CapturedMonitor, OperationId, Overview, RuntimeEvent, ServiceOptions, Services,
     SettingsCoordination,
 };

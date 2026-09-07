@@ -8321,12 +8321,14 @@ dependencies = [
  "libc",
  "log",
  "objc2-app-kit 0.2.2",
+ "plist",
  "raw-window-handle",
  "rotor-common",
  "serde",
  "serde_json",
  "tempfile",
  "windows 0.61.3",
+ "winreg 0.55.0",
  "xcap",
 ]
 

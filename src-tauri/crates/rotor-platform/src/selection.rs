@@ -122,6 +122,15 @@ fn request_accessibility_permission() -> bool {
 }
 
 #[cfg(target_os = "macos")]
+pub fn accessibility_permission() -> bool {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+    }
+    unsafe { AXIsProcessTrusted() }
+}
+
+#[cfg(target_os = "macos")]
 pub fn wait_for_modifiers_release() -> std::io::Result<()> {
     use core_graphics::event::{CGEvent, CGEventFlags};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};

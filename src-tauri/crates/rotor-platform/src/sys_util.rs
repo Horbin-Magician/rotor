@@ -272,6 +272,7 @@ pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
 #[cfg(target_os = "macos")]
 pub fn get_permission_statuses() -> Vec<PermissionStatus> {
     vec![
+        PermissionStatus { key: "accessibility".into(), name: "Accessibility".into(), granted: Some(crate::selection::accessibility_permission()), detail: "Required for selection translation".into() },
         PermissionStatus {
             key: "screen_capture".to_string(),
             name: "Screen Capture".to_string(),

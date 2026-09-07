@@ -48,6 +48,14 @@ pub struct CaptureBundle {
 }
 
 pub enum RuntimeEvent {
+    Overview {
+        id: OperationId,
+        result: Result<Overview, String>,
+    },
+    StartupChanged {
+        id: OperationId,
+        result: Result<bool, String>,
+    },
     SettingsCoordination(SettingsCoordination),
     QuickFinished {
         id: OperationId,
@@ -91,6 +99,17 @@ pub enum RuntimeEvent {
         revision: u64,
         result: Result<Vec<TextResult>, String>,
     },
+}
+
+pub struct Overview {
+    pub version: &'static str,
+    pub platform: &'static str,
+    pub architecture: &'static str,
+    pub data_directory: String,
+    pub resident_bytes: Result<u64, String>,
+    pub permissions: Vec<rotor_platform::sys_util::PermissionStatus>,
+    pub autostart: Result<bool, String>,
+    pub ocr_loaded: Option<bool>,
 }
 
 enum SettingsCommand {
@@ -144,6 +163,8 @@ pub struct Services {
     development_shortcuts: AtomicBool,
     shortcut_recording: Arc<crate::shortcuts::ShortcutRecording>,
     startup_warning: Option<String>,
+    data_directory: std::path::PathBuf,
+    startup_flags: Mutex<Vec<String>>,
     stopped: Arc<AtomicBool>,
 }
 
@@ -197,7 +218,7 @@ impl Services {
             .data_directory()
             .ok_or("configuration data directory unavailable")?
             .to_path_buf();
-        let pins = PinService::new(&runtime, data_directory, events.clone());
+        let pins = PinService::new(&runtime, data_directory.clone(), events.clone());
         let published_config = Arc::new(Mutex::new(lock(&config).get_all()));
         let coordinate_shortcuts = Arc::new(AtomicBool::new(false));
         let settings_worker = runtime.spawn(settings_loop(
@@ -240,6 +261,8 @@ impl Services {
                 development_shortcuts: AtomicBool::new(true),
                 shortcut_recording: Arc::new(crate::shortcuts::ShortcutRecording::default()),
                 startup_warning,
+                data_directory,
+                startup_flags: Mutex::new(Vec::new()),
                 stopped: Arc::new(AtomicBool::new(false)),
             },
             receiver,
@@ -251,6 +274,68 @@ impl Services {
     }
     pub fn startup_warning(&self) -> Option<String> {
         self.startup_warning.clone()
+    }
+    pub fn configure_startup_flags(&self, flags: Vec<String>) {
+        *lock(&self.startup_flags) = flags;
+    }
+    fn startup_parameters(&self) -> Result<(std::path::PathBuf, Vec<String>), String> {
+        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let mut args = vec![
+            "--background".into(),
+            "--data-dir".into(),
+            self.data_directory
+                .to_str()
+                .ok_or("Data directory is not Unicode")?
+                .into(),
+        ];
+        if let Some(resources) = &self.resources {
+            args.extend([
+                "--resource-dir".into(),
+                resources
+                    .root()
+                    .to_str()
+                    .ok_or("Resource directory is not Unicode")?
+                    .into(),
+            ]);
+        }
+        args.extend(lock(&self.startup_flags).iter().cloned());
+        Ok((executable, args))
+    }
+    pub fn request_overview(&self) -> Result<OperationId, String> {
+        let (executable, args) = self.startup_parameters()?;
+        let data_directory = self.data_directory.display().to_string();
+        self.spawn_job(
+            move || {
+                Ok(Overview {
+                    version: env!("CARGO_PKG_VERSION"),
+                    platform: std::env::consts::OS,
+                    architecture: std::env::consts::ARCH,
+                    data_directory,
+                    resident_bytes: rotor_platform::sys_util::get_memory_usage()
+                        .map(|memory| memory.resident_bytes)
+                        .map_err(|error| error.to_string()),
+                    permissions: rotor_platform::sys_util::get_permission_statuses(),
+                    autostart: rotor_platform::startup::enabled(&executable, &args),
+                    ocr_loaded: rotor_screenshot::img_util::ocr_cache_loaded(),
+                })
+            },
+            None,
+            |id, result| RuntimeEvent::Overview { id, result },
+        )
+    }
+    pub fn set_autostart(&self, enabled: bool) -> Result<OperationId, String> {
+        let (executable, args) = self.startup_parameters()?;
+        self.spawn_job(
+            move || {
+                rotor_platform::startup::set_enabled(enabled, &executable, &args)?;
+                rotor_platform::startup::enabled(&executable, &args)
+            },
+            None,
+            |id, result| RuntimeEvent::StartupChanged { id, result },
+        )
+    }
+    pub fn open_data_directory(&self) -> Result<OperationId, String> {
+        self.open_file(self.data_directory.to_string_lossy().into_owned(), false)
     }
     pub fn coordinate_shortcuts(&self, development: bool) {
         self.development_shortcuts

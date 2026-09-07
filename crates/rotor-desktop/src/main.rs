@@ -360,7 +360,20 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let directory = match std::env::var_os("ROTOR_DATA_DIR") {
+    let option = |key: &str| -> Result<Option<String>, String> {
+        let Some(index) = args.iter().position(|arg| arg == key) else {
+            return Ok(None);
+        };
+        args.get(index + 1)
+            .filter(|value| !value.starts_with("--") && !value.is_empty())
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| format!("Missing value for {key}"))
+    };
+    let directory_override = option("--data-dir")?
+        .map(std::ffi::OsString::from)
+        .or_else(|| std::env::var_os("ROTOR_DATA_DIR"));
+    let directory = match directory_override {
         Some(value) if value.is_empty() => return Err("ROTOR_DATA_DIR cannot be empty".into()),
         Some(value) => {
             let path = PathBuf::from(value);
@@ -393,9 +406,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         Instance::ActivatedExisting => return Ok(()),
     };
     let _validated_config = ConfigService::load_from(&directory)?;
-    let resources = ResourceLocator::for_current_process()
-        .map_err(|error| eprintln!("OCR resources: {error}"))
-        .ok();
+    let resources = match option("--resource-dir")? {
+        Some(path) => ResourceLocator::from_root(std::path::Path::new(&path)),
+        None => ResourceLocator::for_current_process(),
+    }
+    .map_err(|error| eprintln!("OCR resources: {error}"))
+    .ok();
     let font_resources = resources.clone();
     let (services, events) = Services::new(
         AppConfig::shared_global(),
@@ -406,6 +422,17 @@ fn run() -> Result<(), Box<dyn Error>> {
     )
     .map_err(std::io::Error::other)?;
     let services = Arc::new(services);
+    services.configure_startup_flags(
+        args.iter()
+            .filter(|arg| {
+                matches!(
+                    arg.as_str(),
+                    "--no-index" | "--no-hotkeys" | "--production-shortcuts"
+                )
+            })
+            .cloned()
+            .collect(),
+    );
     let config = services.settings();
     let app_services = services.clone();
     let background = args.iter().any(|arg| arg == "--background");
