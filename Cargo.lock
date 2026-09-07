@@ -8314,6 +8314,7 @@ dependencies = [
  "rotor-common",
  "rotor-platform",
  "serde",
+ "serde_json",
  "walkdir",
  "windows 0.61.3",
 ]

@@ -15,12 +15,18 @@ impl std::ops::Deref for Searcher {
     }
 }
 impl Searcher {
+    pub fn find(&self, query: String) {
+        if let Err(error) = self.service.find(query) { log::warn!("Search request failed: {error}"); }
+    }
     pub fn new<F>(callback: F, state_callback: Option<Box<dyn Fn(String) + Send>>) -> Self
     where
         F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
     {
         Self {
-            service: rotor_searcher::Searcher::new(callback, state_callback),
+            service: rotor_searcher::Searcher::new(
+                move |batch| callback(batch.query, batch.items, batch.append),
+                state_callback.map(|callback| Box::new(move |state: rotor_searcher::IndexState| callback(state.as_str().to_string())) as Box<dyn Fn(rotor_searcher::IndexState) + Send>),
+            ),
             app_hander: None,
         }
     }

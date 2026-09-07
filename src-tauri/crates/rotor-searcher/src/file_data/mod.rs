@@ -1,4 +1,5 @@
 mod volume;
+use crate::{QueryId, SearchBatch, SearchRequest};
 
 mod excluded_dirs;
 use std::collections::VecDeque;
@@ -22,15 +23,16 @@ pub use volume::{SearchResultItem, VolumeIndexStatus};
 pub enum SearcherMessage {
     Init,
     Update,
-    Find(String),
+    Find(SearchRequest),
     Release,
+    Shutdown,
     Status(mpsc::Sender<SearchIndexStatus>),
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchIndexStatus {
-    pub state: String,
+    pub state: FileState,
     pub volume_count: usize,
     pub indexed_volume_count: usize,
     pub index_item_count: usize,
@@ -42,7 +44,7 @@ pub struct SearchIndexStatus {
 impl SearchIndexStatus {
     pub fn empty() -> Self {
         Self {
-            state: "unavailable".to_string(),
+            state: FileState::Unavailable,
             volume_count: 0,
             indexed_volume_count: 0,
             index_item_count: 0,
@@ -56,8 +58,11 @@ impl SearchIndexStatus {
 const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
 const SEARCH_CANCEL_DRAIN_TIMEOUT: Duration = Duration::from_millis(200);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FileState {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FileState {
+    Unavailable,
+    #[serde(rename = "unbuilt")]
     Unbuild,
     Building,
     Released,
@@ -69,8 +74,9 @@ pub(crate) enum FileState {
 pub(crate) type SharedFileState = Arc<Mutex<FileState>>;
 
 impl FileState {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
+            FileState::Unavailable => "unavailable",
             FileState::Unbuild => "unbuilt",
             FileState::Building => "building",
             FileState::Released => "released",
@@ -166,18 +172,18 @@ pub struct FileData {
     state: SharedFileState,
     show_num: usize,
     batch: u8,
-    find_result_callback: Box<dyn Fn(String, Vec<SearchResultItem>, bool) + Send>,
-    state_change_callback: Option<Box<dyn Fn(String) + Send>>,
+    find_result_callback: Box<dyn Fn(SearchBatch) + Send>,
+    state_change_callback: Option<Box<dyn Fn(FileState) + Send>>,
 }
 
 impl FileData {
     pub(crate) fn new<F>(
         find_result_callback: F,
-        state_change_callback: Option<Box<dyn Fn(String) + Send>>,
+        state_change_callback: Option<Box<dyn Fn(FileState) + Send>>,
         state: SharedFileState,
     ) -> FileData
     where
-        F: Fn(String, Vec<SearchResultItem>, bool) + Send + 'static,
+        F: Fn(SearchBatch) + Send + 'static,
     {
         FileData {
             vols: Vec::new(),
@@ -198,7 +204,7 @@ impl FileData {
     pub(crate) fn event_loop(
         msg_reciever: mpsc::Receiver<SearcherMessage>,
         mut file_data: FileData,
-    ) {
+    ) -> thread::JoinHandle<()> {
         std::thread::spawn(move || {
             let mut wait_deals: VecDeque<SearcherMessage> = VecDeque::new();
             loop {
@@ -255,10 +261,10 @@ impl FileData {
                             log::warn!("Send search index status failed");
                         }
                     }
-                    Err(_) => {}
+                    Ok(SearcherMessage::Shutdown) | Err(_) => break,
                 }
             }
-        });
+        })
     }
 
     fn state(&self) -> FileState {
@@ -284,7 +290,7 @@ impl FileData {
 
         if changed {
             if let Some(callback) = &self.state_change_callback {
-                callback(next_state.as_str().to_string());
+                callback(next_state);
             }
         }
     }
@@ -329,6 +335,7 @@ impl FileData {
 
     fn find_result(
         &mut self,
+        id: QueryId,
         filename: String,
         update_result: Vec<SearchResultItem>,
         if_increase: bool,
@@ -338,14 +345,23 @@ impl FileData {
             .into_iter()
             .map(SearchResultItem::attach_icon_data)
             .collect();
-        (self.find_result_callback)(filename, update_result, if_increase);
+        (self.find_result_callback)(SearchBatch {
+            id,
+            query: filename,
+            items: update_result,
+            append: if_increase,
+        });
     }
 
     pub fn find(
         &mut self,
-        filename: String,
+        request: SearchRequest,
         msg_reciever: &mpsc::Receiver<SearcherMessage>,
     ) -> Option<SearcherMessage> {
+        let SearchRequest {
+            id,
+            query: filename,
+        } = request;
         let mut reply: Option<SearcherMessage> = None;
         let mut if_increase = false;
         let need_num;
@@ -355,7 +371,7 @@ impl FileData {
             if_increase = true;
             if self.finding_result.items.len() >= need_num {
                 let return_result = self.finding_result.items[self.show_num..need_num].to_vec();
-                self.find_result(filename, return_result, if_increase);
+                self.find_result(id, filename, return_result, if_increase);
                 return reply;
             }
         } else {
@@ -418,7 +434,7 @@ impl FileData {
             } else {
                 vec![]
             };
-            self.find_result(filename, return_result, if_increase);
+            self.find_result(id, filename, return_result, if_increase);
         }
 
         reply
@@ -560,7 +576,7 @@ impl FileData {
             .max();
 
         SearchIndexStatus {
-            state: self.state().as_str().to_string(),
+            state: self.state(),
             volume_count: volumes.len(),
             indexed_volume_count,
             index_item_count,
@@ -576,12 +592,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn repeated_query_batches_keep_the_original_request_identity() {
+        let batches = Arc::new(Mutex::new(Vec::new()));
+        let observed = batches.clone();
+        let mut data = FileData::new(
+            move |batch| observed.lock().unwrap().push(batch),
+            None,
+            Arc::new(Mutex::new(FileState::Ready)),
+        );
+        let (_sender, receiver) = mpsc::channel();
+        for id in [QueryId(10), QueryId(11)] {
+            data.find(
+                SearchRequest {
+                    id,
+                    query: "same-query".into(),
+                },
+                &receiver,
+            );
+        }
+        let batches = batches.lock().unwrap();
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].id, QueryId(10));
+        assert_eq!(batches[1].id, QueryId(11));
+        assert!(!batches[0].append);
+        assert!(batches[1].append);
+    }
+
+    #[test]
+    fn disconnected_request_channel_terminates_instead_of_spinning() {
+        let data = FileData::new(|_| {}, None, Arc::new(Mutex::new(FileState::Unbuild)));
+        let (sender, receiver) = mpsc::channel();
+        let worker = FileData::event_loop(receiver, data);
+        drop(sender);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !worker.is_finished() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            worker.is_finished(),
+            "disconnected event loop did not terminate"
+        );
+        worker.join().unwrap();
+    }
+
+    #[test]
     fn state_change_callback_only_runs_for_new_states() {
         let state = Arc::new(Mutex::new(FileState::Unbuild));
         let observed_states = Arc::new(Mutex::new(Vec::new()));
         let callback_states = observed_states.clone();
         let file_data = FileData::new(
-            |_, _, _| {},
+            |_| {},
             Some(Box::new(move |state| {
                 callback_states
                     .lock()
@@ -599,7 +659,7 @@ mod tests {
             *observed_states
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()),
-            vec!["building".to_string(), "ready".to_string()]
+            vec![FileState::Building, FileState::Ready]
         );
     }
 }
