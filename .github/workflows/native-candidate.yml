@@ -2,6 +2,11 @@ name: native-candidate
 on:
   workflow_dispatch:
     inputs:
+      production_identity:
+        description: 'Use the legacy Rotor installation identity for acceptance testing'
+        required: true
+        type: boolean
+        default: false
       sign_updates:
         description: 'Sign candidate artifacts with the existing updater key'
         required: true
@@ -14,6 +19,8 @@ on:
         default: 'GPUI preview candidate; platform acceptance is pending.'
 permissions:
   contents: read
+env:
+  PRODUCTION_IDENTITY: ${{ inputs.production_identity }}
 jobs:
   package:
     strategy:
@@ -33,13 +40,36 @@ jobs:
           choco install nsis --version=3.11 --no-progress -y
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
       - run: cargo test -p xtask -p rotor-updater --locked
-      - run: cargo run -p xtask --locked -- build
-      - run: cargo run -p xtask --locked -- stage target/native-stage
+      - shell: pwsh
+        run: ./.github/scripts/check-annotation-font.ps1
+      - name: Build and stage selected identity
+        shell: pwsh
+        run: |
+          $modeArgs = @()
+          if ($env:PRODUCTION_IDENTITY -eq 'true') { $modeArgs += '--production' }
+          cargo run -p xtask --locked -- build @modeArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+          cargo run -p xtask --locked -- stage @modeArgs "$env:RUNNER_TEMP/native-stage"
+          if ($LASTEXITCODE -ne 0) { throw 'Native staging failed' }
+      - name: Verify installed resource discovery without UI
+        shell: pwsh
+        run: |
+          $production = $env:PRODUCTION_IDENTITY -eq 'true'
+          $binary = if ($production) { 'rotor' } else { 'rotor-desktop' }
+          if ($IsWindows) {
+            $exe = Join-Path "$env:RUNNER_TEMP/native-stage" "$binary.exe"
+            $process = Start-Process -FilePath $exe -ArgumentList '--check-resources' -WorkingDirectory $env:RUNNER_TEMP -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/resources.log" -RedirectStandardError "$env:RUNNER_TEMP/resources-error.log"
+            if ($process.ExitCode -ne 0) { throw 'Packaged resource check failed' }
+          } else {
+            $name = if ($production) { 'Rotor' } else { 'Rotor GPUI Development' }
+            & "$env:RUNNER_TEMP/native-stage/$name.app/Contents/MacOS/$binary" --check-resources
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged resource check failed' }
+          }
       - name: Build development packages
         shell: pwsh
         run: |
           if ($IsWindows) { $env:NSIS_MAKENSIS = 'C:\Program Files (x86)\NSIS\makensis.exe' }
-          cargo run -p xtask --locked -- package target/native-stage target/native-package
+          cargo run -p xtask --locked -- package "$env:RUNNER_TEMP/native-stage" "$env:RUNNER_TEMP/native-package"
           if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed' }
       - name: Sign updater artifacts
         if: inputs.sign_updates
@@ -50,7 +80,7 @@ jobs:
         run: |
           if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Existing updater signing key is unavailable' }
           $signer = if ($IsWindows) { './target/debug/xtask.exe' } else { './target/debug/xtask' }
-          $artifacts = Get-ChildItem target/native-package -File | Where-Object { $_.Extension -in '.exe', '.dmg' -or $_.Name.EndsWith('.app.tar.gz') }
+          $artifacts = Get-ChildItem "$env:RUNNER_TEMP/native-package" -File | Where-Object { $_.Extension -in '.exe', '.dmg' -or $_.Name.EndsWith('.app.tar.gz') }
           foreach ($artifact in $artifacts) {
             & $signer sign $artifact.FullName
             if ($LASTEXITCODE -ne 0) { throw 'Updater signing failed' }
@@ -58,14 +88,14 @@ jobs:
       - name: Verify final package inventory
         shell: pwsh
         run: |
-          cargo run -p xtask --locked -- inventory target/native-package
+          cargo run -p xtask --locked -- inventory "$env:RUNNER_TEMP/native-package"
           if ($LASTEXITCODE -ne 0) { throw 'Inventory failed' }
-          cargo run -p xtask --locked -- verify target/native-package
+          cargo run -p xtask --locked -- verify "$env:RUNNER_TEMP/native-package"
           if ($LASTEXITCODE -ne 0) { throw 'Final package verification failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: native-candidate-${{ matrix.os }}
-          path: target/native-package
+          name: native-candidate-${{ inputs.production_identity && 'production' || 'development' }}-${{ matrix.os }}
+          path: ${{ runner.temp }}/native-package
           if-no-files-found: error
   update-metadata:
     if: inputs.sign_updates
@@ -90,9 +120,10 @@ jobs:
           mkdir merged
           find collected -type f ! -name resources.json -exec cp -n '{}' merged/ \;
           printf '%s\n' "$RELEASE_NOTES" > notes.txt
+          if [ "$PRODUCTION_IDENTITY" = true ]; then metadata=gpui-production-latest.json; else metadata=gpui-latest.json; fi
           cargo run -p xtask --locked -- release-manifest merged \
             "https://github.com/$GITHUB_REPOSITORY/releases/download/gpui-latest/" \
-            notes.txt merged/gpui-latest.json
+            notes.txt "merged/$metadata"
       - uses: actions/upload-artifact@v4
         with:
           name: native-preview-signed

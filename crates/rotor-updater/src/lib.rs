@@ -22,6 +22,10 @@ pub const PREVIEW_ENDPOINTS: &[&str] = &[
     "https://gitee.com/horbin/rotor/releases/download/gpui-latest/gpui-latest.json",
     "https://github.com/Horbin-Magician/rotor/releases/download/gpui-latest/gpui-latest.json",
 ];
+pub const PRODUCTION_PREVIEW_ENDPOINTS: &[&str] = &[
+    "https://gitee.com/horbin/rotor/releases/download/gpui-latest/gpui-production-latest.json",
+    "https://github.com/Horbin-Magician/rotor/releases/download/gpui-latest/gpui-production-latest.json",
+];
 const MAX_MANIFEST: usize = 1024 * 1024;
 const MAX_DOWNLOAD: u64 = 1024 * 1024 * 1024;
 

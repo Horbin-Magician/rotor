@@ -31,15 +31,13 @@ pub fn inspect(app: &Path) -> Result<BundleInfo> {
         return Err("App bundle may not be a symlink".into());
     }
     let canonical = app.canonicalize().map_err(|e| e.to_string())?;
-    for relative in ["Contents/Info.plist", "Contents/MacOS/rotor-desktop"] {
-        if !app
-            .join(relative)
-            .canonicalize()
-            .map_err(|e| e.to_string())?
-            .starts_with(&canonical)
-        {
-            return Err("Bundle resource escapes the app".into());
-        }
+    if !app
+        .join("Contents/Info.plist")
+        .canonicalize()
+        .map_err(|e| e.to_string())?
+        .starts_with(&canonical)
+    {
+        return Err("Bundle metadata escapes the app".into());
     }
     for relative in [
         "Contents/Resources/assets/model/pp-ocrv6_tiny_det.onnx",
@@ -75,7 +73,12 @@ pub fn inspect(app: &Path) -> Result<BundleInfo> {
     ) {
         return Err("Bundle is not Rotor".into());
     }
-    if string("CFBundleExecutable")? != "rotor-desktop" {
+    let executable_name = if identifier == "cc.fluctus.rotor" {
+        "rotor"
+    } else {
+        "rotor-desktop"
+    };
+    if string("CFBundleExecutable")? != executable_name {
         return Err("Bundle has an unexpected executable".into());
     }
     let full_version = values
@@ -83,7 +86,14 @@ pub fn inspect(app: &Path) -> Result<BundleInfo> {
         .and_then(plist::Value::as_string)
         .unwrap_or(string("CFBundleShortVersionString")?);
     let version = semver::Version::parse(full_version).map_err(|e| e.to_string())?;
-    let executable = app.join("Contents/MacOS/rotor-desktop");
+    let executable = app.join("Contents/MacOS").join(executable_name);
+    if !executable
+        .canonicalize()
+        .map_err(|e| e.to_string())?
+        .starts_with(&canonical)
+    {
+        return Err("Bundle executable escapes the app".into());
+    }
     let mut header = [0u8; 8];
     fs::File::open(&executable)
         .map_err(|e| e.to_string())?
@@ -438,5 +448,27 @@ mod tests {
             .insert("RotorVersion".into(), "2.7.0-beta.1".into());
         value.to_file_xml(path).unwrap();
         assert_eq!(inspect(&app).unwrap().version.to_string(), "2.7.0-beta.1");
+    }
+
+    #[test]
+    fn production_bundle_keeps_the_legacy_executable_name() {
+        let root = tempfile::tempdir().unwrap();
+        let app = root.path().join("Rotor.app");
+        fixture(&app, "2.7.0");
+        let path = app.join("Contents/Info.plist");
+        let mut value = plist::Value::from_file(&path).unwrap();
+        let dictionary = value.as_dictionary_mut().unwrap();
+        dictionary.insert("CFBundleIdentifier".into(), "cc.fluctus.rotor".into());
+        dictionary.insert("CFBundleExecutable".into(), "rotor".into());
+        value.to_file_xml(path).unwrap();
+        fs::rename(
+            app.join("Contents/MacOS/rotor-desktop"),
+            app.join("Contents/MacOS/rotor"),
+        )
+        .unwrap();
+        assert_eq!(
+            inspect(&app).unwrap().executable.file_name().unwrap(),
+            "rotor"
+        );
     }
 }

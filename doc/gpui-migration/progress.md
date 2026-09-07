@@ -330,3 +330,10 @@
 - 首次正式模式写入前保留旧配置/完整贴图备份和迁移标记；损坏数据保留副本并停止，不因重试重复覆盖备份。Windows 保持旧 Tauri mutex，macOS 准备兼容 socket，避免两套壳同时写同一资料目录。
 - 核对旧 autostart 来源后沿用 Windows Rotor 项及 macOS Rotor.plist/Label；仅迁移旧版 bare-executable 记录，Windows StartupApproved 字节保持不变。普通启动失败可显示原生错误提示，诊断/更新辅助入口不弹窗。
 - common production 14 项测试、独立测试 namespace 的 Windows 互斥测试 2 项、runtime 20 项及新增快捷键 scope 测试通过；production clippy 通过。--build-info 实际返回正式身份，未进入 GUI/备份/启动项路径。没有改真实 .rotor 或系统启动项；Mac 实现仍未在 Mac 编译/验收。
+
+## P8 双模式构建与正式候选包
+
+- xtask 构建后读取无窗口 build-info，并保存模式/版本/哈希快照；暂存按快照校验，正式与开发二进制不能仅改名混用。正式 Windows 使用 Rotor/rotor.exe/原卸载键，macOS 使用 Rotor.app/rotor/原 bundle ID。
+- Windows 兼容旧 updater 缺少 /PARENT 的 /UPDATE 调用，等待旧互斥体释放或弃置；新客户端继续等待进程退出。开发/正式候选分用 gpui-latest.json 与 gpui-production-latest.json，旧通用 feed 不变。
+- Windows 两种 release 快照、暂存和 NSIS 包均生成并校验；正式包约 35.8 MiB。两种暂存程序从临时工作目录执行 --check-resources 成功，没有进入 GUI 或真实资料迁移。使用正式暂存模型/字体的合成 OCR 和 30 秒闲置释放检查通过。
+- 候选 CI 支持显式选择身份，暂存放在 runner 临时目录，避免缓存恢复旧暂存；macOS DMG 只呈现 app 与 Applications 链接。宏/清单及依赖检查通过；真正安装/覆盖/卸载、旧客户端接收与 Mac 实机仍待验收。

@@ -293,7 +293,7 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
         && parent_exited
         && bundle::inspect(&app).is_ok_and(|info| info.version == previous.version)
     {
-        let _ = Command::new(app.join("Contents/MacOS/rotor-desktop"))
+        let _ = Command::new(bundle::inspect(&app)?.executable)
             .args(&job.arguments)
             .arg("--update-error-file")
             .arg(root.join("result.json"))

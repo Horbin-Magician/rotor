@@ -10,6 +10,25 @@ pub struct ResourceLocator {
 }
 
 impl ResourceLocator {
+    pub fn verify_native_resources(&self) -> io::Result<()> {
+        for name in [
+            "model/pp-ocrv6_tiny_det.onnx",
+            "model/pp-ocrv6_tiny_rec.onnx",
+            "model/ppocrv6_tiny_dict.txt",
+            "fonts/NotoSansCJKsc-Regular.otf",
+            "fonts/LICENSE-NotoSansCJK.txt",
+        ] {
+            let path = self.resolve(Path::new(name))?;
+            let metadata = std::fs::metadata(path)?;
+            if !metadata.is_file() || metadata.len() == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Missing or empty native resource: {name}"),
+                ));
+            }
+        }
+        Ok(())
+    }
     pub fn from_root(root: &Path) -> io::Result<Self> {
         let root = root.canonicalize()?;
         if !root.is_dir() {

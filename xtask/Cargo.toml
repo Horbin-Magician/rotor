@@ -15,5 +15,6 @@ base64 = "0.22.1"
 semver = "1"
 toml_edit = "=0.22.27"
 url = "2.5"
+plist = "=1.9.0"
 
 tempfile = "=3.27.0"

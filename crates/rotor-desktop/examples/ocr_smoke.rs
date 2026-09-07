@@ -12,7 +12,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()?;
-    let resources = ResourceLocator::from_root(&root.join("src-tauri/assets"))?;
+    let arguments = std::env::args().collect::<Vec<_>>();
+    let resource_root = match arguments
+        .iter()
+        .position(|argument| argument == "--resource-dir")
+    {
+        Some(index) => PathBuf::from(
+            arguments
+                .get(index + 1)
+                .ok_or("Missing --resource-dir value")?,
+        ),
+        None => root.join("src-tauri/assets"),
+    };
+    let resources = ResourceLocator::from_root(&resource_root)?;
+    resources.verify_native_resources()?;
     let profile = root.join("experiments/gpui-probe/artifacts/ocr-smoke");
     std::fs::create_dir_all(&profile)?;
     let source = image::RgbaImage::from_pixel(900, 220, image::Rgba([255, 255, 255, 255]));

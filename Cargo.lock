@@ -13201,6 +13201,7 @@ version = "2.6.0"
 dependencies = [
  "base64 0.22.1",
  "minisign",
+ "plist",
  "rotor-common",
  "rotor-updater",
  "semver",

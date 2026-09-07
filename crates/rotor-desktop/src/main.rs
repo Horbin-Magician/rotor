@@ -385,6 +385,18 @@ fn run() -> Result<(), Box<dyn Error>> {
             .map(Some)
             .ok_or_else(|| format!("Missing value for {key}"))
     };
+    if args.iter().any(|arg| arg == "--check-resources") {
+        let resources = match option("--resource-dir")? {
+            Some(path) => ResourceLocator::from_root(std::path::Path::new(&path))?,
+            None => ResourceLocator::for_current_process()?,
+        };
+        resources.verify_native_resources()?;
+        println!(
+            "Native resources verified at {}",
+            resources.root().display()
+        );
+        return Ok(());
+    }
     #[cfg(target_os = "macos")]
     if let Some(job) = option("--apply-update")? {
         if args.len() != 3 || args[1] != "--apply-update" {
@@ -818,7 +830,11 @@ fn main() {
         let diagnostic = std::env::args().any(|arg| {
             matches!(
                 arg.as_str(),
-                "--check-config" | "--build-info" | "--apply-update" | "--update-ready"
+                "--check-config"
+                    | "--check-resources"
+                    | "--build-info"
+                    | "--apply-update"
+                    | "--update-ready"
             )
         });
         if !diagnostic {

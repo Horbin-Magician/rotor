@@ -42,16 +42,16 @@ jobs:
       - shell: pwsh
         run: ./.github/scripts/check-core-dependencies.ps1
       - run: cargo clippy --no-deps -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-runtime -p rotor-updater -p xtask --all-targets --locked -- -D warnings
-      - run: cargo build -p rotor-desktop --release --locked
-      - run: cargo run -p xtask -- stage target/native-stage
-      - run: cargo run -p xtask -- verify target/native-stage
-      - run: tar -czf target/native-stage.tar.gz -C target/native-stage .
+      - run: cargo run -p xtask --locked -- build
+      - run: cargo run -p xtask -- stage "${{ runner.temp }}/native-stage"
+      - run: cargo run -p xtask -- verify "${{ runner.temp }}/native-stage"
+      - run: tar -czf "${{ runner.temp }}/native-stage.tar.gz" -C "${{ runner.temp }}/native-stage" .
       - uses: actions/upload-artifact@v4
         with:
           name: native-stage-${{ matrix.os }}
-          path: target/native-stage.tar.gz
+          path: ${{ runner.temp }}/native-stage.tar.gz
       - run: cargo run -p rotor-desktop --example ocr_smoke --release --locked -- --wait-idle
-      - run: cargo run -p rotor-screenshot --example profile_roundtrip --locked -- target/profile-roundtrip
+      - run: cargo run -p rotor-screenshot --example profile_roundtrip --locked -- "${{ runner.temp }}/profile-roundtrip"
   legacy:
     runs-on: windows-latest
     steps:

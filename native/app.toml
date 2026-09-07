@@ -1,6 +1,10 @@
 product_name = "Rotor GPUI Development"
 identifier = "cc.fluctus.rotor.gpui-dev"
 production_identifier = "cc.fluctus.rotor"
+production_update_endpoints = [
+  "https://gitee.com/horbin/rotor/releases/download/gpui-latest/gpui-production-latest.json",
+  "https://github.com/Horbin-Magician/rotor/releases/download/gpui-latest/gpui-production-latest.json",
+]
 minimum_macos = "15.0"
 data_directory = ".rotor-gpui"
 update_channel = "gpui-preview"

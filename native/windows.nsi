@@ -15,10 +15,19 @@ Unicode true
 !ifndef UNINSTALL_INCLUDE
 !error "Pass /DUNINSTALL_INCLUDE=<generated package file list>"
 !endif
-Name "Rotor GPUI Development"
+!ifndef PRODUCT_NAME
+!error "Pass /DPRODUCT_NAME, /DAPP_EXE, /DREGISTRY_KEY and /DNUMERIC_VERSION from xtask"
+!endif
+VIProductVersion "${NUMERIC_VERSION}"
+VIAddVersionKey /LANG=1033 "ProductName" "${PRODUCT_NAME}"
+VIAddVersionKey /LANG=1033 "FileDescription" "${PRODUCT_NAME} installer"
+VIAddVersionKey /LANG=1033 "FileVersion" "${APP_VERSION}"
+VIAddVersionKey /LANG=1033 "ProductVersion" "${APP_VERSION}"
+VIAddVersionKey /LANG=1033 "LegalCopyright" ""
+Name "${PRODUCT_NAME}"
 OutFile "${OUTPUT_FILE}"
-InstallDir "$PROGRAMFILES64\Rotor GPUI Development"
-InstallDirRegKey HKLM "Software\RotorGpuiDevelopment" "InstallDir"
+InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
+InstallDirRegKey HKLM "Software\${REGISTRY_KEY}" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 !define MUI_ABORTWARNING
@@ -37,7 +46,7 @@ Var RestartArguments
 Var ParentPid
 
 Function RestartRotor
-  ExecShell "open" "$INSTDIR\rotor-desktop.exe" "$RestartArguments"
+  ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments"
 FunctionEnd
 
 Function .onInit
@@ -46,7 +55,10 @@ Function .onInit
     Abort
   ${EndIf}
   SetRegView 64
-  ReadRegStr $R1 HKLM "Software\RotorGpuiDevelopment" "InstallDir"
+  ReadRegStr $R1 HKLM "Software\${REGISTRY_KEY}" "InstallDir"
+  ${If} $R1 == ""
+    ReadRegStr $R1 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "InstallLocation"
+  ${EndIf}
   ${If} $R1 != ""
     StrCpy $INSTDIR $R1
   ${EndIf}
@@ -87,8 +99,22 @@ Function .onInit
     ClearErrors
     ${GetOptions} $R0 "/PARENT=" $ParentPid
     ${If} ${Errors}
-      MessageBox MB_ICONSTOP "Missing update parent process."
-      Abort
+      ; Tauri 2.6 updater supplies /UPDATE /ARGS, without our /PARENT switch.
+      System::Call 'kernel32::OpenMutexW(i 0x100001, i 0, w "${LEGACY_MUTEX}") p.r1'
+      ${If} $1 != 0
+        System::Call 'kernel32::WaitForSingleObject(p r1, i 30000) i.r2'
+        ${If} $2 == 0
+        ${OrIf} $2 == 128
+          System::Call 'kernel32::ReleaseMutex(p r1)'
+        ${EndIf}
+        System::Call 'kernel32::CloseHandle(p r1)'
+        ${If} $2 != 0
+        ${AndIf} $2 != 128
+          MessageBox MB_ICONSTOP "Rotor has not exited. Close it and retry the update."
+          Abort
+        ${EndIf}
+      ${EndIf}
+      Return
     ${EndIf}
     ${If} $ParentPid <= 0
       MessageBox MB_ICONSTOP "Invalid update parent process."
@@ -117,37 +143,37 @@ Section "Rotor" SEC_MAIN
     MessageBox MB_ICONSTOP "Cannot replace Rotor files. Close Rotor and retry."
     Abort
   WriteUninstaller "$INSTDIR\uninstall.exe"
-  WriteRegStr HKLM "Software\RotorGpuiDevelopment" "InstallDir" "$INSTDIR"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment" "DisplayName" "Rotor GPUI Development"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment" "DisplayVersion" "${APP_VERSION}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment" "DisplayIcon" "$INSTDIR\rotor-desktop.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment" "UninstallString" '$\"$INSTDIR\uninstall.exe$\"'
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment" "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment" "NoRepair" 1
-  CreateShortcut "$SMPROGRAMS\Rotor GPUI Development.lnk" "$INSTDIR\rotor-desktop.exe"
+  WriteRegStr HKLM "Software\${REGISTRY_KEY}" "InstallDir" "$INSTDIR"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "DisplayName" "${PRODUCT_NAME}"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "DisplayVersion" "${APP_VERSION}"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "DisplayIcon" "$INSTDIR\${APP_EXE}"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "UninstallString" '$\"$INSTDIR\uninstall.exe$\"'
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "NoModify" 1
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "NoRepair" 1
+  CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}.lnk" "$INSTDIR\${APP_EXE}"
 SectionEnd
 
 Section "Uninstall"
   SetRegView 64
   SetShellVarContext all
   ClearErrors
-  Delete "$INSTDIR\rotor-desktop.exe"
+  Delete "$INSTDIR\${APP_EXE}"
   ${If} ${Errors}
     MessageBox MB_ICONSTOP "Close Rotor before uninstalling."
     Abort
   ${EndIf}
   ; Only package-owned files, followed by non-recursive empty-directory removal.
   !include "${UNINSTALL_INCLUDE}"
-  ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Rotor GPUI Development"
-  StrLen $R1 '$\"$INSTDIR\rotor-desktop.exe$\"'
+  ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCT_NAME}"
+  StrLen $R1 '$\"$INSTDIR\${APP_EXE}$\"'
   StrCpy $R2 $R0 $R1
-  ${If} $R2 == '$\"$INSTDIR\rotor-desktop.exe$\"'
-    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Rotor GPUI Development"
+  ${If} $R2 == '$\"$INSTDIR\${APP_EXE}$\"'
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCT_NAME}"
   ${EndIf}
   Delete "$INSTDIR\uninstall.exe"
-  Delete "$SMPROGRAMS\Rotor GPUI Development.lnk"
+  Delete "$SMPROGRAMS\${PRODUCT_NAME}.lnk"
   RMDir "$INSTDIR"
-  DeleteRegKey HKLM "Software\RotorGpuiDevelopment"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment"
+  DeleteRegKey HKLM "Software\${REGISTRY_KEY}"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}"
 SectionEnd

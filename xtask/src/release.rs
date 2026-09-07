@@ -87,6 +87,7 @@ fn build_manifest(
     notes: &str,
     version: &str,
     public_key: &str,
+    production: bool,
 ) -> Result<rotor_updater::Manifest> {
     semver::Version::parse(version)?;
     let mut base = url::Url::parse(base)?;
@@ -113,7 +114,15 @@ fn build_manifest(
             ["darwin-aarch64", "darwin-aarch64-app"],
         ),
     ] {
-        let name = format!("Rotor-GPUI_{version}_{suffix}");
+        let name = if production {
+            if suffix == "aarch64.app.tar.gz" {
+                "Rotor_aarch64.app.tar.gz".into()
+            } else {
+                format!("Rotor_{version}_{suffix}")
+            }
+        } else {
+            format!("Rotor-GPUI_{version}_{suffix}")
+        };
         let artifact = directory.join(&name);
         let signature = fs::read_to_string(signature_path(&artifact))?;
         rotor_updater::verify_file(&artifact, &signature, public_key)?;
@@ -133,12 +142,14 @@ fn build_manifest(
     })
 }
 pub fn manifest(directory: &Path, base: &str, notes: &Path, output: &Path) -> Result<()> {
+    let info = crate::builder::staged_info(directory)?;
     let manifest = build_manifest(
         directory,
         base,
         &fs::read_to_string(notes)?,
         &version()?,
         rotor_updater::PUBLIC_KEY,
+        info.production,
     )?;
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -182,6 +193,7 @@ mod tests {
             notes,
             "2.7.0",
             &public,
+            false,
         )
         .unwrap();
         assert_eq!(manifest.notes, notes);
@@ -189,17 +201,29 @@ mod tests {
         assert!(manifest.platforms["windows-x86_64"]
             .url
             .contains("/gpui-latest/Rotor-GPUI_2.7.0_"));
-        assert!(
-            build_manifest(root.path(), "http://example.com/", notes, "2.7.0", &public).is_err()
-        );
+        assert!(build_manifest(
+            root.path(),
+            "http://example.com/",
+            notes,
+            "2.7.0",
+            &public,
+            false
+        )
+        .is_err());
         fs::write(
             root.path().join("Rotor-GPUI_2.7.0_aarch64.app.tar.gz"),
             b"tampered",
         )
         .unwrap();
-        assert!(
-            build_manifest(root.path(), "https://example.com/", notes, "2.7.0", &public).is_err()
-        );
+        assert!(build_manifest(
+            root.path(),
+            "https://example.com/",
+            notes,
+            "2.7.0",
+            &public,
+            false
+        )
+        .is_err());
     }
     #[test]
     fn encrypted_signing_keys_produce_legacy_compatible_signatures() {

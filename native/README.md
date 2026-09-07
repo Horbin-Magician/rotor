@@ -124,3 +124,33 @@ without a bundle CodeResources file. The evidence is recorded under
 `doc/gpui-migration/evidence/v2.6.0-macos-signature.json`. This records the old
 artifact's structure; macOS signature validation, Gatekeeper and notarization
 acceptance remain pending. No new Developer ID certificate requirement is imposed.
+
+## Production-identity acceptance packages
+
+```powershell
+cargo run -p xtask -- build --production
+cargo run -p xtask -- stage --production target/production-stage
+cargo run -p xtask -- package target/production-stage target/production-package
+```
+
+Builds save separately hashed binary snapshots for development and production.
+Staging requires the matching snapshot and rejects a changed version or flavor.
+Use xtask build before staging; a bare cargo build does not create this receipt.
+`--build-info` and `--check-resources` are headless diagnostics and return before
+profile migration, global shortcuts or windows. The latter checks packaged asset
+discovery independently of the current working directory.
+
+Production identity preserves `Rotor`, `rotor.exe`/`rotor`, `cc.fluctus.rotor`, the
+old Windows uninstall key/install location, and macOS `Rotor.app`. The first real
+production startup holds the old instance namespace and backs up legacy profile
+files before native writes. It preserves existing startup choices and uses the
+old shortcut values. These packages are for upgrade acceptance until G8 passes;
+none have been installed or published by the migration task.
+
+Development uses `gpui-latest.json`; production identity uses
+`gpui-production-latest.json`, both under the isolated `gpui-latest` release.
+The legacy generic latest feed remains unchanged. The candidate workflow selects
+the identity explicitly; metadata generation reads the package's native-build
+receipt. Windows accepts both native `/PARENT` handoffs and the old Tauri updater's
+`/UPDATE /ARGS` convention. The macOS DMG contains the app and Applications link,
+with technical inventories kept outside the user-facing disk image.

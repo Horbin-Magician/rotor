@@ -1,3 +1,4 @@
+mod builder;
 mod installer;
 mod release;
 mod versions;
@@ -119,55 +120,55 @@ fn verify_stage(directory: &Path) -> Result<()> {
     }
     Ok(())
 }
-fn stage(directory: &Path) -> Result<()> {
+fn stage(directory: &Path, production: bool) -> Result<()> {
     let version = version()?;
-    let parsed_version = semver::Version::parse(&version)?;
-    let mac_version = format!(
-        "{}.{}.{}",
-        parsed_version.major, parsed_version.minor, parsed_version.patch
-    );
-    let config: toml::Value = fs::read_to_string(root().join("native/app.toml"))?.parse()?;
-    let release = root().join("target/release");
-    let binary = if cfg!(windows) {
-        "rotor-desktop.exe"
-    } else {
-        "rotor-desktop"
-    };
-    if !release.join(binary).is_file() {
-        return Err("build the native release executable first".into());
+    let (snapshot, info) = builder::snapshot(production)?;
+    let parsed = semver::Version::parse(&version)?;
+    let mac_version = format!("{}.{}.{}", parsed.major, parsed.minor, parsed.patch);
+    let mut config: toml::Value = fs::read_to_string(root().join("native/app.toml"))?.parse()?;
+    config["product_name"] = info.product_name.clone().into();
+    config["identifier"] = info.identifier.clone().into();
+    config["data_directory"] = info.profile_directory.clone().into();
+    if production {
+        config["update_endpoints"] = config["production_update_endpoints"].clone();
+        config["update_channel"] = "gpui-preview-production".into();
     }
-    // Fail on an existing destination: staging never deletes a prior artifact.
+    config
+        .as_table_mut()
+        .unwrap()
+        .insert("production".into(), production.into());
     fs::create_dir(directory)?;
     let (executable_dir, resource_dir) = if cfg!(target_os = "macos") {
-        let contents = directory.join("Rotor GPUI Development.app/Contents");
+        let contents = directory.join(format!("{}.app/Contents", info.product_name));
         let executable_dir = contents.join("MacOS");
         let resource_dir = contents.join("Resources");
         fs::create_dir_all(&executable_dir)?;
         fs::create_dir_all(&resource_dir)?;
-        fs::write(
-            contents.join("Info.plist"),
-            format!(
-                r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleExecutable</key><string>rotor-desktop</string>
-<key>CFBundleIdentifier</key><string>{}</string>
-<key>CFBundleName</key><string>Rotor GPUI Development</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>{mac_version}</string>
-<key>CFBundleVersion</key><string>{mac_version}</string>
-<key>RotorVersion</key><string>{version}</string>
-<key>CFBundleIconFile</key><string>icon.icns</string>
-<key>LSMinimumSystemVersion</key><string>{}</string>
-<key>LSUIElement</key><true/>
-<key>NSHighResolutionCapable</key><true/>
-</dict></plist>"#,
-                config["identifier"].as_str().ok_or("missing identifier")?,
+        let mut dictionary = plist::Dictionary::new();
+        for (key, value) in [
+            ("CFBundleExecutable", info.executable_name.as_str()),
+            ("CFBundleIdentifier", info.identifier.as_str()),
+            ("CFBundleName", info.product_name.as_str()),
+            ("CFBundlePackageType", "APPL"),
+            ("CFBundleShortVersionString", &mac_version),
+            ("CFBundleVersion", &mac_version),
+            ("RotorVersion", &version),
+            ("CFBundleIconFile", "icon.icns"),
+            (
+                "LSMinimumSystemVersion",
                 config["minimum_macos"]
                     .as_str()
-                    .ok_or("missing minimum_macos")?
+                    .ok_or("missing minimum_macos")?,
             ),
-        )?;
+        ] {
+            dictionary.insert(key.into(), plist::Value::String(value.into()));
+        }
+        dictionary.insert("LSUIElement".into(), plist::Value::Boolean(true));
+        dictionary.insert(
+            "NSHighResolutionCapable".into(),
+            plist::Value::Boolean(true),
+        );
+        plist::Value::Dictionary(dictionary).to_file_xml(contents.join("Info.plist"))?;
         fs::copy(
             root().join("src-tauri/assets/icons/icon.icns"),
             resource_dir.join("icon.icns"),
@@ -176,64 +177,93 @@ fn stage(directory: &Path) -> Result<()> {
     } else {
         (directory.to_path_buf(), directory.to_path_buf())
     };
-    fs::copy(release.join(binary), executable_dir.join(binary))?;
-    for entry in fs::read_dir(&release)? {
+    let binary = format!(
+        "{}{}",
+        info.executable_name,
+        if cfg!(windows) { ".exe" } else { "" }
+    );
+    fs::copy(
+        snapshot.join(builder::binary_name()),
+        executable_dir.join(binary),
+    )?;
+    for entry in fs::read_dir(&snapshot)? {
         let entry = entry?;
         if matches!(
             entry.path().extension().and_then(|s| s.to_str()),
             Some("dll" | "dylib")
         ) {
-            // Cargo's native dependency output may itself be a symlink; copy its bytes.
-            fs::copy(
-                entry.path().canonicalize()?,
-                executable_dir.join(entry.file_name()),
-            )?;
+            fs::copy(entry.path(), executable_dir.join(entry.file_name()))?;
         }
     }
     copy_tree(
         &root().join("src-tauri/assets"),
         &resource_dir.join("assets"),
     )?;
-    fs::copy(
-        root().join("native/app.toml"),
+    fs::write(
         resource_dir.join("native-app.toml"),
+        toml::to_string_pretty(&config)?,
     )?;
     fs::copy(
         root().join("native/update-public.key"),
         resource_dir.join("update-public.key"),
     )?;
+    fs::write(
+        directory.join("native-build.json"),
+        serde_json::to_vec_pretty(&info)?,
+    )?;
     write_manifest(directory, &version)?;
     verify_stage(directory)?;
-    println!("Staged {} at {}", version, directory.display());
+    println!(
+        "Staged {} {} at {}",
+        info.product_name,
+        version,
+        directory.display()
+    );
     Ok(())
 }
 fn package(directory: &Path, output: &Path) -> Result<()> {
+    builder::supported_host()?;
     verify_stage(directory)?;
+    let info = builder::staged_info(directory)?;
     let version = version()?;
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(directory.join("resources.json"))?)?;
-    if manifest["version"].as_str() != Some(version.as_str()) {
-        return Err("staging version differs from workspace".into());
-    }
+    let prefix = if info.production {
+        "Rotor"
+    } else {
+        "Rotor-GPUI"
+    };
     fs::create_dir(output)?;
     let output = output.canonicalize()?;
     let directory = directory.canonicalize()?;
     if cfg!(windows) {
         use std::io::Write;
+        let executable = format!("{}.exe", info.executable_name);
         let mut uninstall = tempfile::Builder::new().suffix(".nsh").tempfile()?;
-        uninstall
-            .write_all(installer::uninstall_script(&directory, "rotor-desktop.exe")?.as_bytes())?;
+        uninstall.write_all(installer::uninstall_script(&directory, &executable)?.as_bytes())?;
         uninstall.flush()?;
+        let parsed = semver::Version::parse(&version)?;
+        let registry = if info.production {
+            "Rotor"
+        } else {
+            "RotorGpuiDevelopment"
+        };
         let compiler = std::env::var_os("NSIS_MAKENSIS").unwrap_or_else(|| "makensis.exe".into());
         let status = Command::new(compiler)
             .arg(format!("/DSTAGE_DIR={}", directory.display()))
             .arg(format!(
                 "/DOUTPUT_FILE={}",
                 output
-                    .join(format!("Rotor-GPUI_{version}_x64-setup.exe"))
+                    .join(format!("{prefix}_{version}_x64-setup.exe"))
                     .display()
             ))
             .arg(format!("/DAPP_VERSION={version}"))
+            .arg(format!(
+                "/DNUMERIC_VERSION={}.{}.{}.0",
+                parsed.major, parsed.minor, parsed.patch
+            ))
+            .arg(format!("/DPRODUCT_NAME={}", info.product_name))
+            .arg(format!("/DAPP_EXE={executable}"))
+            .arg(format!("/DREGISTRY_KEY={registry}"))
+            .arg(format!("/DLEGACY_MUTEX={}-sim", info.identifier))
             .arg(format!(
                 "/DUNINSTALL_INCLUDE={}",
                 uninstall.path().display()
@@ -244,38 +274,44 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
             return Err("NSIS packaging failed".into());
         }
     } else if cfg!(target_os = "macos") {
-        let archive = output.join(format!("Rotor-GPUI_{version}_aarch64.app.tar.gz"));
+        let app_name = format!("{}.app", info.product_name);
+        let archive_name = if info.production {
+            "Rotor_aarch64.app.tar.gz".into()
+        } else {
+            format!("{prefix}_{version}_aarch64.app.tar.gz")
+        };
         let status = Command::new("tar")
             .env("COPYFILE_DISABLE", "1")
             .arg("-czf")
-            .arg(archive)
+            .arg(output.join(archive_name))
             .arg("-C")
             .arg(&directory)
-            .arg("Rotor GPUI Development.app")
+            .arg(&app_name)
             .status()?;
         if !status.success() {
             return Err("macOS archive failed".into());
         }
+        let dmg_root = tempfile::Builder::new().prefix("rotor-dmg-").tempdir()?;
+        copy_tree(&directory.join(&app_name), &dmg_root.path().join(&app_name))?;
+        #[cfg(target_os = "macos")]
+        std::os::unix::fs::symlink("/Applications", dmg_root.path().join("Applications"))?;
         let status = Command::new("hdiutil")
-            .args([
-                "create",
-                "-format",
-                "UDZO",
-                "-volname",
-                "Rotor GPUI Development",
-                "-srcfolder",
-            ])
-            .arg(&directory)
-            .arg(output.join(format!("Rotor-GPUI_{version}_aarch64.dmg")))
+            .args(["create", "-format", "UDZO", "-volname"])
+            .arg(&info.product_name)
+            .arg("-srcfolder")
+            .arg(dmg_root.path())
+            .arg(output.join(format!("{prefix}_{version}_aarch64.dmg")))
             .status()?;
         if !status.success() {
             return Err("DMG creation failed".into());
         }
-    } else {
-        return Err("unsupported native packaging host".into());
     }
+    fs::write(
+        output.join("native-build.json"),
+        serde_json::to_vec_pretty(&info)?,
+    )?;
     write_manifest(&output, &version)?;
-    println!("Packaged artifacts at {}", output.display());
+    println!("Packaged {} at {}", info.product_name, output.display());
     Ok(())
 }
 fn main() -> Result<()> {
@@ -295,14 +331,15 @@ fn main() -> Result<()> {
         Some("inventory") if args.len() == 2 => write_manifest(Path::new(&args[1]), &version()?)?,
         Some("version") => println!("{}", version()?),
         Some("build") => {
-            version()?;
-            let status = Command::new("cargo").current_dir(root()).args(["build", "-p", "rotor-desktop", "--release", "--locked"]).args(&args[1..]).status()?;
-            if !status.success() { return Err("native build failed".into()); }
+            let production = args[1..].iter().any(|arg| arg == "--production");
+            let options = args[1..].iter().filter(|arg| arg.as_str() != "--production").cloned().collect::<Vec<_>>();
+            builder::build(production, &options)?;
         }
         Some("package") if args.len() == 3 => package(Path::new(&args[1]), Path::new(&args[2]))?,
-        Some("stage") if args.len() == 2 => stage(Path::new(&args[1]))?,
+        Some("stage") if args.len() == 2 => stage(Path::new(&args[1]), false)?,
+        Some("stage") if args.len() == 3 && args[1] == "--production" => stage(Path::new(&args[2]), true)?,
         Some("verify") if args.len() == 2 => verify_stage(Path::new(&args[1]))?,
-        _ => return Err("usage: cargo run -p xtask -- version | build [cargo options] | stage <new directory> | verify <directory> | package <stage directory> <new output directory> | import-profile <source> <new destination> <new backup> <source version> | verify-profile <directory> | inventory <directory> | set-version <semver> [--dry-run] | sign <artifact> | release-manifest <artifacts> <https base> <notes file> <new output>".into()),
+        _ => return Err("usage: cargo run -p xtask -- version | build [--production] [cargo options] | stage [--production] <new directory> | verify <directory> | package <stage directory> <new output directory> | import-profile <source> <new destination> <new backup> <source version> | verify-profile <directory> | inventory <directory> | set-version <semver> [--dry-run] | sign <artifact> | release-manifest <artifacts> <https base> <notes file> <new output>".into()),
     }
     Ok(())
 }

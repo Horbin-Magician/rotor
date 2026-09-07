@@ -119,7 +119,7 @@ impl UpdateService {
         let state = self.state.clone();
         let events = self.events.clone();
         self.runtime.spawn(async move {
-            let endpoints = rotor_updater::PREVIEW_ENDPOINTS.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            let endpoints = (if rotor_common::native_app::PRODUCTION { rotor_updater::PRODUCTION_PREVIEW_ENDPOINTS } else { rotor_updater::PREVIEW_ENDPOINTS }).iter().map(|s| s.to_string()).collect::<Vec<_>>();
             let result = tokio::select! {
                 _ = cancelled.cancelled() => Err("Update check cancelled".into()),
                 result = rotor_updater::check(&endpoints, env!("CARGO_PKG_VERSION"), rotor_updater::target()) => result,
