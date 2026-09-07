@@ -827,6 +827,23 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn main() {
     if let Err(error) = run() {
         eprintln!("Rotor: {error}");
+        #[cfg(target_os = "windows")]
+        if std::env::args().any(|arg| arg == "--installation-check")
+            && let Some(profile) = file_path::get_userdata_path()
+        {
+            let flags = std::env::args()
+                .filter(|arg| {
+                    matches!(
+                        arg.as_str(),
+                        "--no-elevate" | "--no-index" | "--no-hotkeys" | "--production-shortcuts"
+                    )
+                })
+                .collect::<Vec<_>>();
+            match rotor_platform::desktop::rollback_failed_install(&profile, &flags) {
+                Ok(()) => std::process::exit(1),
+                Err(rollback) => eprintln!("Rollback could not start: {rollback}"),
+            }
+        }
         let diagnostic = std::env::args().any(|arg| {
             matches!(
                 arg.as_str(),

@@ -119,6 +119,57 @@ pub fn launch_update_installer(
 }
 
 #[cfg(target_os = "windows")]
+pub fn rollback_failed_install(profile: &std::path::Path, flags: &[String]) -> Result<(), String> {
+    use winreg::{
+        enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY},
+        RegKey,
+    };
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let current = executable
+        .parent()
+        .ok_or("Executable has no installation directory")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let registry = if rotor_common::native_app::PRODUCTION {
+        "Rotor"
+    } else {
+        "RotorGpuiDevelopment"
+    };
+    let key = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey_with_flags(format!("Software\\{registry}"), KEY_READ | KEY_WOW64_64KEY)
+        .map_err(|e| e.to_string())?;
+    let installed: String = key.get_value("InstallDir").map_err(|e| e.to_string())?;
+    let previous: String = key
+        .get_value("PreviousInstallLocation")
+        .map_err(|e| e.to_string())?;
+    let previous = std::path::PathBuf::from(previous)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if std::path::Path::new(&installed)
+        .canonicalize()
+        .map_err(|e| e.to_string())?
+        != current
+        || previous == current
+        || previous.parent() != current.parent()
+        || !previous
+            .join(format!("{}.exe", rotor_common::native_app::EXECUTABLE_NAME))
+            .is_file()
+    {
+        return Err("No matching previous installation is available for rollback".into());
+    }
+    let uninstaller = current.join("uninstall.exe");
+    if !uninstaller.is_file() {
+        return Err("Rollback helper is missing".into());
+    }
+    let arguments = update_installer_parameters(profile, std::process::id(), flags)?.replacen(
+        "/UPDATE",
+        "/S /ROLLBACK",
+        1,
+    );
+    launch_elevated_parameters(&uninstaller, &arguments)
+}
+
+#[cfg(target_os = "windows")]
 fn update_installer_parameters(
     profile: &std::path::Path,
     parent: u32,

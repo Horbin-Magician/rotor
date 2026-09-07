@@ -154,3 +154,12 @@ the identity explicitly; metadata generation reads the package's native-build
 receipt. Windows accepts both native `/PARENT` handoffs and the old Tauri updater's
 `/UPDATE /ARGS` convention. The macOS DMG contains the app and Applications link,
 with technical inventories kept outside the user-facing disk image.
+
+Windows installation stages complete files beside the destination and keeps the
+previous installation before switching directories. The registered
+PreviousInstallLocation is retained for recovery. The initial installer-launched
+startup can invoke a dedicated rollback entry if native startup fails; it waits
+for that process to exit, restores the old directory, keeps the failed new files,
+and leaves user data untouched. Ordinary uninstalls never execute the rollback
+entry. File/registry permissions, UAC, actual process exit and rollback still need
+Windows installation tests; compilation is not an installation acceptance result.

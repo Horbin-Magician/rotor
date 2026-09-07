@@ -44,9 +44,19 @@ SetCompressor /SOLID lzma
 
 Var RestartArguments
 Var ParentPid
+Var StagedDirectory
+Var PreviousDirectory
+Var PreviousVersion
+Var InstallParent
+Var FailedDirectory
 
 Function RestartRotor
-  ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments"
+  ${If} $PreviousDirectory != ""
+  ${AndIf} ${FileExists} "$PreviousDirectory\${APP_EXE}"
+    ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments --installation-check"
+  ${Else}
+    ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments"
+  ${EndIf}
 FunctionEnd
 
 Function .onInit
@@ -136,13 +146,109 @@ FunctionEnd
 Section "Rotor" SEC_MAIN
   SectionIn RO
   SetShellVarContext all
-  SetOutPath "$INSTDIR"
+  GetFullPathName $INSTDIR "$INSTDIR"
+  ${GetRoot} "$INSTDIR" $R0
+  GetFullPathName $R0 "$R0\"
+  ${If} $INSTDIR == $R0
+  ${OrIf} $INSTDIR == $WINDIR
+  ${OrIf} $INSTDIR == $PROGRAMFILES64
+  ${OrIf} $INSTDIR == $PROGRAMFILES
+    MessageBox MB_ICONSTOP "Choose a dedicated Rotor installation directory."
+    Abort
+  ${EndIf}
+  ; Refuse nonempty directories belonging to another application.
+  StrCpy $R9 0
+  ClearErrors
+  FindFirst $R7 $R8 "$INSTDIR\*"
+  ${IfNot} ${Errors}
+    ${Do}
+      ${If} $R8 != "."
+      ${AndIf} $R8 != ".."
+      ${AndIf} $R8 != ""
+        StrCpy $R9 1
+      ${EndIf}
+      FindNext $R7 $R8
+    ${LoopUntil} ${Errors}
+    FindClose $R7
+  ${EndIf}
+  ${If} $R9 == 1
+    ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "InstallLocation"
+    ${If} $R0 != ""
+      GetFullPathName $R0 "$R0"
+    ${EndIf}
+    ${If} $R0 != $INSTDIR
+      ${IfNot} ${FileExists} "$INSTDIR\native-build.json"
+        MessageBox MB_ICONSTOP "The selected directory is not a recognized Rotor installation."
+        Abort
+      ${EndIf}
+      ${IfNot} ${FileExists} "$INSTDIR\${APP_EXE}"
+        MessageBox MB_ICONSTOP "The selected directory contains a different build identity."
+        Abort
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ${GetParent} "$INSTDIR" $InstallParent
+  CreateDirectory "$InstallParent"
+  ClearErrors
+  GetTempFileName $StagedDirectory "$InstallParent"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Cannot create a staging directory beside Rotor."
+    Abort
+  ${EndIf}
+  Delete "$StagedDirectory"
+  CreateDirectory "$StagedDirectory"
+  SetOutPath "$StagedDirectory"
   ClearErrors
   File /r "${STAGE_DIR}\*"
-  IfErrors 0 +3
-    MessageBox MB_ICONSTOP "Cannot replace Rotor files. Close Rotor and retry."
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Cannot extract Rotor. The previous installation is unchanged."
     Abort
-  WriteUninstaller "$INSTDIR\uninstall.exe"
+  ${EndIf}
+  WriteUninstaller "$StagedDirectory\uninstall.exe"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Cannot prepare the uninstaller. The previous installation is unchanged."
+    Abort
+  ${EndIf}
+  SetOutPath "$TEMP"
+  StrCpy $PreviousDirectory ""
+  ${If} $R9 == 1
+    ReadRegStr $PreviousVersion HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "DisplayVersion"
+    ClearErrors
+    GetTempFileName $PreviousDirectory "$InstallParent"
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP "Cannot reserve a backup directory."
+      Abort
+    ${EndIf}
+    Delete "$PreviousDirectory"
+    ClearErrors
+    Rename "$INSTDIR" "$PreviousDirectory"
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP "Close all Rotor instances before installing. The previous installation is unchanged."
+      Abort
+    ${EndIf}
+  ${Else}
+    ; Remove only an existing empty destination, never its contents.
+    RMDir "$INSTDIR"
+  ${EndIf}
+  ClearErrors
+  Rename "$StagedDirectory" "$INSTDIR"
+  ${If} ${Errors}
+    ${If} $PreviousDirectory != ""
+      ClearErrors
+      Rename "$PreviousDirectory" "$INSTDIR"
+      ${If} ${Errors}
+        MessageBox MB_ICONSTOP "Install failed. The previous installation remains at $PreviousDirectory."
+        Abort
+      ${EndIf}
+    ${EndIf}
+    MessageBox MB_ICONSTOP "Install failed. The previous installation has been retained."
+    Abort
+  ${EndIf}
+  ${If} $PreviousDirectory != ""
+    WriteRegStr HKLM "Software\${REGISTRY_KEY}" "PreviousInstallLocation" "$PreviousDirectory"
+    WriteRegStr HKLM "Software\${REGISTRY_KEY}" "PreviousVersion" "$PreviousVersion"
+    DetailPrint "Previous installation retained at $PreviousDirectory"
+  ${EndIf}
   WriteRegStr HKLM "Software\${REGISTRY_KEY}" "InstallDir" "$INSTDIR"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "DisplayName" "${PRODUCT_NAME}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "DisplayVersion" "${APP_VERSION}"
@@ -153,6 +259,137 @@ Section "Rotor" SEC_MAIN
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "NoRepair" 1
   CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}.lnk" "$INSTDIR\${APP_EXE}"
 SectionEnd
+
+Function un.onInit
+  SetRegView 64
+  ${un.GetParameters} $R0
+  ClearErrors
+  ${un.GetOptions} $R0 "/ROLLBACK" $R1
+  ${If} ${Errors}
+    Return
+  ${EndIf}
+  SetErrorLevel 1
+  ${un.GetOptions} $R0 "/PARENT=" $ParentPid
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Rollback requires an update parent process."
+    Quit
+  ${EndIf}
+  ${If} $ParentPid <= 0
+    MessageBox MB_ICONSTOP "Invalid rollback parent process."
+    Quit
+  ${EndIf}
+  ReadRegStr $PreviousDirectory HKLM "Software\${REGISTRY_KEY}" "PreviousInstallLocation"
+  ReadRegStr $PreviousVersion HKLM "Software\${REGISTRY_KEY}" "PreviousVersion"
+  ${If} $PreviousDirectory == ""
+    MessageBox MB_ICONSTOP "No previous installation is registered."
+    Quit
+  ${EndIf}
+  GetFullPathName $INSTDIR "$INSTDIR"
+  ReadRegStr $R1 HKLM "Software\${REGISTRY_KEY}" "InstallDir"
+  GetFullPathName $R1 "$R1"
+  ${un.GetRoot} "$INSTDIR" $R2
+  GetFullPathName $R2 "$R2\"
+  ${If} $INSTDIR != $R1
+  ${OrIf} $INSTDIR == $R2
+  ${OrIf} $INSTDIR == $WINDIR
+  ${OrIf} $INSTDIR == $PROGRAMFILES64
+  ${OrIf} $INSTDIR == $PROGRAMFILES
+    MessageBox MB_ICONSTOP "Rollback target does not match the registered Rotor directory."
+    Quit
+  ${EndIf}
+  GetFullPathName $PreviousDirectory "$PreviousDirectory"
+  ${un.GetParent} "$INSTDIR" $InstallParent
+  ${un.GetParent} "$PreviousDirectory" $R1
+  ${If} $R1 != $InstallParent
+  ${OrIf} $PreviousDirectory == $INSTDIR
+    MessageBox MB_ICONSTOP "Invalid rollback location. No files have been moved."
+    Quit
+  ${EndIf}
+  ${IfNot} ${FileExists} "$PreviousDirectory\${APP_EXE}"
+    MessageBox MB_ICONSTOP "The previous Rotor executable is unavailable."
+    Quit
+  ${EndIf}
+  StrCpy $RestartArguments ""
+  ClearErrors
+  ${un.GetOptions} $R0 "/PROFILE=" $R1
+  ${IfNot} ${Errors}
+    StrCpy $R2 $R1 1 -1
+    ${If} $R2 == "\"
+      StrCpy $R1 "$R1\"
+    ${EndIf}
+    StrCpy $RestartArguments '--data-dir $\"$R1$\"'
+  ${EndIf}
+  ClearErrors
+  ${un.GetOptions} $R0 "/NOELEVATE" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --no-elevate"
+  ${EndIf}
+  ClearErrors
+  ${un.GetOptions} $R0 "/NOINDEX" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --no-index"
+  ${EndIf}
+  ClearErrors
+  ${un.GetOptions} $R0 "/NOHOTKEYS" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --no-hotkeys"
+  ${EndIf}
+  ClearErrors
+  ${un.GetOptions} $R0 "/PRODUCTIONSHORTCUTS" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --production-shortcuts"
+  ${EndIf}
+  System::Call 'kernel32::OpenProcess(i 0x100000, i 0, i $ParentPid) p.r1'
+  ${If} $1 != 0
+    System::Call 'kernel32::WaitForSingleObject(p r1, i 30000) i.r2'
+    System::Call 'kernel32::CloseHandle(p r1)'
+    ${If} $2 != 0
+      MessageBox MB_ICONSTOP "Rotor has not exited. Previous files remain at $PreviousDirectory."
+      Quit
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  GetTempFileName $FailedDirectory "$InstallParent"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Cannot reserve a recovery directory."
+    Quit
+  ${EndIf}
+  Delete "$FailedDirectory"
+  SetOutPath "$TEMP"
+  ClearErrors
+  Rename "$INSTDIR" "$FailedDirectory"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Cannot move the failed installation. Close Rotor and retry; previous files remain at $PreviousDirectory."
+    Quit
+  ${EndIf}
+  ClearErrors
+  Rename "$PreviousDirectory" "$INSTDIR"
+  ${If} ${Errors}
+    Rename "$FailedDirectory" "$INSTDIR"
+    MessageBox MB_ICONSTOP "Recovery failed. Previous files remain at $PreviousDirectory."
+    Quit
+  ${EndIf}
+  ${If} $PreviousVersion == ""
+    ClearErrors
+    GetDLLVersion "$INSTDIR\${APP_EXE}" $R0 $R1
+    ${IfNot} ${Errors}
+      IntOp $R2 $R0 >> 16
+      IntOp $R3 $R0 & 0xFFFF
+      IntOp $R4 $R1 >> 16
+      StrCpy $PreviousVersion "$R2.$R3.$R4"
+    ${EndIf}
+  ${EndIf}
+  ${If} $PreviousVersion != ""
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${REGISTRY_KEY}" "DisplayVersion" "$PreviousVersion"
+  ${EndIf}
+  DeleteRegValue HKLM "Software\${REGISTRY_KEY}" "PreviousInstallLocation"
+  DeleteRegValue HKLM "Software\${REGISTRY_KEY}" "PreviousVersion"
+  WriteRegStr HKLM "Software\${REGISTRY_KEY}" "FailedInstallLocation" "$FailedDirectory"
+  ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments"
+  MessageBox MB_ICONEXCLAMATION "The update could not start. The previous installation was restored. Failed new files are retained at $FailedDirectory."
+  SetErrorLevel 0
+  Quit
+FunctionEnd
 
 Section "Uninstall"
   SetRegView 64
