@@ -69,7 +69,7 @@ pub fn is_ntfs(vol: char) -> bool {
     false
 }
 
-type WindowRect = (i32, i32, i32, u32, u32);
+pub type WindowRect = (i32, i32, i32, u32, u32);
 
 // On Windows, enumerate top-level windows directly so the rects cover the full
 // visible frame (title bar included) in physical pixels, and a single bad

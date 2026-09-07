@@ -42,6 +42,11 @@ pub struct CapturedMonitor {
     pub image: Arc<RgbaImage>,
 }
 
+pub struct CaptureBundle {
+    pub monitors: Vec<CapturedMonitor>,
+    pub windows: Vec<rotor_platform::sys_util::WindowRect>,
+}
+
 pub enum RuntimeEvent {
     Pin(crate::PinEvent),
     Search(SearchBatch),
@@ -72,7 +77,7 @@ pub enum RuntimeEvent {
     },
     CaptureFinished {
         id: OperationId,
-        result: Result<Vec<CapturedMonitor>, String>,
+        result: Result<CaptureBundle, String>,
     },
     OcrFinished {
         id: OperationId,
@@ -214,6 +219,24 @@ impl Services {
         self.ensure_running()?;
         let id = next_operation();
         self.pins.submit(PinCommand::Delete { id, pin_id })?;
+        Ok(id)
+    }
+    pub fn export_pin(
+        &self,
+        pin_id: Option<u32>,
+        image: Arc<RgbaImage>,
+        config: crate::ShotterConfig,
+        target: crate::PinExportTarget,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Export {
+            id,
+            pin_id,
+            image,
+            config,
+            target,
+        })?;
         Ok(id)
     }
     pub async fn flush_pins(&self) -> Result<(), String> {
@@ -567,16 +590,21 @@ async fn settings_loop(
     }
 }
 
-fn capture_monitors() -> Result<Vec<CapturedMonitor>, String> {
+fn capture_monitors() -> Result<CaptureBundle, String> {
+    rotor_platform::overlay::settle_desktop()?;
     let before =
         monitor::sorted_configs(monitor::current_configs().map_err(|error| error.to_string())?);
+    let windows = rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
+        log::warn!("Capture window rectangles: {error}");
+        Vec::new()
+    });
     let mut images = rotor_screenshot::capture_images()?;
     let after =
         monitor::sorted_configs(monitor::current_configs().map_err(|error| error.to_string())?);
     if before != after {
         return Err("display topology changed during capture; retry screenshot".into());
     }
-    before
+    let monitors = before
         .into_iter()
         .map(|monitor| {
             let image = images
@@ -590,7 +618,8 @@ fn capture_monitors() -> Result<Vec<CapturedMonitor>, String> {
                 image: Arc::new(image),
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(CaptureBundle { monitors, windows })
 }
 
 fn redact_error(message: String, config: &EngineConfig) -> String {
@@ -693,6 +722,69 @@ mod tests {
         assert!(
             matches!(events.try_recv().unwrap(), RuntimeEvent::Pin(crate::PinEvent::Deleted { id, result: Ok(()), .. }) if id == deleted)
         );
+        assert!(
+            rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+                .unwrap()
+                .load_pins()
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn pin_export_failure_keeps_record_and_success_removes_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let image = Arc::new(RgbaImage::from_pixel(2, 3, image::Rgba([7, 8, 9, 128])));
+        services.create_pin(image.clone(), pin_config()).unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            result: Ok(pin), ..
+        }) = receive()
+        else {
+            panic!("expected created pin");
+        };
+        let invalid = directory.path().join("directory.png");
+        std::fs::create_dir(&invalid).unwrap();
+        let failed = services
+            .export_pin(
+                Some(pin.id),
+                image.clone(),
+                pin_config(),
+                crate::PinExportTarget::File(invalid),
+            )
+            .unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::Pin(crate::PinEvent::Exported { id, result: Err(_) }) if id == failed)
+        );
+        assert_eq!(
+            rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+                .unwrap()
+                .load_pins()
+                .0
+                .len(),
+            1
+        );
+        let output = directory.path().join("export.png");
+        let saved = services
+            .export_pin(
+                Some(pin.id),
+                image.clone(),
+                pin_config(),
+                crate::PinExportTarget::File(output.clone()),
+            )
+            .unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::Pin(crate::PinEvent::Exported { id, result: Ok(()) }) if id == saved)
+        );
+        assert_eq!(image::open(output).unwrap().into_rgba8(), *image);
         assert!(
             rotor_screenshot::pin_store::PinStore::load_from(directory.path())
                 .unwrap()

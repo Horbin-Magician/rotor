@@ -13,7 +13,16 @@ pub struct RestoredPins {
     pub warnings: Vec<String>,
 }
 
+pub enum PinExportTarget {
+    Clipboard,
+    File(PathBuf),
+}
+
 pub enum PinEvent {
+    Exported {
+        id: OperationId,
+        result: Result<(), String>,
+    },
     Restored {
         id: OperationId,
         result: Result<RestoredPins, String>,
@@ -35,6 +44,13 @@ pub enum PinEvent {
 }
 
 pub(crate) enum PinCommand {
+    Export {
+        id: OperationId,
+        pin_id: Option<u32>,
+        image: Arc<RgbaImage>,
+        config: ShotterConfig,
+        target: PinExportTarget,
+    },
     Restore {
         id: OperationId,
     },
@@ -58,6 +74,10 @@ pub(crate) enum PinCommand {
 impl PinCommand {
     fn failure(&self, error: String) -> PinEvent {
         match self {
+            Self::Export { id, .. } => PinEvent::Exported {
+                id: *id,
+                result: Err(error),
+            },
             Self::Restore { id } => PinEvent::Restored {
                 id: *id,
                 result: Err(error),
@@ -134,6 +154,36 @@ async fn run(directory: PathBuf, commands: Receiver<PinCommand>, events: Sender<
 
 fn execute(store: &mut Result<PinStore, String>, command: PinCommand) -> PinEvent {
     match command {
+        PinCommand::Export {
+            id,
+            pin_id,
+            image,
+            config,
+            target,
+        } => PinEvent::Exported {
+            id,
+            result: (|| {
+                let image = rotor_screenshot::pin_store::crop_image(&image, &config)?;
+                match target {
+                    PinExportTarget::Clipboard => rotor_platform::clipboard::write_image(&image)?,
+                    PinExportTarget::File(path) => {
+                        let bytes = rotor_screenshot::pin_store::png_bytes(&image)?;
+                        rotor_common::persistence::atomic_write(&path, &bytes)
+                            .map_err(|error| error.to_string())?;
+                    }
+                }
+                if let Some(pin_id) = pin_id {
+                    store
+                        .as_mut()
+                        .map_err(|error| error.clone())?
+                        .delete(pin_id)
+                        .map_err(|error| {
+                            format!("Image exported, but pin removal failed: {error}")
+                        })?;
+                }
+                Ok(())
+            })(),
+        },
         PinCommand::Restore { id } => PinEvent::Restored {
             id,
             result: store.as_ref().map_err(Clone::clone).map(|store| {

@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 base64 = "0.22.1"
+image.workspace = true
 gpui-kit.workspace = true
 gpui.workspace = true
 rotor-common.workspace = true

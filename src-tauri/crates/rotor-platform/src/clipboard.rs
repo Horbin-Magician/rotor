@@ -13,6 +13,18 @@ pub struct SelectedText {
     pub restore_warning: Option<String>,
 }
 
+pub fn write_image(image: &image::RgbaImage) -> Result<(), String> {
+    let _guard = SELECTION.lock().unwrap_or_else(|error| error.into_inner());
+    let mut clipboard = Clipboard::new().map_err(|error| error.to_string())?;
+    clipboard
+        .set_image(ImageData {
+            width: image.width() as usize,
+            height: image.height() as usize,
+            bytes: std::borrow::Cow::Borrowed(image.as_raw()),
+        })
+        .map_err(|error| error.to_string())
+}
+
 enum Snapshot {
     Text(String),
     Image(ImageData<'static>),

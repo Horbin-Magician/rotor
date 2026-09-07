@@ -50,6 +50,27 @@ fn validate(config: &ShotterConfig, width: u32, height: u32) -> Result<(), Strin
     Ok(())
 }
 
+pub fn crop_image(image: &RgbaImage, config: &ShotterConfig) -> Result<RgbaImage, String> {
+    validate(config, image.width(), image.height())?;
+    let (x, y, width, height) = config
+        .image_rect
+        .unwrap_or((0, 0, config.rect.2, config.rect.3));
+    Ok(image::imageops::crop_imm(image, x, y, width, height).to_image())
+}
+
+pub fn png_bytes(image: &RgbaImage) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut bytes)
+        .write_image(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(bytes)
+}
+
 impl PinStore {
     pub fn load_from(data_directory: &Path) -> Result<Self, String> {
         if !data_directory.is_absolute() {
