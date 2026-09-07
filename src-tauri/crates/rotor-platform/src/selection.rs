@@ -9,7 +9,7 @@ pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_C, VK_CONTROL,
     };
 
-    wait_for_modifiers_release();
+    wait_for_modifiers_release()?;
 
     let input = |vk: u16, key_up: bool| INPUT {
         r#type: INPUT_KEYBOARD,
@@ -47,24 +47,24 @@ pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
 /// Ctrl+Shift+C (which opens DevTools in Chrome instead of copying). Wait
 /// until all modifiers are released before injecting the copy keystroke.
 #[cfg(target_os = "windows")]
-fn wait_for_modifiers_release() {
-    use std::time::{Duration, Instant};
+fn wait_for_modifiers_release() -> std::io::Result<()> {
+    use std::time::Duration;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_MENU, VK_SHIFT,
+        GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
     };
 
     const WAIT_TIMEOUT: Duration = Duration::from_millis(1500);
-    const POLL_INTERVAL: Duration = Duration::from_millis(30);
 
     let is_pressed = |vk: u16| unsafe { (GetAsyncKeyState(vk as i32) as u16 & 0x8000) != 0 };
 
-    let start = Instant::now();
-    while start.elapsed() < WAIT_TIMEOUT {
-        if !is_pressed(VK_SHIFT.0) && !is_pressed(VK_CONTROL.0) && !is_pressed(VK_MENU.0) {
-            return;
-        }
-        std::thread::sleep(POLL_INTERVAL);
-    }
+    wait_until_released(
+        || {
+            Ok([VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN]
+                .iter()
+                .any(|key| is_pressed(key.0)))
+        },
+        WAIT_TIMEOUT,
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -79,7 +79,7 @@ pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
         return Err("macOS Accessibility permission is required for selection translation".into());
     }
 
-    wait_for_modifiers_release();
+    wait_for_modifiers_release()?;
 
     let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
         .map_err(|_| std::io::Error::other("Failed to create CGEventSource"))?;
@@ -116,28 +116,47 @@ fn request_accessibility_permission() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn wait_for_modifiers_release() {
+fn wait_for_modifiers_release() -> std::io::Result<()> {
     use core_graphics::event::{CGEvent, CGEventFlags};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     const WAIT_TIMEOUT: Duration = Duration::from_millis(1500);
-    const POLL_INTERVAL: Duration = Duration::from_millis(30);
     let modifier_flags = CGEventFlags::CGEventFlagShift
         | CGEventFlags::CGEventFlagControl
         | CGEventFlags::CGEventFlagAlternate
         | CGEventFlags::CGEventFlagCommand;
 
-    let start = Instant::now();
-    while start.elapsed() < WAIT_TIMEOUT {
-        let modifiers_pressed = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
-            .and_then(CGEvent::new)
-            .is_ok_and(|event| event.get_flags().intersects(modifier_flags));
+    wait_until_released(
+        || {
+            CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
+                .and_then(CGEvent::new)
+                .map(|event| event.get_flags().intersects(modifier_flags))
+                .map_err(|_| std::io::Error::other("Cannot read keyboard modifier state"))
+        },
+        WAIT_TIMEOUT,
+    )
+}
 
-        if !modifiers_pressed {
-            return;
+#[cfg(any(target_os = "windows", target_os = "macos", test))]
+fn wait_until_released(
+    mut pressed: impl FnMut() -> std::io::Result<bool>,
+    timeout: std::time::Duration,
+) -> std::io::Result<()> {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + timeout;
+    loop {
+        if !pressed()? {
+            return Ok(());
         }
-        std::thread::sleep(POLL_INTERVAL);
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Shortcut modifiers are still pressed",
+            ));
+        }
+        std::thread::sleep(remaining.min(Duration::from_millis(30)));
     }
 }
 
@@ -148,9 +167,44 @@ pub fn clipboard_change_count() -> Option<isize> {
     Some(unsafe { NSPasteboard::generalPasteboard().changeCount() })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+pub fn clipboard_change_count() -> Option<isize> {
+    let sequence = unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() };
+    (sequence != 0).then_some(sequence as isize)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn clipboard_change_count() -> Option<isize> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wait_until_released;
+    use std::{io, time::Duration};
+
+    #[test]
+    fn timeout_or_unreadable_modifiers_prevent_copy() {
+        assert_eq!(
+            wait_until_released(|| Ok(true), Duration::ZERO)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert_eq!(
+            wait_until_released(
+                || Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+                Duration::ZERO
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+    }
+    #[test]
+    fn released_modifiers_can_copy_immediately() {
+        assert!(wait_until_released(|| Ok(false), Duration::ZERO).is_ok());
+    }
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
