@@ -261,3 +261,11 @@
 - 独立 updater 使用与旧 Tauri 完全一致的公钥和嵌套 base64 minisign 格式；仅 HTTPS、限制清单/文件体积、流式落盘与预哈希验签、支持取消，校验成功后才发布暂存文件。进度最多每 100ms 加最终通知。
 - 原生预览使用独立 gpui-latest 地址，不改旧 latest 通道；地址尚未发布。
 - 5 项测试和 updater/xtask clippy 通过，包含真实公开签名向量、内容篡改、错钥、旧元数据、防降级及取消前不写盘。尚未下载旧正式产物做验签，也未接入安装/设置界面；G8 未通过。
+
+## P8 原生暂存与开发安装包
+
+- xtask 校验 workspace/前端版本一致，复制 release 可执行文件、动态库、模型/字体/图标及原生元数据，生成大小/SHA-256 清单；拒绝覆盖已有暂存或产物目录。打包前再次验清单。
+- Windows release 使用 GUI 子系统，嵌入图标与版本；复用 GPUI 已有的 asInvoker/PerMonitorV2 清单，避免重复资源导致链接失败。NSIS 使用独立开发安装目录、快捷方式和卸载注册项。
+- macOS app/tar.gz/DMG 配方已写入，未在 Mac 编译、运行、签名或公证；CI 增加暂存校验和归档上传，尚未执行远端 CI。
+- Windows release 构建、desktop/xtask clippy、资源篡改测试和暂存/产物校验通过。暂存 exe 版本 2.6.0、PE subsystem 2，从临时工作目录执行 --check-config 返回 0。
+- 本地产物 target/native-package-p8/Rotor-GPUI_2.6.0_x64-setup.exe，37,413,343 bytes，SHA-256 caa25c40d74cc9c4164f854b181687569a64a0191da3f0555d15e37435f5b386。仅构建，未安装、签名或发布；安装/卸载/覆盖升级仍待实机验收。

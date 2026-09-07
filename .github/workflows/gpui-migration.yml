@@ -7,6 +7,8 @@ on:
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - 'crates/**'
+      - 'native/**'
+      - 'xtask/**'
       - 'src-tauri/**'
       - '.github/workflows/gpui-migration.yml'
 permissions:
@@ -27,12 +29,19 @@ jobs:
       - uses: swatinem/rust-cache@v2
       - shell: pwsh
         run: ./.github/scripts/check-annotation-font.ps1
-      - run: cargo fmt -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-common -- --check
-      - run: cargo test -p rotor-common -p rotor-canvas -p rotor-runtime -p rotor-searcher -p rotor-screenshot -p rotor-translator -p rotor-ui -p rotor-desktop --locked
+      - run: cargo fmt -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-common -p rotor-updater -p xtask -- --check
+      - run: cargo test -p rotor-common -p rotor-canvas -p rotor-runtime -p rotor-searcher -p rotor-screenshot -p rotor-translator -p rotor-ui -p rotor-desktop -p rotor-updater -p xtask --locked
       - shell: pwsh
         run: ./.github/scripts/check-core-dependencies.ps1
-      - run: cargo clippy --no-deps -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-runtime --all-targets --locked -- -D warnings
+      - run: cargo clippy --no-deps -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-runtime -p rotor-updater -p xtask --all-targets --locked -- -D warnings
       - run: cargo build -p rotor-desktop --release --locked
+      - run: cargo run -p xtask -- stage target/native-stage
+      - run: cargo run -p xtask -- verify target/native-stage
+      - run: tar -czf target/native-stage.tar.gz -C target/native-stage .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-stage-${{ matrix.os }}
+          path: target/native-stage.tar.gz
       - run: cargo run -p rotor-desktop --example ocr_smoke --release --locked -- --wait-idle
   legacy:
     runs-on: windows-latest

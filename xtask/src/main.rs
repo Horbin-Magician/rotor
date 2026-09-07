@@ -1,26 +1,294 @@
-use std::{path::PathBuf, process::Command};
-
+use sha2::{Digest, Sha256};
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+    process::Command,
+};
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .to_path_buf()
 }
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
-        Some("version") => println!("{}", env!("CARGO_PKG_VERSION")),
-        Some("build") => {
-            let status = Command::new("cargo")
-                .current_dir(root())
-                .args(["build", "-p", "rotor-desktop", "--release", "--locked"])
-                .args(&args[1..])
-                .status()?;
-            if !status.success() {
-                return Err("native build failed".into());
-            }
+fn version() -> Result<String> {
+    let cargo: toml::Value = fs::read_to_string(root().join("Cargo.toml"))?.parse()?;
+    let version = cargo["workspace"]["package"]["version"]
+        .as_str()
+        .ok_or("missing workspace version")?
+        .to_string();
+    let package: serde_json::Value =
+        serde_json::from_slice(&fs::read(root().join("package.json"))?)?;
+    if package["version"].as_str() != Some(version.as_str()) {
+        return Err("package.json version must mirror workspace.package.version".into());
+    }
+    Ok(version)
+}
+fn hash(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
         }
-        _ => return Err("usage: cargo run -p xtask -- version | build [cargo options]".into()),
+        digest.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+fn files(directory: &Path, result: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        if entry.file_type()?.is_symlink() {
+            return Err(format!("unexpected staged symlink: {}", entry.path().display()).into());
+        }
+        if entry.file_type()?.is_dir() {
+            files(&entry.path(), result)?;
+        } else {
+            result.push(entry.path());
+        }
+    }
+    result.sort();
+    Ok(())
+}
+fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        if entry.file_type()?.is_symlink() {
+            return Err("resource symlinks are not allowed".into());
+        }
+        let target = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
     }
     Ok(())
+}
+fn write_manifest(directory: &Path, version: &str) -> Result<()> {
+    let mut paths = Vec::new();
+    files(directory, &mut paths)?;
+    let mut entries = serde_json::Map::new();
+    for path in paths {
+        entries.insert(
+            path.strip_prefix(directory)?
+                .to_string_lossy()
+                .replace('\\', "/"),
+            serde_json::json!({"bytes": fs::metadata(&path)?.len(), "sha256": hash(&path)?}),
+        );
+    }
+    fs::write(
+        directory.join("resources.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({"version": version, "files": entries}))?,
+    )?;
+    Ok(())
+}
+fn verify_stage(directory: &Path) -> Result<()> {
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.join("resources.json"))?)?;
+    let expected = manifest["files"]
+        .as_object()
+        .ok_or("invalid file manifest")?;
+    let mut paths = Vec::new();
+    files(directory, &mut paths)?;
+    paths.retain(|path| path != &directory.join("resources.json"));
+    if paths.len() != expected.len() {
+        return Err("staged file set changed".into());
+    }
+    for path in paths {
+        let name = path
+            .strip_prefix(directory)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let entry = expected.get(&name).ok_or("unexpected staged file")?;
+        if entry["sha256"].as_str() != Some(hash(&path)?.as_str())
+            || entry["bytes"].as_u64() != Some(fs::metadata(path)?.len())
+        {
+            return Err(format!("staged checksum mismatch: {name}").into());
+        }
+    }
+    Ok(())
+}
+fn stage(directory: &Path) -> Result<()> {
+    let version = version()?;
+    let config: toml::Value = fs::read_to_string(root().join("native/app.toml"))?.parse()?;
+    let release = root().join("target/release");
+    let binary = if cfg!(windows) {
+        "rotor-desktop.exe"
+    } else {
+        "rotor-desktop"
+    };
+    if !release.join(binary).is_file() {
+        return Err("build the native release executable first".into());
+    }
+    // Fail on an existing destination: staging never deletes a prior artifact.
+    fs::create_dir(directory)?;
+    let (executable_dir, resource_dir) = if cfg!(target_os = "macos") {
+        let contents = directory.join("Rotor GPUI Development.app/Contents");
+        let executable_dir = contents.join("MacOS");
+        let resource_dir = contents.join("Resources");
+        fs::create_dir_all(&executable_dir)?;
+        fs::create_dir_all(&resource_dir)?;
+        fs::write(
+            contents.join("Info.plist"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>rotor-desktop</string>
+<key>CFBundleIdentifier</key><string>{}</string>
+<key>CFBundleName</key><string>Rotor GPUI Development</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>{version}</string>
+<key>CFBundleVersion</key><string>{version}</string>
+<key>CFBundleIconFile</key><string>icon.icns</string>
+<key>LSMinimumSystemVersion</key><string>{}</string>
+<key>LSUIElement</key><true/>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>"#,
+                config["identifier"].as_str().ok_or("missing identifier")?,
+                config["minimum_macos"]
+                    .as_str()
+                    .ok_or("missing minimum_macos")?
+            ),
+        )?;
+        fs::copy(
+            root().join("src-tauri/assets/icons/icon.icns"),
+            resource_dir.join("icon.icns"),
+        )?;
+        (executable_dir, resource_dir)
+    } else {
+        (directory.to_path_buf(), directory.to_path_buf())
+    };
+    fs::copy(release.join(binary), executable_dir.join(binary))?;
+    for entry in fs::read_dir(&release)? {
+        let entry = entry?;
+        if matches!(
+            entry.path().extension().and_then(|s| s.to_str()),
+            Some("dll" | "dylib")
+        ) {
+            // Cargo's native dependency output may itself be a symlink; copy its bytes.
+            fs::copy(
+                entry.path().canonicalize()?,
+                executable_dir.join(entry.file_name()),
+            )?;
+        }
+    }
+    copy_tree(
+        &root().join("src-tauri/assets"),
+        &resource_dir.join("assets"),
+    )?;
+    fs::copy(
+        root().join("native/app.toml"),
+        resource_dir.join("native-app.toml"),
+    )?;
+    fs::copy(
+        root().join("native/update-public.key"),
+        resource_dir.join("update-public.key"),
+    )?;
+    write_manifest(directory, &version)?;
+    verify_stage(directory)?;
+    println!("Staged {} at {}", version, directory.display());
+    Ok(())
+}
+fn package(directory: &Path, output: &Path) -> Result<()> {
+    verify_stage(directory)?;
+    let version = version()?;
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.join("resources.json"))?)?;
+    if manifest["version"].as_str() != Some(version.as_str()) {
+        return Err("staging version differs from workspace".into());
+    }
+    fs::create_dir(output)?;
+    let output = output.canonicalize()?;
+    let directory = directory.canonicalize()?;
+    if cfg!(windows) {
+        let compiler = std::env::var_os("NSIS_MAKENSIS").unwrap_or_else(|| "makensis.exe".into());
+        let status = Command::new(compiler)
+            .arg(format!("/DSTAGE_DIR={}", directory.display()))
+            .arg(format!(
+                "/DOUTPUT_FILE={}",
+                output
+                    .join(format!("Rotor-GPUI_{version}_x64-setup.exe"))
+                    .display()
+            ))
+            .arg(format!("/DAPP_VERSION={version}"))
+            .arg(root().join("native/windows.nsi"))
+            .status()?;
+        if !status.success() {
+            return Err("NSIS packaging failed".into());
+        }
+    } else if cfg!(target_os = "macos") {
+        let archive = output.join(format!("Rotor-GPUI_{version}_aarch64.app.tar.gz"));
+        let status = Command::new("tar")
+            .arg("-czf")
+            .arg(archive)
+            .arg("-C")
+            .arg(&directory)
+            .arg("Rotor GPUI Development.app")
+            .status()?;
+        if !status.success() {
+            return Err("macOS archive failed".into());
+        }
+        let status = Command::new("hdiutil")
+            .args([
+                "create",
+                "-format",
+                "UDZO",
+                "-volname",
+                "Rotor GPUI Development",
+                "-srcfolder",
+            ])
+            .arg(&directory)
+            .arg(output.join(format!("Rotor-GPUI_{version}_aarch64.dmg")))
+            .status()?;
+        if !status.success() {
+            return Err("DMG creation failed".into());
+        }
+    } else {
+        return Err("unsupported native packaging host".into());
+    }
+    write_manifest(&output, &version)?;
+    println!("Packaged artifacts at {}", output.display());
+    Ok(())
+}
+fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("version") => println!("{}", version()?),
+        Some("build") => {
+            version()?;
+            let status = Command::new("cargo").current_dir(root()).args(["build", "-p", "rotor-desktop", "--release", "--locked"]).args(&args[1..]).status()?;
+            if !status.success() { return Err("native build failed".into()); }
+        }
+        Some("package") if args.len() == 3 => package(Path::new(&args[1]), Path::new(&args[2]))?,
+        Some("stage") if args.len() == 2 => stage(Path::new(&args[1]))?,
+        Some("verify") if args.len() == 2 => verify_stage(Path::new(&args[1]))?,
+        _ => return Err("usage: cargo run -p xtask -- version | build [cargo options] | stage <new directory> | verify <directory> | package <stage directory> <new output directory>".into()),
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn manifests_detect_modified_missing_and_extra_resources() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("model.onnx");
+        fs::write(&path, b"model").unwrap();
+        write_manifest(directory.path(), "2.6.0").unwrap();
+        verify_stage(directory.path()).unwrap();
+        fs::write(&path, b"wrong").unwrap();
+        assert!(verify_stage(directory.path()).is_err());
+        fs::write(&path, b"model").unwrap();
+        fs::write(directory.path().join("extra"), b"extra").unwrap();
+        assert!(verify_stage(directory.path()).is_err());
+        fs::remove_file(directory.path().join("extra")).unwrap();
+        fs::remove_file(path).unwrap();
+        assert!(verify_stage(directory.path()).is_err());
+    }
 }
