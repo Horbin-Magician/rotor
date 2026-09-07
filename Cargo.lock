@@ -8269,6 +8269,10 @@ dependencies = [
 [[package]]
 name = "rotor-canvas"
 version = "2.6.0"
+dependencies = [
+ "image",
+ "resvg 0.45.1",
+]
 
 [[package]]
 name = "rotor-common"

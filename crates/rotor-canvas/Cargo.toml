@@ -3,3 +3,7 @@ name = "rotor-canvas"
 version = "2.6.0"
 edition = "2021"
 publish = false
+
+[dependencies]
+image.workspace = true
+resvg = "=0.45.1"

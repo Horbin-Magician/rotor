@@ -1,0 +1,5 @@
+# Preserve the upstream bytes used by the annotation resource checksums.
+src-tauri/assets/fonts/*.otf -text
+src-tauri/assets/fonts/LICENSE-NotoSansCJK.txt -text
+src-tauri/assets/fonts/*.json text eol=lf
+src-tauri/assets/fonts/*.md text eol=lf

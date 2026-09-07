@@ -1,6 +1,13 @@
 //! Image-space geometry shared by native views and offscreen composition.
 //! These are source pixels, never desktop coordinates or window logical units.
 
+mod document;
+mod renderer;
+pub use document::{
+    arrow_head, Annotation, Color, Document, Scene, StrokeStyle, ViewTransform, FONT_FAMILY,
+};
+pub use renderer::Renderer;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImageSize {
     pub width: u32,
