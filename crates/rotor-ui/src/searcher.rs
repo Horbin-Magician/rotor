@@ -9,7 +9,7 @@ use gpui_kit::{
     prelude::*,
     *,
 };
-use rotor_runtime::{OperationId, RuntimeEvent, Services};
+use rotor_runtime::{IndexState, OperationId, RuntimeEvent, Services};
 use std::{collections::HashMap, ops::Range, sync::Arc};
 
 pub struct SearchView {
@@ -19,6 +19,9 @@ pub struct SearchView {
     icons: HashMap<String, Arc<Image>>,
     scroll: UniformListScrollHandle,
     opening: Option<OperationId>,
+    index_request: Option<OperationId>,
+    index_state: IndexState,
+    index_state_changed: bool,
     message: String,
     suppress_enter: bool,
     _input_events: Subscription,
@@ -28,7 +31,14 @@ impl SearchView {
     pub fn new(services: Arc<Services>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         window.set_window_title(search_title(&services.settings()));
         services.update_search();
-        let _ = services.search(String::new());
+        let initial = services.search(String::new());
+        let index_state = if initial.is_ok() {
+            IndexState::Loading
+        } else {
+            IndexState::Unavailable
+        };
+        let message = initial.err().unwrap_or_default();
+        let index_request = services.request_index_status().ok();
         let input = cx.new(|cx| InputState::new(window, cx));
         let input_events =
             cx.subscribe_in(&input, window, |this, _, event, window, cx| match event {
@@ -54,7 +64,10 @@ impl SearchView {
             icons: HashMap::new(),
             scroll: UniformListScrollHandle::new(),
             opening: None,
-            message: String::new(),
+            index_request,
+            index_state,
+            index_state_changed: false,
+            message,
             suppress_enter: false,
             _input_events: input_events,
             _activation: activation,
@@ -110,6 +123,18 @@ impl SearchView {
         cx: &mut Context<Self>,
     ) {
         match event {
+            RuntimeEvent::IndexState(state) => {
+                self.index_state = *state;
+                self.index_state_changed = true;
+            }
+            RuntimeEvent::IndexStatus { id, result } if self.index_request == Some(*id) => {
+                self.index_request = None;
+                match result {
+                    Ok(status) if !self.index_state_changed => self.index_state = status.state,
+                    Err(error) => self.message = error.clone(),
+                    _ => {}
+                }
+            }
             RuntimeEvent::Search(batch) => {
                 if !self.results.accept(batch) {
                     return;
@@ -236,6 +261,23 @@ impl Render for SearchView {
                 "Opening…"
             }
             .into()
+        } else if self.index_state != IndexState::Ready {
+            let (zh, en) = match self.index_state {
+                IndexState::Unavailable => ("文件索引未启用", "File indexing is disabled"),
+                IndexState::Unbuild => ("文件索引尚未构建", "File index has not been built"),
+                IndexState::Building => ("正在构建文件索引…", "Building the file index…"),
+                IndexState::Loading => ("正在加载文件索引…", "Loading the file index…"),
+                IndexState::Released => (
+                    "索引已释放，输入后重新加载",
+                    "Index released; type to load it again",
+                ),
+                IndexState::Error => (
+                    "索引失败，请在设置中重建",
+                    "Index failed; rebuild it in Settings",
+                ),
+                IndexState::Ready => unreachable!(),
+            };
+            if chinese { zh } else { en }.into()
         } else if self.results.loading {
             if chinese {
                 "搜索中…"
@@ -376,11 +418,14 @@ impl Render for SearchView {
                             .text_xs()
                             .max_h(px(48.))
                             .overflow_y_scroll()
-                            .text_color(if self.message.is_empty() {
-                                cx.theme().muted_foreground
-                            } else {
-                                cx.theme().danger
-                            })
+                            .text_color(
+                                if self.message.is_empty() && self.index_state != IndexState::Error
+                                {
+                                    cx.theme().muted_foreground
+                                } else {
+                                    cx.theme().danger
+                                },
+                            )
                             .child(status),
                     )
                     .child(crate::visual::caption(

@@ -48,3 +48,9 @@ target/debug/examples/inspect_pins.exe target/ui-acceptance-fixture-v2
 收尾时 `cargo fmt --all -- --check` 发现 6 个历史文件的模块/导入排序及换行差异；运行 rustfmt 后全 workspace 格式检查通过，没有手工改变这些文件的逻辑。格式调整发生在上述 release 构建之后，最终候选仍应从冻结后的源码重新生成构建收据。
 
 最后一次只读窗口观察返回用户按物理 Escape 停止 Computer Use，本轮停止桌面输入并关闭本地响应夹具。`short` 的实际结果未获确认，不据夹具 HTTP 成功认定翻译 UI 已通过；此前用户确认的单张贴图恢复可见结果保留。
+
+## 后续无窗口核对：搜索索引反馈
+
+旧 `SearchInput.vue` 会区分 building/loading/unbuilt/released/error/unavailable，而原生搜索此前仅区分查询加载和空结果。本批在 SearchView 接入初始索引快照及实时 IndexState，显示构建中、加载中、未构建、已释放、未启用和失败；保留查询结果、键盘导航及虚拟列表逻辑。初始查询按请求 ID 接收，已收到实时状态后不再用迟到的初始快照回退状态。
+
+native check、UI `--all-targets --offline -- -D warnings` clippy 通过。全 workspace Windows `cargo check --workspace --offline` 通过，旧 Tauri 壳仍有三个既有 unused/dead_code warning。本批未进行桌面操作或视觉验收。
