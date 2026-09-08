@@ -968,6 +968,15 @@ async fn settings_loop(
         };
         match command {
             SettingsCommand::Save { id, mut changes } => {
+                if let Err(error) = normalize_shortcut_changes(&mut changes) {
+                    let _ = events
+                        .send(RuntimeEvent::SettingsSaved {
+                            id,
+                            result: Err(error),
+                        })
+                        .await;
+                    continue;
+                }
                 let coordinated = coordinate_shortcuts.load(Ordering::Acquire)
                     && changes.iter().any(|(key, _)| {
                         (key.starts_with("shortcut_") && !key.starts_with("shortcut_pinwin_"))
@@ -1084,6 +1093,32 @@ async fn settings_loop(
             SettingsCommand::Coalesced(_) => unreachable!("coalesced write was resolved above"),
         }
     }
+}
+
+fn normalize_shortcut_changes(changes: &mut [(String, String)]) -> Result<(), String> {
+    use std::str::FromStr;
+    for (key, value) in changes {
+        if matches!(
+            key.as_str(),
+            "shortcut_search"
+                | "shortcut_screenshot"
+                | "shortcut_translate_select"
+                | "shortcut_translate_input"
+                | "shortcut_pinwin_save"
+                | "shortcut_pinwin_close"
+                | "shortcut_pinwin_copy"
+                | "shortcut_pinwin_hide"
+        ) {
+            let normalized = value.trim();
+            if !normalized.is_empty()
+                && global_hotkey::hotkey::HotKey::from_str(normalized).is_err()
+            {
+                return Err(format!("Invalid shortcut in {key}"));
+            }
+            *value = normalized.into();
+        }
+    }
+    Ok(())
 }
 
 fn merge_settings_changes(

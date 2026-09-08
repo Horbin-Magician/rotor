@@ -22,7 +22,7 @@ impl SettingsView {
             .child(self.t("预览更新通道独立于正式版；通道尚未发布时检查会报错。", "The preview feed is separate from stable. Checks fail until the feed is published."))
             .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child(status))
             .child(Button::new("check-updates").primary().label(self.t("检查更新", "Check for updates"))
-                .disabled(self.update.busy())
+                .disabled(self.update.busy() || self.controls_locked())
                 .on_click(cx.listener(|this, _, _, cx| {
                     if let Err(error) = this.services.check_updates() { this.message = error; }
                     this.update = this.services.update_snapshot(); cx.notify();
@@ -35,6 +35,7 @@ impl SettingsView {
                 panel = panel.child(
                     Button::new("download-update")
                         .label(self.t("下载更新", "Download update"))
+                        .disabled(self.controls_locked())
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Err(error) = this.services.download_update() {
                                 this.message = error;
@@ -67,6 +68,13 @@ impl SettingsView {
             panel = panel.child(
                 Button::new("install-update")
                     .label(self.t("退出并安装更新", "Quit and install update"))
+                    .disabled(
+                        self.controls_locked()
+                            || self.autosave.has_pending()
+                            || self.autosave.has_composition()
+                            || self.autosave.has_failures()
+                            || self.manual_failed,
+                    )
                     .on_click(cx.listener(|this, _, _, cx| {
                         if let Err(error) = this.services.install_update() {
                             this.message = error;
@@ -83,6 +91,7 @@ impl SettingsView {
             panel = panel.child(path.display().to_string()).child(
                 Button::new("show-update-folder")
                     .label(self.t("打开下载目录", "Open download directory"))
+                    .disabled(self.controls_locked())
                     .on_click(cx.listener(|this, _, _, cx| {
                         if let Some(parent) =
                             this.update.path.as_ref().and_then(|path| path.parent())

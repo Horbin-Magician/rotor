@@ -2,11 +2,13 @@
 
 ## 当前执行范围（2026-09-08 用户调整）
 
+普通文本、排除目录及快捷键自动保存已接入，并补齐回执隔离、组字保护、失败草稿和关闭/退出等待（[记录](evidence/windows-autosave.md)）。后台 30 项、UI 25 项测试通过；代码缺口已推进，真实 Windows 输入/关闭操作尚未验收，UI-04 继续未关闭。
+
 翻译失败路径继续见 [流式处理核验](evidence/windows-translation-stream.md)：已修复 DeepSeek 提前 EOF 和异常结束被当作成功的问题，回归测试通过；真实窗口/三引擎联合验收仍未关闭。
 
 已增加真实 localhost 请求的替换/取消/503 错误测试，并为原生搜索补齐索引构建、加载、释放和失败反馈。无窗口检查通过，尚不作为 GUI/IME 验收完成的依据。
 
-44 项功能对照已逐行回填实现位置、主要 commit 和证据边界。本次核对发现并修复了 F04 搜索窗关闭未发 release、后台结果缓存未释放的问题（[回归记录](evidence/windows-search-release.md)）。额外 redo 入口已按 P6 首发范围移除；快捷操作无草稿时的启停/删除已直接事务保存，普通文本/快捷键的自动保存及真实交互仍需按 UI-04 收口，详见 [功能核对](evidence/windows-feature-audit.md)。
+44 项功能对照已逐行回填实现位置、主要 commit 和证据边界。本次核对发现并修复了 F04 搜索窗关闭未发 release、后台结果缓存未释放的问题（[回归记录](evidence/windows-search-release.md)）。额外 redo 入口已按 P6 首发范围移除；快捷操作无草稿时的启停/删除已直接事务保存，普通文本/快捷键也已接入自动保存。UI-04 仍需真实交互收口，详见 [功能核对](evidence/windows-feature-audit.md) 和 [自动保存记录](evidence/windows-autosave.md)。
 
 最新 Windows 续作见 [续作核验](evidence/windows-ui-followup.md)：上轮合成贴图未出现已定位为测试记录的 `image_rect` 原点错误；修正夹具通过真实 PinStore 只读检查，窗口恢复验收仍待完成。
 

@@ -2,7 +2,7 @@ use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Selectable,
         button::{Button, ButtonVariants},
-        input::{Input, InputState, Textarea, TextareaState},
+        input::{Input, InputEvent, InputState, Textarea, TextareaState},
     },
     prelude::*,
     *,
@@ -12,6 +12,8 @@ use rotor_runtime::{IndexState, OperationId, RuntimeEvent, SearchIndexStatus, Se
 use std::sync::Arc;
 mod action_change;
 mod actions;
+mod automatic;
+mod autosave;
 mod overview;
 mod updates;
 
@@ -50,6 +52,11 @@ struct Field {
     label: (&'static str, &'static str),
     state: Entity<InputState>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CloseTarget {
+    Window,
+    Application,
+}
 pub struct SettingsView {
     update: Arc<rotor_runtime::UpdateSnapshot>,
     config: Config,
@@ -61,7 +68,12 @@ pub struct SettingsView {
     index_status: Option<SearchIndexStatus>,
     index_request: Option<OperationId>,
     pending: Option<OperationId>,
-    pending_exclusions: bool,
+    autosave: autosave::FieldSaves,
+    _field_observers: Vec<Subscription>,
+    composition_check: Option<Task<()>>,
+    close_request: Option<CloseTarget>,
+    last_close_target: CloseTarget,
+    manual_failed: bool,
     choosing_path: bool,
     message: String,
     actions: Vec<actions::ActionFields>,
@@ -166,7 +178,7 @@ impl SettingsView {
                 true,
             ),
         ];
-        let fields = definitions
+        let fields: Vec<Field> = definitions
             .into_iter()
             .map(|(key, section, label, secret)| {
                 let value = config.get(key).cloned().unwrap_or_default();
@@ -190,6 +202,51 @@ impl SettingsView {
                     .unwrap_or_default(),
             )
         });
+        let autosave = autosave::FieldSaves::new(
+            fields
+                .iter()
+                .map(|field| (field.key, field.state.read(cx).value().to_string()))
+                .chain(std::iter::once((
+                    "search_excluded_dirs",
+                    excluded.read(cx).value().to_string(),
+                )))
+                .chain(
+                    [
+                        "language",
+                        "theme",
+                        "if_ask_save_path",
+                        "if_auto_change_save_path",
+                        "zoom_delta",
+                        "translator_engine",
+                        "translator_target_lang",
+                    ]
+                    .into_iter()
+                    .map(|key| (key, config.get(key).cloned().unwrap_or_default())),
+                ),
+        );
+        let mut field_observers = Vec::new();
+        for field in &fields {
+            let key = field.key;
+            field_observers.push(cx.observe_in(
+                &field.state,
+                window,
+                move |this, _, window, cx| this.observe_field(key, false, window, cx),
+            ));
+            field_observers.push(cx.subscribe_in(
+                &field.state,
+                window,
+                move |this, _, event, window, cx| match event {
+                    InputEvent::PressEnter { shift: false, .. } => {
+                        this.observe_field(key, true, window, cx)
+                    }
+                    InputEvent::Blur => this.observe_field(key, false, window, cx),
+                    _ => {}
+                },
+            ));
+        }
+        field_observers.push(cx.observe_in(&excluded, window, |this, _, window, cx| {
+            this.observe_field("search_excluded_dirs", false, window, cx)
+        }));
         let action_result = services.quick_actions();
         let overview_request = services.request_overview().ok();
         let index_request = services.request_index_status().ok();
@@ -202,8 +259,15 @@ impl SettingsView {
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() && this.recording.take().is_some() {
                 this.services.set_shortcut_recording(false);
-                this.message.clear();
+                if this.manual_failed || this.autosave.has_failures() {
+                    this.saved_feedback();
+                } else {
+                    this.message.clear();
+                }
                 cx.notify();
+            }
+            if !window.is_window_active() {
+                this.observe_all_fields(false, window, cx);
             }
         });
         Self {
@@ -217,7 +281,12 @@ impl SettingsView {
             index_status: None,
             index_request,
             pending: None,
-            pending_exclusions: false,
+            autosave,
+            _field_observers: field_observers,
+            composition_check: None,
+            close_request: None,
+            last_close_target: CloseTarget::Window,
+            manual_failed: false,
             choosing_path: false,
             message,
             actions,
@@ -262,27 +331,36 @@ impl SettingsView {
             }
             RuntimeEvent::SettingsSaved { id, result } => {
                 let own = self.pending == Some(id);
+                let receipt = self.autosave.finish(id, result.is_ok());
                 if own {
                     self.pending = None;
                 }
                 match result {
                     Ok(config) => {
                         self.config = config;
+                        self.apply_saved_fields(receipt.saved, window, cx);
                         if own {
-                            self.sync_saved_fields(window, cx);
-                            self.message = self.t("设置已保存", "Settings saved").into();
-                            if self.pending_exclusions {
-                                self.services.rebuild_search();
+                            if self.pending_keys.iter().any(|key| key == "quick_actions") {
+                                self.manual_failed = false;
                             }
+                            self.sync_saved_fields(window, cx);
+                        }
+                        if own || receipt.current {
+                            self.saved_feedback();
                         }
                     }
-                    Err(error) if own => self.message = error,
+                    Err(error) if own || receipt.current => {
+                        if own && self.pending_keys.iter().any(|key| key == "quick_actions") {
+                            self.manual_failed = true;
+                        }
+                        self.message = error;
+                    }
                     Err(_) => {}
                 }
                 if own {
-                    self.pending_exclusions = false;
                     self.pending_keys.clear();
                 }
+                self.settle_close(window, cx);
             }
             RuntimeEvent::IndexState(state) => self.index_state = state,
             RuntimeEvent::QuickFinished { id, result, .. } if self.pending_run == Some(id) => {
@@ -307,23 +385,39 @@ impl SettingsView {
         cx.notify();
     }
     fn save(&mut self, changes: Vec<(String, String)>, cx: &mut Context<Self>) {
-        if self.pending.is_some() {
+        if self.pending.is_some() || self.close_request.is_some() {
             return;
         }
-        let exclusions = changes.iter().any(|(key, _)| key == "search_excluded_dirs");
         let keys = changes.iter().map(|(key, _)| key.clone()).collect();
-        match self.services.save_settings(changes) {
+        match self.services.save_settings(changes.clone()) {
             Ok(id) => {
+                for (key, value) in &changes {
+                    self.autosave.accepted(key, value, id);
+                }
                 self.pending = Some(id);
                 self.pending_keys = keys;
-                self.pending_exclusions = exclusions;
                 self.message = self.t("正在保存…", "Saving…").into();
             }
-            Err(error) => self.message = error,
+            Err(error) => {
+                for (key, value) in &changes {
+                    self.autosave.rejected_value(key, value);
+                }
+                self.message = error;
+            }
         }
         cx.notify();
     }
-    fn save_fields(&mut self, cx: &mut Context<Self>) {
+    fn save_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.has_marked_fields(window, cx) {
+            self.message = self
+                .t(
+                    "请先确认中文组字，再保存",
+                    "Confirm the composed text before saving",
+                )
+                .into();
+            cx.notify();
+            return;
+        }
         if self.section == Section::Quick {
             self.save_actions(cx);
             return;
@@ -360,7 +454,7 @@ impl SettingsView {
     }
 
     fn choose_save_directory(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.choosing_path || self.pending.is_some() {
+        if self.choosing_path || self.pending.is_some() || self.close_request.is_some() {
             return;
         }
         self.choosing_path = true;
@@ -417,6 +511,12 @@ impl SettingsView {
             .flex_col()
             .gap_2()
             .child(self.t(label.0, label.1))
+            .when(self.autosave.failed(key), |row| {
+                row.child(
+                    crate::visual::caption(self.t("未保存", "Not saved"), cx)
+                        .text_color(cx.theme().danger),
+                )
+            })
             .child(
                 div()
                     .flex()
@@ -428,7 +528,7 @@ impl SettingsView {
                             self.config.get(key).is_some_and(|current| current == value),
                             cx,
                         )
-                        .disabled(self.pending.is_some())
+                        .disabled(self.controls_locked())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.save(vec![(key.into(), value.into())], cx)
                         }))
@@ -487,8 +587,8 @@ impl Render for SettingsView {
                 Section::Shortcuts,
                 "快捷键",
                 "Shortcuts",
-                "录制按键组合，保存后生效",
-                "Record key combinations, then save to apply",
+                "录制后自动保存；手动输入按 Enter 确认",
+                "Recording saves automatically; Enter confirms typed shortcuts",
             ),
             (
                 "quick",
@@ -550,12 +650,15 @@ impl Render for SettingsView {
                             .child(
                                 Button::new("refresh-index")
                                     .label(self.t("刷新状态", "Refresh status"))
-                                    .disabled(self.index_request.is_some())
+                                    .disabled(
+                                        self.index_request.is_some() || self.controls_locked(),
+                                    )
                                     .on_click(cx.listener(|this, _, _, cx| this.refresh_index(cx))),
                             )
                             .child(
                                 Button::new("rebuild-index")
                                     .label(self.t("重建索引", "Rebuild index"))
+                                    .disabled(self.controls_locked())
                                     .on_click(
                                         cx.listener(|this, _, _, _| this.services.rebuild_search()),
                                     ),
@@ -563,6 +666,7 @@ impl Render for SettingsView {
                             .child(
                                 Button::new("release-index")
                                     .label(self.t("释放索引", "Release index"))
+                                    .disabled(self.controls_locked())
                                     .on_click(
                                         cx.listener(|this, _, _, _| this.services.release_search()),
                                     ),
@@ -575,7 +679,7 @@ impl Render for SettingsView {
                     .child(
                         Textarea::new(&self.excluded)
                             .h(px(150.))
-                            .disabled(self.pending.is_some()),
+                            .disabled(self.controls_locked()),
                     );
             }
             Section::Pin => {
@@ -675,7 +779,16 @@ impl Render for SettingsView {
                                                 .w(px(if compact { 110. } else { 165. }))
                                                 .flex_shrink_0()
                                         })
-                                        .child(self.t(field.label.0, field.label.1)),
+                                        .child(self.t(field.label.0, field.label.1))
+                                        .when(self.autosave.failed(key), |label| {
+                                            label.child(
+                                                crate::visual::caption(
+                                                    self.t("未保存", "Not saved"),
+                                                    cx,
+                                                )
+                                                .text_color(cx.theme().danger),
+                                            )
+                                        }),
                                 )
                                 .child(
                                     div()
@@ -687,7 +800,7 @@ impl Render for SettingsView {
                                             Input::new(&field.state)
                                                 .aria_label(self.t(field.label.0, field.label.1))
                                                 .disabled(
-                                                    self.pending.is_some() || self.choosing_path,
+                                                    self.controls_locked() || self.choosing_path,
                                                 ),
                                         )
                                         .when(self.section == Section::Shortcuts, |row| {
@@ -697,7 +810,7 @@ impl Render for SettingsView {
                                                     .tooltip(
                                                         self.t("录制快捷键", "Record shortcut"),
                                                     )
-                                                    .disabled(self.pending.is_some())
+                                                    .disabled(self.controls_locked())
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
                                                             this.start_recording(
@@ -718,7 +831,7 @@ impl Render for SettingsView {
             content = content.child(
                 Button::new("choose-save-directory")
                     .label(self.t("浏览目录…", "Browse…"))
-                    .disabled(self.pending.is_some() || self.choosing_path)
+                    .disabled(self.controls_locked() || self.choosing_path)
                     .on_click(
                         cx.listener(|this, _, window, cx| this.choose_save_directory(window, cx)),
                     ),
@@ -769,10 +882,11 @@ impl Render for SettingsView {
                                 .ghost()
                                 .w_full()
                                 .justify_start()
-                                .label(self.t(zh, en)),
+                            .label(self.t(zh, en)),
                             self.section == section,
                             cx,
                         )
+                        .disabled(self.close_request.is_some())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.section = section;
                             cx.notify();
@@ -831,6 +945,7 @@ impl Render for SettingsView {
                             .child(
                                 div()
                                     .flex()
+                                    .flex_wrap()
                                     .items_center()
                                     .justify_between()
                                     .gap_2()
@@ -841,24 +956,32 @@ impl Render for SettingsView {
                                     .child(
                                         div()
                                             .flex()
+                                            .flex_wrap()
+                                            .max_w_full()
                                             .gap_2()
                                             .when(can_save, |row| {
                                                 row.child(
                                                     Button::new("save-fields")
                                                         .primary()
                                                         .label(self.t("保存更改", "Save changes"))
-                                                        .disabled(self.pending.is_some())
-                                                        .on_click(cx.listener(|this, _, _, cx| {
-                                                            this.save_fields(cx)
+                                                        .disabled(self.controls_locked())
+                                                        .on_click(cx.listener(|this, _, window, cx| {
+                                                            this.save_fields(window, cx)
                                                         })),
                                                 )
                                             })
+                                            .when(self.manual_failed || self.autosave.has_failures(), |row| row.child(
+                                                Button::new("discard-settings-close")
+                                                    .label(if self.last_close_target == CloseTarget::Application {
+                                                        self.t("放弃未保存并退出", "Discard unsaved changes and quit")
+                                                    } else { self.t("放弃未保存并关闭", "Discard unsaved changes and close") })
+                                                    .disabled(self.pending.is_some() || self.autosave.has_pending())
+                                                    .on_click(cx.listener(|this, _, window, cx| this.discard_and_close(window, cx)))))
                                             .child(
                                                 Button::new("close")
                                                     .label(self.t("关闭", "Close"))
-                                                    .on_click(|_, window, _| {
-                                                        window.remove_window()
-                                                    }),
+                                                    .disabled(self.close_request.is_some())
+                                                    .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))),
                                             ),
                                     ),
                             ),

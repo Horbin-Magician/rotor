@@ -58,8 +58,40 @@ struct ShellState {
     pins: pins::PinWindows,
     monitors: Vec<rotor_runtime::MonitorConfig>,
     fonts: Option<Task<()>>,
+    index_rebuild: Option<Task<()>>,
 }
 impl Global for ShellState {}
+
+fn quit_in_progress(cx: &App) -> bool {
+    cx.global::<ShellState>()
+        .windows
+        .get(&WindowRole::Settings)
+        .and_then(|entry| match &entry.view {
+            WindowView::Settings(view) => view.upgrade(),
+            _ => None,
+        })
+        .is_some_and(|view| view.read(cx).waiting_to_quit())
+}
+
+fn request_quit(cx: &mut App) {
+    if let Some((handle, view)) = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Settings)
+        .and_then(|entry| match &entry.view {
+            WindowView::Settings(view) => Some((entry.window, view.clone())),
+            _ => None,
+        })
+        && handle
+            .update(cx, |_, window, cx| {
+                view.update(cx, |view, cx| view.request_quit(window, cx))
+            })
+            .is_ok_and(|result| result.is_ok())
+    {
+        return;
+    }
+    cx.quit();
+}
 
 /// Retain background warnings for the next settings open and update an already
 /// open settings view without taking focus away from the user's current app.
@@ -142,6 +174,12 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
             }
         });
         let view = cx.new(|cx| rotor_ui::SettingsView::new(config, services, window, cx));
+        let closing = view.downgrade();
+        window.on_window_should_close(cx, move |window, cx| {
+            closing
+                .update(cx, |view, cx| view.request_close(window, cx))
+                .is_err()
+        });
         if let Some(warning) = warning {
             view.update(cx, |view, cx| view.show_message(warning, cx));
         }
@@ -254,7 +292,7 @@ fn show_search(cx: &mut App) -> Result<(), String> {
 fn handle_event(event: RuntimeEvent, cx: &mut App) {
     if matches!(&event, RuntimeEvent::Update(snapshot) if snapshot.phase == rotor_runtime::UpdatePhase::HandedOff)
     {
-        cx.quit();
+        request_quit(cx);
         return;
     }
     if let RuntimeEvent::SettingsCoordination(request) = event {
@@ -339,7 +377,19 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
         let theme_changed = cx.global::<ShellState>().config.get("theme") != config.get("theme");
         let language_changed =
             cx.global::<ShellState>().config.get("language") != config.get("language");
+        let exclusions_changed = cx.global::<ShellState>().config.get("search_excluded_dirs")
+            != config.get("search_excluded_dirs");
         cx.global_mut::<ShellState>().config = config.clone();
+        if exclusions_changed {
+            let services = cx.global::<ShellState>().services.clone();
+            let rebuild = cx.spawn(async move |cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(500))
+                    .await;
+                services.rebuild_search();
+            });
+            cx.global_mut::<ShellState>().index_rebuild = Some(rebuild);
+        }
         if theme_changed {
             apply_theme(config, cx);
         }
@@ -628,6 +678,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             pins: pins::PinWindows::default(),
             monitors: Vec::new(),
             fonts: None,
+            index_rebuild: None,
         });
         let closed = cx.on_window_closed(|cx, id| {
             if cx.try_global::<ShellState>().is_some() {
@@ -664,6 +715,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             pins::stop(cx);
             let state = cx.global_mut::<ShellState>();
             state.fonts = None;
+            state.index_rebuild = None;
             state.commands.close();
             state.system.stop_events();
             state.services.shutdown_with_pin_updates(final_records);
@@ -685,8 +737,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                 match select(command, event).await {
                     Either::Left((Ok(()), _)) => {
                         if let Some(command) = commands.take() {
-                            let quit = matches!(command, Command::Quit);
                             cx.update(|cx| {
+                                // Keep draining runtime coordination while a save
+                                // finishes, but don't begin another tool operation.
+                                if quit_in_progress(cx) && !matches!(command, Command::Quit) {
+                                    return;
+                                }
                                 let command = match command {
                                     Command::Shortcut { key, generation }
                                         if cx
@@ -780,7 +836,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                             eprintln!("Settings: {error}");
                                         }
                                     }
-                                    Command::Quit => cx.quit(),
+                                    Command::Quit => request_quit(cx),
                                     Command::ShowTranslator => {
                                         if let Err(error) = show_translator(cx) {
                                             eprintln!("Translator: {error}");
@@ -814,9 +870,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                             });
-                            if quit {
-                                break;
-                            }
                         }
                     }
                     Either::Right((Ok(event), _)) => cx.update(|cx| handle_event(event, cx)),

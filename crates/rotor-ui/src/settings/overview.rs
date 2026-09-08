@@ -129,12 +129,13 @@ impl SettingsView {
                 .child(
                     Button::new("refresh-overview")
                         .label(self.t("刷新概览", "Refresh overview"))
-                        .disabled(self.overview_request.is_some())
+                        .disabled(self.overview_request.is_some() || self.controls_locked())
                         .on_click(cx.listener(|this, _, _, cx| this.refresh_overview(cx))),
                 )
                 .child(
                     Button::new("project-home")
                         .label(self.t("项目主页", "Project home"))
+                        .disabled(self.controls_locked())
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Err(error) = this
                                 .services
@@ -209,6 +210,7 @@ impl SettingsView {
                         .child(
                             Button::new("open-data-directory")
                                 .label(self.t("打开数据目录", "Open data directory"))
+                                .disabled(self.controls_locked())
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     if let Err(error) = this.services.open_data_directory() {
                                         this.message = error;
@@ -274,7 +276,7 @@ impl SettingsView {
                             } else {
                                 self.t("启用登录启动", "Enable login startup")
                             })
-                            .disabled(self.startup_request.is_some())
+                            .disabled(self.startup_request.is_some() || self.controls_locked())
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 match this.services.set_autostart(!enabled) {
                                     Ok(id) => this.startup_request = Some(id),

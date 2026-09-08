@@ -68,12 +68,30 @@ impl ActionFields {
     }
 }
 impl SettingsView {
+    pub(super) fn action_has_marked_text(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.actions.iter().any(|action| {
+            action.name.update(cx, |input, cx| {
+                input.marked_text_range(window, cx).is_some()
+            }) || action.shortcut.update(cx, |input, cx| {
+                input.marked_text_range(window, cx).is_some()
+            }) || action.command.update(cx, |input, cx| {
+                input.marked_text_range(window, cx).is_some()
+            })
+        })
+    }
     pub(super) fn start_recording(
         &mut self,
         target: Recording,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.controls_locked() {
+            return;
+        }
         self.recording = Some(target);
         self.services.set_shortcut_recording(true);
         self.focus.focus(window, cx);
@@ -131,6 +149,10 @@ impl SettingsView {
             return;
         };
         self.services.set_shortcut_recording(false);
+        let setting_key = match &target {
+            Recording::Setting(key) => Some(*key),
+            Recording::Action(_) => None,
+        };
         let field = match target {
             Recording::Setting(key) => self
                 .fields
@@ -146,20 +168,16 @@ impl SettingsView {
         if let Some(field) = field {
             field.update(cx, |field, cx| field.set_value(value, window, cx));
         }
-        self.message = self
-            .t("已录入，保存后生效", "Recorded; save to apply")
-            .into();
+        if let Some(key) = setting_key {
+            self.observe_field(key, true, window, cx);
+        } else {
+            self.message = self
+                .t("已录入，保存后生效", "Recorded; save to apply")
+                .into();
+        }
         cx.notify();
     }
     pub(super) fn sync_saved_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for field in &self.fields {
-            if self.pending_keys.iter().any(|key| key == field.key) {
-                let value = self.config.get(field.key).cloned().unwrap_or_default();
-                field
-                    .state
-                    .update(cx, |field, cx| field.set_value(value, window, cx));
-            }
-        }
         if self.pending_keys.iter().any(|key| key == "quick_actions")
             && let Ok(actions) = self.services.quick_actions()
         {
@@ -175,21 +193,25 @@ impl SettingsView {
         self.submit_actions(actions, cx);
     }
     fn submit_actions(&mut self, actions: Vec<QuickAction>, cx: &mut Context<Self>) {
-        if self.pending.is_some() {
+        if self.controls_locked() {
             return;
         }
         match self.services.save_quick_actions(actions) {
             Ok(id) => {
+                self.manual_failed = false;
                 self.pending = Some(id);
                 self.pending_keys = vec!["quick_actions".into()];
                 self.message = self.t("正在保存…", "Saving…").into();
             }
-            Err(error) => self.message = error,
+            Err(error) => {
+                self.manual_failed = true;
+                self.message = error;
+            }
         }
         cx.notify();
     }
     fn change_action(&mut self, change: ActionChange, cx: &mut Context<Self>) {
-        if self.pending.is_some() {
+        if self.controls_locked() {
             return;
         }
         let saved = match self.services.quick_actions() {
@@ -243,7 +265,7 @@ impl SettingsView {
         }
     }
     fn cancel_action_edit(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pending.is_some() || self.editing_action.as_deref() != Some(id) {
+        if self.controls_locked() || self.editing_action.as_deref() != Some(id) {
             return;
         }
         let saved = match self.services.quick_actions() {
@@ -254,7 +276,7 @@ impl SettingsView {
             }
         };
         if let Some(index) = self.actions.iter().position(|action| action.id == id) {
-            if let Some(action) = saved.into_iter().find(|action| action.id == id) {
+            if let Some(action) = saved.iter().find(|action| action.id == id).cloned() {
                 self.actions[index] = ActionFields::new(action, window, cx);
             } else {
                 self.actions.remove(index);
@@ -263,7 +285,20 @@ impl SettingsView {
         self.editing_action = None;
         self.recording = None;
         self.services.set_shortcut_recording(false);
-        self.message = self.t("已取消编辑", "Edit cancelled").into();
+        if self
+            .actions
+            .iter()
+            .map(|action| action.value(cx))
+            .collect::<Vec<_>>()
+            == saved
+        {
+            self.manual_failed = false;
+        }
+        if self.manual_failed || self.autosave.has_failures() {
+            self.saved_feedback();
+        } else {
+            self.message = self.t("已取消编辑", "Edit cancelled").into();
+        }
         self.focus.focus(window, cx);
         cx.notify();
     }
@@ -291,7 +326,7 @@ impl SettingsView {
         cx.notify();
     }
     pub(super) fn action_editor(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let disabled = self.pending.is_some();
+        let disabled = self.controls_locked();
         let saved = self.services.quick_actions().unwrap_or_default();
         div()
             .flex()

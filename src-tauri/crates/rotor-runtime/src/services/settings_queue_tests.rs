@@ -179,3 +179,95 @@ fn a_full_queue_can_still_replace_its_automatic_tail() {
         .unwrap();
     assert_eq!(services.settings()["fixture_value"], "latest automatic");
 }
+
+#[test]
+fn automatic_shortcut_save_is_not_complete_until_the_ui_confirms_the_transaction() {
+    let (_directory, _config, services, events) = setup();
+    services.coordinate_shortcuts(true);
+    let old = services.settings()["shortcut_search"].clone();
+    let id = services
+        .save_settings_coalesced(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
+        .unwrap();
+    let receive = || {
+        services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        })
+    };
+    match receive() {
+        RuntimeEvent::SettingsCoordination(SettingsCoordination::Prepare {
+            id: received,
+            candidate,
+            reply,
+        }) => {
+            assert_eq!(received, id);
+            assert_eq!(candidate["shortcut_search"], "Ctrl+Shift+X");
+            assert_eq!(services.settings()["shortcut_search"], old);
+            assert!(events.try_recv().is_err());
+            reply.send(Ok(())).unwrap();
+        }
+        _ => panic!("expected UI shortcut preparation"),
+    }
+    match receive() {
+        RuntimeEvent::SettingsCoordination(SettingsCoordination::Finish {
+            id: received,
+            committed,
+            reply,
+        }) => {
+            assert_eq!(received, id);
+            assert!(committed);
+            assert!(events.try_recv().is_err());
+            reply.send(Ok(())).unwrap();
+        }
+        _ => panic!("expected UI transaction completion"),
+    }
+    match receive() {
+        RuntimeEvent::SettingsSaved {
+            id: received,
+            result,
+        } => {
+            assert_eq!(received, id);
+            assert_eq!(result.unwrap()["shortcut_search"], "Ctrl+Shift+X");
+        }
+        _ => panic!("expected save receipt after both acknowledgements"),
+    }
+}
+
+#[test]
+fn local_shortcut_validation_is_atomic_and_allows_explicit_disabling() {
+    let (_directory, _config, services, events) = setup();
+    let before = services.settings();
+    services
+        .save_settings_coalesced(vec![
+            ("shortcut_pinwin_save".into(), "Ctrl+".into()),
+            ("fixture_value".into(), "must not commit".into()),
+        ])
+        .unwrap();
+    let receive = || {
+        services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        })
+    };
+    assert!(matches!(
+        receive(),
+        RuntimeEvent::SettingsSaved { result: Err(_), .. }
+    ));
+    assert_eq!(services.settings(), before);
+    for (value, expected) in [("  Ctrl+KeyS  ", "Ctrl+KeyS"), ("  ", "")] {
+        services
+            .save_settings_coalesced(vec![("shortcut_pinwin_save".into(), value.into())])
+            .unwrap();
+        match receive() {
+            RuntimeEvent::SettingsSaved {
+                result: Ok(snapshot),
+                ..
+            } => assert_eq!(snapshot["shortcut_pinwin_save"], expected),
+            _ => panic!("expected normalized local shortcut save"),
+        }
+    }
+}
