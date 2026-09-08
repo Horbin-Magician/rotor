@@ -2,6 +2,8 @@
 
 ## 当前执行范围（2026-09-08 用户调整）
 
+翻译失败路径继续见 [流式处理核验](evidence/windows-translation-stream.md)：已修复 DeepSeek 提前 EOF 和异常结束被当作成功的问题，回归测试通过；真实窗口/三引擎联合验收仍未关闭。
+
 最新 Windows 续作见 [续作核验](evidence/windows-ui-followup.md)：上轮合成贴图未出现已定位为测试记录的 `image_rect` 原点错误；修正夹具通过真实 PinStore 只读检查，窗口恢复验收仍待完成。
 
 概览索引详情及后台警告的即时展示已补齐，13 项 UI 测试、严格 clippy、release 构建和 workspace 格式检查通过。用户授权后已恢复部分窗口核验，确认单张合成贴图恢复可见，并采集两屏 200% DPI 的真实拓扑与翻译空输入截图；随后用户再次以 Esc 停止桌面操作。翻译结果、完整贴图操作和其余 Windows 验收仍未关闭。

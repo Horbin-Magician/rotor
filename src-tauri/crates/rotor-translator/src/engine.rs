@@ -2,6 +2,10 @@ use std::error::Error;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+mod stream;
+#[cfg(test)]
+use stream::consume_deepseek_stream_line;
+use stream::DeepSeekStream;
 
 const GOOGLE_TRANSLATE_URL: &str = "https://translate.googleapis.com/translate_a/single";
 const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/chat/completions";
@@ -171,34 +175,13 @@ where
         to: to.to_string(),
     });
 
-    let mut translated = String::new();
-    let mut line_buffer = Vec::new();
-    let mut stream_done = false;
-
+    let mut stream = DeepSeekStream::default();
     while let Some(chunk) = response.chunk().await? {
-        line_buffer.extend_from_slice(&chunk);
-
-        while let Some(newline) = line_buffer.iter().position(|byte| *byte == b'\n') {
-            let line = line_buffer.drain(..=newline).collect::<Vec<_>>();
-            if consume_deepseek_stream_line(&line, &mut translated, on_event)? {
-                stream_done = true;
-                break;
-            }
-        }
-
-        if stream_done {
+        if stream.push(&chunk, on_event)? {
             break;
         }
     }
-
-    if !stream_done && !line_buffer.is_empty() {
-        consume_deepseek_stream_line(&line_buffer, &mut translated, on_event)?;
-    }
-
-    let translated = translated.trim().to_string();
-    if translated.is_empty() {
-        return Err("Unexpected DeepSeek response format".into());
-    }
+    let translated = stream.finish(on_event)?;
 
     Ok(TranslateResult {
         text: text.to_string(),
@@ -215,45 +198,6 @@ fn resolve_deepseek_model(configured_model: &str) -> &str {
     } else {
         configured_model
     }
-}
-
-fn consume_deepseek_stream_line<F>(
-    line: &[u8],
-    translated: &mut String,
-    on_event: &F,
-) -> Result<bool, Box<dyn Error + Send + Sync>>
-where
-    F: Fn(TranslateStreamEvent) + Send + Sync,
-{
-    let line = std::str::from_utf8(line)?.trim_end_matches(['\r', '\n']);
-    let Some(data) = line.strip_prefix("data:").map(str::trim) else {
-        return Ok(false);
-    };
-
-    if data == "[DONE]" {
-        return Ok(true);
-    }
-
-    let payload: serde_json::Value = serde_json::from_str(data)?;
-    if let Some(message) = payload
-        .pointer("/error/message")
-        .and_then(|message| message.as_str())
-    {
-        return Err(format!("DeepSeek translate stream failed: {message}").into());
-    }
-
-    if let Some(content) = payload
-        .pointer("/choices/0/delta/content")
-        .and_then(|content| content.as_str())
-        .filter(|content| !content.is_empty())
-    {
-        translated.push_str(content);
-        on_event(TranslateStreamEvent::Delta {
-            content: content.to_string(),
-        });
-    }
-
-    Ok(false)
 }
 
 fn target_language_name(language: &str) -> String {
