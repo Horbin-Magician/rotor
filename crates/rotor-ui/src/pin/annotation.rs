@@ -265,7 +265,7 @@ impl PinView {
             });
         }));
     }
-    fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
         self.canvas.tool = tool;
         self.canvas.draft = None;
         self.canvas.editor = None;

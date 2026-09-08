@@ -1,5 +1,6 @@
 use super::*;
 use crate::shortcut::recorded_key;
+use gpui_kit::component::IconName;
 use rotor_runtime::QuickAction;
 use std::{
     sync::atomic::{AtomicU64, Ordering},
@@ -201,6 +202,7 @@ impl SettingsView {
             window,
             cx,
         ));
+        self.editing_action = self.actions.last().map(|action| action.id.clone());
         cx.notify();
     }
     pub(super) fn action_editor(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -231,6 +233,7 @@ impl SettingsView {
                                     .into_iter()
                                     .map(|action| ActionFields::new(action, window, cx))
                                     .collect();
+                                this.editing_action = None;
                                 this.message = this
                                     .t("默认值已载入，保存后生效", "Defaults loaded; save to apply")
                                     .into();
@@ -241,82 +244,141 @@ impl SettingsView {
             .children(self.actions.iter().enumerate().map(|(index, action)| {
                 let id = action.id.clone();
                 let record_id = id.clone();
+                let editing = self.editing_action.as_ref() == Some(&id);
+                let edit_id = id.clone();
                 let normalized = rotor_runtime::quick::normalize_actions(vec![action.value(cx)])
                     .ok()
                     .and_then(|mut actions| actions.pop());
                 let runnable = normalized
                     .as_ref()
                     .is_some_and(|draft| draft.enabled && saved.iter().any(|saved| saved == draft));
+                let controls = div()
+                    .flex()
+                    .gap_1()
+                    .items_center()
+                    .child(
+                        Button::new(("toggle-action", index))
+                            .selected(action.enabled)
+                            .toggled(action.enabled)
+                            .compact()
+                            .label(if action.enabled {
+                                self.t("启用", "On")
+                            } else {
+                                self.t("停用", "Off")
+                            })
+                            .disabled(disabled)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if let Some(action) = this.actions.get_mut(index) {
+                                    action.enabled = !action.enabled;
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new(("run-action", index))
+                            .icon(IconName::Play)
+                            .compact()
+                            .accessibility_label(self.t("运行已保存操作", "Run saved action"))
+                            .tooltip(self.t("运行已保存操作", "Run saved action"))
+                            .disabled(disabled || !runnable || self.pending_run.is_some())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                match this.services.run_quick_action(id.clone()) {
+                                    Ok(id) => this.pending_run = Some(id),
+                                    Err(error) => this.message = error,
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new(("edit-action", index))
+                            .icon(IconName::Settings2)
+                            .compact()
+                            .accessibility_label(self.t("编辑操作", "Edit action"))
+                            .tooltip(self.t("编辑操作", "Edit action"))
+                            .selected(editing)
+                            .disabled(disabled)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.editing_action = (!editing).then(|| edit_id.clone());
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new(("remove-action", index))
+                            .icon(IconName::Delete)
+                            .compact()
+                            .accessibility_label(self.t("删除操作", "Delete action"))
+                            .tooltip(self.t("删除操作", "Delete action"))
+                            .disabled(disabled)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if index < this.actions.len() {
+                                    let removed = this.actions.remove(index);
+                                    if this.editing_action.as_ref() == Some(&removed.id) {
+                                        this.editing_action = None;
+                                    }
+                                }
+                                cx.notify();
+                            })),
+                    );
                 crate::visual::card(cx)
-                    .child(crate::visual::caption(self.t("名称", "Name"), cx))
-                    .child(Input::new(&action.name).disabled(disabled))
-                    .child(crate::visual::caption(self.t("快捷键", "Shortcut"), cx))
+                    .p_3()
                     .child(
                         div()
                             .flex()
+                            .items_center()
                             .gap_2()
-                            .child(Input::new(&action.shortcut).disabled(disabled))
                             .child(
-                                Button::new(("record-action", index))
-                                    .label(self.t("录制", "Record"))
-                                    .disabled(disabled)
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.start_recording(
-                                            Recording::Action(record_id.clone()),
-                                            window,
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .truncate()
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child(action.name.read(cx).value()),
+                                    )
+                                    .child(
+                                        crate::visual::caption(
+                                            action.shortcut.read(cx).value(),
                                             cx,
                                         )
-                                    })),
-                            ),
-                    )
-                    .child(crate::visual::caption(self.t("命令", "Command"), cx))
-                    .child(Textarea::new(&action.command).h(px(72.)).disabled(disabled))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_2()
-                            .child(
-                                Button::new(("toggle-action", index))
-                                    .selected(action.enabled)
-                                    .toggled(action.enabled)
-                                    .label(if action.enabled {
-                                        self.t("已启用", "Enabled")
-                                    } else {
-                                        self.t("已停用", "Disabled")
-                                    })
-                                    .disabled(disabled)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        if let Some(action) = this.actions.get_mut(index) {
-                                            action.enabled = !action.enabled;
-                                        }
-                                        cx.notify();
-                                    })),
+                                        .truncate(),
+                                    ),
                             )
-                            .child(
-                                Button::new(("run-action", index))
-                                    .label(self.t("运行已保存操作", "Run saved action"))
-                                    .disabled(disabled || !runnable || self.pending_run.is_some())
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        match this.services.run_quick_action(id.clone()) {
-                                            Ok(id) => this.pending_run = Some(id),
-                                            Err(error) => this.message = error,
-                                        }
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                Button::new(("remove-action", index))
-                                    .label(self.t("删除", "Delete"))
-                                    .disabled(disabled)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        if index < this.actions.len() {
-                                            this.actions.remove(index);
-                                        }
-                                        cx.notify();
-                                    })),
-                            ),
+                            .child(controls),
                     )
+                    .when(!editing, |card| {
+                        card.child(
+                            crate::visual::caption(action.command.read(cx).value(), cx).truncate(),
+                        )
+                    })
+                    .when(editing, |card| {
+                        card.child(crate::visual::caption(self.t("名称", "Name"), cx))
+                            .child(Input::new(&action.name).disabled(disabled))
+                            .child(crate::visual::caption(self.t("快捷键", "Shortcut"), cx))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_2()
+                                    .child(Input::new(&action.shortcut).disabled(disabled))
+                                    .child(
+                                        Button::new(("record-action", index))
+                                            .label(self.t("录制", "Record"))
+                                            .disabled(disabled)
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.start_recording(
+                                                    Recording::Action(record_id.clone()),
+                                                    window,
+                                                    cx,
+                                                )
+                                            })),
+                                    ),
+                            )
+                            .child(crate::visual::caption(self.t("命令", "Command"), cx))
+                            .child(Textarea::new(&action.command).h(px(72.)).disabled(disabled))
+                    })
             }))
     }
 }

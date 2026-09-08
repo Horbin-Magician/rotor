@@ -15,6 +15,7 @@ pub struct TranslatorView {
     services: Arc<Services>,
     config: Config,
     input: Entity<TextareaState>,
+    input_height: Pixels,
     active: Option<OperationId>,
     translated: String,
     message: String,
@@ -30,6 +31,7 @@ impl TranslatorView {
         let input = cx.new(|cx| TextareaState::new(window, cx).submit_on_enter(true));
         let input_events = cx.subscribe_in(&input, window, |this, _, event, window, cx| {
             if matches!(event, InputEvent::Change) {
+                this.resize(window, cx);
                 cx.notify();
             }
             if matches!(event, InputEvent::PressEnter { shift: false, .. }) {
@@ -46,10 +48,11 @@ impl TranslatorView {
             }
         });
         input.update(cx, |input, cx| input.focus(window, cx));
-        Self {
+        let mut view = Self {
             config: services.settings(),
             services,
             input,
+            input_height: px(44.),
             active: None,
             translated: String::new(),
             message: String::new(),
@@ -59,7 +62,9 @@ impl TranslatorView {
             suppress_enter: false,
             _input_events: input_events,
             _activation: activation,
-        }
+        };
+        view.resize(window, cx);
+        view
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
         if rotor_common::i18n::language_for_config(&self.config) == "zh-CN" {
@@ -71,6 +76,58 @@ impl TranslatorView {
     fn cancel(&mut self) {
         if let Some(id) = self.active.take() {
             self.services.cancel_translation_request(id);
+        }
+    }
+    fn resize(&mut self, window: &mut Window, cx: &App) {
+        let width = (window.viewport_size().width - px(56.)).max(px(80.));
+        let measure = |text: SharedString, max_lines: usize| {
+            if text.is_empty() {
+                return px(0.);
+            }
+            window
+                .text_system()
+                .shape_text(
+                    text.clone(),
+                    px(14.),
+                    &[TextRun {
+                        len: text.len(),
+                        font: font(cx.theme().font_family.clone()),
+                        ..Default::default()
+                    }],
+                    Some(width),
+                    Some(max_lines),
+                )
+                .map(|lines| {
+                    lines
+                        .iter()
+                        .map(|line| line.size(px(23.)).height)
+                        .sum::<Pixels>()
+                })
+                .unwrap_or(px(max_lines as f32 * 23.))
+        };
+        self.input_height =
+            (measure(self.input.read(cx).value(), 4) + px(18.)).clamp(px(44.), px(100.));
+        let result = if self.active.is_some() || !self.translated.is_empty() {
+            (measure(self.translated.clone().into(), 14) + px(56.)).clamp(px(88.), px(320.))
+                + px(8.)
+        } else {
+            px(0.)
+        };
+        let status = [&self.message, &self.warning]
+            .into_iter()
+            .filter(|text| !text.is_empty())
+            .map(|text| measure(text.clone().into(), 3).clamp(px(23.), px(64.)) + px(8.))
+            .sum::<Pixels>();
+        let desired = (px(92.) + self.input_height + result + status).min(px(520.));
+        let available = window
+            .display(cx)
+            .map(|display| {
+                (display.visible_bounds().bottom() - window.bounds().top()).max(px(136.))
+            })
+            .unwrap_or(desired);
+        let height = desired.min(available);
+        if (window.viewport_size().height - height).abs() > px(1.) {
+            window.resize(size(window.viewport_size().width, height));
         }
     }
     pub fn begin_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -85,6 +142,7 @@ impl TranslatorView {
         self.languages = None;
         self.copied = false;
         self.suppress_enter = false;
+        self.resize(window, cx);
         cx.notify();
     }
     pub fn translate_text(
@@ -119,9 +177,15 @@ impl TranslatorView {
             }
             Err(error) => self.message = error,
         }
+        self.resize(window, cx);
         cx.notify();
     }
-    pub fn handle_event(&mut self, event: &RuntimeEvent, cx: &mut Context<Self>) {
+    pub fn handle_event(
+        &mut self,
+        event: &RuntimeEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match event {
             RuntimeEvent::Translation { id, event } if self.active == Some(*id) => match event {
                 TranslateStreamEvent::Started { from, to, .. } => {
@@ -149,6 +213,7 @@ impl TranslatorView {
             } => self.config = config.clone(),
             _ => return,
         }
+        self.resize(window, cx);
         cx.notify();
     }
 }
@@ -164,8 +229,8 @@ impl Render for TranslatorView {
             .flex()
             .flex_col()
             .size_full()
-            .p_4()
-            .gap_3()
+            .p_3()
+            .gap_2()
             .text_sm()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -209,7 +274,7 @@ impl Render for TranslatorView {
                         cx,
                     )),
             )
-            .child(Textarea::new(&self.input).h(px(88.)))
+            .child(Textarea::new(&self.input).h(self.input_height))
             .child(
                 div()
                     .flex()
@@ -228,9 +293,10 @@ impl Render for TranslatorView {
                             .icon(IconName::Pause)
                             .label(self.t("停止", "Stop"))
                             .disabled(self.active.is_none())
-                            .on_click(cx.listener(|this, _, _, cx| {
+                            .on_click(cx.listener(|this, _, window, cx| {
                                 this.cancel();
                                 this.message.clear();
+                                this.resize(window, cx);
                                 cx.notify();
                             })),
                     )
@@ -256,26 +322,31 @@ impl Render for TranslatorView {
                             })),
                     ),
             )
-            .child(
-                div()
-                    .id("translation-result")
-                    .flex_1()
-                    .min_h_0()
-                    .p_4()
-                    .rounded_lg()
-                    .bg(cx.theme().muted)
-                    .overflow_y_scroll()
-                    .children(self.languages.as_ref().map(|(from, to)| {
-                        crate::visual::caption(format!("{from} → {to}"), cx).mb_2()
-                    }))
-                    .child(div().line_height(relative(1.65)).child(
-                        if self.translated.is_empty() {
-                            self.t("译文将显示在这里", "Your translation will appear here")
-                                .to_owned()
-                        } else {
-                            self.translated.clone()
-                        },
-                    )),
+            .when(
+                self.active.is_some() || !self.translated.is_empty(),
+                |root| {
+                    root.child(
+                        div()
+                            .id("translation-result")
+                            .flex_1()
+                            .min_h_0()
+                            .p_4()
+                            .rounded_lg()
+                            .bg(cx.theme().muted)
+                            .overflow_y_scroll()
+                            .children(self.languages.as_ref().map(|(from, to)| {
+                                crate::visual::caption(format!("{from} → {to}"), cx).mb_2()
+                            }))
+                            .child(div().text_size(px(14.)).line_height(relative(1.65)).child(
+                                if self.translated.is_empty() {
+                                    self.t("译文将显示在这里", "Your translation will appear here")
+                                        .to_owned()
+                                } else {
+                                    self.translated.clone()
+                                },
+                            )),
+                    )
+                },
             )
             .when(!self.message.is_empty(), |root| {
                 root.child(

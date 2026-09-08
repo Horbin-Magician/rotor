@@ -78,3 +78,25 @@ Windows computer-use 已初始化并两次列举窗口。启动已安装 `C:/Pro
 ## 原生依赖链 lint 收敛
 
 `rotor-platform` 的安装资源指针对齐检查改用 `is_multiple_of(2)`，`rotor-searcher` 的缺失父目录返回改用 `?`，均保持原有条件与返回语义。包含业务依赖的 `cargo clippy -p rotor-desktop -p rotor-ui --all-targets -- -D warnings` 通过，前述依赖 lint 阻断已消除。
+
+## 旧壳实际对照与第二批布局修正
+
+旧壳使用当前保留的 Tauri/Vue 源码重新构建，放在 `target/legacy-ui-baseline`，资源来自仓库 assets，资料目录为 `target/legacy-ui-profile`。使用既有 `ROTOR_SIMULATE_SHORTCUT_CONFLICT=1` 钩子打开设置，取样时提示已消退；没有安装或修改正式用户资料。它证明保留源码的旧 UI 行为，不冒充未经修改的 v2.6.0 正式安装产物。旧设置默认 500×400，原生默认 820×600；当前截图尚不是同尺寸最终对照。
+
+| 旧壳实际截图 | 对照结果 |
+|---|---|
+| [通用](ui-windows/legacy-general-zh-dark-source.png) | 紧凑标签/控件行；原生快捷键改为同一卡片中的紧凑行 |
+| [概览](ui-windows/legacy-overview-zh-dark-source.png) | 有内存、索引、权限和磁盘详情；原生概览的索引详情覆盖仍需补齐 |
+| [快捷操作](ui-windows/legacy-quick-zh-dark-source.png) | 紧凑列表、按需编辑；原生改为常态摘要与展开编辑 |
+| [翻译设置](ui-windows/legacy-translator-settings-zh-dark-source.png) | 只显示所选引擎的参数；原生已按引擎筛选，保存只提交当前可见字段 |
+| [贴图设置](ui-windows/legacy-pin-settings-zh-dark-source.png) | 路径/缩放与快捷键入口清楚；原生贴图工具改为底部居中主栏，标注时才展开画布工具 |
+| [搜索空输入](ui-windows/legacy-search-empty-source.png) | 紧凑搜索输入，无结果内容时不占大面积 |
+| [翻译失败](ui-windows/legacy-translation-rate-limit-source.png) | 固定样例 `Rotor makes everyday tasks easier.` 返回 Google 429；保存错误反馈证据，未反复请求端点 |
+
+原生翻译按实际文字换行测量输入/结果高度，空输入不展示空结果大面板，长结果限制窗口高度后独立滚动；输入、取消和后台结果都会刷新尺寸。窗口仍保留创建时的屏幕内放置策略，实际屏幕边缘/IME 场景尚待验证。
+
+[原生紧凑快捷键](ui-windows/native-shortcuts-zh-light-dense.png) 的 820×600 客户区实际可见全部八项与固定保存区；[原生快捷操作摘要](ui-windows/native-quick-collapsed-fixture.png) 已实际呈现。命令是禁用的合成示例，没有执行。
+
+新增 [本地翻译响应夹具](../fixtures/translation_server.py)，只监听 `127.0.0.1:18765`，提供普通/long/slow/error 响应；健康检查通过。它供真实 UI 的传输、长文、取消与失败验收使用，不能代替 Google/DeepSeek 服务验收。新隔离 profile 为 `target/ui-acceptance-fixture`，输入图片是既有合成 640×240 标定图；本轮尚未观察到其贴图恢复窗口，原因未确定。
+
+`cargo test --workspace --exclude rotor --locked` 全部通过；第二批 UI 改动经 native build、native check 和包含依赖的严格 clippy 检查通过。最后新增的贴图恢复诊断计数和后台日志逐条 flush 仅经 clippy 类型检查，尚未重启验证；日志不包含图片内容或配置值。用户随后按物理 Escape 停止 Computer Use，本轮终止桌面输入；其余 UI/Windows 验收继续未关闭。

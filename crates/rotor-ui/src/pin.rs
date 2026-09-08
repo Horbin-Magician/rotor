@@ -524,6 +524,12 @@ impl Render for PinView {
         self.ensure_canvas(window, cx);
         let busy = self.busy();
         let export_disabled = busy || !self.canvas.ready() || self.crop_drag.is_some();
+        let toolbar_width = px(if self.canvas.editing() || self.ocr.active {
+            440.
+        } else {
+            260.
+        })
+        .min(window.viewport_size().width);
         div()
             .id("pin")
             .track_focus(&self.focus)
@@ -545,13 +551,15 @@ impl Render for PinView {
                         div()
                             .id("pin-toolbar")
                             .absolute()
-                            .top_0()
-                            .left_0()
+                            .bottom_0()
+                            .left((window.viewport_size().width - toolbar_width) / 2.)
+                            .w(toolbar_width)
                             .flex()
                             .flex_col()
                             .max_w_full()
                             .max_h(window.viewport_size().height)
                             .overflow_y_scroll()
+                            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                             .p_1()
                             .gap_1()
                             .rounded_lg()
@@ -566,6 +574,34 @@ impl Render for PinView {
                                     .flex()
                                     .flex_wrap()
                                     .gap_1()
+                                    .child(
+                                        Button::new("pin-annotate")
+                                            .label(self.t("标注", "Annotate"))
+                                            .tooltip(
+                                                self.t("画笔、形状与文字", "Pen, shapes and text"),
+                                            )
+                                            .selected(self.canvas.editing())
+                                            .compact()
+                                            .disabled(export_disabled)
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.clear_ocr(window);
+                                                this.set_tool(annotation::Tool::Pen, window, cx);
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("pin-ocr")
+                                            .label("OCR")
+                                            .tooltip(self.t(
+                                                "识别图片中的文字",
+                                                "Recognize text in this image",
+                                            ))
+                                            .selected(self.ocr.active)
+                                            .compact()
+                                            .disabled(export_disabled)
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.start_ocr(window, cx)
+                                            })),
+                                    )
                                     .child(
                                         Button::new("pin-save")
                                             .icon(IconName::ArrowDown)
@@ -623,21 +659,10 @@ impl Render for PinView {
                                             })),
                                     ),
                             )
-                            .child(
-                                Button::new("pin-ocr")
-                                    .label("OCR")
-                                    .tooltip(
-                                        self.t("识别图片中的文字", "Recognize text in this image"),
-                                    )
-                                    .selected(self.ocr.active)
-                                    .compact()
-                                    .disabled(export_disabled)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.start_ocr(window, cx)
-                                    })),
-                            )
                             .when(self.ocr.active, |root| root.child(self.ocr_tools(cx)))
-                            .when(!self.ocr.active, |root| root.child(self.canvas_tools(cx)))
+                            .when(!self.ocr.active && self.canvas.editing(), |root| {
+                                root.child(self.canvas_tools(cx))
+                            })
                             .when(!self.message.is_empty(), |toolbar| {
                                 toolbar.child(div().text_xs().child(self.message.clone()))
                             })

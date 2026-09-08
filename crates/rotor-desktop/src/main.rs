@@ -343,16 +343,18 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
             }
         }
     }
-    if let Some(view) = cx
+    if let Some((handle, view)) = cx
         .global::<ShellState>()
         .windows
         .get(&WindowRole::Translator)
         .and_then(|entry| match &entry.view {
-            WindowView::Translator(view) => Some(view.clone()),
+            WindowView::Translator(view) => Some((entry.window, view.clone())),
             _ => None,
         })
     {
-        let _ = view.update(cx, |view, cx| view.handle_event(&event, cx));
+        let _ = handle.update(cx, |_, window, cx| {
+            let _ = view.update(cx, |view, cx| view.handle_event(&event, window, cx));
+        });
     }
     if let Some((handle, view)) = cx
         .global::<ShellState>()

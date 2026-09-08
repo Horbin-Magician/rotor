@@ -63,6 +63,7 @@ pub struct SettingsView {
     choosing_path: bool,
     message: String,
     actions: Vec<actions::ActionFields>,
+    editing_action: Option<String>,
     recording: Option<actions::Recording>,
     pending_keys: Vec<String>,
     pending_run: Option<OperationId>,
@@ -216,6 +217,7 @@ impl SettingsView {
             choosing_path: false,
             message,
             actions,
+            editing_action: None,
             recording: None,
             pending_keys: Vec::new(),
             pending_run: None,
@@ -327,11 +329,27 @@ impl SettingsView {
         } else {
             self.fields
                 .iter()
-                .filter(|field| field.section == self.section)
+                .filter(|field| self.field_visible(field))
                 .map(|field| (field.key.into(), field.state.read(cx).value().to_string()))
                 .collect()
         };
         self.save(changes, cx);
+    }
+
+    fn field_visible(&self, field: &Field) -> bool {
+        if field.section != self.section {
+            return false;
+        }
+        let engine = self
+            .config
+            .get("translator_engine")
+            .map(String::as_str)
+            .unwrap_or("google");
+        match field.key {
+            "translator_deepseek_api_key" | "translator_deepseek_model" => engine == "deepseek",
+            "translator_custom_url" | "translator_custom_key" => engine == "custom",
+            _ => true,
+        }
     }
 
     fn choose_save_directory(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -414,6 +432,8 @@ impl SettingsView {
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let compact = window.viewport_size().width < px(760.);
+        let can_save = matches!(self.section, Section::Quick | Section::Search)
+            || self.fields.iter().any(|field| self.field_visible(field));
         let sections = [
             (
                 "overview",
@@ -645,53 +665,68 @@ impl Render for SettingsView {
                 content = content.child(self.action_editor(cx));
             }
         }
-        content = content.children(
-            self.fields
-                .iter()
-                .filter(|field| field.section == self.section)
-                .map(|field| {
-                    let key = field.key;
-                    crate::visual::card(cx)
-                        .p_3()
-                        .when(self.section == Section::Shortcuts && !compact, |row| {
-                            row.flex_row().items_center()
-                        })
-                        .gap_2()
-                        .child(
-                            div()
-                                .when(self.section == Section::Shortcuts && !compact, |label| {
-                                    label.w(px(165.)).flex_shrink_0()
-                                })
-                                .child(self.t(field.label.0, field.label.1)),
-                        )
-                        .child(
+        if self.fields.iter().any(|field| self.field_visible(field)) {
+            content = content.child(
+                crate::visual::card(cx).gap_3().children(
+                    self.fields
+                        .iter()
+                        .filter(|field| self.field_visible(field))
+                        .map(|field| {
+                            let key = field.key;
                             div()
                                 .flex()
-                                .flex_1()
+                                .flex_col()
                                 .min_w_0()
+                                .when(self.section == Section::Shortcuts, |row| {
+                                    row.flex_row().items_center()
+                                })
                                 .gap_2()
                                 .child(
-                                    Input::new(&field.state)
-                                        .disabled(self.pending.is_some() || self.choosing_path),
+                                    div()
+                                        .when(self.section == Section::Shortcuts, |label| {
+                                            label
+                                                .w(px(if compact { 110. } else { 165. }))
+                                                .flex_shrink_0()
+                                        })
+                                        .child(self.t(field.label.0, field.label.1)),
                                 )
-                                .when(self.section == Section::Shortcuts, |row| {
-                                    row.child(
-                                        Button::new((key, 0usize))
-                                            .label(self.t("录制", "Record"))
-                                            .tooltip(self.t("录制快捷键", "Record shortcut"))
-                                            .disabled(self.pending.is_some())
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.start_recording(
-                                                    actions::Recording::Setting(key),
-                                                    window,
-                                                    cx,
-                                                )
-                                            })),
-                                    )
-                                }),
-                        )
-                }),
-        );
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .gap_2()
+                                        .child(
+                                            Input::new(&field.state)
+                                                .aria_label(self.t(field.label.0, field.label.1))
+                                                .disabled(
+                                                    self.pending.is_some() || self.choosing_path,
+                                                ),
+                                        )
+                                        .when(self.section == Section::Shortcuts, |row| {
+                                            row.child(
+                                                Button::new((key, 0usize))
+                                                    .label(self.t("录制", "Record"))
+                                                    .tooltip(
+                                                        self.t("录制快捷键", "Record shortcut"),
+                                                    )
+                                                    .disabled(self.pending.is_some())
+                                                    .on_click(cx.listener(
+                                                        move |this, _, window, cx| {
+                                                            this.start_recording(
+                                                                actions::Recording::Setting(key),
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    )),
+                                            )
+                                        }),
+                                )
+                        }),
+                ),
+            );
+        }
         if self.section == Section::Pin {
             content = content.child(
                 Button::new("choose-save-directory")
@@ -820,29 +855,17 @@ impl Render for SettingsView {
                                         div()
                                             .flex()
                                             .gap_2()
-                                            .when(
-                                                !matches!(
-                                                    self.section,
-                                                    Section::General
-                                                        | Section::Overview
-                                                        | Section::Updates
-                                                ),
-                                                |row| {
-                                                    row.child(
-                                                        Button::new("save-fields")
-                                                            .primary()
-                                                            .label(
-                                                                self.t("保存更改", "Save changes"),
-                                                            )
-                                                            .disabled(self.pending.is_some())
-                                                            .on_click(cx.listener(
-                                                                |this, _, _, cx| {
-                                                                    this.save_fields(cx)
-                                                                },
-                                                            )),
-                                                    )
-                                                },
-                                            )
+                                            .when(can_save, |row| {
+                                                row.child(
+                                                    Button::new("save-fields")
+                                                        .primary()
+                                                        .label(self.t("保存更改", "Save changes"))
+                                                        .disabled(self.pending.is_some())
+                                                        .on_click(cx.listener(|this, _, _, cx| {
+                                                            this.save_fields(cx)
+                                                        })),
+                                                )
+                                            })
                                             .child(
                                                 Button::new("close")
                                                     .label(self.t("关闭", "Close"))
