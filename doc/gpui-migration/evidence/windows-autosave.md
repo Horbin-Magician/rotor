@@ -36,4 +36,4 @@
 
 `a225b02` 通过 Windows release 离线构建、无窗口身份诊断和显式开发资源检查，[哈希与检查记录](windows-autosave-release-2026-09-08.json) 已保存。准备了[无凭据、命令和贴图的设置夹具](../fixtures/settings-autosave.toml)，复制到新的 `target/autosave-ui-a225b02` 后配置诊断通过（24 个键）。后续可用 `--no-elevate --no-index --no-hotkeys --data-dir <该目录>` 验证普通字段、局部键和失败/放弃关闭；禁用热键的会话不能用于证明系统全局注册成功。
 
-已向用户询问何时可恢复此前以 Esc 停止的桌面操作；等待确认，不据 release 构建或夹具读取认定实机通过。
+用户回复“先继续无窗口检查”，本轮继续保持桌面暂停。基于 `fd9b206` 已离线生成两种身份的新 Windows 安装包；中文/空格暂存路径、外部工作目录资源发现、PE 身份、文件清单及源码收据均通过检查，文件篡改和伪造源码收据被拒绝。见[候选记录](../candidate-status.md)及[机器可读证据](windows-autosave-candidates-2026-09-08.json)。这些检查不替代真实输入、关闭或安装验收。

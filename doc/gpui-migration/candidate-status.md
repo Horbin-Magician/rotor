@@ -2,6 +2,23 @@
 
 当前状态：**代码与 Windows 候选已准备；迁移没有完成，G8/G9 未通过。**
 
+## 自动保存后的 Windows 候选（最新）
+
+用户要求继续无窗口检查。基于 `fd9b206`，通过 xtask 分别离线构建 development/production，使用 NSIS 3.11 生成新的本地安装包。完整[源码收据、身份、哈希和诊断记录](evidence/windows-autosave-candidates-2026-09-08.json)已保存；以下历史候选不再代表最新实现。
+
+| 模式 | 产物（仓库相对路径） | 字节 | SHA-256 |
+|---|---|---:|---|
+| development | `target/native-autosave-fd9b206/development-package/Rotor-GPUI_2.6.0_x64-setup.exe` | 37,613,587 | `e67d1dafb1e09f01cdb2b7b601649f434f5d0475b615ee0b5456da646d4c7637` |
+| production | `target/native-autosave-fd9b206/production-package/Rotor_2.6.0_x64-setup.exe` | 37,647,800 | `c902f7fd9104c466eae542d3fceeac0d6582131a57030356d9a72d2182ae429a` |
+
+共同源码摘要为 `7d02edf52b60e13f04565499a54edf8e2e62326e330887cff41374aa763aaf41`。每种身份的暂存目录 31 个文件、包目录 3 个文件均通过清单/大小/哈希检查。程序和安装包的 PE 产品名/版本匹配身份收据；两个主程序均为 AMD64 Windows GUI 子系统。
+
+两个暂存目录分别包含中文和空格。清除诊断子进程的资源/数据环境覆盖，从 `D:\` 运行 `--build-info` 和 `--check-resources` 均通过，资源实际定位到各自暂存目录。只运行提前返回的诊断入口，没有启动正式身份服务或写入正式用户资料。
+
+开发暂存副本的故障注入还验证：修改文件后 verify/package 拒绝；伪造源码摘要并重算文件清单后 package 仍拒绝，且没有创建输出目录。注入后已恢复原始字节并重新核对。未签名、未安装、未上传；窗口、IME、安装/更新/回退及性能验收仍待完成。版本仍为 2.6.0，不能证明递增升级。macOS 按用户要求暂缓。
+
+## 较早候选的历史记录
+
 构建源码提交：`76f0352ddd0af2ef3765723151340710a132c976`。文档收尾提交不改变原生输入摘要。
 共同源码/资源/安装配方摘要：`be09038648c8fa0b7f4d3183d2dfaa4cfc3a15881fca3c81461e34e0105f4b88`。
 
