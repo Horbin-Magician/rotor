@@ -17,6 +17,10 @@
 
 ## 发现与后续
 
-非法快捷键的错误仍为英文并暴露 `shortcut_pinwin_save` 内部键名，应改为随界面语言显示的字段名和可操作说明。此项来自实际窗口，不能按截图存在即视为 UI 美化完成。
+非法快捷键原先显示英文并暴露 `shortcut_pinwin_save` 内部键名，已在 `0253418` 修复为随当前界面语言显示的字段名及重新录制/输入完整组合的说明。runtime 34 项测试、native/runtime 严格 clippy 通过，随后 release 构建成功。新程序在同一隔离配置中复验，[英文](ui-windows/native-shortcut-error-english-0253418.png)和[中文](ui-windows/native-shortcut-error-chinese-0253418.png)提示均完整可见；语言设置保存成功后，其他字段的失败状态仍保留，未误报全部保存成功。
+
+修复版 release SHA-256：`6945d4d5d92c86e151cdb9793d2d018420d1a62a595e01041da464d1a789786f`。此次 UI 复验使用显式 `--resource-dir D:/Project/rotor/src-tauri/assets`，不是新安装包的资源验收；此前 `6efe337` 安装包不包含这份提示修复。
+
+另完成设置页的[深色/英文组合](ui-windows/native-settings-dark-english-6efe337.png)，选择值即时更新界面和磁盘。通过窗口实际右/下边框拖动至截图尺寸 496×401，[通用设置](ui-windows/native-settings-small-dark-6efe337.png)可操作，[快捷键列表](ui-windows/native-shortcuts-small-bottom-6efe337.png)可滚动至最后一项，保存及关闭区仍可见。该样本未覆盖其余页面的窄窗口或不同 DPI；不能替代完整新旧对照矩阵。
 
 本轮覆盖设置字段与局部快捷键的一组实机成功/失败/恢复操作，以及中文组字的确认/取消。没有完成输入法全矩阵、应用退出期间待保存事务、全局热键注册、贴图/OCR/翻译窗口、多屏/DPI、安装更新或性能验收；UI-01–UI-05 与 V17 的完整范围继续保留未完成。macOS 暂缓。
