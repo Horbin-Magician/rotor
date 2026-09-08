@@ -2,10 +2,13 @@
 
 制定日期：2026-09-07。开发分支：`refactor/gpui`。代码基线：`master` 的 `40addee065765ed343e665d6a712b3e9cbe2bdcc`（`chore: release v2.6.0`）。
 
+优先级更新（2026-09-08）：所有剩余任务之前，先参考旧 UI 完成原生 UI 现代化美化，美观度和实用性均不得低于旧 UI。具体范围与验收要求见 [剩余任务汇总第 0 节](remaining-tasks.md#0-第一优先级ui-现代化美化先于其余剩余任务)；后续阶段按该汇总的执行顺序推进。
+
 P0 已开始实施，独立原型位于 [experiments/gpui-probe](../../experiments/gpui-probe/README.md)。当前实现与验证结果见 [依赖基线](dependency-baseline.md)、[旧版基线记录](baseline.md) 和 [更新交接草案](update-handoff.md)。以下任务只有附有完整测试证据才能标记完成；原型代码交付不等于 G0 通过。
 
 配套文档：
 
+- [剩余任务汇总](remaining-tasks.md)：截至 2026-09-08 的未完成项，区分已实现待验收与尚待实施的工程切换。
 - [功能与代码迁移对照](feature-parity.md)：逐项功能、现有入口、目标位置、兼容约束。
 - [验证、性能与发布验收](validation.md)：可复现的测试场景、指标、发布检查和证据模板。
 
