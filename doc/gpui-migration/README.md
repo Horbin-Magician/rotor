@@ -4,7 +4,7 @@
 
 优先级更新（2026-09-08）：所有剩余任务之前，先参考旧 UI 完成原生 UI 现代化美化，美观度和实用性均不得低于旧 UI。具体范围与验收要求见 [剩余任务汇总第 0 节](remaining-tasks.md#0-第一优先级ui-现代化美化先于其余剩余任务)；后续阶段按该汇总的执行顺序推进。
 
-P0 已开始实施，独立原型位于 [experiments/gpui-probe](../../experiments/gpui-probe/README.md)。当前实现与验证结果见 [依赖基线](dependency-baseline.md)、[旧版基线记录](baseline.md) 和 [更新交接草案](update-handoff.md)。以下任务只有附有完整测试证据才能标记完成；原型代码交付不等于 G0 通过。
+当前已建立根 workspace 和原生壳，P1–P8 主要代码通路已接入；44 项当前实现及证据边界见 [功能对照](feature-parity.md)。Windows UI、安装、性能与最终切换仍未完成，macOS 按用户要求暂缓。独立 P0 原型保留在 [experiments/gpui-probe](../../experiments/gpui-probe/README.md)。下文是阶段要求，只有完整证据满足要求才能勾选，代码交付不等于 G0–G9 通过。
 
 配套文档：
 
@@ -26,7 +26,7 @@ P0 已开始实施，独立原型位于 [experiments/gpui-probe](../../experimen
 
 ## 2. 基线核对与优先处理的问题
 
-已从代码确认：
+以下为制定计划时从 `40addee` 确认的基线问题，不是当前实现状态；核心解耦和配置事务等后续改动见功能对照表：
 
 1. `rotor-common` 和 `rotor-platform` 没有直接 Tauri 依赖；搜索、截图、翻译和运行时仍依赖 Tauri 窗口或快捷键类型。
 2. 翻译不仅有 Google/自定义模板，还包括 DeepSeek 流式输出；前端用请求序号隔离旧结果。
