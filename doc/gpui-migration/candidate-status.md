@@ -2,7 +2,11 @@
 
 当前状态：**代码与 Windows 候选已准备；迁移没有完成，G8/G9 未通过。**
 
-## 失败恢复修复后的 Windows 候选（最新）
+## 根目录迁移后的开发候选（最新）
+
+`4f1f107` 已将共享 crate 和资源移至根目录，并重新构建开发身份 NSIS 包。[产物与集成记录](evidence/windows-root-layout.md)包含 174 项 workspace 测试、资源、OCR及资料兼容结果，[机器可读清单](evidence/windows-root-layout-candidate-2026-09-08.json)保存源码/文件哈希。该包包含 `0253418` 提示修复；未安装、未签名、未发布。可视化测试现按用户要求跳过，macOS 暂缓。
+
+## 失败恢复修复后的 Windows 候选（历史）
 
 基于 `6efe337` 离线重建两种身份，包含贴图失败目录记忆修复和快捷键回滚失败后的恢复修复。完整[构建与诊断证据](evidence/windows-recovery-candidates-2026-09-08.json)已保存。
 

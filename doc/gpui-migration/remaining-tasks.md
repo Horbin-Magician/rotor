@@ -116,7 +116,7 @@ Windows P0 原型已有部分实机证据，但不能覆盖正式应用所有场
 
 最新用户指令取消可视化测试等待。先实施可逆的目录/构建迁移并保持兼容检查；安装恢复、非可视化性能、正式发布和旧壳删除的状态分别追踪，不把跳过的可视化验收记成通过。
 
-- [ ] **P9-02：搬迁业务与资源。** 六个共享 crate 已移至根 `crates/`，资源已移至根 `assets/`，workspace、资源定位、构建收据、xtask、测试及 CI 检查路径已同步，174 项测试通过；完成新布局 release/打包核验后收口。安装配方保留 `native/`，目录说明已同步。
+- [x] **P9-02：搬迁业务与资源（Windows 工程范围）。** 六个共享 crate 已移至根 `crates/`，资源已移至根 `assets/`，workspace、资源定位、构建收据、xtask、测试及 CI 检查路径已同步。174 项测试、新布局 release/NSIS 打包、无窗口资源/OCR与合成资料兼容检查通过，见[记录](evidence/windows-root-layout.md)。安装配方保留 `native/`；macOS 构建仍暂缓。
 - [ ] **P9-03：移除旧壳和前端。** 删除不再使用的 Vue/TypeScript/Vite/前端依赖、Tauri 壳与 integration、插件/配置/capability 和 WebView bridge；先保留仍用的业务、资源、测试及许可证。
 - [ ] **P9-04：切换正式构建发布和开发文档。** 当前 `.github/workflows/publish.yml` 仍为 Tauri + Node/Yarn 发布流程，需改为原生流程；消除旧版本镜像/脚本依赖，更新中英文 README、AGENTS.md、贡献与平台要求、资源/签名/恢复说明。
 - [ ] **P9-05：最终依赖与干净环境验证。** 重新执行完整 workspace 格式、check/test/clippy/release 及两端打包检查，收敛历史 lint；在无 Node/Yarn 环境构建，审计最终 normal/build 依赖与产物不含 Tauri/WebView/JS 运行路径。

@@ -19,3 +19,11 @@
 严格 clippy 首次发现 platform 的测试模块之后仍有函数；仅移动测试模块至文件末尾后，`cargo clippy --workspace --exclude rotor --all-targets --offline -- -D warnings` 通过。未增加 lint 抑制，旧壳 warning 没有冒充严格检查通过。
 
 字体及许可证哈希检查通过。Windows 共享核心依赖边界检查通过；native normal/build 依赖闭包不含 Tauri、Wry、WebView2 或 QuickJS。格式和 diff 检查通过。下一阶段从这份目录结构重新构建和打包，旧目录布局的候选不作为新布局的产物证明。
+
+## 新布局产物与无窗口集成
+
+基于目录迁移提交 `4f1f107`，xtask 离线 release、暂存及 NSIS 3.11 开发安装包构建均通过。产物为 `target/native-root-layout-4f1f107/package/Rotor-GPUI_2.6.0_x64-setup.exe`，37,609,281 字节，SHA-256 `e0a71e3266b5abc6fa5d427e7f6ad6a387f5d0f4517ce0d4a923a2f0fe1fff90`；[完整记录](windows-root-layout-candidate-2026-09-08.json)包含源码收据、程序哈希与诊断输出。
+
+31 个暂存文件与 3 个包目录文件通过清单校验，安装器产品名/版本经实际 Windows VERSIONINFO 读取器核对。清除子进程资源/数据覆盖，在 `D:\` 执行中文/空格暂存路径的 `--build-info`、`--check-resources` 均通过。debug 默认资源探测也通过，实际选中相邻的 `target/debug/assets`，没有把它误报为根 assets fallback 的运行证据。
+
+使用暂存模型及字体完成无窗口 OCR：识别出“中文测试 Hello 123”和“Rotor OCR验证”，等待现有 idle reaper 后确认模型缓存释放。新的 `target/profile-root-layout-4f1f107` 合成资料完成旧格式 → native 写回 → legacy Rust 读取器及二次导入；生产身份 common 的 14 项测试通过。未运行安装器、未签名或发布；可视化测试按用户要求跳过，macOS 暂缓。P9-02 的 Windows 工程目录迁移收口，余下安装恢复及最终清理继续单独推进。
