@@ -14,3 +14,4 @@ pub use pin::{PinBounds, PinBoundsSetter, PinInit, PinPointerCapture, PinPositio
 pub use searcher::SearchView;
 pub use settings::{SettingsView, settings_title};
 pub use translator::TranslatorView;
+pub use visual::configure_theme;

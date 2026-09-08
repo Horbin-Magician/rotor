@@ -568,6 +568,7 @@ impl PinView {
             .child(
                 Button::new("canvas-undo")
                     .icon(IconName::Undo2)
+                    .accessibility_label(self.t("撤销", "Undo"))
                     .tooltip(self.t("撤销", "Undo"))
                     .compact()
                     .disabled(
@@ -582,6 +583,7 @@ impl PinView {
             .child(
                 Button::new("canvas-redo")
                     .icon(IconName::Redo2)
+                    .accessibility_label(self.t("重做", "Redo"))
                     .tooltip(self.t("重做", "Redo"))
                     .compact()
                     .disabled(
@@ -597,6 +599,7 @@ impl PinView {
                 row.child(
                     Button::new("canvas-text-done")
                         .icon(IconName::Check)
+                        .accessibility_label(self.t("完成文字标注", "Finish text annotation"))
                         .tooltip(self.t("完成文字标注", "Finish text annotation"))
                         .compact()
                         .disabled(disabled)

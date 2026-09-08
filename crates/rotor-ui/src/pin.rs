@@ -569,6 +569,7 @@ impl Render for PinView {
                                     .child(
                                         Button::new("pin-save")
                                             .icon(IconName::ArrowDown)
+                                            .accessibility_label(self.t("保存", "Save"))
                                             .tooltip(self.shortcut_hint(
                                                 self.t("保存", "Save"),
                                                 "shortcut_pinwin_save",
@@ -582,6 +583,7 @@ impl Render for PinView {
                                     .child(
                                         Button::new("pin-copy")
                                             .icon(IconName::Copy)
+                                            .accessibility_label(self.t("复制", "Copy"))
                                             .tooltip(self.shortcut_hint(
                                                 self.t("复制", "Copy"),
                                                 "shortcut_pinwin_copy",
@@ -595,6 +597,7 @@ impl Render for PinView {
                                     .child(
                                         Button::new("pin-hide")
                                             .icon(IconName::EyeOff)
+                                            .accessibility_label(self.t("隐藏", "Hide"))
                                             .tooltip(self.shortcut_hint(
                                                 self.t("隐藏", "Hide"),
                                                 "shortcut_pinwin_hide",
@@ -608,6 +611,7 @@ impl Render for PinView {
                                     .child(
                                         Button::new("pin-close")
                                             .icon(IconName::Close)
+                                            .accessibility_label(self.t("关闭", "Close"))
                                             .tooltip(self.shortcut_hint(
                                                 self.t("关闭", "Close"),
                                                 "shortcut_pinwin_close",

@@ -398,13 +398,15 @@ impl SettingsView {
                     .flex_wrap()
                     .gap_2()
                     .children(options.iter().enumerate().map(|(index, &(value, zh, en))| {
-                        Button::new((key, index))
-                            .label(self.t(zh, en))
-                            .selected(self.config.get(key).is_some_and(|current| current == value))
-                            .disabled(self.pending.is_some())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.save(vec![(key.into(), value.into())], cx)
-                            }))
+                        crate::visual::choice(
+                            Button::new((key, index)).label(self.t(zh, en)),
+                            self.config.get(key).is_some_and(|current| current == value),
+                            cx,
+                        )
+                        .disabled(self.pending.is_some())
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.save(vec![(key.into(), value.into())], cx)
+                        }))
                     })),
             )
     }
@@ -650,28 +652,44 @@ impl Render for SettingsView {
                 .map(|field| {
                     let key = field.key;
                     crate::visual::card(cx)
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(self.t(field.label.0, field.label.1))
-                        .child(
-                            Input::new(&field.state)
-                                .disabled(self.pending.is_some() || self.choosing_path),
-                        )
-                        .when(self.section == Section::Shortcuts, |row| {
-                            row.child(
-                                Button::new((key, 0usize))
-                                    .label(self.t("录制快捷键", "Record shortcut"))
-                                    .disabled(self.pending.is_some())
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.start_recording(
-                                            actions::Recording::Setting(key),
-                                            window,
-                                            cx,
-                                        )
-                                    })),
-                            )
+                        .p_3()
+                        .when(self.section == Section::Shortcuts && !compact, |row| {
+                            row.flex_row().items_center()
                         })
+                        .gap_2()
+                        .child(
+                            div()
+                                .when(self.section == Section::Shortcuts && !compact, |label| {
+                                    label.w(px(165.)).flex_shrink_0()
+                                })
+                                .child(self.t(field.label.0, field.label.1)),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_1()
+                                .min_w_0()
+                                .gap_2()
+                                .child(
+                                    Input::new(&field.state)
+                                        .disabled(self.pending.is_some() || self.choosing_path),
+                                )
+                                .when(self.section == Section::Shortcuts, |row| {
+                                    row.child(
+                                        Button::new((key, 0usize))
+                                            .label(self.t("录制", "Record"))
+                                            .tooltip(self.t("录制快捷键", "Record shortcut"))
+                                            .disabled(self.pending.is_some())
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.start_recording(
+                                                    actions::Recording::Setting(key),
+                                                    window,
+                                                    cx,
+                                                )
+                                            })),
+                                    )
+                                }),
+                        )
                 }),
         );
         if self.section == Section::Pin {
@@ -724,16 +742,19 @@ impl Render for SettingsView {
                             .child("Rotor"),
                     )
                     .children(sections.into_iter().map(|(id, section, zh, en, _, _)| {
-                        Button::new(id)
-                            .ghost()
-                            .w_full()
-                            .justify_start()
-                            .label(self.t(zh, en))
-                            .selected(self.section == section)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.section = section;
-                                cx.notify();
-                            }))
+                        crate::visual::choice(
+                            Button::new(id)
+                                .ghost()
+                                .w_full()
+                                .justify_start()
+                                .label(self.t(zh, en)),
+                            self.section == section,
+                            cx,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.section = section;
+                            cx.notify();
+                        }))
                     })),
             )
             .child(

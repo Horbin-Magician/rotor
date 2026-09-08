@@ -56,3 +56,21 @@ Windows computer-use 已初始化并两次列举窗口。启动已安装 `C:/Pro
 - 取色放大镜增加中英文和复制反馈；临近右/下边缘时换到光标另一侧，避免直接覆盖采样点。位置单测覆盖 600/1080/1440 逻辑长度的边缘和中部，以及小于提示卡的视口。
 - native check、13 项 UI 测试及 desktop/ui `--all-targets --no-deps -- -D warnings` clippy 通过。
 - 用户将 macOS 相关工作暂缓，本轮只推进 Windows。此前隔离测试进程仍存活，但没有可控制窗口，二次激活也未出现；结束该测试进程以重新构建与采集诊断，未操作正式安装或用户资料。
+
+## Windows 实际设置窗口取样与修正
+
+使用 `--no-elevate --no-index --data-dir target/ui-modernization-profile` 的 debug 原生程序。初次以 Hidden 方式启动未得到可控窗口；Normal 启动取得真实设置窗口，stderr 为空。窗口客户端按源码 820×600 逻辑像素创建，捕获图片 822×630（含原生标题栏/边界）；尚未单独记录显示器 DPI，不把这些截图作为 100/150/200% DPI 矩阵。
+
+| 证据 | 实际观察 |
+|---|---|
+| [中文深色概览](ui-windows/native-overview-dark-20dcf0c.png) | 概览摘要/数据目录卡片和独立滚动区可见 |
+| [英文深色设置](ui-windows/native-general-en-dark-20dcf0c.png) | 切换 English 后导航及标题更新，底部出现 Settings saved |
+| [英文浅色设置](ui-windows/native-general-en-light-20dcf0c.png) | 点击 Light 后窗口正文切换浅色，保存反馈保留 |
+| [快捷键页修正前](ui-windows/native-shortcuts-before-density-fix.png) | 三行卡片造成一屏仅约两项半；已据此改为宽窗口横向标签/输入/录制，窄窗口换行 |
+| [调整后的浅色概览](ui-windows/native-overview-en-light-refined.png) | 14px 基准字体、蓝色强调与较紧凑摘要，卡片和正文层级清楚 |
+
+新主题保存在 gpui-component 的 light/dark ThemeConfig 中，因此后续模式切换和系统跟随仍使用同一套配色。普通文本颜色对比度计算：浅色正文 16.30、辅助 4.67、选中 5.00、主按钮 5.81；深色分别 14.54、8.28、4.54、7.48。计算仅覆盖列出的不透明颜色对，不替代全部控件/禁用态的实际验收。
+
+本批同时补图标按钮无障碍名称、切换按钮 toggled 状态，以及快捷操作输入变化时刷新“可运行”状态。native build 和 desktop/ui 的严格 `--no-deps` clippy 通过。旧 `yarn build` 与 `cargo build -p rotor --features tauri/custom-protocol` 通过，旧壳保留既有 unused/dead_code 和链接提示；未启用浏览器调试。旧壳尚未启动采图。
+
+窗口输入检测到用户正在操作后，多次拒绝过期坐标；仅刷新读取状态，没有复用旧坐标。后续仍需快捷键密度修正后的截图、其余模块、窄窗口、IME、DPI 和逐项旧新对照，UI-01–UI-05 继续未关闭。

@@ -18,6 +18,7 @@ pub(super) struct ActionFields {
     shortcut: Entity<InputState>,
     command: Entity<TextareaState>,
     enabled: bool,
+    _input_events: Vec<Subscription>,
 }
 impl ActionFields {
     pub(super) fn new(
@@ -25,12 +26,33 @@ impl ActionFields {
         window: &mut Window,
         cx: &mut Context<SettingsView>,
     ) -> Self {
+        let name = cx.new(|cx| InputState::new(window, cx).default_value(action.name));
+        let shortcut = cx.new(|cx| InputState::new(window, cx).default_value(action.shortcut));
+        let command = cx.new(|cx| TextareaState::new(window, cx).default_value(action.command));
+        let input_events = vec![
+            cx.subscribe(&name, |_, _, event, cx| {
+                if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+            cx.subscribe(&shortcut, |_, _, event, cx| {
+                if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+            cx.subscribe(&command, |_, _, event, cx| {
+                if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+        ];
         Self {
             id: action.id,
-            name: cx.new(|cx| InputState::new(window, cx).default_value(action.name)),
-            shortcut: cx.new(|cx| InputState::new(window, cx).default_value(action.shortcut)),
-            command: cx.new(|cx| TextareaState::new(window, cx).default_value(action.command)),
+            name,
+            shortcut,
+            command,
             enabled: action.enabled,
+            _input_events: input_events,
         }
     }
     fn value(&self, cx: &App) -> QuickAction {
@@ -257,6 +279,7 @@ impl SettingsView {
                             .child(
                                 Button::new(("toggle-action", index))
                                     .selected(action.enabled)
+                                    .toggled(action.enabled)
                                     .label(if action.enabled {
                                         self.t("已启用", "Enabled")
                                     } else {

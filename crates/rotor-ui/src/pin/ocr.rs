@@ -254,6 +254,7 @@ impl PinView {
             .child(
                 Button::new("ocr-retry")
                     .icon(IconName::RotateCw)
+                    .accessibility_label(self.t("重新识别", "Recognize again"))
                     .tooltip(self.t("重新识别", "Recognize again"))
                     .compact()
                     .disabled(self.ocr.pending.is_some() || !self.canvas.ready())

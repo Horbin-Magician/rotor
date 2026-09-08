@@ -560,6 +560,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     });
     application.run(move |cx| {
         gpui_kit::init(cx);
+        rotor_ui::configure_theme(cx);
         if let Err(error) = rotor_platform::desktop::configure_background_application() {
             log::warn!("Application policy: {error}");
         }
