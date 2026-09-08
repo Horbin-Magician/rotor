@@ -1,6 +1,11 @@
 name: gpui-migration
 on:
   workflow_dispatch:
+    inputs:
+      include_macos:
+        description: 'Also build macOS (validation currently deferred)'
+        type: boolean
+        default: false
   pull_request:
     paths:
       - 'Cargo.toml'
@@ -9,7 +14,9 @@ on:
       - 'crates/**'
       - 'native/**'
       - 'xtask/**'
-      - 'src-tauri/**'
+      - 'assets/**'
+      - '.cargo/**'
+      - '.gitattributes'
       - '.github/workflows/gpui-migration.yml'
       - '.github/workflows/sync-to-gitee.yml'
       - '.github/workflows/native-candidate.yml'
@@ -22,11 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 .github/scripts/test-prepare-gitee-release.py
+      - run: python3 .github/scripts/test-prepare-native-draft.py
   native:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-15]
+        os: ${{ fromJSON(inputs.include_macos && '["windows-latest","macos-15"]' || '["windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -37,11 +45,11 @@ jobs:
       - uses: swatinem/rust-cache@v2
       - shell: pwsh
         run: ./.github/scripts/check-annotation-font.ps1
-      - run: cargo fmt -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-common -p rotor-updater -p xtask -- --check
-      - run: cargo test -p rotor-common -p rotor-canvas -p rotor-runtime -p rotor-searcher -p rotor-screenshot -p rotor-translator -p rotor-ui -p rotor-desktop -p rotor-updater -p xtask --locked
+      - run: cargo fmt --all -- --check
+      - run: cargo test --workspace --locked
       - shell: pwsh
         run: ./.github/scripts/check-core-dependencies.ps1
-      - run: cargo clippy --no-deps -p rotor-desktop -p rotor-ui -p rotor-canvas -p rotor-runtime -p rotor-updater -p xtask --all-targets --locked -- -D warnings
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo run -p xtask --locked -- build
       - run: cargo run -p xtask -- stage "${{ runner.temp }}/native-stage"
       - run: cargo run -p xtask -- verify "${{ runner.temp }}/native-stage"
@@ -52,18 +60,3 @@ jobs:
           path: ${{ runner.temp }}/native-stage.tar.gz
       - run: cargo run -p rotor-desktop --example ocr_smoke --release --locked -- --wait-idle
       - run: cargo run -p rotor-screenshot --example profile_roundtrip --locked -- "${{ runner.temp }}/profile-roundtrip"
-  legacy:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.97.0'
-      - uses: actions/setup-node@v6
-        with:
-          node-version: lts/*
-          cache: yarn
-      - uses: swatinem/rust-cache@v2
-      - run: yarn install --frozen-lockfile
-      - run: yarn build
-      - run: cargo check -p rotor --locked

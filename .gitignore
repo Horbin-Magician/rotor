@@ -9,6 +9,9 @@ lerna-debug.log*
 
 node_modules
 /target/
+# Keep ignored output from pre-migration developer checkouts out of Git.
+/src-tauri/target/
+/src-tauri/gen/
 __pycache__/
 dist
 dist-ssr

@@ -1,57 +1,87 @@
-name: 'publish'
-
+name: native-publish-draft
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing native version tag to build as a draft release'
+        required: true
+        type: string
+      platforms:
+        description: 'Platforms to build; macOS validation is currently deferred'
+        required: true
+        type: choice
+        default: windows
+        options: [windows, both, macos]
   push:
-    tags:
-      - 'v*'
-
+    tags: ['v*']
+permissions:
+  contents: read
 jobs:
-  publish-tauri:
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
-          - platform: 'windows-latest'
-            args: ''
-
-    runs-on: ${{ matrix.platform }}
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: setup node
-        uses: actions/setup-node@v6
         with:
-          node-version: lts/*
-          cache: 'yarn' # Set this to npm, yarn or pnpm.
-
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable # Set this to dtolnay/rust-toolchain@nightly
-        with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: '. -> target'
-
-      - name: install frontend dependencies
-        run: yarn install # change this to npm, pnpm or bun depending on which one you use.
-
-      - uses: tauri-apps/tauri-action@v0
+          ref: ${{ github.event_name == 'push' && github.ref || inputs.tag }}
+          fetch-depth: 0
+      - id: version
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('Cargo.toml').read_text())['workspace']['package']['version']
+          tag = os.environ['RELEASE_TAG']
+          if tag != f'v{version}':
+              raise SystemExit('Tag must match the root workspace version')
+          commit = subprocess.check_output(['git', 'rev-parse', f'refs/tags/{tag}^{{commit}}'], text=True).strip()
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if commit != head:
+              raise SystemExit('Checkout differs from the requested tag')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'tag={tag}\nversion={version}\n')
+          PY
+  build-native:
+    needs: validate
+    uses: ./.github/workflows/native-candidate.yml
+    with:
+      checkout_ref: ${{ needs.validate.outputs.tag }}
+      platforms: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || 'windows' }}
+      production_identity: true
+      test_installation: false
+      sign_updates: true
+      notes: 'Native Rotor candidate; consult migration records for validation and skipped tests.'
+    secrets: inherit
+  draft:
+    needs: [validate, build-native]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
         with:
-          tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-candidate-production-*
+          path: collected
+      - name: Verify package inventories and collect draft attachments
+        run: |
+          python3 .github/scripts/test-prepare-native-draft.py
+          python3 .github/scripts/prepare-native-draft.py --source collected --output release-assets --version "$RELEASE_VERSION"
+          printf '%s\n' 'Native Rotor build. Review validation records before publishing. Update feeds are promoted separately.' > notes.txt
+      - name: Create an unpublished native release draft
+        run: |
+          set -euo pipefail
+          flags=(--draft --verify-tag)
+          if [[ "$RELEASE_VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "${flags[@]}" \
+            --title "Rotor $RELEASE_VERSION (native)" --notes-file notes.txt release-assets/*

@@ -1,192 +1,91 @@
 # AGENTS.md
 
-This file provides guidance to Codex when working with code in this repository.
+## Project and migration state
 
-## Project Overview
+Rotor is a Rust/GPUI native desktop toolbox. The root Cargo workspace is the
+application workspace; `rotor-desktop` is the default target. All application and
+shared crates live in `crates/`, models/fonts/icons in `assets/`, packaging in
+`native/`, and release tooling in `xtask/`.
 
-### Active GPUI migration
+The user explicitly waived further visual UI tests and deferred macOS validation.
+Continue Windows engineering and nonvisual checks. Record skipped tests as skipped,
+never passed. Current work and evidence are in `doc/gpui-migration/remaining-tasks.md`.
 
-The Rust workspace now lives at the repository root. `rotor-desktop` is the
-default native target. All shared and native crates live under `crates/`, and
-models, fonts and icons live under root `assets/`. The
-native shell uses `.rotor-gpui` by default, or an explicit `ROTOR_DATA_DIR`.
-The independent P0 workspace remains under `experiments/gpui-probe`.
+Legacy frontend/Tauri sources are no longer workspace members or native CI inputs.
+Their physical deletion was blocked by automatic approval review; use the explicit
+removal plan and do not retry deletion through an alternative method without new
+user authorization. Retained legacy code is historical, not a development target.
 
-Shared business crates must remain free of Tauri, GPUI and WebView dependencies.
-The old Tauri window/lifecycle/IPC adapters are now in
-`src-tauri/src/integration`; do not move them back into the shared crates.
-The historical module map below describes the old shell. Follow
-`doc/gpui-migration/progress.md` for current implementation and validation state.
-Code implementation and cross-platform acceptance are tracked separately.
-The user has waived further visual UI tests; mark them skipped, not passed.
-Continue Windows engineering migration and automated checks; macOS validation
-is deferred. Legacy adapters still consume the root shared crates and map the
-root assets to their existing installed `assets/` layout.
-
-Rotor is a fast, low-occupancy desktop toolbox for Windows and macOS. It is built with Tauri 2, a Rust backend, and a Vue 3 + TypeScript frontend. Current user-facing modules include file search, screenshots, pinned screenshot windows, screenshot OCR, text translation (selection and input), settings/overview, and configurable quick actions.
-
-## Technology Stack
-
-- **Desktop shell**: Tauri 2.
-- **Backend**: Rust 2021 with a Cargo workspace under `src-tauri`.
-- **Frontend**: Vue 3, TypeScript, Vite 6, Vue Router 4, Vue i18n 11, Naive UI, and Tauri JS APIs.
-- **Package management**: Yarn 1.22.22 for frontend/Tauri CLI, Cargo for Rust.
-- **Screenshot/OCR**: `xcap`, `image`, `rayon`, and `oar-ocr` with ONNX model assets in `assets/model`.
-
-## Agent Constraints
+## Constraints
 
 - Do not enable browser debugging.
-- Do not edit generated or dependency output unless the task explicitly requires it: `node_modules`, `dist`, `src-tauri/target`, and generated Tauri schema files under `src-tauri/gen`.
-- Keep frontend changes consistent with the existing Vue single-file component style and Naive UI usage.
-- Keep backend IPC handlers thin where possible; shared behavior should live in the appropriate workspace crate.
+- Keep shared business crates free of Tauri, GPUI and WebView dependencies.
+- Platform code may accept wrapped native handles; it must not depend on UI Entity types.
+- Keep window/lifecycle code in rotor-desktop and rendering/interaction in rotor-ui.
+- Do not move old integration adapters into shared crates.
+- Preserve unknown config/record fields, accepted write ordering and request identities.
+- Use isolated synthetic profiles for tests; avoid real credentials and user data.
+- Do not edit generated/dependency output such as node_modules, dist, target or retained
+  src-tauri target/gen directories unless explicitly required.
+- Preserve model/font bytes and their licenses. `.github/scripts/check-annotation-font.ps1`
+  verifies the font and OFL checksums.
 
-## Development Commands
+## Commands
 
-### Frontend
-
-```bash
-# Start Vite on the Tauri dev port, 1420
-yarn dev
-
-# Type check and build frontend
-yarn build
-
-# Type check only
-yarn vue-tsc --noEmit
-
-# Preview the built frontend
-yarn preview
+```powershell
+cargo run -p rotor-desktop -- --no-elevate --data-dir target/dev-profile
+cargo fmt --all -- --check
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo run -p xtask -- build
+cargo run -p xtask -- stage target/native-stage
+cargo run -p xtask -- package target/native-stage target/native-package
 ```
 
-### Tauri
+Stage/package destinations must be new. NSIS 3.11 is required on Windows; set
+`NSIS_MAKENSIS` when it is not on PATH. Node/Yarn are not native build prerequisites.
 
-```bash
-# Start the full Tauri development app
-yarn tauri dev
+The root workspace version is authoritative. `xtask set-version <semver> --dry-run`
+previews a change; actual editing requires a clean worktree and updates Cargo.lock.
+It never commits, tags or pushes. `publish.yml` creates native release drafts;
+update-feed promotion is separate. Existing updater secret names beginning with
+`TAURI_SIGNING_` remain for key compatibility, not as a Tauri runtime dependency.
 
-# Build the app with the base Tauri config
-yarn tauri build
+## Module map
 
-# Tauri automatically merges the matching platform override:
-# src-tauri/tauri.macos.conf.json or src-tauri/tauri.windows.conf.json
-```
+- rotor-desktop: app/window lifecycle, tray, hotkeys, capture/pin placement, logging.
+- rotor-ui: settings, search, translation, screenshot masks, pins/annotations/OCR UI.
+- rotor-canvas: GUI-independent document, geometry and offscreen composition.
+- rotor-common: config transactions, paths, resources, identities, profile migration.
+- rotor-platform: filesystem/index helpers, clipboard/selection, startup, installation,
+  elevation, window geometry and OS integration.
+- rotor-runtime: asynchronous services, event identities, bounded queues, cancellation,
+  settings/hotkey coordination, pins and updates.
+- rotor-searcher: indexing, exclusions, ranking, pagination and release lifecycle.
+- rotor-screenshot: capture, legacy-compatible pin records, image helpers and OCR.
+- rotor-translator: Google, DeepSeek streaming and custom HTTP engines.
+- rotor-updater: manifests, signatures, download and platform handoff/recovery.
 
-### Rust Workspace
+## Profiles and shortcuts
 
-```bash
-# Check all Rust crates
-cargo check --workspace
+Development uses `.rotor-gpui`; production identity uses `.rotor`. `--data-dir` or
+`ROTOR_DATA_DIR` selects an explicit profile. `--build-info` and `--check-resources`
+return before windows or profile initialization; `--check-config` needs an explicit
+synthetic data directory during tests.
 
-# Run Rust tests
-cargo test --workspace
+Stored Windows defaults are Ctrl+Shift+F/S/D/W for search/capture/selection/input
+translation. Development adds Alt and provides Ctrl+Alt+Shift+G for Settings.
+Pin-local defaults are S/Enter/H/Escape. IME/text editing owns its own key handling.
 
-# Build all Rust crates
-cargo build --workspace
-```
+## Validation and distribution
 
-## Frontend Structure
+Keep implementation, automated checks, skipped visual tests and actual installation
+results distinct. Windows silent checks use `.github/scripts/test-windows-install.ps1`
+with development identity, an unused registry namespace and a new target subdirectory.
+They preserve synthetic user files and backups and clean their installation entries.
 
-- `src/main.ts`: Creates the Vue app and installs router/i18n.
-- `src/App.vue`: Wraps pages in Naive UI providers and theme overrides.
-- `src/plugins/router.ts`: Defines the Tauri webview routes:
-  - `/` -> settings window.
-  - `/Searcher` -> search window.
-  - `/Translator` -> translator window.
-  - `/ScreenShotter/Mask` -> per-monitor screenshot mask windows.
-  - `/ScreenShotter/Pin` -> pinned screenshot windows.
-- `src/plugins/i18n.ts` and `src/locales/*`: English and Chinese localization.
-- `src/shared/api/*`: Shared Tauri IPC clients.
-- `src/features/*`: Typed API wrappers and composables for searcher, screenshot, translator, and quick actions.
-- `src/components/setting/*`: Settings, overview, shortcut, quick action, update, and platform titlebar UI.
-- `src/components/screenShotter/*`: Screenshot mask, pin canvas, pin toolbar, OCR overlay, drawing, text, and edge UI.
-- `src/components/searcher/*`: Search input and result list UI.
-
-## Backend Structure
-
-The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
-
-- `src-tauri/src/lib.rs`: Main Tauri entry point. Registers plugins, IPC commands, global shortcut handler, dock behavior, and app lifecycle.
-- `src-tauri/src/command/*`: Tauri command handlers for IPC:
-  - `core_cmd.rs`: Config, app version, overview info, shortcut conflict notices, and URL opening.
-  - `quick_cmd.rs`: Quick action CRUD, validation, shortcut registration, rollback, and execution.
-  - `screen_shotter_cmd.rs`: Mask/pin commands, screenshot data bytes, save image, persisted pin state, and OCR.
-  - `searcher_cmd.rs`: Search requests, index status, open file, and open as admin.
-  - `translator_cmd.rs`: Translation requests against the configured engine.
-- `crates/rotor-common`: App config, user data paths, and backend i18n.
-- `crates/rotor-platform`: Platform-specific file utilities, file icons, permission/status collection, window rects, memory usage, elevation, and open-file behavior.
-- `crates/rotor-runtime`: Global application state, tray menu, global shortcut dispatch, quick actions, shortcut conflict notices, and screenshot data fetching for IPC.
-- `crates/rotor-searcher`: File indexing/search, excluded directory parsing, per-volume search workers, result ranking, and icon attachment.
-- `crates/rotor-screenshot`: Monitor capture, mask and pin windows, capture cache, persisted shotter records, image utilities, rectangle detection, and OCR integration.
-- `crates/rotor-translator`: Translator window, simulated-copy selection capture, cursor-following window placement, and translation engines (free Google endpoint plus custom API template). Uses `reqwest` with `rustls-no-provider` + ring (mirrors tauri-plugin-updater).
-
-## Runtime Flows
-
-### Global Shortcuts
-
-- Defaults live in `crates/rotor-common/src/config.rs`.
-- macOS defaults: search `Cmd+Shift+F`, screenshot `Cmd+Shift+S`, quick actions `Cmd+Shift+T` and `Cmd+Shift+E`, selection translate `Cmd+Shift+D`, input translate `Cmd+Shift+W`.
-- Windows defaults: search `Ctrl+Shift+F`, screenshot `Ctrl+Shift+S`, quick actions `Ctrl+Shift+T` and `Ctrl+Shift+E`, selection translate `Ctrl+Shift+D`, input translate `Ctrl+Shift+W`.
-- Pin window defaults: save `S`, close `Escape`, copy `Enter`, hide `H`.
-- `rotor-runtime::handle_global_hotkey_event` dispatches screenshot, searcher, translator, and quick action shortcuts with debounce/stale-press handling.
-- Global shortcut keys are `shortcut_*` config keys except `shortcut_pinwin_*` (pin-window local shortcuts, persisted only); `set_cfg` registers/unregisters them accordingly.
-- Shortcut updates are validated through `tauri-plugin-global-shortcut`; failed registrations emit notices that the settings UI displays.
-
-### Screenshot And Pin Windows
-
-- The screenshot shortcut calls `ScreenShotter::run`, captures all monitors, stores raw RGBA images in `CaptureCache`, and emits `show-mask`.
-- Mask windows are labeled `ssmask-*`; pin windows are labeled `sspin-{id}`. The Tauri capability file must allow any new labels.
-- Frontend mask and pin pages request image bytes through the `get_screenshot_data` command, which returns raw RGBA bytes as a binary IPC response (`tauri::ipc::Response`).
-- `rotor-runtime::screenshot_data::fetch_screenshot_data` resolves a window label to image bytes from `CaptureCache` (mask) or persisted pin images, retrying briefly until the image is available.
-- Pinned screenshots persist through `rotor-screenshot::shotter_record`; invalid persisted records are removed during restore.
-- OCR uses `img2text` and ONNX model files bundled from `assets/model`.
-
-### Search
-
-- `Searcher::new` starts a `FileData` event loop and builds indexes in background workers.
-- Showing the search window sends an `Update` message and focuses the hidden `searcher` webview.
-- Search results are emitted to the `searcher` window through the `update_result` event.
-- Excluded directories are configured by the newline-delimited `search_excluded_dirs` setting. Entries may be directory names or absolute/home-relative paths.
-- Windows uses NTFS-specific volume handling when available. macOS indexes the user home, `/Applications`, and `/System/Applications`.
-
-### Quick Actions
-
-- Quick actions are stored in config as a JSON string under `quick_actions` with a `quick_actions_revision`.
-- `set_quick_actions` normalizes IDs, names, shortcuts, commands, and enabled state; duplicate enabled shortcuts are rejected.
-- On Windows, commands run via `cmd /C`; on other platforms they run via `sh -lc`.
-- If shortcut registration fails while saving quick actions, the command rolls back previously registered shortcuts.
-
-### Translator
-
-- The `translator` window is pre-created hidden at startup (same builder pattern as `searcher`) and follows the mouse cursor when shown.
-- Selection translation saves the clipboard text, simulates Ctrl+C (Windows `SendInput`) / Cmd+C (macOS `CGEvent`), reads the clipboard, restores the previous text, then emits `translate-select` with the captured text.
-- Input translation just emits `translate-input`; the page clears and focuses its input box. The window hides itself on blur/Escape.
-- Translation runs Rust-side via the `translator_translate` command (no CSP change needed). Engine is configured by `translator_engine` (`google` default free endpoint, or `custom` with `translator_custom_url` template supporting `{text}`/`{from}`/`{to}`/`{key}` and `translator_custom_key`). `translator_target_lang` is `auto` (CJK text -> `en`, otherwise `zh-CN`) or an explicit language code.
-
-## Configuration And Resources
-
-- `src-tauri/tauri.conf.json`: Base Tauri 2 config, updater endpoints, CSP, resources, icons, dev URL, and frontend build commands.
-- `src-tauri/tauri.macos.conf.json`: macOS bundle targets and signing override.
-- `src-tauri/tauri.windows.conf.json`: Windows NSIS target, WebView bootstrapper, per-machine install mode, and installer languages.
-- `src-tauri/capabilities/default.json`: Tauri permissions and allowed window labels.
-- User config is persisted as TOML in the app user data directory through `rotor-common::AppConfig`.
-- Screenshot OCR models and icon resources are bundled from `assets/**/*`.
-
-## Platform Notes
-
-- Windows startup attempts elevation through `rotor_platform::sys_util::run_as_admin`; file search filters to NTFS drives.
-- Windows search and screenshot windows use decoration/taskbar settings tailored for overlay-style utility windows.
-- macOS hides the Dock icon with `app.set_dock_visibility(false)` and uses private API/titlebar settings for overlay behavior.
-- macOS screenshot behavior depends on screen recording permissions; permission status is surfaced in the settings overview.
-
-## Key Files
-
-- `package.json`: Frontend scripts, dependency versions, and Yarn package manager pin.
-- `vite.config.ts`: Vite/Tauri dev-server settings. Port `1420` is strict.
-- `src-tauri/Cargo.toml`: Rust workspace and Tauri app dependencies.
-- `src-tauri/src/lib.rs`: Tauri builder, plugins, command registration, setup, and run loop.
-- `crates/rotor-common/src/config.rs`: Default settings, shortcuts, quick actions, and excluded search directories.
-- `crates/rotor-runtime/src/application.rs`: Global app state and shortcut dispatch.
-- `crates/rotor-runtime/src/screenshot_data.rs`: Screenshot/pin image byte fetching behind the `get_screenshot_data` command.
-- `crates/rotor-searcher/src/file_data/mod.rs`: Search index state machine and search task orchestration.
-- `crates/rotor-screenshot/src/lib.rs`: Screenshot capture, mask windows, pin windows, and pin restore flow.
-- `crates/rotor-translator/src/lib.rs`: Translator window lifecycle, selection capture, and cursor-following placement.
+The independent P0 workspace remains in `experiments/gpui-probe`. Historical paths
+and screenshots under migration evidence describe their recorded commits; prefer
+current crate paths for ongoing edits. macOS code remains, but Windows results do
+not prove macOS build, runtime or packaging acceptance.

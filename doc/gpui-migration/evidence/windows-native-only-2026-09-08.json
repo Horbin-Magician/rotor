@@ -1,0 +1,26 @@
+{
+  "native_input_files": 137,
+  "inputs_match_main_worktree": true,
+  "legacy_source_and_package_manifest_absent": true,
+  "node_and_yarn_unavailable_on_build_path": true,
+  "check": "passed offline with new target directory",
+  "build": "passed offline (debug) in 2m 27s",
+  "binary_sha256": "ef0a8805aa2760aa16715d83234f1386c428ef59f4090164e2d6a298ecedbe7c",
+  "diagnostics": [
+    {
+      "option": "--build-info",
+      "exit_code": 0,
+      "stdout": "{\"version\":\"2.6.0\",\"production\":false,\"product_name\":\"Rotor GPUI Development\",\"identifier\":\"cc.fluctus.rotor.gpui-dev\",\"profile_directory\":\".rotor-gpui\",\"executable_name\":\"rotor-desktop\"}"
+    },
+    {
+      "option": "--check-resources",
+      "exit_code": 0,
+      "stdout": "Native resources verified at \\\\?\\D:\\Project\\rotor\\target\\native-only-source-check\\assets"
+    }
+  ],
+  "workspace_tests": 172,
+  "production_common_tests": 14,
+  "draft_attachment_tests": 5,
+  "visual_tests": "skipped by user",
+  "macos": "deferred by user"
+}

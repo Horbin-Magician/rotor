@@ -22,11 +22,7 @@ fn version() -> Result<String> {
         .as_str()
         .ok_or("missing workspace version")?
         .to_string();
-    let package: serde_json::Value =
-        serde_json::from_slice(&fs::read(root().join("package.json"))?)?;
-    if package["version"].as_str() != Some(version.as_str()) {
-        return Err("package.json version must mirror workspace.package.version".into());
-    }
+    semver::Version::parse(&version)?;
     Ok(version)
 }
 fn hash(path: &Path) -> Result<String> {

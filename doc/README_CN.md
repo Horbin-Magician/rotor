@@ -1,142 +1,73 @@
-<p align="center">
-  <a href="https://github.com/Horbin-Magician/rotor" target="_blank" rel="noopener noreferrer">
-    <img width="100" src="../public/assets/logo.png" alt="Rotor logo">
-  </a>
-</p>
+<p align="center"><img width="100" src="./branding/logo.png" alt="Rotor logo"></p>
 
-<p align="center">
-  <strong>适用于 Windows 和 macOS 的快速、轻量桌面工具箱。</strong>
-</p>
+# Rotor
 
-<p align="center">
-  <a href="../README.md">English</a>
-  <span> | </span>
-  <span>中文</span>
-</p>
+使用 Rust、GPUI 和 gpui-component 构建的原生桌面工具箱。
 
-<div align="center">
-
-[![GitHub License](https://img.shields.io/github/license/Horbin-Magician/rotor?style=flat)](../LICENSE)
-[![GitHub Downloads](https://img.shields.io/github/downloads/Horbin-Magician/rotor/total?style=flat)](https://github.com/Horbin-Magician/rotor/releases)
-![Windows Support](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
-![macOS Support](https://img.shields.io/badge/macOS-000000?style=flat&logo=apple&logoColor=white)
-
-</div>
-
-## 关于 Rotor
-
-Rotor 将常用桌面工具集中到全局快捷键中，同时保持快速和低资源占用。目前提供文件
-搜索、截图与图片置顶、本地截图 OCR，以及可配置的快捷操作。
+[English](../README.md) · [迁移状态](gpui-migration/remaining-tasks.md) · [打包与恢复](../native/README.md)
 
 ## 功能
 
-### 文件搜索
+- 文件索引搜索、键盘导航、目录排除及 Windows 管理员打开。
+- 多屏截图、贴图、裁剪缩放、画笔/矩形/箭头/文字标注、PNG 与剪贴板导出。
+- 使用内置 ONNX 模型和字体的本地中英文 OCR。
+- 输入及划词翻译，支持 Google、DeepSeek 和自定义 HTTP 引擎。
+- 快捷操作、快捷键录制、设置自动保存、中英文及浅色/深色主题。
+- 原生托盘、单实例、自启动与更新签名校验。
 
-- macOS 按 `Cmd+Shift+F`，Windows 按 `Ctrl+Shift+F` 打开搜索窗口。
-- 输入文件名即时搜索，并通过键盘切换结果。
-- 按 `Enter` 打开结果，也可以通过条目操作在文件夹中显示。
-- Windows 支持以管理员身份打开适用的结果。
-- 可在设置中配置需要排除的目录名称或路径。
+## 当前平台状态
 
-<p align="center">
-  <img src="./search_demo.png" width="500" alt="Rotor 文件搜索">
-</p>
+当前验收范围为 Windows x64，本机检查使用 Windows 11。macOS arm64 实现与打包配方仍保留，配置最低版本为 macOS 15.0，但 macOS 验收暂缓。后续可视化测试已按用户要求跳过；已通过、跳过和未完成项目见迁移记录。
 
-### 截图与图片置顶
-
-- macOS 按 `Cmd+Shift+S`，Windows 按 `Ctrl+Shift+S` 开始截图。
-- 在连接的显示器上框选区域，并将结果置顶显示。
-- 使用画笔、矩形、箭头和文字标注置顶图片。
-- 对置顶图片执行本地 OCR，并选择识别出的文字。
-- 支持缩放、保存、复制、隐藏、恢复和关闭置顶图片。
-
-默认置顶窗口快捷键：
-
-| 操作 | 快捷键 |
-| --- | --- |
-| 保存 | `S` |
-| 复制 | `Enter` |
-| 隐藏 | `H` |
-| 关闭 | `Escape` |
-
-<p align="center">
-  <img src="./screenshot_demo.png" width="558" alt="Rotor 截图工具">
-</p>
-
-### 快捷操作
-
-通过全局快捷键运行终端命令。可以在设置中新增、编辑、禁用和测试操作，并为每个
-操作分配快捷键。Rotor 默认提供打开终端和系统文件管理器的快捷操作。
-
-### 设置与诊断
-
-- 自定义全局快捷键和置顶窗口快捷键。
-- 支持跟随系统、浅色和深色主题，以及中文和英文界面。
-- 配置截图保存方式和搜索排除目录。
-- 查看内存占用、搜索索引状态和相关系统权限。
-- 自动检查更新。
-
-## 安装
-
-从 [GitHub Releases](https://github.com/Horbin-Magician/rotor/releases/latest) 下载最新安装包：
-
-- Windows：使用 NSIS 安装程序。
-- macOS：使用 DMG 镜像。
-
-macOS 截图功能需要授予“屏幕录制”权限。Windows 采用每台计算机安装模式，可能会
-请求管理员权限。
+代码迁移没有发布新版本或切换更新源。原生候选可在本地构建，或运行默认 Windows 的 `native-candidate` 工作流；发布工作流只准备带签名的草稿，公开发布和更新源切换仍是后续操作。
 
 ## 开发
 
-Rotor 使用 [Tauri 2](https://tauri.app/)、Rust 2021、Vue 3 和 TypeScript。
+Windows 需要 `rust-toolchain.toml` 指定的 Rust、MSVC C++ Build Tools 和 Windows SDK；打包需要 NSIS 3.11。原生构建不需要 Node.js、Yarn、浏览器运行时或前端构建命令。
 
-### 环境要求
-
-- [Tauri 开发环境要求](https://v2.tauri.app/start/prerequisites/)
-- Rust 和 Cargo
-- Node.js 与 Yarn `1.22.22`
-
-### 本地运行
-
-```bash
-yarn install
-yarn tauri dev
+```powershell
+cargo run -p rotor-desktop -- --no-elevate --data-dir target/dev-profile
+cargo fmt --all -- --check
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-仅启动前端开发服务器：
+应用及共享 crate 均位于 `crates/`，模型、字体与图标位于 `assets/`；`xtask/` 管理版本、暂存、打包与签名，`native/` 保存分发配方。独立 P0 实验保留在 `experiments/gpui-probe`。
 
-```bash
-yarn dev
+开发身份默认使用 `.rotor-gpui`，并在保存的全局快捷键上增加 Alt。正式身份使用 `.rotor`，通过 `production` feature 启用。可用 `--data-dir` 或 `ROTOR_DATA_DIR` 指定资料目录。
+
+| 操作 | 保存的 Windows 快捷键 | 开发模式实际快捷键 |
+|---|---|---|
+| 文件搜索 | Ctrl+Shift+F | Ctrl+Alt+Shift+F |
+| 截图 | Ctrl+Shift+S | Ctrl+Alt+Shift+S |
+| 划词翻译 | Ctrl+Shift+D | Ctrl+Alt+Shift+D |
+| 输入翻译 | Ctrl+Shift+W | Ctrl+Alt+Shift+W |
+
+开发模式设置入口为 Ctrl+Alt+Shift+G。贴图局部默认键为 S 保存、Enter 复制、H 隐藏、Escape 关闭；文字编辑时采用独立的确认/取消行为。
+
+## 原生打包
+
+```powershell
+cargo run -p xtask -- build
+cargo run -p xtask -- stage target/native-stage
+$env:NSIS_MAKENSIS = 'C:/Program Files (x86)/NSIS/makensis.exe'
+cargo run -p xtask -- package target/native-stage target/native-package
 ```
 
-### 检查与构建
+暂存和包目录必须是新目录。正式身份需同时给 build 和 stage 传入 `--production`。签名、资料备份、回退及静默安装检查见[分发说明](../native/README.md)。
 
-```bash
-# 前端类型检查、代码检查、格式检查和构建
-yarn typecheck
-yarn lint
-yarn format:check
-yarn build
+版本以根 Cargo workspace 为准：
 
-# Rust 工作区
-cd src-tauri
-cargo check --workspace
-cargo test --workspace
-
-# 平台应用安装包
-cd ..
-yarn tauri build
+```powershell
+cargo run -p xtask -- version
+cargo run -p xtask -- set-version 2.7.0-beta.1 --dry-run
 ```
 
-主要代码位于 `src/`（Vue 前端）和 `src-tauri/`（Tauri 应用及 Rust 工作区 crate）。
+版本工具不会自动提交、打标签或推送。旧源码清理单独跟踪，它们已不再参与原生 workspace 和 CI 构建。
 
-## 参与贡献
+## 贡献与许可证
 
-欢迎提交 Issue 和 Pull Request。请保持改动范围清晰，运行相关的前端和 Rust 检查，
-并在受影响的操作系统上测试平台相关功能。
+共享业务 crate 不引入 GPUI、Tauri 或 WebView 依赖。测试使用独立合成资料，失败与回退时保留用户数据。
 
-## 开源协议
-
-Rotor 基于 [MIT License](../LICENSE) 开源。
-
-Copyright (c) 2024-present Horbin
+项目采用 [MIT License](../LICENSE)；内置 Noto Sans CJK 的 OFL 许可证位于 `assets/fonts/`。

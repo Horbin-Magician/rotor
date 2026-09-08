@@ -123,6 +123,9 @@ pub fn build(production: bool, options: &[String]) -> Result<()> {
         "--locked",
         "--no-default-features",
     ]);
+    // Snapshot the output we actually built even if the caller has a different
+    // CARGO_TARGET_DIR in its environment or Cargo configuration.
+    command.arg("--target-dir").arg(root().join("target"));
     if production {
         command.args(["--features", "production"]);
     }

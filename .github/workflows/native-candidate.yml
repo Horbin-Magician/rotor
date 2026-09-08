@@ -1,5 +1,30 @@
 name: native-candidate
 on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        type: string
+        default: ''
+      platforms:
+        type: string
+        default: windows
+      test_installation:
+        type: boolean
+        default: true
+      production_identity:
+        type: boolean
+        default: false
+      sign_updates:
+        type: boolean
+        default: false
+      notes:
+        type: string
+        default: 'Native candidate; see validation records for acceptance status.'
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
   workflow_dispatch:
     inputs:
       platforms:
@@ -44,6 +69,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.97.0'
@@ -54,6 +81,7 @@ jobs:
           choco install nsis --version=3.11 --no-progress -y
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
       - run: cargo test -p xtask -p rotor-updater --locked
+      - run: cargo test -p rotor-common --features production --locked
       - shell: pwsh
         run: ./.github/scripts/check-annotation-font.ps1
       - name: Build and stage selected identity
@@ -131,6 +159,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.97.0'

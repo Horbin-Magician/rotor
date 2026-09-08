@@ -1,12 +1,12 @@
 # Native development packages
 
-The root `workspace.package.version` is authoritative. `package.json` must mirror
-it while the legacy Tauri build remains available; `xtask version` checks this.
+The root `workspace.package.version` is the sole version authority. Native builds
+and `xtask version` do not read a frontend package manifest.
 
 All native and shared crates now live under root `crates/`; bundled models,
-fonts and icons live under root `assets/`. The legacy adapter keeps its own
-`src-tauri/` directory and maps `../assets/` to installed `assets/`, so existing
-runtime resource paths remain valid. Packaging recipes remain in `native/`.
+fonts and icons live under root `assets/`. Native packages retain the installed
+`assets/` resource layout. Packaging recipes remain in `native/`. Legacy sources
+await physical removal separately and are not native build targets.
 
 ```powershell
 cargo run -p xtask -- version
@@ -99,9 +99,8 @@ cargo run -p xtask -- sign target/native-package/Rotor-GPUI_2.6.0_x64-setup.exe
 cargo run -p xtask -- inventory target/native-package
 ```
 
-Version editing updates the root workspace, package.json mirror and Cargo.lock.
-It does not commit, tag or push. The legacy `yarn release:bump` entry point now
-delegates to this local-only tool. macOS uses numeric Apple version fields and
+Version editing updates the root workspace and Cargo.lock. It does not commit,
+tag or push, and does not require a JavaScript runtime or package manifest. macOS uses numeric Apple version fields and
 stores the full preview SemVer in `RotorVersion` for updater comparisons.
 
 `sign` reads the existing `TAURI_SIGNING_PRIVATE_KEY` (base64 value or key-file
@@ -174,3 +173,20 @@ and installer recipes. Build checks that inputs did not change during compilatio
 stage/package reject stale receipts even when the app version is unchanged. Git
 is used read-only to enumerate tracked and untracked non-ignored source inputs.
 Text line endings are normalized so Windows and macOS candidate receipts agree.
+
+## Silent Windows installation checks
+
+```powershell
+./.github/scripts/test-windows-install.ps1 -PackageDirectory target/native-package -TestDirectory D:/path/to/rotor/target/new-install-check
+```
+
+This requires PowerShell 7 in an already elevated test session, a development
+package and an unused development installation/startup namespace. It checks fresh
+installation, locked-file failure, same-version replacement, installed resource
+hashes and removal while preserving synthetic user files and backups. The script
+uses a new directory under this workspace's target tree and cleans its registry
+entries and Start menu shortcut. It does not run the app's visual entry point.
+
+Installers support `/S` and optional `/LOG=<file>` diagnostics. Logs use UTF-16LE
+with a BOM so Unicode paths remain readable. Production identity, increasing-version
+updates, old-client handoff and startup crash/hang recovery require separate evidence.

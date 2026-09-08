@@ -66,11 +66,11 @@ mod tests {
         assert_eq!(info.profile_directory, super::PROFILE_DIRECTORY);
         assert_eq!(info.executable_name, super::EXECUTABLE_NAME);
         if super::PRODUCTION {
-            let legacy: serde_json::Value =
-                serde_json::from_str(include_str!("../../../src-tauri/tauri.conf.json")).unwrap();
-            assert_eq!(info.identifier, legacy["identifier"].as_str().unwrap());
-            assert_eq!(info.product_name, legacy["productName"].as_str().unwrap());
+            // Frozen v2.6.0 installation/data contract, independent of old UI sources.
+            assert_eq!(info.identifier, "cc.fluctus.rotor");
+            assert_eq!(info.product_name, "Rotor");
             assert_eq!(info.profile_directory, ".rotor");
+            assert_eq!(info.executable_name, "rotor");
         } else {
             let metadata: toml::Value =
                 toml::from_str(include_str!("../../../native/app.toml")).unwrap();
