@@ -1,0 +1,73 @@
+{
+  "utc": "2026-09-08T09:02:29.305032+00:00",
+  "source_commit": "7d2b59f0dd8eeb44e4e027f97db4ff78d01b0484",
+  "artifact": "target/native-silent-install-check/package-final/Rotor-GPUI_2.6.0_x64-setup.exe",
+  "bytes": 37615923,
+  "sha256": "f6c538feaf58a45ca8e885261f50b8f1fe7b344bbdd16ec020b138f960d27d60",
+  "native_source_sha256": "28275f58116d054cde9441b38fea550a879c17afd1c6550f326e80cb7917b4a3",
+  "flavor": "development",
+  "version": "2.6.0",
+  "signed": false,
+  "published": false,
+  "results": [
+    {
+      "case": "reject_nonempty_unrelated_directory",
+      "exit_code": 2
+    },
+    {
+      "case": "fresh_install",
+      "exit_code": 0
+    },
+    {
+      "case": "--build-info",
+      "exit_code": 0,
+      "output": "{\"version\":\"2.6.0\",\"production\":false,\"product_name\":\"Rotor GPUI Development\",\"identifier\":\"cc.fluctus.rotor.gpui-dev\",\"profile_directory\":\".rotor-gpui\",\"executable_name\":\"rotor-desktop\"}"
+    },
+    {
+      "case": "--check-resources",
+      "exit_code": 0,
+      "output": "Native resources verified at \\\\?\\D:\\Project\\rotor\\target\\windows-silent-install-run4\\安装 Rotor\\assets"
+    },
+    {
+      "case": "locked_installation_preserved",
+      "exit_code": 2
+    },
+    {
+      "case": "same_version_replacement",
+      "exit_code": 0
+    },
+    {
+      "case": "--build-info",
+      "exit_code": 0,
+      "output": "{\"version\":\"2.6.0\",\"production\":false,\"product_name\":\"Rotor GPUI Development\",\"identifier\":\"cc.fluctus.rotor.gpui-dev\",\"profile_directory\":\".rotor-gpui\",\"executable_name\":\"rotor-desktop\"}"
+    },
+    {
+      "case": "--check-resources",
+      "exit_code": 0,
+      "output": "Native resources verified at \\\\?\\D:\\Project\\rotor\\target\\windows-silent-install-run4\\安装 Rotor\\assets"
+    },
+    {
+      "case": "uninstall",
+      "exit_code": 0
+    },
+    {
+      "case": "retained_data",
+      "profile_unchanged": true,
+      "user_file_retained": true,
+      "backup": "D:\\Project\\rotor\\target\\windows-silent-install-run4\\nsq7E1E.tmp"
+    }
+  ],
+  "post_cleanup": {
+    "product_key_present": false,
+    "uninstall_key_present": false,
+    "start_menu_shortcut_present": false,
+    "remaining_install_files": [
+      "user-added.txt"
+    ]
+  },
+  "limits": [
+    "Actual silent development-identity installation on Windows; installed app executed only headless identity/resource diagnostics.",
+    "No real production install, UAC interaction, login-startup cleanup, increasing-version update, old-client handoff, crash/hang rollback or remote CI execution.",
+    "Visual tests skipped by user; macOS deferred."
+  ]
+}
