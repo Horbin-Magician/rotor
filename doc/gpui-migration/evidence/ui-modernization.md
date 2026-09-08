@@ -40,3 +40,10 @@ Windows computer-use 已初始化并两次列举窗口。启动已安装 `C:/Pro
 - `cargo check -p rotor-ui`、`cargo check -p rotor-desktop`、`cargo build -p rotor-desktop` 通过。debug 链接保留 MSVC 导入库提示 warning；未将构建作为视觉验收。
 - 启动 debug 程序使用隔离资料目录 `target/ui-modernization-profile`，参数 `--no-elevate --no-index`。随后 computer-use 返回用户按物理 Escape 停止操作，本轮停止界面控制，未取得新窗口截图。
 - 待继续：实际布局/窄窗口/双主题验证、搜索与翻译、截图与贴图工具美化，以及完整旧新对照。UI-01–UI-05 均未关闭。
+
+## 搜索和翻译第一批实现
+
+- 搜索改用主题选中/悬停色、文件图标回退及名称/路径层级，底栏显示结果数和键盘提示；明确区分空输入、搜索中、无结果、正在打开及失败。保留 100 项上限和虚拟列表。
+- 翻译补回 Started/Finished 事件中的语言方向，结果区采用独立底色和 1.65 行高；复制显示成功反馈，流式追加/新请求重置反馈。空输入禁用提交，输入事件刷新该状态，保留 IME 确认保护。
+- `cargo check -p rotor-ui`、12 项 `cargo test -p rotor-ui --lib` 及 `cargo clippy -p rotor-ui --all-targets --no-deps -- -D warnings` 通过。包含依赖的 clippy 在既有 `rotor-platform/src/installer.rs:27` 的 `manual_is_multiple_of` 上失败，尚待单独收敛。
+- 本批没有进行桌面操作或实际新旧截图验收；视觉与交互门槛继续未通过。

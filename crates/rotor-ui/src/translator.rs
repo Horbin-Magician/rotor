@@ -1,7 +1,7 @@
 use gpui_kit::{
     component::{
-        Disableable,
-        button::Button,
+        ActiveTheme, Disableable, IconName,
+        button::{Button, ButtonVariants},
         input::{InputEvent, Textarea, TextareaState},
     },
     prelude::*,
@@ -19,6 +19,8 @@ pub struct TranslatorView {
     translated: String,
     message: String,
     warning: String,
+    languages: Option<(String, String)>,
+    copied: bool,
     suppress_enter: bool,
     _input_events: Subscription,
     _activation: Subscription,
@@ -27,6 +29,9 @@ impl TranslatorView {
     pub fn new(services: Arc<Services>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| TextareaState::new(window, cx).submit_on_enter(true));
         let input_events = cx.subscribe_in(&input, window, |this, _, event, window, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
             if matches!(event, InputEvent::PressEnter { shift: false, .. }) {
                 if !this.suppress_enter {
                     this.submit(window, cx);
@@ -49,6 +54,8 @@ impl TranslatorView {
             translated: String::new(),
             message: String::new(),
             warning: String::new(),
+            languages: None,
+            copied: false,
             suppress_enter: false,
             _input_events: input_events,
             _activation: activation,
@@ -75,6 +82,8 @@ impl TranslatorView {
         self.translated.clear();
         self.message.clear();
         self.warning.clear();
+        self.languages = None;
+        self.copied = false;
         self.suppress_enter = false;
         cx.notify();
     }
@@ -104,6 +113,8 @@ impl TranslatorView {
             Ok(id) => {
                 self.active = Some(id);
                 self.translated.clear();
+                self.languages = None;
+                self.copied = false;
                 self.message = self.t("正在翻译…", "Translating…").into();
             }
             Err(error) => self.message = error,
@@ -112,16 +123,22 @@ impl TranslatorView {
     }
     pub fn handle_event(&mut self, event: &RuntimeEvent, cx: &mut Context<Self>) {
         match event {
-            RuntimeEvent::Translation { id, event } if self.active == Some(*id) => {
-                if let TranslateStreamEvent::Delta { content } = event {
-                    self.translated.push_str(content);
+            RuntimeEvent::Translation { id, event } if self.active == Some(*id) => match event {
+                TranslateStreamEvent::Started { from, to, .. } => {
+                    self.languages = Some((from.clone(), to.clone()));
                 }
-            }
+                TranslateStreamEvent::Delta { content } => {
+                    self.translated.push_str(content);
+                    self.copied = false;
+                }
+            },
             RuntimeEvent::TranslationFinished { id, result } if self.active == Some(*id) => {
                 self.active = None;
                 match result {
                     Ok(result) => {
                         self.translated = result.translated.clone();
+                        self.languages = Some((result.from.clone(), result.to.clone()));
+                        self.copied = false;
                         self.message.clear();
                     }
                     Err(error) => self.message = error.clone(),
@@ -149,6 +166,9 @@ impl Render for TranslatorView {
             .size_full()
             .p_4()
             .gap_3()
+            .text_sm()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let composing = this.input.update(cx, |input, cx| {
                     input.marked_text_range(window, cx).is_some()
@@ -162,22 +182,50 @@ impl Render for TranslatorView {
                     cx.stop_propagation();
                 }
             }))
-            .child(self.t(
-                "翻译 · Enter 提交，Shift+Enter 换行",
-                "Translate · Enter to submit, Shift+Enter for a new line",
-            ))
-            .child(Textarea::new(&self.input).h(px(100.)))
             .child(
                 div()
                     .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(IconName::Globe)
+                            .child(
+                                div()
+                                    .text_lg()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(self.t("翻译", "Translate")),
+                            ),
+                    )
+                    .child(crate::visual::caption(
+                        self.t(
+                            "Enter 提交 · Shift+Enter 换行",
+                            "Enter to translate · Shift+Enter for a new line",
+                        ),
+                        cx,
+                    )),
+            )
+            .child(Textarea::new(&self.input).h(px(88.)))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .flex_shrink_0()
                     .gap_2()
                     .child(
                         Button::new("translate")
+                            .primary()
+                            .disabled(self.input.read(cx).value().trim().is_empty())
                             .label(self.t("翻译", "Translate"))
                             .on_click(cx.listener(|this, _, window, cx| this.submit(window, cx))),
                     )
                     .child(
                         Button::new("cancel")
+                            .icon(IconName::Pause)
                             .label(self.t("停止", "Stop"))
                             .disabled(self.active.is_none())
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -188,12 +236,23 @@ impl Render for TranslatorView {
                     )
                     .child(
                         Button::new("copy")
-                            .label(self.t("复制结果", "Copy result"))
+                            .icon(if self.copied {
+                                IconName::Check
+                            } else {
+                                IconName::Copy
+                            })
+                            .label(if self.copied {
+                                self.t("已复制", "Copied")
+                            } else {
+                                self.t("复制结果", "Copy result")
+                            })
                             .disabled(self.translated.is_empty())
                             .on_click(cx.listener(|this, _, _, cx| {
                                 cx.write_to_clipboard(ClipboardItem::new_string(
                                     this.translated.clone(),
-                                ))
+                                ));
+                                this.copied = true;
+                                cx.notify();
                             })),
                     ),
             )
@@ -202,10 +261,47 @@ impl Render for TranslatorView {
                     .id("translation-result")
                     .flex_1()
                     .min_h_0()
+                    .p_4()
+                    .rounded_lg()
+                    .bg(cx.theme().muted)
                     .overflow_y_scroll()
-                    .child(self.translated.clone()),
+                    .children(self.languages.as_ref().map(|(from, to)| {
+                        crate::visual::caption(format!("{from} → {to}"), cx).mb_2()
+                    }))
+                    .child(div().line_height(relative(1.65)).child(
+                        if self.translated.is_empty() {
+                            self.t("译文将显示在这里", "Your translation will appear here")
+                                .to_owned()
+                        } else {
+                            self.translated.clone()
+                        },
+                    )),
             )
-            .child(self.message.clone())
-            .child(self.warning.clone())
+            .when(!self.message.is_empty(), |root| {
+                root.child(
+                    div()
+                        .id("translation-status")
+                        .max_h(px(64.))
+                        .overflow_y_scroll()
+                        .text_xs()
+                        .text_color(if self.active.is_some() {
+                            cx.theme().muted_foreground
+                        } else {
+                            cx.theme().danger
+                        })
+                        .child(self.message.clone()),
+                )
+            })
+            .when(!self.warning.is_empty(), |root| {
+                root.child(
+                    div()
+                        .id("translation-warning")
+                        .max_h(px(64.))
+                        .overflow_y_scroll()
+                        .text_xs()
+                        .text_color(cx.theme().warning)
+                        .child(self.warning.clone()),
+                )
+            })
     }
 }

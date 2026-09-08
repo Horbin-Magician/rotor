@@ -2,7 +2,7 @@ use super::search_results::{MAX_RESULTS, SearchResults};
 use base64::prelude::*;
 use gpui_kit::{
     component::{
-        Disableable,
+        ActiveTheme, Disableable, IconName,
         button::Button,
         input::{Input, InputEvent, InputState},
     },
@@ -169,13 +169,22 @@ impl SearchView {
                     .items_center()
                     .gap_3()
                     .px_3()
+                    .rounded_lg()
                     .when(index == self.results.selected, |row| {
-                        row.bg(rgba(0x4488bb44))
+                        row.bg(cx.theme().list_active)
+                            .text_color(cx.theme().foreground)
                     })
-                    .hover(|row| row.bg(rgba(0x4488bb22)))
+                    .when(index != self.results.selected, |row| {
+                        row.hover(|row| row.bg(cx.theme().list_hover))
+                    })
                     .child(
                         div()
                             .size(px(32.))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(icon.is_none(), |icon| icon.child(IconName::File))
                             .children(icon.map(|icon| img(icon).size_full())),
                     )
                     .child(
@@ -183,8 +192,20 @@ impl SearchView {
                             .flex()
                             .flex_col()
                             .min_w_0()
-                            .child(div().truncate().child(item.file_name.clone()))
-                            .child(div().text_sm().truncate().child(item.path.clone())),
+                            .flex_1()
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .truncate()
+                                    .child(item.file_name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .truncate()
+                                    .child(item.path.clone()),
+                            ),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.results.selected = index;
@@ -200,6 +221,39 @@ impl Render for SearchView {
         let chinese = rotor_common::i18n::language_for_config(&self.services.settings()) == "zh-CN";
         let weak = cx.weak_entity();
         let count = self.results.items.len();
+        let status = if !self.message.is_empty() {
+            self.message.clone()
+        } else if self.opening.is_some() {
+            if chinese {
+                "正在打开…"
+            } else {
+                "Opening…"
+            }
+            .into()
+        } else if self.results.loading {
+            if chinese {
+                "搜索中…"
+            } else {
+                "Searching…"
+            }
+            .into()
+        } else if self.input.read(cx).value().is_empty() {
+            if chinese {
+                "输入文件名开始搜索"
+            } else {
+                "Type a file name to search"
+            }
+            .into()
+        } else if count == 0 {
+            if chinese {
+                "未找到匹配文件"
+            } else {
+                "No matching files"
+            }
+            .into()
+        } else {
+            format!("{} {}", count, if chinese { "个结果" } else { "results" })
+        };
         div()
             .id("searcher")
             .flex()
@@ -207,6 +261,9 @@ impl Render for SearchView {
             .size_full()
             .p_3()
             .gap_2()
+            .text_sm()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let composing = this.input.update(cx, |input, cx| {
                     input.marked_text_range(window, cx).is_some()
@@ -237,7 +294,15 @@ impl Render for SearchView {
                     .scroll_to_item(this.results.selected, ScrollStrategy::Nearest);
                 cx.notify();
             }))
-            .child(Input::new(&self.input))
+            .child(
+                Input::new(&self.input)
+                    .prefix(IconName::Search)
+                    .aria_label(if chinese {
+                        "搜索文件"
+                    } else {
+                        "Search files"
+                    }),
+            )
             .child(
                 uniform_list("results", count, move |range, _, cx| {
                     weak.update(cx, |this, cx| this.rows(range, cx))
@@ -250,9 +315,13 @@ impl Render for SearchView {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
+                    .flex_shrink_0()
                     .gap_2()
                     .child(
                         Button::new("open-folder")
+                            .compact()
+                            .icon(IconName::FolderOpen)
                             .label(if chinese {
                                 "打开目录"
                             } else {
@@ -264,6 +333,7 @@ impl Render for SearchView {
                     .when(cfg!(target_os = "windows"), |row| {
                         row.child(
                             Button::new("open-admin")
+                                .compact()
                                 .label(if chinese {
                                     "管理员打开"
                                 } else {
@@ -275,6 +345,7 @@ impl Render for SearchView {
                     })
                     .child(
                         Button::new("load-more")
+                            .compact()
                             .label(if chinese { "加载更多" } else { "Load more" })
                             .disabled(
                                 self.results.loading
@@ -287,14 +358,33 @@ impl Render for SearchView {
                             ),
                     ),
             )
-            .child(if self.results.loading {
-                if chinese {
-                    "搜索中…".into()
-                } else {
-                    "Searching…".into()
-                }
-            } else {
-                self.message.clone()
-            })
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .gap_2()
+                    .flex_shrink_0()
+                    .child(
+                        div()
+                            .id("search-status")
+                            .text_xs()
+                            .max_h(px(48.))
+                            .overflow_y_scroll()
+                            .text_color(if self.message.is_empty() {
+                                cx.theme().muted_foreground
+                            } else {
+                                cx.theme().danger
+                            })
+                            .child(status),
+                    )
+                    .child(crate::visual::caption(
+                        if chinese {
+                            "↑↓ 选择 · Enter 打开 · Esc 关闭"
+                        } else {
+                            "↑↓ Select · Enter Open · Esc Close"
+                        },
+                        cx,
+                    )),
+            )
     }
 }
