@@ -157,46 +157,75 @@ pub struct ShortcutTransaction {
     removed: Vec<HotKey>,
 }
 impl ShortcutTransaction {
+    /// Keep the caller's registration inventory aligned with each successful
+    /// backend operation, including partially failed preparation and rollback.
     pub fn prepare(
         backend: &mut impl HotkeyBackend,
-        old: &[HotKey],
+        registered: &mut Vec<HotKey>,
         new: &[HotKey],
     ) -> Result<Self, String> {
-        let old_ids: HashSet<_> = old.iter().map(HotKey::id).collect();
+        let old_ids: HashSet<_> = registered.iter().map(HotKey::id).collect();
         let new_ids: HashSet<_> = new.iter().map(HotKey::id).collect();
+        let remove: Vec<_> = registered
+            .iter()
+            .filter(|key| !new_ids.contains(&key.id()))
+            .copied()
+            .collect();
         let mut transaction = Self {
             added: Vec::new(),
             removed: Vec::new(),
         };
         let change = (|| {
-            for key in old.iter().filter(|key| !new_ids.contains(&key.id())) {
-                backend.unregister(*key)?;
-                transaction.removed.push(*key);
+            for key in remove {
+                backend.unregister(key)?;
+                registered.retain(|registered| registered.id() != key.id());
+                transaction.removed.push(key);
             }
             for key in new.iter().filter(|key| !old_ids.contains(&key.id())) {
                 backend.register(*key)?;
+                registered.push(*key);
                 transaction.added.push(*key);
             }
             Ok::<_, String>(())
         })();
         if let Err(error) = change {
-            return Err(match transaction.rollback(backend) {
+            return Err(match transaction.rollback(backend, registered) {
                 Ok(()) => error,
                 Err(rollback) => format!("{error}; rollback: {rollback}"),
             });
         }
         Ok(transaction)
     }
-    pub fn rollback(&self, backend: &mut impl HotkeyBackend) -> Result<(), String> {
+    pub fn rollback(
+        &self,
+        backend: &mut impl HotkeyBackend,
+        registered: &mut Vec<HotKey>,
+    ) -> Result<(), String> {
         let mut errors = Vec::new();
         for key in self.added.iter().rev() {
+            if !registered
+                .iter()
+                .any(|registered| registered.id() == key.id())
+            {
+                continue;
+            }
             if let Err(error) = backend.unregister(*key) {
                 errors.push(error);
+            } else {
+                registered.retain(|registered| registered.id() != key.id());
             }
         }
         for key in &self.removed {
+            if registered
+                .iter()
+                .any(|registered| registered.id() == key.id())
+            {
+                continue;
+            }
             if let Err(error) = backend.register(*key) {
                 errors.push(error);
+            } else {
+                registered.push(*key);
             }
         }
         if errors.is_empty() {
@@ -213,17 +242,21 @@ mod tests {
     #[derive(Default)]
     struct Registry {
         keys: HashSet<u32>,
-        fail: Option<u32>,
+        fail: HashSet<u32>,
+        fail_unregister: Option<u32>,
     }
     impl HotkeyBackend for Registry {
         fn register(&mut self, key: HotKey) -> Result<(), String> {
-            if self.fail == Some(key.id()) {
+            if self.fail.contains(&key.id()) {
                 return Err("shortcut occupied".into());
             }
             self.keys.insert(key.id());
             Ok(())
         }
         fn unregister(&mut self, key: HotKey) -> Result<(), String> {
+            if self.fail_unregister == Some(key.id()) {
+                return Err("unregister failed".into());
+            }
             self.keys.remove(&key.id());
             Ok(())
         }
@@ -235,10 +268,13 @@ mod tests {
         let c = HotKey::from_str("Ctrl+C").unwrap();
         let mut backend = Registry {
             keys: HashSet::from([a.id()]),
-            fail: Some(c.id()),
+            fail: HashSet::from([c.id()]),
+            ..Default::default()
         };
-        assert!(ShortcutTransaction::prepare(&mut backend, &[a], &[b, c]).is_err());
+        let mut registered = vec![a];
+        assert!(ShortcutTransaction::prepare(&mut backend, &mut registered, &[b, c]).is_err());
         assert_eq!(backend.keys, HashSet::from([a.id()]));
+        assert_eq!(registered, vec![a]);
     }
     #[test]
     fn disk_failure_can_roll_back_a_successfully_staged_change() {
@@ -246,11 +282,69 @@ mod tests {
         let b = HotKey::from_str("Ctrl+B").unwrap();
         let mut backend = Registry {
             keys: HashSet::from([a.id()]),
-            fail: None,
+            ..Default::default()
         };
-        let transaction = ShortcutTransaction::prepare(&mut backend, &[a], &[b]).unwrap();
+        let mut registered = vec![a];
+        let transaction =
+            ShortcutTransaction::prepare(&mut backend, &mut registered, &[b]).unwrap();
         assert_eq!(backend.keys, HashSet::from([b.id()]));
-        transaction.rollback(&mut backend).unwrap();
+        assert_eq!(registered, vec![b]);
+        transaction.rollback(&mut backend, &mut registered).unwrap();
+        assert_eq!(backend.keys, HashSet::from([a.id()]));
+        assert_eq!(registered, vec![a]);
+    }
+
+    #[test]
+    fn failed_rollback_tracks_a_missing_key_so_the_next_save_can_restore_it() {
+        let a = HotKey::from_str("Ctrl+A").unwrap();
+        let b = HotKey::from_str("Ctrl+B").unwrap();
+        let c = HotKey::from_str("Ctrl+C").unwrap();
+        let mut backend = Registry {
+            keys: HashSet::from([a.id()]),
+            fail: HashSet::from([a.id(), c.id()]),
+            ..Default::default()
+        };
+        let mut registered = vec![a];
+        let error = ShortcutTransaction::prepare(&mut backend, &mut registered, &[b, c])
+            .err()
+            .expect("new registration and restoring the old key both fail");
+        assert!(error.contains("rollback"));
+        assert!(backend.keys.is_empty());
+        assert!(
+            registered.is_empty(),
+            "the missing old key must not be advertised as registered"
+        );
+        backend.fail.clear();
+        ShortcutTransaction::prepare(&mut backend, &mut registered, &[a]).unwrap();
+        assert_eq!(backend.keys, HashSet::from([a.id()]));
+        assert_eq!(registered, vec![a]);
+    }
+
+    #[test]
+    fn failed_disk_rollback_tracks_an_extra_key_until_cleanup_succeeds() {
+        let a = HotKey::from_str("Ctrl+A").unwrap();
+        let b = HotKey::from_str("Ctrl+B").unwrap();
+        let mut backend = Registry {
+            keys: HashSet::from([a.id()]),
+            ..Default::default()
+        };
+        let mut registered = vec![a];
+        let transaction =
+            ShortcutTransaction::prepare(&mut backend, &mut registered, &[b]).unwrap();
+        backend.fail.insert(a.id());
+        backend.fail_unregister = Some(b.id());
+        assert!(transaction.rollback(&mut backend, &mut registered).is_err());
+        assert_eq!(registered, vec![b]);
+        assert_eq!(backend.keys, HashSet::from([b.id()]));
+
+        backend.fail.clear();
+        assert!(ShortcutTransaction::prepare(&mut backend, &mut registered, &[a]).is_err());
+        assert_eq!(registered, vec![b]);
+        assert_eq!(backend.keys, HashSet::from([b.id()]));
+
+        backend.fail_unregister = None;
+        ShortcutTransaction::prepare(&mut backend, &mut registered, &[a]).unwrap();
+        assert_eq!(registered, vec![a]);
         assert_eq!(backend.keys, HashSet::from([a.id()]));
     }
 

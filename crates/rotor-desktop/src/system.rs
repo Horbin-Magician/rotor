@@ -135,11 +135,19 @@ struct ActiveBindings {
     generation: u64,
     bindings: Vec<ShortcutBinding>,
 }
+impl ActiveBindings {
+    fn retain_registered(&mut self, registered: &[HotKey]) {
+        // Invalidate queued events from before an aborted transaction. If a
+        // rollback could not restore a key, do not dispatch its old action.
+        self.generation = self.generation.wrapping_add(1);
+        self.bindings
+            .retain(|binding| registered.iter().any(|key| key.id() == binding.key.id()));
+    }
+}
 struct Pending {
     id: OperationId,
     transaction: ShortcutTransaction,
     bindings: Vec<ShortcutBinding>,
-    previous: Vec<HotKey>,
 }
 pub struct SystemServices {
     tray: TrayIcon,
@@ -293,18 +301,17 @@ impl SystemServices {
         let bindings = shortcuts::bindings(config, self.development)?;
         let desired: Vec<_> = bindings.iter().map(|binding| binding.key).collect();
         self.paused.store(true, Ordering::Release);
-        match ShortcutTransaction::prepare(&mut self.backend, &self.registered, &desired) {
+        match ShortcutTransaction::prepare(&mut self.backend, &mut self.registered, &desired) {
             Ok(transaction) => {
-                let previous = std::mem::replace(&mut self.registered, desired);
                 self.pending = Some(Pending {
                     id,
                     transaction,
                     bindings,
-                    previous,
                 });
                 Ok(())
             }
             Err(error) => {
+                self.reconcile_active_bindings();
                 self.paused.store(false, Ordering::Release);
                 self.warning = Some(error.clone());
                 Err(error)
@@ -325,14 +332,24 @@ impl SystemServices {
             active.bindings = pending.bindings;
             Ok(())
         } else {
-            self.registered = pending.previous;
-            pending.transaction.rollback(&mut self.backend)
+            let result = pending
+                .transaction
+                .rollback(&mut self.backend, &mut self.registered);
+            self.reconcile_active_bindings();
+            result
         };
         self.paused.store(false, Ordering::Release);
         if let Err(error) = &result {
             self.warning = Some(error.clone());
         }
         result
+    }
+    fn reconcile_active_bindings(&mut self) {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        active.retain_registered(&self.registered);
     }
     pub fn update_menu(
         &mut self,
@@ -391,6 +408,30 @@ impl Drop for SystemServices {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rollback_invalidates_old_events_and_keeps_only_registered_old_actions() {
+        let retained: HotKey = "Ctrl+A".parse().unwrap();
+        let missing: HotKey = "Ctrl+B".parse().unwrap();
+        let leftover: HotKey = "Ctrl+C".parse().unwrap();
+        let mut active = ActiveBindings {
+            generation: 7,
+            bindings: vec![
+                ShortcutBinding {
+                    key: retained,
+                    action: ShortcutAction::Search,
+                },
+                ShortcutBinding {
+                    key: missing,
+                    action: ShortcutAction::Capture,
+                },
+            ],
+        };
+        active.retain_registered(&[retained, leftover]);
+        assert_eq!(active.generation, 8);
+        assert_eq!(active.bindings.len(), 1);
+        assert_eq!(active.bindings[0].key, retained);
+        assert_eq!(active.bindings[0].action, ShortcutAction::Search);
+    }
     #[test]
     fn exit_is_not_lost_when_activation_wakeups_are_coalesced() {
         let (bus, receiver) = CommandBus::new();

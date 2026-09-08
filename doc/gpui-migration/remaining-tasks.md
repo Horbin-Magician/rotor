@@ -6,6 +6,8 @@
 
 后续无窗口核对修复了“贴图保存失败后普通关闭，误记住失败目录”的状态串用问题，见[功能核对](evidence/windows-feature-audit.md)。UI 25 项测试及 native/UI 严格 clippy 通过；此改动晚于上述候选，实机前需重建，实际失败交互仍待验收。
 
+另修复快捷键回滚本身失败后，注册清单与后端状态不一致、后续保存无法补注册或清理的问题；[故障复现与恢复记录](evidence/windows-shortcut-recovery.md)包含修复前失败、修复后通过的测试。runtime 33 项、desktop 4 项及严格 clippy 通过；真实系统热键冲突验收仍未关闭。
+
 普通文本、排除目录及快捷键自动保存已接入，并补齐回执隔离、组字保护、失败草稿和关闭/退出等待（[记录](evidence/windows-autosave.md)）。后台新增真实 Windows 文件占用下的整批失败/回滚请求与解除占用重试测试，共 31 项通过；UI 25 项测试通过。代码缺口已推进，真实 Windows 输入/关闭操作尚未验收，UI-04 继续未关闭。
 
 翻译失败路径继续见 [流式处理核验](evidence/windows-translation-stream.md)：已修复 DeepSeek 提前 EOF 和异常结束被当作成功的问题，回归测试通过；真实窗口/三引擎联合验收仍未关闭。
