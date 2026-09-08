@@ -1,13 +1,13 @@
 pub mod file_util;
 pub mod sys_util;
 
-pub mod selection;
 pub mod clipboard;
 pub mod cursor;
-pub mod overlay;
-pub mod startup;
 pub mod desktop;
-pub mod single_instance;
-pub mod legacy_instance;
 #[cfg(target_os = "windows")]
 pub mod installer;
+pub mod legacy_instance;
+pub mod overlay;
+pub mod selection;
+pub mod single_instance;
+pub mod startup;

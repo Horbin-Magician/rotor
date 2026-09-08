@@ -44,3 +44,7 @@ target/debug/examples/inspect_pins.exe target/ui-acceptance-fixture-v2
 - 新增无窗口 `display_info` 示例，使用同一 GPUI 平台初始化和真实 monitor 配置，只读取拓扑，不创建 UI、不捕获桌面、不访问资料或剪贴板。实测退出 0，输出见 [显示器 TSV](windows-displays-2026-09-08.tsv)：两屏均为 200%，包括竖屏和负 Y 坐标。不同 DPI 混合、热插拔和旋转的行为未由该静态查询覆盖。
 - [环境和二进制哈希](windows-ui-environment-2026-09-08.json) 已采集。当前是 Windows 11 build 26200，环境含 Intel Graphics 和虚拟显示适配器；本批为 debug UI 样本，不能用于最低 OS、物理双屏热插拔或 release 性能的结论。
 - 该批代码通过 native check、debug build 和包含依赖的严格 clippy。`cargo build -p rotor-desktop --release --offline` 已通过；release `--build-info` 返回 2.6.0 开发身份，`--check-resources --resource-dir src-tauri/assets` 通过。资源检查显式使用开发资源路径，不是已安装包的资源发现或安装验收。
+
+收尾时 `cargo fmt --all -- --check` 发现 6 个历史文件的模块/导入排序及换行差异；运行 rustfmt 后全 workspace 格式检查通过，没有手工改变这些文件的逻辑。格式调整发生在上述 release 构建之后，最终候选仍应从冻结后的源码重新生成构建收据。
+
+最后一次只读窗口观察返回用户按物理 Escape 停止 Computer Use，本轮停止桌面输入并关闭本地响应夹具。`short` 的实际结果未获确认，不据夹具 HTTP 成功认定翻译 UI 已通过；此前用户确认的单张贴图恢复可见结果保留。

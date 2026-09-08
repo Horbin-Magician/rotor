@@ -69,9 +69,7 @@ impl EngineConfig {
             deepseek_model: config
                 .get("translator_deepseek_model")
                 .cloned()
-                .unwrap_or_else(|| {
-                    rotor_common::config::DEFAULT_TRANSLATOR_DEEPSEEK_MODEL.into()
-                }),
+                .unwrap_or_else(|| rotor_common::config::DEFAULT_TRANSLATOR_DEEPSEEK_MODEL.into()),
             custom_url: config
                 .get("translator_custom_url")
                 .cloned()
@@ -330,9 +328,7 @@ async fn translate_google(
         .map(|segments| {
             segments
                 .iter()
-                .filter_map(|segment| {
-                    segment.get(0).and_then(|translated| translated.as_str())
-                })
+                .filter_map(|segment| segment.get(0).and_then(|translated| translated.as_str()))
                 .collect::<String>()
         })
         .filter(|translated| !translated.is_empty())
@@ -366,7 +362,10 @@ async fn translate_custom(
         .replace("{text}", &urlencoding_encode(text))
         .replace("{from}", "auto")
         .replace("{to}", &urlencoding_encode(to))
-        .replace("{key}", &urlencoding_encode(engine_config.custom_key.trim()));
+        .replace(
+            "{key}",
+            &urlencoding_encode(engine_config.custom_key.trim()),
+        );
 
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
@@ -428,10 +427,14 @@ mod tests {
 
     #[test]
     fn errors_redact_raw_and_url_encoded_credentials() {
-        let config = EngineConfig::from_config(&rotor_common::Config::from([
-            ("translator_custom_key".into(), " a& b ".into()),
-        ]));
-        assert_eq!(config.redact_error("raw a& b encoded a%26%20b".into()), "raw [redacted] encoded [redacted]");
+        let config = EngineConfig::from_config(&rotor_common::Config::from([(
+            "translator_custom_key".into(),
+            " a& b ".into(),
+        )]));
+        assert_eq!(
+            config.redact_error("raw a& b encoded a%26%20b".into()),
+            "raw [redacted] encoded [redacted]"
+        );
     }
 
     #[test]
@@ -484,12 +487,8 @@ mod tests {
     #[test]
     fn recognizes_deepseek_stream_end() {
         let mut translated = String::new();
-        let done = consume_deepseek_stream_line(
-            b"data: [DONE]\r\n",
-            &mut translated,
-            &|_| {},
-        )
-        .unwrap();
+        let done =
+            consume_deepseek_stream_line(b"data: [DONE]\r\n", &mut translated, &|_| {}).unwrap();
         assert!(done);
     }
 
@@ -504,10 +503,7 @@ mod tests {
 
     #[test]
     fn parse_custom_response_falls_back_to_plain_text() {
-        assert_eq!(
-            parse_custom_response("  hello  ").as_deref(),
-            Some("hello")
-        );
+        assert_eq!(parse_custom_response("  hello  ").as_deref(), Some("hello"));
     }
 
     #[test]

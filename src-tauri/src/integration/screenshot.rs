@@ -1,4 +1,3 @@
-use rotor_screenshot::session::recoverable_session_id;
 use super::screenshot_platform::{
     disable_window_animation, prepare_overlay_window, raise_overlay_window,
 };
@@ -7,6 +6,7 @@ use rotor_screenshot::capture_cache::CaptureCache;
 use rotor_screenshot::monitor::{
     capture_all, current_configs, mask_label, sorted_configs, MonitorConfig,
 };
+use rotor_screenshot::session::recoverable_session_id;
 use rotor_screenshot::shotter_record::{ShotterConfig, ShotterRecord};
 use std::error::Error;
 use std::str::FromStr;
@@ -539,7 +539,6 @@ impl Default for ScreenShotter {
         Self::new()
     }
 }
-
 
 fn get_logical_position(pos: Option<PhysicalPosition<i32>>) -> Result<(f64, f64), Box<dyn Error>> {
     let Some(pos) = pos else {

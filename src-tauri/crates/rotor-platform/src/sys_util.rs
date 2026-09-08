@@ -76,10 +76,10 @@ pub type WindowRect = (i32, i32, i32, u32, u32);
 // window cannot fail the whole list.
 #[cfg(target_os = "windows")]
 pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
-    use windows::Win32::Foundation::{LPARAM, RECT};
     use windows::core::BOOL;
+    use windows::Win32::Foundation::{LPARAM, RECT};
     use windows::Win32::Graphics::Dwm::{
-        DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
+        DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetClassNameW, GetWindowThreadProcessId, IsWindowVisible,
@@ -272,7 +272,12 @@ pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
 #[cfg(target_os = "macos")]
 pub fn get_permission_statuses() -> Vec<PermissionStatus> {
     vec![
-        PermissionStatus { key: "accessibility".into(), name: "Accessibility".into(), granted: Some(crate::selection::accessibility_permission()), detail: "Required for selection translation".into() },
+        PermissionStatus {
+            key: "accessibility".into(),
+            name: "Accessibility".into(),
+            granted: Some(crate::selection::accessibility_permission()),
+            detail: "Required for selection translation".into(),
+        },
         PermissionStatus {
             key: "screen_capture".to_string(),
             name: "Screen Capture".to_string(),
@@ -352,7 +357,10 @@ mod tests {
         let rects = super::get_all_window_rect().expect("get_all_window_rect failed");
         assert!(!rects.is_empty(), "expected at least one visible window");
         for &(x, y, z, width, height) in &rects {
-            assert!(width > 0 && height > 0, "invalid rect: {x},{y},{z},{width}x{height}");
+            assert!(
+                width > 0 && height > 0,
+                "invalid rect: {x},{y},{z},{width}x{height}"
+            );
         }
     }
 }
