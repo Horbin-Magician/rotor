@@ -14,7 +14,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, Weak,
     },
     time::Duration,
 };
@@ -118,8 +118,16 @@ enum SettingsCommand {
         id: OperationId,
         changes: Vec<(String, String)>,
     },
+    Coalesced(Arc<Mutex<Option<SettingsPatch>>>),
     Flush(oneshot::Sender<()>),
 }
+
+struct SettingsPatch {
+    id: OperationId,
+    changes: Vec<(String, String)>,
+}
+
+type SettingsTail = Mutex<Option<Weak<Mutex<Option<SettingsPatch>>>>>;
 
 pub enum SettingsCoordination {
     Prepare {
@@ -151,6 +159,7 @@ pub struct Services {
     resources: Option<ResourceLocator>,
     events: Sender<RuntimeEvent>,
     settings: Sender<SettingsCommand>,
+    settings_tail: SettingsTail,
     settings_worker: Option<JoinHandle<()>>,
     pins: PinService,
     searcher: Option<Searcher>,
@@ -254,6 +263,7 @@ impl Services {
                 resources,
                 events,
                 settings,
+                settings_tail: Mutex::new(None),
                 settings_worker: Some(settings_worker),
                 pins,
                 searcher,
@@ -561,15 +571,47 @@ impl Services {
 
     /// Accepted patches execute serially, including when fields are edited fast.
     pub fn save_settings(&self, changes: Vec<(String, String)>) -> Result<OperationId, String> {
+        let mut tail = lock(&self.settings_tail);
         self.ensure_running()?;
         let id = next_operation();
         self.settings
             .try_send(SettingsCommand::Save { id, changes })
             .map_err(|_| "configuration queue is busy or closed".to_string())?;
+        // Later automatic edits must queue after this explicit transaction.
+        *tail = None;
+        Ok(id)
+    }
+
+    /// Merge only into the last unconsumed automatic batch. A returned ID may
+    /// be shared by multiple fields; its SettingsSaved snapshot covers them all.
+    pub fn save_settings_coalesced(
+        &self,
+        changes: Vec<(String, String)>,
+    ) -> Result<OperationId, String> {
+        let mut tail = lock(&self.settings_tail);
+        self.ensure_running()?;
+        if let Some(batch) = tail.as_ref().and_then(Weak::upgrade) {
+            if let Some(patch) = lock(&batch).as_mut() {
+                merge_settings_changes(&mut patch.changes, changes)?;
+                return Ok(patch.id);
+            }
+        }
+        let mut merged = Vec::new();
+        merge_settings_changes(&mut merged, changes)?;
+        let id = next_operation();
+        let batch = Arc::new(Mutex::new(Some(SettingsPatch {
+            id,
+            changes: merged,
+        })));
+        self.settings
+            .try_send(SettingsCommand::Coalesced(batch.clone()))
+            .map_err(|_| "configuration queue is busy or closed".to_string())?;
+        *tail = Some(Arc::downgrade(&batch));
         Ok(id)
     }
 
     pub async fn flush_settings(&self) -> Result<(), String> {
+        *lock(&self.settings_tail) = None;
         let (sender, receiver) = oneshot::channel();
         self.settings
             .send(SettingsCommand::Flush(sender))
@@ -852,6 +894,7 @@ impl Services {
     }
 
     pub fn shutdown_with_pin_updates(&self, updates: Vec<(u32, crate::ShotterConfig)>) {
+        let _tail = lock(&self.settings_tail);
         if self.stopped.swap(true, Ordering::AcqRel) {
             return;
         }
@@ -911,6 +954,18 @@ async fn settings_loop(
     coordinate_shortcuts: Arc<AtomicBool>,
 ) {
     while let Ok(command) = receiver.recv().await {
+        let command = match command {
+            SettingsCommand::Coalesced(batch) => {
+                let Some(patch) = lock(&batch).take() else {
+                    continue;
+                };
+                SettingsCommand::Save {
+                    id: patch.id,
+                    changes: patch.changes,
+                }
+            }
+            other => other,
+        };
         match command {
             SettingsCommand::Save { id, mut changes } => {
                 let coordinated = coordinate_shortcuts.load(Ordering::Acquire)
@@ -1026,8 +1081,33 @@ async fn settings_loop(
             SettingsCommand::Flush(sender) => {
                 let _ = sender.send(());
             }
+            SettingsCommand::Coalesced(_) => unreachable!("coalesced write was resolved above"),
         }
     }
+}
+
+fn merge_settings_changes(
+    current: &mut Vec<(String, String)>,
+    incoming: Vec<(String, String)>,
+) -> Result<(), String> {
+    // Bound the number of fields in one automatic batch without rejecting a
+    // replacement of an existing field. Validate before changing accepted data.
+    let keys = current
+        .iter()
+        .chain(&incoming)
+        .map(|(key, _)| key)
+        .collect::<std::collections::HashSet<_>>();
+    if keys.len() > 64 {
+        return Err("too many fields in automatic settings batch".into());
+    }
+    for (key, value) in incoming {
+        if let Some((_, previous)) = current.iter_mut().find(|(existing, _)| existing == &key) {
+            *previous = value;
+        } else {
+            current.push((key, value));
+        }
+    }
+    Ok(())
 }
 
 fn capture_monitors() -> Result<CaptureBundle, String> {
@@ -1066,6 +1146,8 @@ fn redact_error(message: String, config: &EngineConfig) -> String {
     config.redact_error(message)
 }
 
+#[cfg(test)]
+mod settings_queue_tests;
 #[cfg(test)]
 mod translation_tests;
 
