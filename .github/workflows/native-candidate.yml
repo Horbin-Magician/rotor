@@ -2,6 +2,20 @@ name: native-candidate
 on:
   workflow_dispatch:
     inputs:
+      platforms:
+        description: 'Candidate platforms (macOS acceptance is currently deferred)'
+        required: true
+        type: choice
+        default: windows
+        options:
+          - windows
+          - both
+          - macos
+      test_installation:
+        description: 'Run silent Windows installation checks for development identity'
+        required: true
+        type: boolean
+        default: true
       production_identity:
         description: 'Use the legacy Rotor installation identity for acceptance testing'
         required: true
@@ -26,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-15]
+        os: ${{ fromJSON(inputs.platforms == 'windows' && '["windows-latest"]' || inputs.platforms == 'macos' && '["macos-15"]' || '["windows-latest","macos-15"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -65,12 +79,26 @@ jobs:
             & "$env:RUNNER_TEMP/native-stage/$name.app/Contents/MacOS/$binary" --check-resources
             if ($LASTEXITCODE -ne 0) { throw 'Packaged resource check failed' }
           }
-      - name: Build development packages
+      - name: Build native packages
         shell: pwsh
         run: |
           if ($IsWindows) { $env:NSIS_MAKENSIS = 'C:\Program Files (x86)\NSIS\makensis.exe' }
           cargo run -p xtask --locked -- package "$env:RUNNER_TEMP/native-stage" "$env:RUNNER_TEMP/native-package"
           if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed' }
+      - name: Verify silent Windows installation and removal
+        if: runner.os == 'Windows' && inputs.test_installation && !inputs.production_identity
+        shell: pwsh
+        run: |
+          ./.github/scripts/test-windows-install.ps1 -PackageDirectory "$env:RUNNER_TEMP/native-package" -TestDirectory "$env:GITHUB_WORKSPACE/target/windows-install-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+      - name: Retain Windows installation evidence
+        if: always() && runner.os == 'Windows' && inputs.test_installation && !inputs.production_identity
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-install-checks
+          path: |
+            ${{ github.workspace }}/target/windows-install-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+            ${{ github.workspace }}/target/windows-install-${{ github.run_id }}-${{ github.run_attempt }}/*.log
+          if-no-files-found: ignore
       - name: Sign updater artifacts
         if: inputs.sign_updates
         shell: pwsh
@@ -98,7 +126,7 @@ jobs:
           path: ${{ runner.temp }}/native-package
           if-no-files-found: error
   update-metadata:
-    if: inputs.sign_updates
+    if: inputs.sign_updates && inputs.platforms == 'both'
     needs: package
     runs-on: ubuntu-latest
     steps:

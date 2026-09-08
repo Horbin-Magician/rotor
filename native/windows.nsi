@@ -49,6 +49,16 @@ Var PreviousDirectory
 Var PreviousVersion
 Var InstallParent
 Var FailedDirectory
+Var InstallLogFile
+Var InstallLogPath
+
+; Optional /LOG is for unattended diagnostics; no log is created by default.
+!macro ReportMessage FLAGS MESSAGE
+  ${If} $InstallLogFile != ""
+    FileWriteUTF16LE $InstallLogFile "${MESSAGE}$\r$\n"
+  ${EndIf}
+  MessageBox ${FLAGS} "${MESSAGE}" /SD IDOK
+!macroend
 
 Function RestartRotor
   ${If} $PreviousDirectory != ""
@@ -60,8 +70,18 @@ Function RestartRotor
 FunctionEnd
 
 Function .onInit
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/LOG=" $InstallLogPath
+  ${IfNot} ${Errors}
+    FileOpen $InstallLogFile "$InstallLogPath" w
+    ${IfNot} ${Errors}
+      FileWriteByte $InstallLogFile 255
+      FileWriteByte $InstallLogFile 254
+    ${EndIf}
+  ${EndIf}
   ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP "Rotor requires 64-bit Windows."
+    !insertmacro ReportMessage MB_ICONSTOP "Rotor requires 64-bit Windows."
     Abort
   ${EndIf}
   SetRegView 64
@@ -120,14 +140,14 @@ Function .onInit
         System::Call 'kernel32::CloseHandle(p r1)'
         ${If} $2 != 0
         ${AndIf} $2 != 128
-          MessageBox MB_ICONSTOP "Rotor has not exited. Close it and retry the update."
+          !insertmacro ReportMessage MB_ICONSTOP "Rotor has not exited. Close it and retry the update."
           Abort
         ${EndIf}
       ${EndIf}
       Return
     ${EndIf}
     ${If} $ParentPid <= 0
-      MessageBox MB_ICONSTOP "Invalid update parent process."
+      !insertmacro ReportMessage MB_ICONSTOP "Invalid update parent process."
       Abort
     ${EndIf}
     ; Wait for the normal quit path to flush configuration and pin records.
@@ -136,7 +156,7 @@ Function .onInit
       System::Call 'kernel32::WaitForSingleObject(p r1, i 30000) i.r2'
       System::Call 'kernel32::CloseHandle(p r1)'
       ${If} $2 != 0
-        MessageBox MB_ICONSTOP "Rotor has not exited. Close it and retry the update."
+        !insertmacro ReportMessage MB_ICONSTOP "Rotor has not exited. Close it and retry the update."
         Abort
       ${EndIf}
     ${EndIf}
@@ -146,14 +166,25 @@ FunctionEnd
 Section "Rotor" SEC_MAIN
   SectionIn RO
   SetShellVarContext all
-  GetFullPathName $INSTDIR "$INSTDIR"
+  ; NSIS GetFullPathName can empty its output for a not-yet-created path.
+  ; Normalize lexically before creating the destination, then reject truncation.
+  System::Call 'kernel32::GetFullPathNameW(w "$INSTDIR", i ${NSIS_MAX_STRLEN}, w .r0, p 0) i.r1'
+  ${If} $1 == 0
+  ${OrIf} $1 >= ${NSIS_MAX_STRLEN}
+    !insertmacro ReportMessage MB_ICONSTOP "Invalid or excessively long installation directory."
+    Abort
+  ${EndIf}
+  StrCpy $INSTDIR $0
+  ${If} $InstallLogFile != ""
+    FileWriteUTF16LE $InstallLogFile "Install directory: $INSTDIR$\r$\n"
+  ${EndIf}
   ${GetRoot} "$INSTDIR" $R0
   GetFullPathName $R0 "$R0\"
   ${If} $INSTDIR == $R0
   ${OrIf} $INSTDIR == $WINDIR
   ${OrIf} $INSTDIR == $PROGRAMFILES64
   ${OrIf} $INSTDIR == $PROGRAMFILES
-    MessageBox MB_ICONSTOP "Choose a dedicated Rotor installation directory."
+    !insertmacro ReportMessage MB_ICONSTOP "Choose a dedicated Rotor installation directory."
     Abort
   ${EndIf}
   ; Refuse nonempty directories belonging to another application.
@@ -178,11 +209,11 @@ Section "Rotor" SEC_MAIN
     ${EndIf}
     ${If} $R0 != $INSTDIR
       ${IfNot} ${FileExists} "$INSTDIR\native-build.json"
-        MessageBox MB_ICONSTOP "The selected directory is not a recognized Rotor installation."
+        !insertmacro ReportMessage MB_ICONSTOP "The selected directory is not a recognized Rotor installation."
         Abort
       ${EndIf}
       ${IfNot} ${FileExists} "$INSTDIR\${APP_EXE}"
-        MessageBox MB_ICONSTOP "The selected directory contains a different build identity."
+        !insertmacro ReportMessage MB_ICONSTOP "The selected directory contains a different build identity."
         Abort
       ${EndIf}
     ${EndIf}
@@ -192,7 +223,7 @@ Section "Rotor" SEC_MAIN
   ClearErrors
   GetTempFileName $StagedDirectory "$InstallParent"
   ${If} ${Errors}
-    MessageBox MB_ICONSTOP "Cannot create a staging directory beside Rotor."
+    !insertmacro ReportMessage MB_ICONSTOP "Cannot create a staging directory beside Rotor."
     Abort
   ${EndIf}
   Delete "$StagedDirectory"
@@ -201,12 +232,12 @@ Section "Rotor" SEC_MAIN
   ClearErrors
   File /r "${STAGE_DIR}\*"
   ${If} ${Errors}
-    MessageBox MB_ICONSTOP "Cannot extract Rotor. The previous installation is unchanged."
+    !insertmacro ReportMessage MB_ICONSTOP "Cannot extract Rotor. The previous installation is unchanged."
     Abort
   ${EndIf}
   WriteUninstaller "$StagedDirectory\uninstall.exe"
   ${If} ${Errors}
-    MessageBox MB_ICONSTOP "Cannot prepare the uninstaller. The previous installation is unchanged."
+    !insertmacro ReportMessage MB_ICONSTOP "Cannot prepare the uninstaller. The previous installation is unchanged."
     Abort
   ${EndIf}
   SetOutPath "$TEMP"
@@ -216,14 +247,14 @@ Section "Rotor" SEC_MAIN
     ClearErrors
     GetTempFileName $PreviousDirectory "$InstallParent"
     ${If} ${Errors}
-      MessageBox MB_ICONSTOP "Cannot reserve a backup directory."
+      !insertmacro ReportMessage MB_ICONSTOP "Cannot reserve a backup directory."
       Abort
     ${EndIf}
     Delete "$PreviousDirectory"
     ClearErrors
     Rename "$INSTDIR" "$PreviousDirectory"
     ${If} ${Errors}
-      MessageBox MB_ICONSTOP "Close all Rotor instances before installing. The previous installation is unchanged."
+      !insertmacro ReportMessage MB_ICONSTOP "Close all Rotor instances before installing. The previous installation is unchanged."
       Abort
     ${EndIf}
   ${Else}
@@ -237,11 +268,11 @@ Section "Rotor" SEC_MAIN
       ClearErrors
       Rename "$PreviousDirectory" "$INSTDIR"
       ${If} ${Errors}
-        MessageBox MB_ICONSTOP "Install failed. The previous installation remains at $PreviousDirectory."
+        !insertmacro ReportMessage MB_ICONSTOP "Install failed. The previous installation remains at $PreviousDirectory."
         Abort
       ${EndIf}
     ${EndIf}
-    MessageBox MB_ICONSTOP "Install failed. The previous installation has been retained."
+    !insertmacro ReportMessage MB_ICONSTOP "Install failed. The previous installation has been retained."
     Abort
   ${EndIf}
   ${If} $PreviousDirectory != ""
@@ -271,17 +302,17 @@ Function un.onInit
   SetErrorLevel 1
   ${un.GetOptions} $R0 "/PARENT=" $ParentPid
   ${If} ${Errors}
-    MessageBox MB_ICONSTOP "Rollback requires an update parent process."
+    !insertmacro ReportMessage MB_ICONSTOP "Rollback requires an update parent process."
     Quit
   ${EndIf}
   ${If} $ParentPid <= 0
-    MessageBox MB_ICONSTOP "Invalid rollback parent process."
+    !insertmacro ReportMessage MB_ICONSTOP "Invalid rollback parent process."
     Quit
   ${EndIf}
   ReadRegStr $PreviousDirectory HKLM "Software\${REGISTRY_KEY}" "PreviousInstallLocation"
   ReadRegStr $PreviousVersion HKLM "Software\${REGISTRY_KEY}" "PreviousVersion"
   ${If} $PreviousDirectory == ""
-    MessageBox MB_ICONSTOP "No previous installation is registered."
+    !insertmacro ReportMessage MB_ICONSTOP "No previous installation is registered."
     Quit
   ${EndIf}
   GetFullPathName $INSTDIR "$INSTDIR"
@@ -294,7 +325,7 @@ Function un.onInit
   ${OrIf} $INSTDIR == $WINDIR
   ${OrIf} $INSTDIR == $PROGRAMFILES64
   ${OrIf} $INSTDIR == $PROGRAMFILES
-    MessageBox MB_ICONSTOP "Rollback target does not match the registered Rotor directory."
+    !insertmacro ReportMessage MB_ICONSTOP "Rollback target does not match the registered Rotor directory."
     Quit
   ${EndIf}
   GetFullPathName $PreviousDirectory "$PreviousDirectory"
@@ -302,11 +333,11 @@ Function un.onInit
   ${un.GetParent} "$PreviousDirectory" $R1
   ${If} $R1 != $InstallParent
   ${OrIf} $PreviousDirectory == $INSTDIR
-    MessageBox MB_ICONSTOP "Invalid rollback location. No files have been moved."
+    !insertmacro ReportMessage MB_ICONSTOP "Invalid rollback location. No files have been moved."
     Quit
   ${EndIf}
   ${IfNot} ${FileExists} "$PreviousDirectory\${APP_EXE}"
-    MessageBox MB_ICONSTOP "The previous Rotor executable is unavailable."
+    !insertmacro ReportMessage MB_ICONSTOP "The previous Rotor executable is unavailable."
     Quit
   ${EndIf}
   StrCpy $RestartArguments ""
@@ -344,14 +375,14 @@ Function un.onInit
     System::Call 'kernel32::WaitForSingleObject(p r1, i 30000) i.r2'
     System::Call 'kernel32::CloseHandle(p r1)'
     ${If} $2 != 0
-      MessageBox MB_ICONSTOP "Rotor has not exited. Previous files remain at $PreviousDirectory."
+      !insertmacro ReportMessage MB_ICONSTOP "Rotor has not exited. Previous files remain at $PreviousDirectory."
       Quit
     ${EndIf}
   ${EndIf}
   ClearErrors
   GetTempFileName $FailedDirectory "$InstallParent"
   ${If} ${Errors}
-    MessageBox MB_ICONSTOP "Cannot reserve a recovery directory."
+    !insertmacro ReportMessage MB_ICONSTOP "Cannot reserve a recovery directory."
     Quit
   ${EndIf}
   Delete "$FailedDirectory"
@@ -359,14 +390,14 @@ Function un.onInit
   ClearErrors
   Rename "$INSTDIR" "$FailedDirectory"
   ${If} ${Errors}
-    MessageBox MB_ICONSTOP "Cannot move the failed installation. Close Rotor and retry; previous files remain at $PreviousDirectory."
+    !insertmacro ReportMessage MB_ICONSTOP "Cannot move the failed installation. Close Rotor and retry; previous files remain at $PreviousDirectory."
     Quit
   ${EndIf}
   ClearErrors
   Rename "$PreviousDirectory" "$INSTDIR"
   ${If} ${Errors}
     Rename "$FailedDirectory" "$INSTDIR"
-    MessageBox MB_ICONSTOP "Recovery failed. Previous files remain at $PreviousDirectory."
+    !insertmacro ReportMessage MB_ICONSTOP "Recovery failed. Previous files remain at $PreviousDirectory."
     Quit
   ${EndIf}
   ${If} $PreviousVersion == ""
@@ -386,7 +417,7 @@ Function un.onInit
   DeleteRegValue HKLM "Software\${REGISTRY_KEY}" "PreviousVersion"
   WriteRegStr HKLM "Software\${REGISTRY_KEY}" "FailedInstallLocation" "$FailedDirectory"
   ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments"
-  MessageBox MB_ICONEXCLAMATION "The update could not start. The previous installation was restored. Failed new files are retained at $FailedDirectory."
+  !insertmacro ReportMessage MB_ICONEXCLAMATION "The update could not start. The previous installation was restored. Failed new files are retained at $FailedDirectory."
   SetErrorLevel 0
   Quit
 FunctionEnd
@@ -397,7 +428,7 @@ Section "Uninstall"
   ClearErrors
   Delete "$INSTDIR\${APP_EXE}"
   ${If} ${Errors}
-    MessageBox MB_ICONSTOP "Close Rotor before uninstalling."
+    !insertmacro ReportMessage MB_ICONSTOP "Close Rotor before uninstalling."
     Abort
   ${EndIf}
   ; Only package-owned files, followed by non-recursive empty-directory removal.
