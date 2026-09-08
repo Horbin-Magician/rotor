@@ -6,7 +6,7 @@
 
 已增加真实 localhost 请求的替换/取消/503 错误测试，并为原生搜索补齐索引构建、加载、释放和失败反馈。无窗口检查通过，尚不作为 GUI/IME 验收完成的依据。
 
-44 项功能对照已逐行回填实现位置、主要 commit 和证据边界。本次核对发现并修复了 F04 搜索窗关闭未发 release、后台结果缓存未释放的问题（[回归记录](evidence/windows-search-release.md)）。文本/快捷操作显式保存增加步骤、原生额外 redo 与首发范围的差异已登记，UI-04 仍需收口。
+44 项功能对照已逐行回填实现位置、主要 commit 和证据边界。本次核对发现并修复了 F04 搜索窗关闭未发 release、后台结果缓存未释放的问题（[回归记录](evidence/windows-search-release.md)）。额外 redo 入口已按 P6 首发范围移除；文本/快捷键保存及快捷操作启停/删除增加步骤的问题仍需按 UI-04 收口，详见 [功能核对](evidence/windows-feature-audit.md)。
 
 最新 Windows 续作见 [续作核验](evidence/windows-ui-followup.md)：上轮合成贴图未出现已定位为测试记录的 `image_rect` 原点错误；修正夹具通过真实 PinStore 只读检查，窗口恢复验收仍待完成。
 

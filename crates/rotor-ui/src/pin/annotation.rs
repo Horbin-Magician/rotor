@@ -302,7 +302,7 @@ impl PinView {
         }
         cx.notify();
     }
-    fn undo_canvas(&mut self, redo: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn undo_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy()
             || self.canvas.rendering
             || self.canvas.editor.is_some()
@@ -312,31 +312,21 @@ impl PinView {
             return;
         }
         let before_crop = self.canvas.document.scene().crop;
-        let changed = if redo {
-            self.canvas.document.redo()
-        } else {
-            self.canvas.document.undo()
-        };
+        let changed = self.canvas.document.undo();
         if changed {
             let next_crop = self.canvas.document.scene().crop;
             if next_crop != before_crop
                 && let Err(error) = self.apply_crop(next_crop, window, cx)
             {
-                if redo {
-                    self.canvas.document.undo();
-                } else {
-                    self.canvas.document.redo();
-                }
+                self.canvas.document.redo();
                 self.message = error;
                 cx.notify();
                 return;
             }
             self.canvas.error = None;
             self.canvas.preview = None;
-            self.canvas.rollback = (next_crop == before_crop).then_some((
-                self.canvas.document.revision(),
-                if redo { Rollback::Undo } else { Rollback::Redo },
-            ));
+            self.canvas.rollback = (next_crop == before_crop)
+                .then_some((self.canvas.document.revision(), Rollback::Redo));
             self.ensure_canvas(window, cx);
             cx.notify();
         }
@@ -527,10 +517,8 @@ impl PinView {
             cx.stop_propagation();
             return true;
         }
-        if event.keystroke.key.eq_ignore_ascii_case("z")
-            && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
-        {
-            self.undo_canvas(event.keystroke.modifiers.shift, window, cx);
+        if is_canvas_undo(&event.keystroke, self.canvas.editing()) {
+            self.undo_canvas(window, cx);
             cx.stop_propagation();
             return true;
         }
@@ -576,24 +564,7 @@ impl PinView {
                             || !self.canvas.document.can_undo()
                             || self.canvas.editor.is_some(),
                     )
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.undo_canvas(false, window, cx)),
-                    ),
-            )
-            .child(
-                Button::new("canvas-redo")
-                    .icon(IconName::Redo2)
-                    .accessibility_label(self.t("重做", "Redo"))
-                    .tooltip(self.t("重做", "Redo"))
-                    .compact()
-                    .disabled(
-                        disabled
-                            || !self.canvas.document.can_redo()
-                            || self.canvas.editor.is_some(),
-                    )
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.undo_canvas(true, window, cx)),
-                    ),
+                    .on_click(cx.listener(|this, _, window, cx| this.undo_canvas(window, cx))),
             )
             .when(self.canvas.editor.is_some(), |row| {
                 row.child(
@@ -828,9 +799,34 @@ fn paint_preview(
     }
 }
 
+fn is_canvas_undo(key: &Keystroke, editing: bool) -> bool {
+    editing
+        && key.key.eq_ignore_ascii_case("z")
+        && (key.modifiers.control || key.modifiers.platform)
+        && !key.modifiers.shift
+        && !key.modifiers.alt
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CanvasState, FrameKey, Rollback};
+
+    #[test]
+    fn undo_only_claims_the_plain_editing_chord() {
+        let undo = gpui_kit::Keystroke::parse("ctrl-z").unwrap();
+        assert!(super::is_canvas_undo(&undo, true));
+        assert!(!super::is_canvas_undo(&undo, false));
+        assert!(super::super::shortcut_matches(
+            &undo,
+            Some(&"Ctrl+KeyZ".into())
+        ));
+        for chord in ["ctrl-shift-z", "ctrl-alt-z", "z"] {
+            assert!(!super::is_canvas_undo(
+                &gpui_kit::Keystroke::parse(chord).unwrap(),
+                true
+            ));
+        }
+    }
     use rotor_canvas::{Annotation, Color, ImagePoint, StrokeStyle};
     use rotor_runtime::ShotterConfig;
     use std::sync::Arc;
