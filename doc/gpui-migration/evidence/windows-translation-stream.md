@@ -25,3 +25,5 @@
 - 服务返回 HTTP 503，验证得到带原请求 ID 的错误，而不是成功译文。
 
 `cargo test -p rotor-runtime translation_tests --offline` 两项通过；runtime `--all-targets --offline -- -D warnings` clippy 与全 workspace 格式检查通过。该测试不注册系统热键、不创建窗口、不调用剪贴板或外部翻译服务。
+
+包含上述修正及搜索状态反馈的 `a593272` 已通过 Windows release 离线构建、无窗口身份诊断及显式开发资源检查；[校验记录与二进制哈希](windows-native-checks-2026-09-08.json) 已保存。全 workspace Windows check 通过，旧 Tauri 仍有三个既有 warning。没有生成新安装候选、切换版本/渠道或把该结果当成窗口、安装、性能验收。
