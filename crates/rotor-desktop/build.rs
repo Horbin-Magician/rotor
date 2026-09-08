@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
 fn main() {
-    println!("cargo:rerun-if-changed=../../src-tauri/assets/icons/icon.ico");
+    println!("cargo:rerun-if-changed=../../assets/icons/icon.ico");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
@@ -58,7 +58,7 @@ BEGIN
   END
 END
 "#,
-        icon = path("src-tauri/assets/icons/icon.ico"),
+        icon = path("assets/icons/icon.ico"),
         major = numbers[0],
         minor = numbers[1],
         patch = numbers[2]

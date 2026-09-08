@@ -7,7 +7,8 @@ This file provides guidance to Codex when working with code in this repository.
 ### Active GPUI migration
 
 The Rust workspace now lives at the repository root. `rotor-desktop` is the
-default native target; `rotor-ui` and `rotor-canvas` are under `crates/`. The
+default native target. All shared and native crates live under `crates/`, and
+models, fonts and icons live under root `assets/`. The
 native shell uses `.rotor-gpui` by default, or an explicit `ROTOR_DATA_DIR`.
 The independent P0 workspace remains under `experiments/gpui-probe`.
 
@@ -17,6 +18,10 @@ The old Tauri window/lifecycle/IPC adapters are now in
 The historical module map below describes the old shell. Follow
 `doc/gpui-migration/progress.md` for current implementation and validation state.
 Code implementation and cross-platform acceptance are tracked separately.
+The user has waived further visual UI tests; mark them skipped, not passed.
+Continue Windows engineering migration and automated checks; macOS validation
+is deferred. Legacy adapters still consume the root shared crates and map the
+root assets to their existing installed `assets/` layout.
 
 Rotor is a fast, low-occupancy desktop toolbox for Windows and macOS. It is built with Tauri 2, a Rust backend, and a Vue 3 + TypeScript frontend. Current user-facing modules include file search, screenshots, pinned screenshot windows, screenshot OCR, text translation (selection and input), settings/overview, and configurable quick actions.
 
@@ -26,7 +31,7 @@ Rotor is a fast, low-occupancy desktop toolbox for Windows and macOS. It is buil
 - **Backend**: Rust 2021 with a Cargo workspace under `src-tauri`.
 - **Frontend**: Vue 3, TypeScript, Vite 6, Vue Router 4, Vue i18n 11, Naive UI, and Tauri JS APIs.
 - **Package management**: Yarn 1.22.22 for frontend/Tauri CLI, Cargo for Rust.
-- **Screenshot/OCR**: `xcap`, `image`, `rayon`, and `oar-ocr` with ONNX model assets in `src-tauri/assets/model`.
+- **Screenshot/OCR**: `xcap`, `image`, `rayon`, and `oar-ocr` with ONNX model assets in `assets/model`.
 
 ## Agent Constraints
 
@@ -70,13 +75,13 @@ yarn tauri build
 
 ```bash
 # Check all Rust crates
-cd src-tauri && cargo check --workspace
+cargo check --workspace
 
 # Run Rust tests
-cd src-tauri && cargo test --workspace
+cargo test --workspace
 
 # Build all Rust crates
-cd src-tauri && cargo build --workspace
+cargo build --workspace
 ```
 
 ## Frontend Structure
@@ -107,18 +112,18 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
   - `screen_shotter_cmd.rs`: Mask/pin commands, screenshot data bytes, save image, persisted pin state, and OCR.
   - `searcher_cmd.rs`: Search requests, index status, open file, and open as admin.
   - `translator_cmd.rs`: Translation requests against the configured engine.
-- `src-tauri/crates/rotor-common`: App config, user data paths, and backend i18n.
-- `src-tauri/crates/rotor-platform`: Platform-specific file utilities, file icons, permission/status collection, window rects, memory usage, elevation, and open-file behavior.
-- `src-tauri/crates/rotor-runtime`: Global application state, tray menu, global shortcut dispatch, quick actions, shortcut conflict notices, and screenshot data fetching for IPC.
-- `src-tauri/crates/rotor-searcher`: File indexing/search, excluded directory parsing, per-volume search workers, result ranking, and icon attachment.
-- `src-tauri/crates/rotor-screenshot`: Monitor capture, mask and pin windows, capture cache, persisted shotter records, image utilities, rectangle detection, and OCR integration.
-- `src-tauri/crates/rotor-translator`: Translator window, simulated-copy selection capture, cursor-following window placement, and translation engines (free Google endpoint plus custom API template). Uses `reqwest` with `rustls-no-provider` + ring (mirrors tauri-plugin-updater).
+- `crates/rotor-common`: App config, user data paths, and backend i18n.
+- `crates/rotor-platform`: Platform-specific file utilities, file icons, permission/status collection, window rects, memory usage, elevation, and open-file behavior.
+- `crates/rotor-runtime`: Global application state, tray menu, global shortcut dispatch, quick actions, shortcut conflict notices, and screenshot data fetching for IPC.
+- `crates/rotor-searcher`: File indexing/search, excluded directory parsing, per-volume search workers, result ranking, and icon attachment.
+- `crates/rotor-screenshot`: Monitor capture, mask and pin windows, capture cache, persisted shotter records, image utilities, rectangle detection, and OCR integration.
+- `crates/rotor-translator`: Translator window, simulated-copy selection capture, cursor-following window placement, and translation engines (free Google endpoint plus custom API template). Uses `reqwest` with `rustls-no-provider` + ring (mirrors tauri-plugin-updater).
 
 ## Runtime Flows
 
 ### Global Shortcuts
 
-- Defaults live in `src-tauri/crates/rotor-common/src/config.rs`.
+- Defaults live in `crates/rotor-common/src/config.rs`.
 - macOS defaults: search `Cmd+Shift+F`, screenshot `Cmd+Shift+S`, quick actions `Cmd+Shift+T` and `Cmd+Shift+E`, selection translate `Cmd+Shift+D`, input translate `Cmd+Shift+W`.
 - Windows defaults: search `Ctrl+Shift+F`, screenshot `Ctrl+Shift+S`, quick actions `Ctrl+Shift+T` and `Ctrl+Shift+E`, selection translate `Ctrl+Shift+D`, input translate `Ctrl+Shift+W`.
 - Pin window defaults: save `S`, close `Escape`, copy `Enter`, hide `H`.
@@ -133,7 +138,7 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 - Frontend mask and pin pages request image bytes through the `get_screenshot_data` command, which returns raw RGBA bytes as a binary IPC response (`tauri::ipc::Response`).
 - `rotor-runtime::screenshot_data::fetch_screenshot_data` resolves a window label to image bytes from `CaptureCache` (mask) or persisted pin images, retrying briefly until the image is available.
 - Pinned screenshots persist through `rotor-screenshot::shotter_record`; invalid persisted records are removed during restore.
-- OCR uses `img2text` and ONNX model files bundled from `src-tauri/assets/model`.
+- OCR uses `img2text` and ONNX model files bundled from `assets/model`.
 
 ### Search
 
@@ -164,7 +169,7 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 - `src-tauri/tauri.windows.conf.json`: Windows NSIS target, WebView bootstrapper, per-machine install mode, and installer languages.
 - `src-tauri/capabilities/default.json`: Tauri permissions and allowed window labels.
 - User config is persisted as TOML in the app user data directory through `rotor-common::AppConfig`.
-- Screenshot OCR models and icon resources are bundled from `src-tauri/assets/**/*`.
+- Screenshot OCR models and icon resources are bundled from `assets/**/*`.
 
 ## Platform Notes
 
@@ -179,9 +184,9 @@ The backend is a Cargo workspace rooted at `src-tauri/Cargo.toml`.
 - `vite.config.ts`: Vite/Tauri dev-server settings. Port `1420` is strict.
 - `src-tauri/Cargo.toml`: Rust workspace and Tauri app dependencies.
 - `src-tauri/src/lib.rs`: Tauri builder, plugins, command registration, setup, and run loop.
-- `src-tauri/crates/rotor-common/src/config.rs`: Default settings, shortcuts, quick actions, and excluded search directories.
-- `src-tauri/crates/rotor-runtime/src/application.rs`: Global app state and shortcut dispatch.
-- `src-tauri/crates/rotor-runtime/src/screenshot_data.rs`: Screenshot/pin image byte fetching behind the `get_screenshot_data` command.
-- `src-tauri/crates/rotor-searcher/src/file_data/mod.rs`: Search index state machine and search task orchestration.
-- `src-tauri/crates/rotor-screenshot/src/lib.rs`: Screenshot capture, mask windows, pin windows, and pin restore flow.
-- `src-tauri/crates/rotor-translator/src/lib.rs`: Translator window lifecycle, selection capture, and cursor-following placement.
+- `crates/rotor-common/src/config.rs`: Default settings, shortcuts, quick actions, and excluded search directories.
+- `crates/rotor-runtime/src/application.rs`: Global app state and shortcut dispatch.
+- `crates/rotor-runtime/src/screenshot_data.rs`: Screenshot/pin image byte fetching behind the `get_screenshot_data` command.
+- `crates/rotor-searcher/src/file_data/mod.rs`: Search index state machine and search task orchestration.
+- `crates/rotor-screenshot/src/lib.rs`: Screenshot capture, mask windows, pin windows, and pin restore flow.
+- `crates/rotor-translator/src/lib.rs`: Translator window lifecycle, selection capture, and cursor-following placement.

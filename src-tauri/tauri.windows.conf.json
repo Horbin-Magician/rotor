@@ -11,7 +11,7 @@
       },
       "nsis": {
         "displayLanguageSelector": true,
-        "installerIcon": "assets/icons/icon.ico",
+        "installerIcon": "../assets/icons/icon.ico",
         "languages": ["SimpChinese", "English"],
         "installMode": "perMachine"
       }

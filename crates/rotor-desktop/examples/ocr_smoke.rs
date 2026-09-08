@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(index + 1)
                 .ok_or("Missing --resource-dir value")?,
         ),
-        None => root.join("src-tauri/assets"),
+        None => root.join("assets"),
     };
     let resources = ResourceLocator::from_root(&resource_root)?;
     resources.verify_native_resources()?;

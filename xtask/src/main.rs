@@ -170,7 +170,7 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
         );
         plist::Value::Dictionary(dictionary).to_file_xml(contents.join("Info.plist"))?;
         fs::copy(
-            root().join("src-tauri/assets/icons/icon.icns"),
+            root().join("assets/icons/icon.icns"),
             resource_dir.join("icon.icns"),
         )?;
         (executable_dir, resource_dir)
@@ -195,10 +195,7 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
             fs::copy(entry.path(), executable_dir.join(entry.file_name()))?;
         }
     }
-    copy_tree(
-        &root().join("src-tauri/assets"),
-        &resource_dir.join("assets"),
-    )?;
+    copy_tree(&root().join("assets"), &resource_dir.join("assets"))?;
     fs::write(
         resource_dir.join("native-app.toml"),
         toml::to_string_pretty(&config)?,

@@ -2,12 +2,12 @@
 resolver = "2"
 members = [
   "src-tauri",
-  "src-tauri/crates/rotor-common",
-  "src-tauri/crates/rotor-platform",
-  "src-tauri/crates/rotor-searcher",
-  "src-tauri/crates/rotor-screenshot",
-  "src-tauri/crates/rotor-runtime",
-  "src-tauri/crates/rotor-translator",
+  "crates/rotor-common",
+  "crates/rotor-platform",
+  "crates/rotor-searcher",
+  "crates/rotor-screenshot",
+  "crates/rotor-runtime",
+  "crates/rotor-translator",
   "crates/rotor-desktop",
   "crates/rotor-ui",
   "crates/rotor-canvas",
@@ -24,9 +24,9 @@ version = "2.6.0"
 gpui-kit = { version = "=0.6.0", default-features = false, features = ["component", "assets"] }
 gpui = { package = "gpui-pre", version = "=0.3.3" }
 gpui-platform = { package = "gpui-pre-platform", version = "=0.3.3" }
-rotor-common = { path = "src-tauri/crates/rotor-common" }
-rotor-runtime = { path = "src-tauri/crates/rotor-runtime" }
-rotor-platform = { path = "src-tauri/crates/rotor-platform" }
+rotor-common = { path = "crates/rotor-common" }
+rotor-runtime = { path = "crates/rotor-runtime" }
+rotor-platform = { path = "crates/rotor-platform" }
 async-channel = "=2.5.0"
 futures = "0.3"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }

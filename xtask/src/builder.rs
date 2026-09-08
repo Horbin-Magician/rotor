@@ -34,9 +34,11 @@ fn source_digest() -> Result<String> {
             "Cargo.lock",
             "rust-toolchain.toml",
             "crates",
-            "src-tauri/crates",
-            "src-tauri/assets",
+            "assets",
             "native",
+            "xtask",
+            ".cargo",
+            ".gitattributes",
         ])
         .output()?;
     if !listed.status.success() {

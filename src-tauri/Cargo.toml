@@ -26,12 +26,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["time"] }
 log = "0.4.27"
-rotor-common = { path = "crates/rotor-common" }
-rotor-platform = { path = "crates/rotor-platform" }
-rotor-runtime = { path = "crates/rotor-runtime" }
-rotor-screenshot = { path = "crates/rotor-screenshot" }
-rotor-searcher = { path = "crates/rotor-searcher" }
-rotor-translator = { path = "crates/rotor-translator" }
+rotor-common = { path = "../crates/rotor-common" }
+rotor-platform = { path = "../crates/rotor-platform" }
+rotor-runtime = { path = "../crates/rotor-runtime" }
+rotor-screenshot = { path = "../crates/rotor-screenshot" }
+rotor-searcher = { path = "../crates/rotor-searcher" }
+rotor-translator = { path = "../crates/rotor-translator" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

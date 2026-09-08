@@ -67,13 +67,13 @@ mod tests {
         assert_eq!(info.executable_name, super::EXECUTABLE_NAME);
         if super::PRODUCTION {
             let legacy: serde_json::Value =
-                serde_json::from_str(include_str!("../../../tauri.conf.json")).unwrap();
+                serde_json::from_str(include_str!("../../../src-tauri/tauri.conf.json")).unwrap();
             assert_eq!(info.identifier, legacy["identifier"].as_str().unwrap());
             assert_eq!(info.product_name, legacy["productName"].as_str().unwrap());
             assert_eq!(info.profile_directory, ".rotor");
         } else {
             let metadata: toml::Value =
-                toml::from_str(include_str!("../../../../native/app.toml")).unwrap();
+                toml::from_str(include_str!("../../../native/app.toml")).unwrap();
             assert_eq!(info.identifier, metadata["identifier"].as_str().unwrap());
             assert_eq!(info.profile_directory, ".rotor-gpui");
         }

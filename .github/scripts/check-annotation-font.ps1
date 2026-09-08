@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$assetRoot = (Resolve-Path "$PSScriptRoot/../../src-tauri/assets/fonts").Path
+$assetRoot = (Resolve-Path "$PSScriptRoot/../../assets/fonts").Path
 $fontManifest = Get-Content -LiteralPath (Join-Path $assetRoot 'source.json') -Raw | ConvertFrom-Json
 foreach ($entry in $fontManifest.files) {
     if ([System.IO.Path]::GetFileName($entry.file) -ne $entry.file -or $entry.file -in @('.', '..')) {

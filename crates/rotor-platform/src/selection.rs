@@ -193,6 +193,15 @@ pub fn clipboard_change_count() -> Option<isize> {
     None
 }
 
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn simulate_copy_if(_: impl Fn() -> bool) -> Result<(), Box<dyn Error + Send + Sync>> {
+    Err("Simulated copy is not supported on this platform".into())
+}
+
+pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
+    simulate_copy_if(|| false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::wait_until_released;
@@ -220,13 +229,4 @@ mod tests {
     fn released_modifiers_can_copy_immediately() {
         assert!(wait_until_released(|| Ok(false), Duration::ZERO).is_ok());
     }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn simulate_copy_if(_: impl Fn() -> bool) -> Result<(), Box<dyn Error + Send + Sync>> {
-    Err("Simulated copy is not supported on this platform".into())
-}
-
-pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
-    simulate_copy_if(|| false)
 }

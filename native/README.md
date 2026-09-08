@@ -3,6 +3,11 @@
 The root `workspace.package.version` is authoritative. `package.json` must mirror
 it while the legacy Tauri build remains available; `xtask version` checks this.
 
+All native and shared crates now live under root `crates/`; bundled models,
+fonts and icons live under root `assets/`. The legacy adapter keeps its own
+`src-tauri/` directory and maps `../assets/` to installed `assets/`, so existing
+runtime resource paths remain valid. Packaging recipes remain in `native/`.
+
 ```powershell
 cargo run -p xtask -- version
 cargo run -p xtask -- build

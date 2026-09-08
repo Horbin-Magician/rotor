@@ -167,10 +167,9 @@ impl SystemServices {
         development: bool,
         recording: Arc<shortcuts::ShortcutRecording>,
     ) -> Result<Self, String> {
-        let image =
-            image::load_from_memory(include_bytes!("../../../src-tauri/assets/icons/32x32.png"))
-                .map_err(|error| error.to_string())?
-                .into_rgba8();
+        let image = image::load_from_memory(include_bytes!("../../../assets/icons/32x32.png"))
+            .map_err(|error| error.to_string())?
+            .into_rgba8();
         let (width, height) = image.dimensions();
         let icon = tray_icon::Icon::from_rgba(image.into_raw(), width, height)
             .map_err(|error| error.to_string())?;

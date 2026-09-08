@@ -337,7 +337,7 @@ mod tests {
     fn bundled_chinese_text_renders_and_markup_is_literal() {
         let bytes = std::fs::read(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../src-tauri/assets/fonts/NotoSansCJKsc-Regular.otf"),
+                .join("../../assets/fonts/NotoSansCJKsc-Regular.otf"),
         )
         .unwrap();
         let renderer = Renderer::with_font(bytes, false).unwrap();
