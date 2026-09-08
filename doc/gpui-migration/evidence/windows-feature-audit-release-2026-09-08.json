@@ -1,0 +1,21 @@
+{
+  "utc": "2026-09-08T04:56:43.1473004Z",
+  "source_commit": "35c6c5295354eaa7b247131cb41956551fdba0d8",
+  "release_binary_sha256": "121B8F269713AE71970EB1E06CA8F873D797F50A7D4DC7250387EC4FF3BC53DF",
+  "identity": {
+    "version": "2.6.0",
+    "production": false,
+    "product_name": "Rotor GPUI Development",
+    "identifier": "cc.fluctus.rotor.gpui-dev",
+    "profile_directory": ".rotor-gpui",
+    "executable_name": "rotor-desktop"
+  },
+  "release_build": "passed offline",
+  "searcher_tests": 18,
+  "ui_tests": 17,
+  "strict_clippy": "desktop/searcher and ui/desktop all-targets passed",
+  "feature_rows": 44,
+  "local_feature_links": "verified",
+  "desktop_acceptance": "not performed this turn",
+  "remaining_code_gap": "ordinary text and shortcut autosave semantics"
+}
