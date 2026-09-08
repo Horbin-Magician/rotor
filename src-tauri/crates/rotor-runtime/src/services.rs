@@ -1067,6 +1067,9 @@ fn redact_error(message: String, config: &EngineConfig) -> String {
 }
 
 #[cfg(test)]
+mod translation_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::{
