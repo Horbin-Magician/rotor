@@ -271,3 +271,110 @@ fn local_shortcut_validation_is_atomic_and_allows_explicit_disabling() {
         }
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn locked_config_rolls_back_an_automatic_batch_and_allows_retry_after_unlock() {
+    use std::{fs, os::windows::fs::OpenOptionsExt};
+
+    let (directory, config, services, events) = setup();
+    let receive = || {
+        services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        })
+    };
+    services
+        .save_settings(vec![("fixture_unknown".into(), "保留旧值".into())])
+        .unwrap();
+    assert!(matches!(
+        receive(),
+        RuntimeEvent::SettingsSaved { result: Ok(_), .. }
+    ));
+    let path = directory.path().join("config.toml");
+    let before_bytes = fs::read(&path).unwrap();
+    let before = services.settings();
+    // Permit reads but deny write/delete sharing, so the real Windows rename
+    // fails after the temporary candidate has been written and flushed.
+    let mut occupied = Some(
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&path)
+            .unwrap(),
+    );
+    services.coordinate_shortcuts(true);
+    let mut failed_id = None;
+    for should_commit in [false, true] {
+        if should_commit {
+            drop(occupied.take());
+        }
+        let id = services
+            .save_settings_coalesced(vec![
+                ("shortcut_search".into(), "Ctrl+Shift+X".into()),
+                ("fixture_text".into(), "自动保存 中文".into()),
+            ])
+            .unwrap();
+        assert_ne!(Some(id), failed_id);
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Prepare {
+            id: received,
+            candidate,
+            reply,
+        }) = receive()
+        else {
+            panic!("expected automatic batch preparation");
+        };
+        assert_eq!(received, id);
+        assert_eq!(candidate["fixture_text"], "自动保存 中文");
+        assert_eq!(services.settings(), before);
+        reply.send(Ok(())).unwrap();
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Finish {
+            id: received,
+            committed,
+            reply,
+        }) = receive()
+        else {
+            panic!("expected commit or rollback request");
+        };
+        assert_eq!(received, id);
+        assert_eq!(committed, should_commit);
+        assert!(events.try_recv().is_err());
+        reply.send(Ok(())).unwrap();
+        let RuntimeEvent::SettingsSaved {
+            id: received,
+            result,
+        } = receive()
+        else {
+            panic!("expected automatic save receipt after coordination");
+        };
+        assert_eq!(received, id);
+        if should_commit {
+            let saved = result.unwrap();
+            assert_eq!(saved["shortcut_search"], "Ctrl+Shift+X");
+            assert_eq!(saved["fixture_text"], "自动保存 中文");
+            assert_eq!(saved["fixture_unknown"], "保留旧值");
+            assert_eq!(services.settings(), saved);
+            assert_eq!(
+                ConfigService::load_from(directory.path())
+                    .unwrap()
+                    .get_all(),
+                saved
+            );
+        } else {
+            assert!(result.is_err());
+            assert_eq!(fs::read(&path).unwrap(), before_bytes);
+            assert_eq!(lock(&config).get_all(), before);
+            assert_eq!(services.settings(), before);
+            failed_id = Some(id);
+        }
+        assert!(fs::read_dir(directory.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".config.toml.")
+        }));
+    }
+}
