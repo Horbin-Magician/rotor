@@ -968,7 +968,8 @@ async fn settings_loop(
         };
         match command {
             SettingsCommand::Save { id, mut changes } => {
-                if let Err(error) = normalize_shortcut_changes(&mut changes) {
+                let normalized = normalize_shortcut_changes(&mut changes, &lock(&published));
+                if let Err(error) = normalized {
                     let _ = events
                         .send(RuntimeEvent::SettingsSaved {
                             id,
@@ -1095,28 +1096,33 @@ async fn settings_loop(
     }
 }
 
-fn normalize_shortcut_changes(changes: &mut [(String, String)]) -> Result<(), String> {
+fn normalize_shortcut_changes(
+    changes: &mut [(String, String)],
+    config: &Config,
+) -> Result<(), String> {
     use std::str::FromStr;
+    let chinese = rotor_common::i18n::language_for_config(config) == "zh-CN";
     for (key, value) in changes {
-        if matches!(
-            key.as_str(),
-            "shortcut_search"
-                | "shortcut_screenshot"
-                | "shortcut_translate_select"
-                | "shortcut_translate_input"
-                | "shortcut_pinwin_save"
-                | "shortcut_pinwin_close"
-                | "shortcut_pinwin_copy"
-                | "shortcut_pinwin_hide"
-        ) {
-            let normalized = value.trim();
-            if !normalized.is_empty()
-                && global_hotkey::hotkey::HotKey::from_str(normalized).is_err()
-            {
-                return Err(format!("Invalid shortcut in {key}"));
-            }
-            *value = normalized.into();
+        let (zh, en) = match key.as_str() {
+            "shortcut_search" => ("搜索快捷键", "Search shortcut"),
+            "shortcut_screenshot" => ("截图快捷键", "Screenshot shortcut"),
+            "shortcut_translate_select" => ("划词翻译快捷键", "Selection translation shortcut"),
+            "shortcut_translate_input" => ("输入翻译快捷键", "Input translation shortcut"),
+            "shortcut_pinwin_save" => ("贴图保存", "Save pinned image"),
+            "shortcut_pinwin_close" => ("贴图关闭", "Close pinned image"),
+            "shortcut_pinwin_copy" => ("贴图复制", "Copy pinned image"),
+            "shortcut_pinwin_hide" => ("贴图隐藏", "Hide pinned image"),
+            _ => continue,
+        };
+        let normalized = value.trim();
+        if !normalized.is_empty() && global_hotkey::hotkey::HotKey::from_str(normalized).is_err() {
+            return Err(if chinese {
+                format!("“{zh}”格式不正确，请重新录制或输入完整按键组合。")
+            } else {
+                format!("Invalid shortcut for “{en}”. Record it again or enter a complete key combination.")
+            });
         }
+        *value = normalized.into();
     }
     Ok(())
 }

@@ -20,6 +20,22 @@ fn patch(value: &str) -> Vec<(String, String)> {
 }
 
 #[test]
+fn invalid_shortcut_feedback_uses_the_current_language_and_a_visible_field_name() {
+    for (language, field) in [("1", "贴图保存"), ("2", "Save pinned image")] {
+        let config = Config::from([("language".into(), language.into())]);
+        let mut changes = vec![("shortcut_pinwin_save".into(), "Ctrl+".into())];
+        let error = normalize_shortcut_changes(&mut changes, &config).unwrap_err();
+        assert!(error.contains(field));
+        assert!(!error.contains("shortcut_pinwin_save"));
+        assert!(error.contains(if language == "1" {
+            "重新录制"
+        } else {
+            "Record it again"
+        }));
+    }
+}
+
+#[test]
 fn rapid_fields_share_one_receipt_and_keep_latest_values() {
     let (_directory, config, services, events) = setup();
     let hold = lock(&config);
