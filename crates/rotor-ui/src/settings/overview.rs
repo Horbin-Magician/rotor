@@ -1,11 +1,123 @@
 use super::*;
 
 impl SettingsView {
+    pub(super) fn refresh_index(&mut self, cx: &mut Context<Self>) {
+        if self.index_request.is_some() {
+            return;
+        }
+        match self.services.request_index_status() {
+            Ok(id) => self.index_request = Some(id),
+            Err(error) => self.message = error,
+        }
+        cx.notify();
+    }
+
+    pub(super) fn index_panel(&self, cx: &App) -> impl IntoElement {
+        let state = match self.index_state {
+            IndexState::Unavailable => self.t("未启用", "Disabled"),
+            IndexState::Unbuild => self.t("待构建", "Not built"),
+            IndexState::Building => self.t("构建中", "Building"),
+            IndexState::Released => self.t("已释放", "Released"),
+            IndexState::Loading => self.t("加载中", "Loading"),
+            IndexState::Ready => self.t("就绪", "Ready"),
+            IndexState::Error => self.t("失败", "Error"),
+        };
+        let mut panel = crate::visual::card(cx).child(
+            div()
+                .flex()
+                .flex_wrap()
+                .justify_between()
+                .gap_2()
+                .child(
+                    div()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(self.t("文件索引", "File index")),
+                )
+                .child(crate::visual::caption(state, cx)),
+        );
+        if let Some(status) = &self.index_status {
+            let unavailable = self.t("暂无记录", "Not available");
+            panel = panel
+                .child(format!(
+                    "{} {} · {}/{} {} · {:.1} MiB",
+                    status.index_item_count,
+                    self.t("项", "items"),
+                    status.indexed_volume_count,
+                    status.volume_count,
+                    self.t("个磁盘已索引", "volumes indexed"),
+                    status.index_file_size_bytes as f64 / 1048576.
+                ))
+                .child(crate::visual::caption(
+                    format!(
+                        "{}: {}",
+                        self.t("最近索引时间", "Last indexed"),
+                        modified_at(status.latest_index_modified_at)
+                            .unwrap_or_else(|| unavailable.into())
+                    ),
+                    cx,
+                ))
+                .children(status.volumes.iter().map(|volume| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .min_w_0()
+                        .gap_1()
+                        .border_t_1()
+                        .border_color(cx.theme().border)
+                        .pt_2()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .justify_between()
+                                .gap_2()
+                                .child(volume.name.clone())
+                                .child(crate::visual::caption(
+                                    if volume.indexed {
+                                        self.t("已索引", "Indexed")
+                                    } else {
+                                        self.t("未索引", "Not indexed")
+                                    },
+                                    cx,
+                                )),
+                        )
+                        .child(crate::visual::caption(
+                            format!(
+                                "{} {} · {:.1} MiB · {}",
+                                volume
+                                    .index_item_count
+                                    .map(|count| count.to_string())
+                                    .unwrap_or_else(|| unavailable.into()),
+                                self.t("项", "items"),
+                                volume.index_file_size_bytes as f64 / 1048576.,
+                                modified_at(volume.index_file_modified_at)
+                                    .unwrap_or_else(|| unavailable.into())
+                            ),
+                            cx,
+                        ))
+                }));
+        } else {
+            panel = panel.child(crate::visual::caption(
+                if self.index_request.is_some() {
+                    self.t("正在读取索引状态…", "Loading index status…")
+                } else {
+                    self.t(
+                        "索引状态不可用，请刷新重试",
+                        "Index status unavailable; refresh to retry",
+                    )
+                },
+                cx,
+            ));
+        }
+        panel
+    }
+
     pub(super) fn refresh_overview(&mut self, cx: &mut Context<Self>) {
         match self.services.request_overview() {
             Ok(id) => self.overview_request = Some(id),
             Err(error) => self.message = error,
         }
+        self.refresh_index(cx);
         cx.notify();
     }
     pub(super) fn overview_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -86,6 +198,7 @@ impl SettingsView {
                                 ),
                         ),
                 )
+                .child(self.index_panel(cx))
                 .child(
                     crate::visual::card(cx)
                         .child(crate::visual::caption(
@@ -189,4 +302,13 @@ impl SettingsView {
         }
         panel
     }
+}
+
+fn modified_at(milliseconds: Option<u64>) -> Option<String> {
+    let timestamp = i64::try_from(milliseconds?).ok()?;
+    chrono::DateTime::from_timestamp_millis(timestamp).map(|time| {
+        time.with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M")
+            .to_string()
+    })
 }

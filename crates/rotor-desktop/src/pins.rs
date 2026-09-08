@@ -198,8 +198,7 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
                     restored.warnings.len()
                 );
                 if !restored.warnings.is_empty() {
-                    cx.global_mut::<ShellState>().system.warning =
-                        Some(restored.warnings.join("\n"));
+                    crate::publish_warning(restored.warnings.join("\n"), cx);
                 }
                 let pins = restored.pins.clone();
                 let task = cx.spawn(async move |cx| {

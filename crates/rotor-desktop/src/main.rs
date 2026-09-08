@@ -61,6 +61,25 @@ struct ShellState {
 }
 impl Global for ShellState {}
 
+/// Retain background warnings for the next settings open and update an already
+/// open settings view without taking focus away from the user's current app.
+pub(crate) fn publish_warning(message: String, cx: &mut App) {
+    let view = {
+        let state = cx.global_mut::<ShellState>();
+        state.system.warning = Some(message.clone());
+        state
+            .windows
+            .get(&WindowRole::Settings)
+            .and_then(|entry| match &entry.view {
+                WindowView::Settings(view) => Some(view.clone()),
+                _ => None,
+            })
+    };
+    if let Some(view) = view {
+        let _ = view.update(cx, |view, cx| view.show_message(message, cx));
+    }
+}
+
 fn apply_theme(config: &Config, cx: &mut App) {
     match config.get("theme").map(String::as_str) {
         Some("1") => Theme::change(ThemeMode::Light, None, cx),
@@ -137,7 +156,6 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
         cx.new(|cx| Root::new(view, window, cx))
     })
     .map_err(|error| error.to_string())?;
-    let _ = cx.global::<ShellState>().services.request_index_status();
     Ok(())
 }
 

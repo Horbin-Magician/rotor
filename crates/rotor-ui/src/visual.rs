@@ -88,7 +88,7 @@ pub(crate) fn card(cx: &App) -> Div {
 
 pub(crate) fn caption(value: impl Into<SharedString>, cx: &App) -> Div {
     div()
-        .text_xs()
+        .text_size(px(12.))
         .text_color(cx.theme().muted_foreground)
         .child(value.into())
 }
@@ -100,7 +100,7 @@ pub(crate) fn heading(title: &'static str, detail: &'static str, cx: &App) -> Di
         .gap_1()
         .child(
             div()
-                .text_2xl()
+                .text_size(px(24.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(title),
         )

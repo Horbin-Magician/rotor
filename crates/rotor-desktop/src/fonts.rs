@@ -21,7 +21,7 @@ pub fn load(resources: Option<ResourceLocator>, cx: &mut App) -> Task<()> {
         cx.update(|cx| {
             if let Err(error) = result {
                 eprintln!("Annotation font: {error}");
-                cx.global_mut::<crate::ShellState>().system.warning = Some(error);
+                crate::publish_warning(error, cx);
             }
             cx.refresh_windows();
         });

@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 base64 = "0.22.1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 image.workspace = true
 global-hotkey = "=0.7.0"
 gpui-kit.workspace = true

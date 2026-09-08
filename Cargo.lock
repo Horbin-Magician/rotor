@@ -8428,6 +8428,7 @@ name = "rotor-ui"
 version = "2.6.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "global-hotkey",
  "gpui-kit",
  "gpui-pre",

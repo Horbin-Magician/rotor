@@ -58,6 +58,7 @@ pub struct SettingsView {
     excluded: Entity<TextareaState>,
     index_state: IndexState,
     index_status: Option<SearchIndexStatus>,
+    index_request: Option<OperationId>,
     pending: Option<OperationId>,
     pending_exclusions: bool,
     choosing_path: bool,
@@ -190,6 +191,7 @@ impl SettingsView {
         });
         let action_result = services.quick_actions();
         let overview_request = services.request_overview().ok();
+        let index_request = services.request_index_status().ok();
         let message = action_result.as_ref().err().cloned().unwrap_or_default();
         let actions = action_result
             .unwrap_or_default()
@@ -212,6 +214,7 @@ impl SettingsView {
             excluded,
             index_state: IndexState::Unavailable,
             index_status: None,
+            index_request,
             pending: None,
             pending_exclusions: false,
             choosing_path: false,
@@ -288,13 +291,16 @@ impl SettingsView {
                     Err(error) => error,
                 };
             }
-            RuntimeEvent::IndexStatus { result, .. } => match result {
-                Ok(status) => {
-                    self.index_state = status.state;
-                    self.index_status = Some(status);
+            RuntimeEvent::IndexStatus { id, result } if self.index_request == Some(id) => {
+                self.index_request = None;
+                match result {
+                    Ok(status) => {
+                        self.index_state = status.state;
+                        self.index_status = Some(status);
+                    }
+                    Err(error) => self.message = error,
                 }
-                Err(error) => self.message = error,
-            },
+            }
             _ => return,
         }
         cx.notify();
@@ -533,38 +539,18 @@ impl Render for SettingsView {
                     ));
             }
             Section::Search => {
-                let state = match self.index_state {
-                    IndexState::Unavailable => self.t("未启用", "Disabled"),
-                    IndexState::Unbuild => self.t("待构建", "Not built"),
-                    IndexState::Building => self.t("构建中", "Building"),
-                    IndexState::Released => self.t("已释放", "Released"),
-                    IndexState::Loading => self.t("加载中", "Loading"),
-                    IndexState::Ready => self.t("就绪", "Ready"),
-                    IndexState::Error => self.t("失败", "Error"),
-                };
                 content = content
-                    .child(format!("{}: {state}", self.t("索引状态", "Index status")))
-                    .children(self.index_status.as_ref().map(|status| {
-                        format!(
-                            "{} {} · {} {}",
-                            status.index_item_count,
-                            self.t("项", "items"),
-                            status.volume_count,
-                            self.t("个磁盘", "volumes")
-                        )
-                    }))
+                    .child(self.index_panel(cx))
                     .child(
                         div()
                             .flex()
+                            .flex_wrap()
                             .gap_2()
                             .child(
                                 Button::new("refresh-index")
                                     .label(self.t("刷新状态", "Refresh status"))
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        if let Err(error) = this.services.request_index_status() {
-                                            this.show_message(error, cx);
-                                        }
-                                    })),
+                                    .disabled(self.index_request.is_some())
+                                    .on_click(cx.listener(|this, _, _, cx| this.refresh_index(cx))),
                             )
                             .child(
                                 Button::new("rebuild-index")
