@@ -31,3 +31,9 @@
 后台队列增加了快捷键双确认和局部键校验测试，共 7 项专项测试；runtime 全部 30 项测试通过。UI 全部 25 项测试通过，其中字段模型覆盖 UTF-8 组字、手输快捷键确认、共享批次、旧回执、拒绝/重试、规范化以及失败选项不能被其他字段成功掩盖。workspace check 通过，旧 Tauri 仍有三个既有 warning；native/UI/runtime 严格 clippy 及格式检查通过。窗口失焦也会检查已确认编辑，关闭与放弃路径保留观察屏蔽直到视图销毁。
 
 本轮没有重新接管桌面，没有据服务/模型测试关闭 UI-04、IME、真实关闭/退出、更新安装或性能验收。
+
+## release 与实机准备
+
+`a225b02` 通过 Windows release 离线构建、无窗口身份诊断和显式开发资源检查，[哈希与检查记录](windows-autosave-release-2026-09-08.json) 已保存。准备了[无凭据、命令和贴图的设置夹具](../fixtures/settings-autosave.toml)，复制到新的 `target/autosave-ui-a225b02` 后配置诊断通过（24 个键）。后续可用 `--no-elevate --no-index --no-hotkeys --data-dir <该目录>` 验证普通字段、局部键和失败/放弃关闭；禁用热键的会话不能用于证明系统全局注册成功。
+
+已向用户询问何时可恢复此前以 Esc 停止的桌面操作；等待确认，不据 release 构建或夹具读取认定实机通过。

@@ -1,0 +1,21 @@
+{
+  "utc": "2026-09-08T06:39:57.9836042Z",
+  "source_commit": "a225b027c906ec445b531cf5a86531520f721bb2",
+  "binary_sha256": "EA1E5AB98E6B0DEB8CA2C910D957FEEA1A73A1ED16D1880F6CFA08F9B195D6D2",
+  "identity": {
+    "version": "2.6.0",
+    "production": false,
+    "product_name": "Rotor GPUI Development",
+    "identifier": "cc.fluctus.rotor.gpui-dev",
+    "profile_directory": ".rotor-gpui",
+    "executable_name": "rotor-desktop"
+  },
+  "runtime_tests": 30,
+  "ui_tests": 25,
+  "release_build": "passed offline",
+  "workspace_check": "passed; 3 existing legacy Tauri warnings",
+  "strict_clippy": "native/UI/runtime all-targets passed",
+  "formatting": "workspace passed",
+  "resource_check": "explicit development assets passed; not an installed package check",
+  "ui_acceptance": "awaiting permission to resume desktop testing"
+}
