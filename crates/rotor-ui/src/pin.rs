@@ -43,6 +43,13 @@ enum ExportIntent {
     Save,
     Target(PinExportTarget),
 }
+struct PendingFinish {
+    id: OperationId,
+    // Only an accepted file export may update the remembered directory.
+    // Keeping it with the request prevents a later Delete from reusing a
+    // failed export's path.
+    remember_directory: Option<String>,
+}
 pub struct PinView {
     services: Arc<Services>,
     settings: Config,
@@ -51,9 +58,8 @@ pub struct PinView {
     id: Option<u32>,
     pending_create: Option<OperationId>,
     pending_update: Option<OperationId>,
-    pending_finish: Option<OperationId>,
+    pending_finish: Option<PendingFinish>,
     queued_export: Option<ExportIntent>,
-    remember_directory: Option<String>,
     dialog: bool,
     hovered: bool,
     dirty: bool,
@@ -101,7 +107,6 @@ impl PinView {
             pending_update: None,
             pending_finish: None,
             queued_export: None,
-            remember_directory: None,
             dialog: false,
             hovered: false,
             dirty: false,
@@ -241,7 +246,12 @@ impl PinView {
         }
         if let Some(id) = self.id {
             match self.services.delete_pin(id) {
-                Ok(request) => self.pending_finish = Some(request),
+                Ok(request) => {
+                    self.pending_finish = Some(PendingFinish {
+                        id: request,
+                        remember_directory: None,
+                    });
+                }
                 Err(error) => self.message = error,
             }
         } else {
@@ -329,7 +339,7 @@ impl PinView {
             return;
         }
         self.flush(cx);
-        self.remember_directory = match &target {
+        let remember_directory = match &target {
             PinExportTarget::File(path)
                 if self
                     .settings
@@ -344,7 +354,10 @@ impl PinView {
         };
         match self.services.export_pin_frame(self.id, image, target) {
             Ok(request) => {
-                self.pending_finish = Some(request);
+                self.pending_finish = Some(PendingFinish {
+                    id: request,
+                    remember_directory,
+                });
                 self.message = self.t("正在导出…", "Exporting…").into();
             }
             Err(error) => self.message = error,
@@ -484,11 +497,11 @@ impl PinView {
             }
             RuntimeEvent::Pin(
                 PinEvent::Deleted { id, result, .. } | PinEvent::Exported { id, result },
-            ) if self.pending_finish == Some(*id) => {
-                self.pending_finish = None;
+            ) if self.pending_finish.as_ref().map(|pending| pending.id) == Some(*id) => {
+                let pending = self.pending_finish.take().unwrap();
                 match result {
                     Ok(()) => {
-                        if let Some(directory) = self.remember_directory.take()
+                        if let Some(directory) = pending.remember_directory
                             && let Err(error) = self
                                 .services
                                 .save_settings(vec![("save_path".into(), directory)])
