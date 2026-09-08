@@ -148,6 +148,8 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
     }
     cx.global_mut::<ShellState>().monitors = monitors;
     let callback: rotor_ui::MaskCallback = Rc::new(mask_action);
+    let chinese =
+        rotor_common::i18n::language_for_config(&cx.global::<ShellState>().config) == "zh-CN";
     let displays = cx.displays();
     let mut opened = Vec::new();
     for frame in frames {
@@ -176,8 +178,9 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                     ..Default::default()
                 },
                 |window, cx| {
-                    let view =
-                        cx.new(|cx| rotor_ui::MaskView::new(session, frame, callback, window, cx));
+                    let view = cx.new(|cx| {
+                        rotor_ui::MaskView::new(session, frame, callback, chinese, window, cx)
+                    });
                     cx.global_mut::<ShellState>().windows.insert(
                         WindowRole::Mask {
                             session,

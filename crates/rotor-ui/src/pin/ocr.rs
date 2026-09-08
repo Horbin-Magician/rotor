@@ -187,18 +187,17 @@ impl PinView {
                         )
                     })
                     .collect();
-                if self.ocr.rows.is_empty() {
-                    self.ocr.error = Some(self.t("未识别到文字", "No text recognized").into());
-                }
             }
             Err(error) => self.ocr.error = Some(error.clone()),
         }
         cx.notify();
     }
-    fn ocr_copy(&self, all: bool, cx: &mut App) {
+    fn ocr_copy(&mut self, all: bool, cx: &mut Context<Self>) {
         let text = self.ocr.text(all);
         if !text.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
+            self.message = self.t("文字已复制", "Text copied").into();
+            cx.notify();
         }
     }
     pub(super) fn ocr_keys(
@@ -237,6 +236,7 @@ impl PinView {
         div()
             .flex()
             .flex_wrap()
+            .gap_1()
             .child(
                 Button::new("ocr-copy-all")
                     .label(self.t("全部复制", "Copy all"))
@@ -253,7 +253,7 @@ impl PinView {
             )
             .child(
                 Button::new("ocr-retry")
-                    .label("↻")
+                    .icon(IconName::RotateCw)
                     .tooltip(self.t("重新识别", "Recognize again"))
                     .compact()
                     .disabled(self.ocr.pending.is_some() || !self.canvas.ready())
@@ -268,11 +268,29 @@ impl PinView {
                         cx.notify();
                     })),
             )
-            .child(if self.ocr.pending.is_some() {
-                self.t("识别中…", "Recognizing…").to_owned()
-            } else {
-                self.ocr.error.clone().unwrap_or_default()
-            })
+            .child(
+                div()
+                    .w_full()
+                    .text_xs()
+                    .text_color(if self.ocr.error.is_some() {
+                        cx.theme().danger
+                    } else {
+                        cx.theme().muted_foreground
+                    })
+                    .child(if self.ocr.pending.is_some() {
+                        self.t("识别中…", "Recognizing…").to_owned()
+                    } else if let Some(error) = &self.ocr.error {
+                        error.clone()
+                    } else if self.ocr.rows.is_empty() {
+                        self.t("未识别到文字", "No text detected").into()
+                    } else {
+                        self.t(
+                            "拖选文字 · 双击选行",
+                            "Drag to select · Double-click a line",
+                        )
+                        .into()
+                    }),
+            )
     }
     fn ocr_position(
         &self,

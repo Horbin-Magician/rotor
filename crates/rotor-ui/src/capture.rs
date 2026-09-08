@@ -93,12 +93,15 @@ pub struct MaskView {
     armed: bool,
     _bounds: Subscription,
     detected: Vec<ImageRect>,
+    chinese: bool,
+    copied: bool,
 }
 impl MaskView {
     pub fn new(
         session: u64,
         capture: Arc<PreparedCapture>,
         callback: MaskCallback,
+        chinese: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -117,6 +120,8 @@ impl MaskView {
             armed: false,
             _bounds: bounds,
             detected: Vec::new(),
+            chinese,
+            copied: false,
         }
     }
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -196,6 +201,9 @@ impl MaskView {
             point.y.as_f32() as f64,
             window.scale_factor() as f64,
         ) {
+            if self.point != point {
+                self.copied = false;
+            }
             self.point = point;
         }
         if !window.is_window_active() {
@@ -327,15 +335,22 @@ impl Render for MaskView {
         } else {
             root = root.child(shade(0., 0., width, height));
         }
-        let magnifier_x = (self.point.x as f32 / scale + 20.).clamp(0., (width - 112.).max(0.));
-        let magnifier_y = (self.point.y as f32 / scale + 24.).clamp(0., (height - 140.).max(0.));
+        let magnifier_x = inspector_axis(self.point.x as f32 / scale, 144., width, 20.);
+        let magnifier_y = inspector_axis(self.point.y as f32 / scale, 184., height, 24.);
         let magnifier = div()
             .absolute()
             .left(px(magnifier_x))
             .top(px(magnifier_y))
+            .w(px(144.))
+            .h(px(184.))
             .p_2()
             .flex()
             .flex_col()
+            .items_center()
+            .rounded_lg()
+            .border_1()
+            .border_color(rgba(0x555555ff))
+            .shadow_lg()
             .bg(rgba(0x111111ff))
             .text_color(rgba(0xffffffff))
             .text_xs()
@@ -358,7 +373,22 @@ impl Render for MaskView {
                     .map(|rect| format!("{} × {}", rect.width, rect.height))
                     .unwrap_or_default(),
             )
-            .child("C · Copy / Esc");
+            .child(if self.copied {
+                if self.chinese {
+                    "颜色已复制"
+                } else {
+                    "Color copied"
+                }
+            } else if self.chinese {
+                "C 复制颜色"
+            } else {
+                "C Copy color"
+            })
+            .child(if self.chinese {
+                "Esc 取消截图"
+            } else {
+                "Esc Cancel"
+            });
         root.child(magnifier)
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.move_pointer(event.position, window, cx)
@@ -397,10 +427,22 @@ impl Render for MaskView {
                     cx.stop_propagation();
                 } else if event.keystroke.key.eq_ignore_ascii_case("c") {
                     cx.write_to_clipboard(ClipboardItem::new_string(this.color()));
+                    this.copied = true;
+                    cx.notify();
                     cx.stop_propagation();
                 }
             }))
     }
+}
+
+// Prefer the opposite side at a display edge instead of covering the sampled pixel.
+fn inspector_axis(pointer: f32, length: f32, viewport: f32, gap: f32) -> f32 {
+    let position = if pointer + gap + length <= viewport {
+        pointer + gap
+    } else {
+        pointer - gap - length
+    };
+    position.clamp(0., (viewport - length).max(0.))
 }
 
 #[cfg(test)]
@@ -410,6 +452,17 @@ mod tests {
     use rotor_canvas::ImageRect;
     use rotor_runtime::{CaptureBundle, MonitorConfig};
     use std::sync::Arc;
+    #[test]
+    fn inspector_stays_on_screen_and_away_from_edge_pixels() {
+        for viewport in [600., 1080., 1440.] {
+            for pointer in [0., 1., viewport / 2., viewport - 1., viewport] {
+                let start = super::inspector_axis(pointer, 184., viewport, 24.);
+                assert!(start >= 0. && start + 184. <= viewport);
+                assert!(pointer < start || pointer > start + 184.);
+            }
+        }
+        assert_eq!(super::inspector_axis(40., 184., 80., 24.), 0.);
+    }
     #[test]
     fn native_upload_is_straight_bgra_without_mutating_export_pixels() {
         let source = Arc::new(RgbaImage::from_pixel(

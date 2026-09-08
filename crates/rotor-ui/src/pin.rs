@@ -3,7 +3,7 @@ mod annotation;
 mod crop;
 mod ocr;
 use gpui_kit::{
-    component::{Disableable, button::Button},
+    component::{ActiveTheme, Disableable, IconName, Selectable, button::Button},
     prelude::*,
     *,
 };
@@ -124,6 +124,12 @@ impl PinView {
             zh
         } else {
             en
+        }
+    }
+    fn shortcut_hint(&self, label: &'static str, key: &str) -> String {
+        match self.settings.get(key).filter(|key| !key.is_empty()) {
+            Some(shortcut) => format!("{label} · {shortcut}"),
+            None => label.into(),
         }
     }
     fn busy(&self) -> bool {
@@ -537,23 +543,36 @@ impl Render for PinView {
                 |root| {
                     root.child(
                         div()
+                            .id("pin-toolbar")
                             .absolute()
                             .top_0()
                             .left_0()
                             .flex()
                             .flex_col()
                             .max_w_full()
-                            .bg(rgba(0x222222dd))
-                            .text_color(rgba(0xffffffff))
+                            .max_h(window.viewport_size().height)
+                            .overflow_y_scroll()
+                            .p_1()
+                            .gap_1()
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .bg(cx.theme().background)
+                            .text_color(cx.theme().foreground)
+                            .shadow_sm()
                             .occlude()
                             .child(
                                 div()
                                     .flex()
                                     .flex_wrap()
+                                    .gap_1()
                                     .child(
                                         Button::new("pin-save")
-                                            .label("S")
-                                            .tooltip(self.t("保存", "Save"))
+                                            .icon(IconName::ArrowDown)
+                                            .tooltip(self.shortcut_hint(
+                                                self.t("保存", "Save"),
+                                                "shortcut_pinwin_save",
+                                            ))
                                             .compact()
                                             .disabled(export_disabled)
                                             .on_click(cx.listener(|this, _, window, cx| {
@@ -562,8 +581,11 @@ impl Render for PinView {
                                     )
                                     .child(
                                         Button::new("pin-copy")
-                                            .label("C")
-                                            .tooltip(self.t("复制", "Copy"))
+                                            .icon(IconName::Copy)
+                                            .tooltip(self.shortcut_hint(
+                                                self.t("复制", "Copy"),
+                                                "shortcut_pinwin_copy",
+                                            ))
                                             .compact()
                                             .disabled(export_disabled)
                                             .on_click(cx.listener(|this, _, window, cx| {
@@ -572,8 +594,11 @@ impl Render for PinView {
                                     )
                                     .child(
                                         Button::new("pin-hide")
-                                            .label("H")
-                                            .tooltip(self.t("隐藏", "Hide"))
+                                            .icon(IconName::EyeOff)
+                                            .tooltip(self.shortcut_hint(
+                                                self.t("隐藏", "Hide"),
+                                                "shortcut_pinwin_hide",
+                                            ))
                                             .compact()
                                             .disabled(busy)
                                             .on_click(cx.listener(|this, _, window, cx| {
@@ -582,8 +607,11 @@ impl Render for PinView {
                                     )
                                     .child(
                                         Button::new("pin-close")
-                                            .label("×")
-                                            .tooltip(self.t("关闭", "Close"))
+                                            .icon(IconName::Close)
+                                            .tooltip(self.shortcut_hint(
+                                                self.t("关闭", "Close"),
+                                                "shortcut_pinwin_close",
+                                            ))
                                             .compact()
                                             .disabled(busy)
                                             .on_click(cx.listener(|this, _, window, cx| {
@@ -594,6 +622,10 @@ impl Render for PinView {
                             .child(
                                 Button::new("pin-ocr")
                                     .label("OCR")
+                                    .tooltip(
+                                        self.t("识别图片中的文字", "Recognize text in this image"),
+                                    )
+                                    .selected(self.ocr.active)
                                     .compact()
                                     .disabled(export_disabled)
                                     .on_click(cx.listener(|this, _, window, cx| {
@@ -602,12 +634,17 @@ impl Render for PinView {
                             )
                             .when(self.ocr.active, |root| root.child(self.ocr_tools(cx)))
                             .when(!self.ocr.active, |root| root.child(self.canvas_tools(cx)))
-                            .child(div().text_xs().child(self.message.clone()))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .child(self.canvas.error.clone().unwrap_or_default()),
-                            ),
+                            .when(!self.message.is_empty(), |toolbar| {
+                                toolbar.child(div().text_xs().child(self.message.clone()))
+                            })
+                            .when(self.canvas.error.is_some(), |toolbar| {
+                                toolbar.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().danger)
+                                        .child(self.canvas.error.clone().unwrap_or_default()),
+                                )
+                            }),
                     )
                 },
             )

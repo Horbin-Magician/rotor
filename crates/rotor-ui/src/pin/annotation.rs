@@ -541,22 +541,25 @@ impl PinView {
         div()
             .flex()
             .flex_wrap()
+            .gap_1()
             .children(
                 [
-                    (Tool::Move, "M", "移动", "Move"),
-                    (Tool::Pen, "P", "画笔", "Pen"),
-                    (Tool::Rectangle, "▭", "矩形", "Rectangle"),
-                    (Tool::Arrow, "→", "箭头", "Arrow"),
-                    (Tool::Text, "T", "文字", "Text"),
+                    (Tool::Move, "移动", "Move"),
+                    (Tool::Pen, "画笔", "Pen"),
+                    (Tool::Rectangle, "矩形", "Rectangle"),
+                    (Tool::Arrow, "箭头", "Arrow"),
+                    (Tool::Text, "文字", "Text"),
                 ]
                 .into_iter()
                 .enumerate()
-                .map(|(index, (tool, label, zh, en))| {
+                .map(|(index, (tool, zh, en))| {
                     Button::new(("canvas-tool", index))
-                        .label(label)
+                        .label(self.t(zh, en))
                         .tooltip(self.t(zh, en))
                         .compact()
-                        .disabled(disabled || self.canvas.tool == tool)
+                        .selected(self.canvas.tool == tool)
+                        .toggled(self.canvas.tool == tool)
+                        .disabled(disabled)
                         .on_click(
                             cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)),
                         )
@@ -564,7 +567,7 @@ impl PinView {
             )
             .child(
                 Button::new("canvas-undo")
-                    .label("↶")
+                    .icon(IconName::Undo2)
                     .tooltip(self.t("撤销", "Undo"))
                     .compact()
                     .disabled(
@@ -578,7 +581,7 @@ impl PinView {
             )
             .child(
                 Button::new("canvas-redo")
-                    .label("↷")
+                    .icon(IconName::Redo2)
                     .tooltip(self.t("重做", "Redo"))
                     .compact()
                     .disabled(
@@ -593,7 +596,8 @@ impl PinView {
             .when(self.canvas.editor.is_some(), |row| {
                 row.child(
                     Button::new("canvas-text-done")
-                        .label("✓")
+                        .icon(IconName::Check)
+                        .tooltip(self.t("完成文字标注", "Finish text annotation"))
                         .compact()
                         .disabled(disabled)
                         .on_click(cx.listener(|this, _, window, cx| this.finish_text(window, cx))),

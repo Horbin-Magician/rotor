@@ -47,3 +47,12 @@ Windows computer-use 已初始化并两次列举窗口。启动已安装 `C:/Pro
 - 翻译补回 Started/Finished 事件中的语言方向，结果区采用独立底色和 1.65 行高；复制显示成功反馈，流式追加/新请求重置反馈。空输入禁用提交，输入事件刷新该状态，保留 IME 确认保护。
 - `cargo check -p rotor-ui`、12 项 `cargo test -p rotor-ui --lib` 及 `cargo clippy -p rotor-ui --all-targets --no-deps -- -D warnings` 通过。包含依赖的 clippy 在既有 `rotor-platform/src/installer.rs:27` 的 `manual_is_multiple_of` 上失败，尚待单独收敛。
 - 本批没有进行桌面操作或实际新旧截图验收；视觉与交互门槛继续未通过。
+
+## 截图、贴图与 OCR 第一批实现
+
+- 贴图主操作使用图标和本地化提示，提示附实际配置的快捷键；画布工具使用本地化名称和 selected/toggled 状态，撤销/重做/完成采用统一图标。
+- 工具栏采用主题背景、边框和阴影，按窗口高度滚动；空提示不占行，画布错误使用语义错误色。窄小贴图的遮挡与可达性仍需实际交互验收，不能仅据可滚动实现认定解决。
+- OCR 空结果与执行错误分开显示，识别后提示拖选/双击操作，复制文字后显示反馈。
+- 取色放大镜增加中英文和复制反馈；临近右/下边缘时换到光标另一侧，避免直接覆盖采样点。位置单测覆盖 600/1080/1440 逻辑长度的边缘和中部，以及小于提示卡的视口。
+- native check、13 项 UI 测试及 desktop/ui `--all-targets --no-deps -- -D warnings` clippy 通过。
+- 用户将 macOS 相关工作暂缓，本轮只推进 Windows。此前隔离测试进程仍存活，但没有可控制窗口，二次激活也未出现；结束该测试进程以重新构建与采集诊断，未操作正式安装或用户资料。
