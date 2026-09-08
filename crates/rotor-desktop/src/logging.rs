@@ -51,6 +51,9 @@ fn write_logs(file: File, receiver: mpsc::Receiver<Message>) {
         match message {
             Message::Line(line) => {
                 let _ = writeln!(file, "{line}");
+                // This runs on the log worker, never on the UI thread. Keep
+                // startup/restore errors available even if the process crashes.
+                let _ = file.flush();
             }
             Message::Flush => {
                 let _ = file.flush();

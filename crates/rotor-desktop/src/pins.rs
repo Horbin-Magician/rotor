@@ -192,6 +192,11 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
     if let RuntimeEvent::Pin(PinEvent::Restored { result, .. }) = event {
         match result {
             Ok(restored) => {
+                log::info!(
+                    "Restoring {} pins; {} metadata warnings",
+                    restored.pins.len(),
+                    restored.warnings.len()
+                );
                 if !restored.warnings.is_empty() {
                     cx.global_mut::<ShellState>().system.warning =
                         Some(restored.warnings.join("\n"));
@@ -218,6 +223,11 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
                         .await;
                     cx.update(|cx| match prepared {
                         Ok((monitors, images)) => {
+                            log::info!(
+                                "Prepared {} restored pins across {} displays",
+                                images.len(),
+                                monitors.len()
+                            );
                             if cx
                                 .global::<ShellState>()
                                 .capture
@@ -268,7 +278,9 @@ pub fn drain_deferred(cx: &mut App) {
         match open(pin, cx) {
             Ok((handle, activate)) if visible => {
                 let _ = handle.update(cx, |_, window, _| {
-                    let _ = crate::capture::show(window);
+                    if let Err(error) = crate::capture::show(window) {
+                        log::warn!("Could not show restored pin: {error}");
+                    }
                     if activate {
                         window.activate_window();
                     }
