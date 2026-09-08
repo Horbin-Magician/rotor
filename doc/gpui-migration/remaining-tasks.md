@@ -2,9 +2,9 @@
 
 ## 当前执行范围（2026-09-08 用户调整）
 
-最新用户要求“先继续无窗口检查”。已按 `fd9b206` 重新生成 development/production Windows 安装包，通过中文/空格暂存路径、外部工作目录资源定位、身份与哈希检查，并验证文件篡改/过期源码收据拒绝；见[最新候选](candidate-status.md)。未恢复桌面或执行安装；这些证据不关闭 UI、IME 或 G8/G9。
+最新用户要求“先继续无窗口检查”。当前已按 `6efe337` 重新生成 development/production Windows 安装包，包含近期贴图和快捷键恢复修复，通过中文/空格暂存路径、外部工作目录资源定位、身份与哈希检查；见[最新候选](candidate-status.md)。较早 `fd9b206` 候选另有文件篡改/过期源码收据拒绝证据。未恢复桌面或执行安装；这些证据不关闭 UI、IME 或 G8/G9。
 
-后续无窗口核对修复了“贴图保存失败后普通关闭，误记住失败目录”的状态串用问题，见[功能核对](evidence/windows-feature-audit.md)。UI 25 项测试及 native/UI 严格 clippy 通过；此改动晚于上述候选，实机前需重建，实际失败交互仍待验收。
+后续无窗口核对修复了“贴图保存失败后普通关闭，误记住失败目录”的状态串用问题，见[功能核对](evidence/windows-feature-audit.md)。UI 25 项测试及 native/UI 严格 clippy 通过；此改动已进入 `6efe337` 候选，实际失败交互仍待验收。
 
 另修复快捷键回滚本身失败后，注册清单与后端状态不一致、后续保存无法补注册或清理的问题；[故障复现与恢复记录](evidence/windows-shortcut-recovery.md)包含修复前失败、修复后通过的测试。runtime 33 项、desktop 4 项及严格 clippy 通过；真实系统热键冲突验收仍未关闭。
 
@@ -54,7 +54,7 @@
 
 历史 Windows 候选记录为 125 项 native/core 测试通过，版本仍为 `2.6.0`，未使用真实更新私钥签名或发布。macOS 依赖图检查不等于 macOS 编译、打包或运行通过。
 
-初次核对时，`crates/rotor-desktop/src/capture.rs` 的 Windows 遮罩视口/DPI 缓存修正尚未提交，后已收入 `3cb21b6`。最新 `fd9b206` 候选包含该修正及后续 UI/自动保存实现，已登记来源摘要；真实多屏交互仍按上述验收边界保留。
+初次核对时，`crates/rotor-desktop/src/capture.rs` 的 Windows 遮罩视口/DPI 缓存修正尚未提交，后已收入 `3cb21b6`。当前 `6efe337` 候选包含该修正及后续 UI/自动保存实现，已登记来源摘要；真实多屏交互仍按上述验收边界保留。
 
 ## 2. 已实现但尚待验收的任务
 

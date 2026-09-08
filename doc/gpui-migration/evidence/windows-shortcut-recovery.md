@@ -23,3 +23,5 @@
 - `cargo clippy -p rotor-runtime -p rotor-desktop --all-targets --offline -- -D warnings`、workspace 格式及 diff 检查通过。
 
 故障由实现同一 HotkeyBackend 接口的内存后端注入，证明事务和事件状态的恢复逻辑；不能替代 Windows RegisterHotKey 冲突、睡眠恢复或 GUI 提示的联合验收。该修复晚于 `fd9b206` 候选，候选包不包含它，实机前仍需重建。macOS 暂缓，G8/G9 保持未关闭。
+
+后续已从 `6efe337` 重建两种身份，修复进入[最新候选](../candidate-status.md)，资源/身份/哈希的无窗口诊断通过；真实系统热键验收仍待完成。

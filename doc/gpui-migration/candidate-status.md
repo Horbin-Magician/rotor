@@ -2,7 +2,20 @@
 
 当前状态：**代码与 Windows 候选已准备；迁移没有完成，G8/G9 未通过。**
 
-## 自动保存后的 Windows 候选（最新）
+## 失败恢复修复后的 Windows 候选（最新）
+
+基于 `6efe337` 离线重建两种身份，包含贴图失败目录记忆修复和快捷键回滚失败后的恢复修复。完整[构建与诊断证据](evidence/windows-recovery-candidates-2026-09-08.json)已保存。
+
+| 模式 | 产物（仓库相对路径） | 字节 | SHA-256 |
+|---|---|---:|---|
+| development | `target/native-recovery-6efe337/development-package/Rotor-GPUI_2.6.0_x64-setup.exe` | 37,609,953 | `1512e6540be9695355d2b1b2fc6106ac3ec6c783b6403cc55d17d442b562ec6a` |
+| production | `target/native-recovery-6efe337/production-package/Rotor_2.6.0_x64-setup.exe` | 37,649,924 | `74474002baab9980849d61319e21febe912c1cb66e3ca7c7514a44a3f003c6f7` |
+
+共同源码摘要为 `d736c4442cce1fe4ec18d290c65fdab89130a3cab59f68122cc13a27f7d42586`。两套暂存各 31 个文件、包目录各 3 个文件均通过清单、大小及哈希核对；主程序 AMD64/GUI 子系统、主程序与安装包的产品名/版本匹配身份。清除子进程资源/数据环境覆盖，从 `D:\` 运行两个中文/空格暂存路径中的身份与资源诊断，全部通过。
+
+此轮只构建和运行无窗口诊断；未安装、签名或发布，版本仍为 2.6.0。此前的 runtime 33 项、desktop 4 项、UI 25 项测试及严格 clippy 证据继续按各修复记录归属，不声称本次重复执行。下一阶段是 UI/IME/多屏、真实安装更新与性能验收，macOS 暂缓，G8/G9 保持未关闭。
+
+## 自动保存后的较早 Windows 候选
 
 用户要求继续无窗口检查。基于 `fd9b206`，通过 xtask 分别离线构建 development/production，使用 NSIS 3.11 生成新的本地安装包。完整[源码收据、身份、哈希和诊断记录](evidence/windows-autosave-candidates-2026-09-08.json)已保存；以下历史候选不再代表最新实现。
 
