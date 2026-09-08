@@ -2,6 +2,8 @@
 
 返回 [迁移计划](README.md)；功能 ID 见 [功能对照](feature-parity.md)。本文件定义完整验收要求；已执行的 P0 Windows 子集见 [实机证据](evidence/p0-windows.md)，完整跨平台矩阵尚未完成。
 
+2026-09-08 用户调整：本轮专注 Windows，macOS 项暂缓。下文保留完整跨平台要求，暂缓项不填写“通过”；当前 Windows 结果见 [UI 续作核验](evidence/windows-ui-followup.md)。
+
 ## 1. 测试环境与证据
 
 Windows x64 和 macOS arm64 均为必测平台；编译成功不能替代本机窗口测试。P0 锁定最低系统版本、Rust/GPUI/组件库版本后，填写实际 OS build、CPU/GPU、驱动、显示器分辨率/布局/DPI 和安装包 hash。
@@ -14,9 +16,9 @@ Windows x64 和 macOS arm64 均为必测平台；编译成功不能替代本机�
 | 用户状态 | 新用户目录、v2.6.0 数据副本、坏记录/缺图、无写权限、无网络、权限拒绝、剪贴板暂时占用 |
 | 构建 | 固定 release 依赖；打包后的二进制；发布门槛须使用干净机器，不能借开发机资源路径通过 |
 
-所有会修改配置、贴图、索引或启动项的测试使用临时 profile/虚拟机快照。计划中的 `ROTOR_DATA_DIR` 是 P1 新增能力，在实现前不得假定旧版已支持。旧版基线用独立系统用户或目录副本环境采样。
+所有会修改配置、贴图、索引或启动项的测试使用临时 profile/虚拟机快照。当前原生壳支持 `--data-dir`/`ROTOR_DATA_DIR`，保留的旧壳源码通过共享核心支持 `ROTOR_DATA_DIR`；未经修改的旧正式安装包不能据此假定支持，仍须用独立系统用户或隔离环境采样。需要区分“保留源码重新构建的旧 UI”和“原始正式产物”的证据。
 
-证据保存在后续创建的 `doc/gpui-migration/evidence/`，较大的录屏/安装包放 CI artifact 并记录链接与校验和。命名示例 `P5-V10-windows-<commit>.md`；不要提交 API key、真实用户截图或私人路径。
+证据保存在 `doc/gpui-migration/evidence/`，较大的录屏/安装包放 CI artifact 并记录链接与校验和。命名示例 `P5-V10-windows-<commit>.md`；不要提交 API key、真实用户截图或私人路径。可复现的无隐私 UI 输入和生成器位于 `doc/gpui-migration/fixtures/`，贴图进入 GUI 前先执行 `inspect_pins` 只读校验。
 
 ## 2. 功能场景
 
@@ -101,7 +103,7 @@ V09 的细化输入必须包含：Windows 微软拼音、macOS 拼音；常见�
 
 ## 5. 构建与 CI 门槛
 
-P0 独立 workspace 已建立，按下面的 P0 命令验证。P1 之后的根 workspace 和 xtask 仍为后续阶段安排，不能作为已存在的入口运行。
+根 workspace 和 xtask 已建立，默认原生目标为 `rotor-desktop`。P0 原型仍是 `experiments/gpui-probe` 下的独立 workspace，其结果不能替代当前原生壳的验收。
 
 ### P0 原型
 
@@ -139,7 +141,22 @@ cargo build -p rotor-desktop --release --locked
 cargo tree -p rotor-desktop --edges normal,build
 ```
 
-最终 xtask 至少提供 `version --dry-run`、`verify-assets`、`package --target ...` 和 `update-manifest --channel ...` 等独立操作；具体 CLI 在 P8 实现并更新这里。不能复制尚不存在的命令作为已通过验证。
+当前 xtask 入口如下（路径和版本为参数示意，执行时使用新的独立输出目录）：
+
+```text
+cargo run -p xtask -- version
+cargo run -p xtask -- set-version <candidate-version> --dry-run
+cargo run -p xtask -- build
+cargo run -p xtask -- stage <new-stage-directory>
+cargo run -p xtask -- verify <stage-directory>
+cargo run -p xtask -- package <stage-directory> <new-package-directory>
+cargo run -p xtask -- import-profile <source> <new-profile> <new-backup> <source-version>
+cargo run -p xtask -- verify-profile <profile-copy-or-backup>
+cargo run -p xtask -- sign <artifact>
+cargo run -p xtask -- release-manifest <artifacts-directory> <https-base-url> <notes-file> <new-output>
+```
+
+正式身份分别用 `build --production` 和 `stage --production <new-stage-directory>`；构建收据、资源和安装身份必须一致。`package` 按执行主机选择平台，不接受 `--target`；`version` 是只读查询，不需要 `--dry-run`。`release-manifest` 仍要求两端已验签、同身份的产物，Windows 单端验证不能作为双平台清单完成或正式通道切换的证据。此处列出可用 CLI，不表示上述安装、签名和发布场景已经执行。
 
 最终应用 normal/build 依赖闭包中不得有 tauri、tauri-runtime、tauri-runtime-wry、tauri-plugin-*、wry、webview2-com、GPUI WebView 组件或 JS 引擎。系统 WebKit 框架如由无关库引入，必须解释实际用途并验证没有 WebView UI 路径；不能只按字符串搜索宣布已去除前端。`tray-icon`/`global-hotkey` 独立库可以保留。
 
