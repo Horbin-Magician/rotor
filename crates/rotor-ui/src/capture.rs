@@ -105,6 +105,11 @@ impl MaskView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        window.set_window_title(&format!(
+            "Rotor · {} {}",
+            if chinese { "截图" } else { "Capture" },
+            capture.monitor.id
+        ));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let bounds =

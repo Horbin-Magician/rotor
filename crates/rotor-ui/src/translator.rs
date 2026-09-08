@@ -63,6 +63,7 @@ impl TranslatorView {
             _input_events: input_events,
             _activation: activation,
         };
+        window.set_window_title(view.t("Rotor · 翻译", "Rotor · Translation"));
         view.resize(window, cx);
         view
     }
@@ -210,7 +211,10 @@ impl TranslatorView {
             }
             RuntimeEvent::SettingsSaved {
                 result: Ok(config), ..
-            } => self.config = config.clone(),
+            } => {
+                self.config = config.clone();
+                window.set_window_title(self.t("Rotor · 翻译", "Rotor · Translation"));
+            }
             _ => return,
         }
         self.resize(window, cx);

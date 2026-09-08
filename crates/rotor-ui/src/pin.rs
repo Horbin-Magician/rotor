@@ -79,6 +79,8 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let settings = services.settings();
+        window.set_window_title(&pin_title(&settings, init.id));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let bounds =
@@ -90,7 +92,7 @@ impl PinView {
             }
         });
         Self {
-            settings: services.settings(),
+            settings,
             services,
             image: init.image,
             record: init.config,
@@ -457,6 +459,7 @@ impl PinView {
                 match result {
                     Ok(pin) => {
                         self.id = Some(pin.id);
+                        window.set_window_title(&pin_title(&self.settings, self.id));
                         self.message.clear();
                     }
                     Err(error) => {
@@ -499,13 +502,28 @@ impl PinView {
             }
             RuntimeEvent::SettingsSaved {
                 result: Ok(config), ..
-            } => self.settings = config.clone(),
+            } => {
+                self.settings = config.clone();
+                window.set_window_title(&pin_title(&self.settings, self.id));
+            }
             _ => return,
         }
         self.resume_export(window, cx);
         cx.notify();
     }
 }
+fn pin_title(config: &Config, id: Option<u32>) -> String {
+    let label = if rotor_common::i18n::language_for_config(config) == "zh-CN" {
+        "贴图"
+    } else {
+        "Pinned image"
+    };
+    match id {
+        Some(id) => format!("Rotor · {label} {id}"),
+        None => format!("Rotor · {label}"),
+    }
+}
+
 fn shortcut_matches(event: &Keystroke, configured: Option<&String>) -> bool {
     let Some(configured) = configured else {
         return false;

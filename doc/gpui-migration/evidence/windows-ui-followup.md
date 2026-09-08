@@ -32,3 +32,15 @@ target/debug/examples/inspect_pins.exe target/ui-acceptance-fixture-v2
 - `cargo check -p rotor-desktop --offline`、13 项 `cargo test -p rotor-ui --lib --offline`、包含依赖的 desktop/ui `--all-targets --offline -- -D warnings` clippy 通过；警告反馈最后改动后再次执行 desktop clippy 通过。检查未代替 GUI 显示/焦点验收。
 
 合成标定图已从 P0 的既有输出保留到 [calibration.png](../fixtures/calibration.png)，SHA-256 `FCB86244BAD672F03D76442EDD4B61FE041A26FE4C965D2CFE8EDD9CA5A60E52`。后续新 checkout 可用该图运行 profile 生成器，无需依赖被 git 忽略的实验输出。
+
+## 获准恢复桌面验收后的结果
+
+用户明确回复“现在可以继续窗口验收”后恢复桌面检查。沙箱实例未被窗口工具列出；只读确认该实例身份后停止它，在正常桌面以相同 `--no-elevate --no-index` 和 v2 隔离 profile 重启。没有修改正常安装、真实用户资料、自启动或显示设置。
+
+- 日志实际记录 `Restoring 1 pins; 0 metadata warnings`、`Prepared 1 restored pins across 2 displays`，记录中的显示器 ID 更新为当前 ID。用户确认能看到合成标定贴图，完成单张夹具“恢复可见”的人工观察；裁剪、标注、导出和 OCR 尚待验收。
+- 给搜索、翻译、贴图和遮罩补了原生窗口名称，贴图名称附记录 ID，设置语言改变时同步相应名称。名称不作为画布元素，不进入导出。窗口工具仍将原生浮窗归到设置页的附属截图，不能据添加名称声称自动操作问题已解决。
+- 原生输入翻译热键确实打开了紧凑浮窗，[200% DPI 空输入截图](ui-windows/native-translation-empty-200dpi.png) 已保存。自动点击浮窗会先激活设置，继而触发翻译正常的失焦关闭；已停止重复点击，转请用户输入固定 `short` 样例，当前等待结果确认。
+- 本地夹具独立 HTTP 检查：short 返回 200 和 15 字符，long 返回 200 和 729 字符，error 返回 503。这里只证明夹具响应，不证明应用已显示或复制这些结果。
+- 新增无窗口 `display_info` 示例，使用同一 GPUI 平台初始化和真实 monitor 配置，只读取拓扑，不创建 UI、不捕获桌面、不访问资料或剪贴板。实测退出 0，输出见 [显示器 TSV](windows-displays-2026-09-08.tsv)：两屏均为 200%，包括竖屏和负 Y 坐标。不同 DPI 混合、热插拔和旋转的行为未由该静态查询覆盖。
+- [环境和二进制哈希](windows-ui-environment-2026-09-08.json) 已采集。当前是 Windows 11 build 26200，环境含 Intel Graphics 和虚拟显示适配器；本批为 debug UI 样本，不能用于最低 OS、物理双屏热插拔或 release 性能的结论。
+- 该批代码通过 native check、debug build 和包含依赖的严格 clippy。`cargo build -p rotor-desktop --release --offline` 已通过；release `--build-info` 返回 2.6.0 开发身份，`--check-resources --resource-dir src-tauri/assets` 通过。资源检查显式使用开发资源路径，不是已安装包的资源发现或安装验收。

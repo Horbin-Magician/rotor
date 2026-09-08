@@ -26,6 +26,7 @@ pub struct SearchView {
 }
 impl SearchView {
     pub fn new(services: Arc<Services>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        window.set_window_title(search_title(&services.settings()));
         services.update_search();
         let _ = services.search(String::new());
         let input = cx.new(|cx| InputState::new(window, cx));
@@ -140,6 +141,11 @@ impl SearchView {
                     Ok(()) => window.remove_window(),
                     Err(error) => self.message = error.clone(),
                 }
+            }
+            RuntimeEvent::SettingsSaved {
+                result: Ok(config), ..
+            } => {
+                window.set_window_title(search_title(config));
             }
             _ => return,
         }
@@ -386,5 +392,13 @@ impl Render for SearchView {
                         cx,
                     )),
             )
+    }
+}
+
+fn search_title(config: &rotor_common::Config) -> &'static str {
+    if rotor_common::i18n::language_for_config(config) == "zh-CN" {
+        "Rotor · 文件搜索"
+    } else {
+        "Rotor · File search"
     }
 }
