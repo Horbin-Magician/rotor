@@ -234,13 +234,9 @@ impl FileMap {
         let mut segments = Vec::new();
         let mut loop_index = *index;
         while loop_index != 0 {
-            let file_op = self.get(&loop_index);
-            if let Some(file) = file_op {
-                segments.push(file.file_name.as_str());
-                loop_index = file.parent_index;
-            } else {
-                return None;
-            }
+            let file = self.get(&loop_index)?;
+            segments.push(file.file_name.as_str());
+            loop_index = file.parent_index;
         }
 
         let path_len = segments.iter().map(|segment| segment.len() + 1).sum();

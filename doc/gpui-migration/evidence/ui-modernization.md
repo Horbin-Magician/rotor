@@ -74,3 +74,7 @@ Windows computer-use 已初始化并两次列举窗口。启动已安装 `C:/Pro
 本批同时补图标按钮无障碍名称、切换按钮 toggled 状态，以及快捷操作输入变化时刷新“可运行”状态。native build 和 desktop/ui 的严格 `--no-deps` clippy 通过。旧 `yarn build` 与 `cargo build -p rotor --features tauri/custom-protocol` 通过，旧壳保留既有 unused/dead_code 和链接提示；未启用浏览器调试。旧壳尚未启动采图。
 
 窗口输入检测到用户正在操作后，多次拒绝过期坐标；仅刷新读取状态，没有复用旧坐标。后续仍需快捷键密度修正后的截图、其余模块、窄窗口、IME、DPI 和逐项旧新对照，UI-01–UI-05 继续未关闭。
+
+## 原生依赖链 lint 收敛
+
+`rotor-platform` 的安装资源指针对齐检查改用 `is_multiple_of(2)`，`rotor-searcher` 的缺失父目录返回改用 `?`，均保持原有条件与返回语义。包含业务依赖的 `cargo clippy -p rotor-desktop -p rotor-ui --all-targets -- -D warnings` 通过，前述依赖 lint 阻断已消除。

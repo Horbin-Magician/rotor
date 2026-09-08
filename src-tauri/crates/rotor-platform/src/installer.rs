@@ -24,7 +24,7 @@ fn words(buffer: &[u8], pointer: *mut c_void, count: usize) -> Option<&[u16]> {
     let start = pointer as usize;
     let base = buffer.as_ptr() as usize;
     let end = start.checked_add(count.checked_mul(2)?)?;
-    if start < base || end > base.checked_add(buffer.len())? || start % 2 != 0 {
+    if start < base || end > base.checked_add(buffer.len())? || !start.is_multiple_of(2) {
         return None;
     }
     Some(unsafe { std::slice::from_raw_parts(pointer.cast::<u16>(), count) })
