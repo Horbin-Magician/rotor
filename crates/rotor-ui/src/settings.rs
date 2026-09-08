@@ -10,6 +10,7 @@ use gpui_kit::{
 use rotor_common::Config;
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, SearchIndexStatus, Services};
 use std::sync::Arc;
+mod action_change;
 mod actions;
 mod overview;
 mod updates;

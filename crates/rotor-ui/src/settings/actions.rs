@@ -1,3 +1,4 @@
+use super::action_change::{ActionChange, plan_action_change};
 use super::*;
 use crate::shortcut::recorded_key;
 use gpui_kit::component::IconName;
@@ -166,13 +167,17 @@ impl SettingsView {
                 .into_iter()
                 .map(|action| ActionFields::new(action, window, cx))
                 .collect();
+            self.editing_action = None;
         }
     }
     pub(super) fn save_actions(&mut self, cx: &mut Context<Self>) {
+        let actions = self.actions.iter().map(|action| action.value(cx)).collect();
+        self.submit_actions(actions, cx);
+    }
+    fn submit_actions(&mut self, actions: Vec<QuickAction>, cx: &mut Context<Self>) {
         if self.pending.is_some() {
             return;
         }
-        let actions = self.actions.iter().map(|action| action.value(cx)).collect();
         match self.services.save_quick_actions(actions) {
             Ok(id) => {
                 self.pending = Some(id);
@@ -183,6 +188,86 @@ impl SettingsView {
         }
         cx.notify();
     }
+    fn change_action(&mut self, change: ActionChange, cx: &mut Context<Self>) {
+        if self.pending.is_some() {
+            return;
+        }
+        let saved = match self.services.quick_actions() {
+            Ok(saved) => saved,
+            Err(error) => {
+                self.show_message(error, cx);
+                return;
+            }
+        };
+        let drafts = self
+            .actions
+            .iter()
+            .map(|action| action.value(cx))
+            .collect::<Vec<_>>();
+        let Some(plan) = plan_action_change(&drafts, &saved, self.editing_action.is_some(), change)
+        else {
+            return;
+        };
+        if plan.save_immediately {
+            // Keep the current rows until the existing registration/disk
+            // transaction succeeds; a failed delete therefore leaves its row.
+            self.submit_actions(plan.actions, cx);
+        } else {
+            let enabled = plan
+                .actions
+                .iter()
+                .map(|action| (action.id.as_str(), action.enabled))
+                .collect::<std::collections::HashMap<_, _>>();
+            self.actions.retain_mut(|action| {
+                if let Some(value) = enabled.get(action.id.as_str()) {
+                    action.enabled = *value;
+                    true
+                } else {
+                    false
+                }
+            });
+            if self
+                .editing_action
+                .as_ref()
+                .is_some_and(|id| !self.actions.iter().any(|action| &action.id == id))
+            {
+                self.editing_action = None;
+            }
+            self.message = self
+                .t(
+                    "更改已加入未保存的草稿，保存后生效",
+                    "Change added to the existing draft; save to apply",
+                )
+                .into();
+            cx.notify();
+        }
+    }
+    fn cancel_action_edit(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending.is_some() || self.editing_action.as_deref() != Some(id) {
+            return;
+        }
+        let saved = match self.services.quick_actions() {
+            Ok(saved) => saved,
+            Err(error) => {
+                self.show_message(error, cx);
+                return;
+            }
+        };
+        if let Some(index) = self.actions.iter().position(|action| action.id == id) {
+            if let Some(action) = saved.into_iter().find(|action| action.id == id) {
+                self.actions[index] = ActionFields::new(action, window, cx);
+            } else {
+                self.actions.remove(index);
+            }
+        }
+        self.editing_action = None;
+        self.recording = None;
+        self.services.set_shortcut_recording(false);
+        self.message = self.t("已取消编辑", "Edit cancelled").into();
+        self.focus.focus(window, cx);
+        cx.notify();
+    }
+
     fn add_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -246,6 +331,8 @@ impl SettingsView {
                 let record_id = id.clone();
                 let editing = self.editing_action.as_ref() == Some(&id);
                 let edit_id = id.clone();
+                let toggle_id = id.clone();
+                let delete_id = id.clone();
                 let normalized = rotor_runtime::quick::normalize_actions(vec![action.value(cx)])
                     .ok()
                     .and_then(|mut actions| actions.pop());
@@ -268,10 +355,7 @@ impl SettingsView {
                             })
                             .disabled(disabled)
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                if let Some(action) = this.actions.get_mut(index) {
-                                    action.enabled = !action.enabled;
-                                }
-                                cx.notify();
+                                this.change_action(ActionChange::Toggle(toggle_id.clone()), cx);
                             })),
                     )
                     .child(
@@ -291,15 +375,31 @@ impl SettingsView {
                     )
                     .child(
                         Button::new(("edit-action", index))
-                            .icon(IconName::Settings2)
+                            .icon(if editing {
+                                IconName::Close
+                            } else {
+                                IconName::Settings2
+                            })
                             .compact()
-                            .accessibility_label(self.t("编辑操作", "Edit action"))
-                            .tooltip(self.t("编辑操作", "Edit action"))
+                            .accessibility_label(if editing {
+                                self.t("取消编辑", "Cancel edit")
+                            } else {
+                                self.t("编辑操作", "Edit action")
+                            })
+                            .tooltip(if editing {
+                                self.t("取消编辑", "Cancel edit")
+                            } else {
+                                self.t("编辑操作", "Edit action")
+                            })
                             .selected(editing)
                             .disabled(disabled)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.editing_action = (!editing).then(|| edit_id.clone());
-                                cx.notify();
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if editing {
+                                    this.cancel_action_edit(&edit_id, window, cx);
+                                } else {
+                                    this.editing_action = Some(edit_id.clone());
+                                    cx.notify();
+                                }
                             })),
                     )
                     .child(
@@ -310,13 +410,7 @@ impl SettingsView {
                             .tooltip(self.t("删除操作", "Delete action"))
                             .disabled(disabled)
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                if index < this.actions.len() {
-                                    let removed = this.actions.remove(index);
-                                    if this.editing_action.as_ref() == Some(&removed.id) {
-                                        this.editing_action = None;
-                                    }
-                                }
-                                cx.notify();
+                                this.change_action(ActionChange::Delete(delete_id.clone()), cx);
                             })),
                     );
                 crate::visual::card(cx)
