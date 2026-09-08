@@ -5,6 +5,7 @@ mod searcher;
 mod settings;
 mod shortcut;
 mod translator;
+mod visual;
 pub use capture::{
     MaskAction, MaskCallback, MaskView, PreparedCapture, PreparedImage, prepare_capture,
     prepare_image,

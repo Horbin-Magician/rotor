@@ -225,13 +225,10 @@ impl SettingsView {
                 let runnable = normalized
                     .as_ref()
                     .is_some_and(|draft| draft.enabled && saved.iter().any(|saved| saved == draft));
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .p_3()
-                    .border_1()
+                crate::visual::card(cx)
+                    .child(crate::visual::caption(self.t("名称", "Name"), cx))
                     .child(Input::new(&action.name).disabled(disabled))
+                    .child(crate::visual::caption(self.t("快捷键", "Shortcut"), cx))
                     .child(
                         div()
                             .flex()
@@ -250,13 +247,16 @@ impl SettingsView {
                                     })),
                             ),
                     )
+                    .child(crate::visual::caption(self.t("命令", "Command"), cx))
                     .child(Textarea::new(&action.command).h(px(72.)).disabled(disabled))
                     .child(
                         div()
                             .flex()
+                            .flex_wrap()
                             .gap_2()
                             .child(
                                 Button::new(("toggle-action", index))
+                                    .selected(action.enabled)
                                     .label(if action.enabled {
                                         self.t("已启用", "Enabled")
                                     } else {

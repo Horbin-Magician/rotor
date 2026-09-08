@@ -1,7 +1,7 @@
 use gpui_kit::{
     component::{
-        Disableable,
-        button::Button,
+        ActiveTheme, Disableable, Selectable,
+        button::{Button, ButtonVariants},
         input::{Input, InputState, Textarea, TextareaState},
     },
     prelude::*,
@@ -240,6 +240,7 @@ impl SettingsView {
                 self.update = snapshot;
             }
             RuntimeEvent::Overview { id, result } if self.overview_request == Some(id) => {
+                self.overview_request = None;
                 match result {
                     Ok(overview) => self.overview = Some(overview),
                     Err(error) => self.message = error,
@@ -386,7 +387,7 @@ impl SettingsView {
         options: &[(&'static str, &'static str, &'static str)],
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        div()
+        crate::visual::card(cx)
             .flex()
             .flex_col()
             .gap_2()
@@ -399,10 +400,8 @@ impl SettingsView {
                     .children(options.iter().enumerate().map(|(index, &(value, zh, en))| {
                         Button::new((key, index))
                             .label(self.t(zh, en))
-                            .disabled(
-                                self.pending.is_some()
-                                    || self.config.get(key).is_some_and(|current| current == value),
-                            )
+                            .selected(self.config.get(key).is_some_and(|current| current == value))
+                            .disabled(self.pending.is_some())
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.save(vec![(key.into(), value.into())], cx)
                             }))
@@ -411,8 +410,76 @@ impl SettingsView {
     }
 }
 impl Render for SettingsView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut content = div().flex().flex_col().gap_4();
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let compact = window.viewport_size().width < px(760.);
+        let sections = [
+            (
+                "overview",
+                Section::Overview,
+                "概览",
+                "Overview",
+                "运行状态与常用入口",
+                "Status and everyday tools",
+            ),
+            (
+                "general",
+                Section::General,
+                "通用",
+                "General",
+                "让 Rotor 符合你的使用习惯",
+                "Make Rotor feel at home",
+            ),
+            (
+                "search",
+                Section::Search,
+                "搜索",
+                "Search",
+                "管理文件索引与排除目录",
+                "Manage your file index and exclusions",
+            ),
+            (
+                "pin",
+                Section::Pin,
+                "贴图",
+                "Pinned images",
+                "保存位置与缩放行为",
+                "Save locations and zoom behavior",
+            ),
+            (
+                "translation",
+                Section::Translation,
+                "翻译",
+                "Translation",
+                "选择翻译引擎与目标语言",
+                "Choose an engine and target language",
+            ),
+            (
+                "shortcuts",
+                Section::Shortcuts,
+                "快捷键",
+                "Shortcuts",
+                "录制按键组合，保存后生效",
+                "Record key combinations, then save to apply",
+            ),
+            (
+                "quick",
+                Section::Quick,
+                "快捷操作",
+                "Quick actions",
+                "通过快捷键运行常用命令",
+                "Run your everyday commands with a shortcut",
+            ),
+            (
+                "updates",
+                Section::Updates,
+                "更新",
+                "Updates",
+                "版本信息与下载进度",
+                "Version details and download progress",
+            ),
+        ];
+        let current = sections.iter().find(|item| item.1 == self.section).unwrap();
+        let mut content = div().flex().flex_col().min_w_0().gap_4();
         match self.section {
             Section::Updates => {
                 content = content.child(self.update_panel(cx));
@@ -582,7 +649,7 @@ impl Render for SettingsView {
                 .filter(|field| field.section == self.section)
                 .map(|field| {
                     let key = field.key;
-                    div()
+                    crate::visual::card(cx)
                         .flex()
                         .flex_col()
                         .gap_2()
@@ -617,25 +684,14 @@ impl Render for SettingsView {
                     ),
             );
         }
-        if !matches!(
-            self.section,
-            Section::General | Section::Overview | Section::Updates
-        ) {
-            content = content.child(
-                Button::new("save-fields")
-                    .label(self.t("保存", "Save"))
-                    .disabled(self.pending.is_some())
-                    .on_click(cx.listener(|this, _, _, cx| this.save_fields(cx))),
-            );
-        }
         div()
             .id("settings")
             .track_focus(&self.focus)
             .flex()
-            .flex_col()
-            .p_6()
-            .gap_4()
             .size_full()
+            .text_sm()
+            .text_color(cx.theme().foreground)
+            .bg(cx.theme().muted)
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
                 if this.recording.take().is_some() {
                     this.services.set_shortcut_recording(false);
@@ -645,56 +701,137 @@ impl Render for SettingsView {
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 this.record_key(event, window, cx)
             }))
-            .child(div().text_2xl().child("Rotor"))
             .child(
-                div().flex().gap_2().children(
-                    [
-                        ("overview", Section::Overview, "概览", "Overview"),
-                        ("updates", Section::Updates, "更新", "Updates"),
-                        ("general", Section::General, "通用", "General"),
-                        ("search", Section::Search, "搜索", "Search"),
-                        ("pin", Section::Pin, "贴图", "Pinned screenshots"),
-                        ("translation", Section::Translation, "翻译", "Translation"),
-                        ("shortcuts", Section::Shortcuts, "快捷键", "Shortcuts"),
-                        ("quick", Section::Quick, "快捷操作", "Quick actions"),
-                    ]
-                    .into_iter()
-                    .map(|(id, section, zh, en)| {
+                div()
+                    .id("settings-navigation")
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .w(px(if compact { 150. } else { 184. }))
+                    .h_full()
+                    .flex_shrink_0()
+                    .p_3()
+                    .border_r_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background)
+                    .overflow_y_scroll()
+                    .child(
+                        div()
+                            .px_3()
+                            .py_4()
+                            .text_2xl()
+                            .font_weight(FontWeight::BOLD)
+                            .child("Rotor"),
+                    )
+                    .children(sections.into_iter().map(|(id, section, zh, en, _, _)| {
                         Button::new(id)
+                            .ghost()
+                            .w_full()
+                            .justify_start()
                             .label(self.t(zh, en))
-                            .disabled(self.section == section)
+                            .selected(self.section == section)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.section = section;
                                 cx.notify();
                             }))
-                    }),
-                ),
+                    })),
             )
             .child(
                 div()
-                    .id("settings-content")
+                    .flex()
+                    .flex_col()
                     .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(content),
-            )
-            .child(self.message.clone())
-            .when(self.recording.is_some(), |root| {
-                root.child(
-                    Button::new("cancel-recording")
-                        .label(self.t("取消录制", "Cancel recording"))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.recording = None;
-                            this.services.set_shortcut_recording(false);
-                            this.message.clear();
-                            cx.notify();
-                        })),
-                )
-            })
-            .child(
-                Button::new("close")
-                    .label(self.t("关闭", "Close"))
-                    .on_click(|_, window, _| window.remove_window()),
+                    .min_w_0()
+                    .h_full()
+                    .gap_4()
+                    .p(if compact { px(16.) } else { px(24.) })
+                    .child(crate::visual::heading(
+                        self.t(current.2, current.3),
+                        self.t(current.4, current.5),
+                        cx,
+                    ))
+                    .child(
+                        div()
+                            .id("settings-content")
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .child(content),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .flex_shrink_0()
+                            .when(!self.message.is_empty(), |footer| {
+                                footer.child(
+                                    div()
+                                        .id("settings-feedback")
+                                        .max_h(px(100.))
+                                        .overflow_y_scroll()
+                                        .child(self.message.clone()),
+                                )
+                            })
+                            .when(self.recording.is_some(), |root| {
+                                root.child(
+                                    Button::new("cancel-recording")
+                                        .label(self.t("取消录制", "Cancel recording"))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.recording = None;
+                                            this.services.set_shortcut_recording(false);
+                                            this.message.clear();
+                                            cx.notify();
+                                        })),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap_2()
+                                    .child(crate::visual::caption(
+                                        self.t("Rotor · 随时待命", "Rotor · Ready when you are"),
+                                        cx,
+                                    ))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .gap_2()
+                                            .when(
+                                                !matches!(
+                                                    self.section,
+                                                    Section::General
+                                                        | Section::Overview
+                                                        | Section::Updates
+                                                ),
+                                                |row| {
+                                                    row.child(
+                                                        Button::new("save-fields")
+                                                            .primary()
+                                                            .label(
+                                                                self.t("保存更改", "Save changes"),
+                                                            )
+                                                            .disabled(self.pending.is_some())
+                                                            .on_click(cx.listener(
+                                                                |this, _, _, cx| {
+                                                                    this.save_fields(cx)
+                                                                },
+                                                            )),
+                                                    )
+                                                },
+                                            )
+                                            .child(
+                                                Button::new("close")
+                                                    .label(self.t("关闭", "Close"))
+                                                    .on_click(|_, window, _| {
+                                                        window.remove_window()
+                                                    }),
+                                            ),
+                                    ),
+                            ),
+                    ),
             )
     }
 }

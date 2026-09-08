@@ -31,3 +31,12 @@
 Windows computer-use 已初始化并两次列举窗口。启动已安装 `C:/Program Files/Rotor/rotor.exe` 返回 `launched app did not expose a targetable window: cc.fluctus.rotor`，复查没有 Rotor 窗口。尚未取得旧版截图，源码对照不等于 UI-01/UI-05 完成。
 
 后续逐模块记录：版本/commit、OS、窗口尺寸、语言、主题、DPI、固定内容、操作步骤、截图路径、通过/失败/未测。最少覆盖中文/英文 × 浅/深色，系统跟随、窄窗口、100/150/200% DPI；旧新使用同一内容。完整视觉/交互验收前，UI-01–UI-05 继续保持未关闭。
+
+## 设置页第一批实现
+
+- `rotor-ui/src/visual.rs` 提供语义主题卡片、标题及辅助文字；设置采用左导航、可滚动正文、固定保存/反馈区，并在 760px 以下缩小导航与边距。
+- 选中导航和选项使用组件 selected 状态；保存按钮使用 primary；概览分为运行摘要、数据目录和权限卡片，刷新期间禁用重复请求，收到结果解除等待。
+- 快捷操作补名称/快捷键/命令标签，操作行可换行；更新状态建立标题层级、错误使用语义色。
+- `cargo check -p rotor-ui`、`cargo check -p rotor-desktop`、`cargo build -p rotor-desktop` 通过。debug 链接保留 MSVC 导入库提示 warning；未将构建作为视觉验收。
+- 启动 debug 程序使用隔离资料目录 `target/ui-modernization-profile`，参数 `--no-elevate --no-index`。随后 computer-use 返回用户按物理 Escape 停止操作，本轮停止界面控制，未取得新窗口截图。
+- 待继续：实际布局/窄窗口/双主题验证、搜索与翻译、截图与贴图工具美化，以及完整旧新对照。UI-01–UI-05 均未关闭。

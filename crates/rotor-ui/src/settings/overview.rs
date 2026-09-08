@@ -9,61 +9,106 @@ impl SettingsView {
         cx.notify();
     }
     pub(super) fn overview_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut panel = div().flex().flex_col().gap_3().child(
-            Button::new("refresh-overview")
-                .label(self.t("刷新概览", "Refresh overview"))
-                .on_click(cx.listener(|this, _, _, cx| this.refresh_overview(cx))),
-        );
-        panel = panel.child(
-            Button::new("project-home")
-                .label(self.t("项目主页", "Project home"))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    if let Err(error) = this
-                        .services
-                        .open_url("https://github.com/Horbin-Magician/rotor".into())
-                    {
-                        this.message = error;
-                        cx.notify();
-                    }
-                })),
-        );
-        if let Some(overview) = &self.overview {
-            panel = panel
-                .child(format!(
-                    "Rotor {} · {} / {}",
-                    overview.version, overview.platform, overview.architecture
-                ))
-                .child(format!(
-                    "{}: {}",
-                    self.t("数据目录", "Data directory"),
-                    overview.data_directory
-                ))
-                .child(match &overview.resident_bytes {
-                    Ok(bytes) => format!(
-                        "{}: {:.1} MiB",
-                        self.t("当前进程内存", "Process resident memory"),
-                        *bytes as f64 / 1048576.
-                    ),
-                    Err(error) => error.clone(),
-                })
-                .child(format!(
-                    "OCR: {}",
-                    match overview.ocr_loaded {
-                        Some(true) => self.t("模型已加载", "Model loaded"),
-                        Some(false) => self.t("模型未加载", "Model unloaded"),
-                        None => self.t("忙碌或状态不可用", "Busy or unavailable"),
-                    }
-                ))
+        let mut panel = div().flex().flex_col().gap_4().child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_2()
                 .child(
-                    Button::new("open-data-directory")
-                        .label(self.t("打开数据目录", "Open data directory"))
+                    Button::new("refresh-overview")
+                        .label(self.t("刷新概览", "Refresh overview"))
+                        .disabled(self.overview_request.is_some())
+                        .on_click(cx.listener(|this, _, _, cx| this.refresh_overview(cx))),
+                )
+                .child(
+                    Button::new("project-home")
+                        .label(self.t("项目主页", "Project home"))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            if let Err(error) = this.services.open_data_directory() {
+                            if let Err(error) = this
+                                .services
+                                .open_url("https://github.com/Horbin-Magician/rotor".into())
+                            {
                                 this.message = error;
                                 cx.notify();
                             }
                         })),
+                ),
+        );
+        if let Some(overview) = &self.overview {
+            panel = panel
+                .child(
+                    crate::visual::card(cx)
+                        .child(
+                            div()
+                                .text_lg()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(format!(
+                                    "Rotor {} · {} / {}",
+                                    overview.version, overview.platform, overview.architecture
+                                )),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_4()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .child(crate::visual::caption(
+                                            self.t("当前进程内存", "Process memory"),
+                                            cx,
+                                        ))
+                                        .child(div().text_2xl().child(
+                                            match &overview.resident_bytes {
+                                                Ok(bytes) => {
+                                                    format!("{:.1} MiB", *bytes as f64 / 1048576.)
+                                                }
+                                                Err(error) => error.clone(),
+                                            },
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .child(crate::visual::caption("OCR", cx))
+                                        .child(match overview.ocr_loaded {
+                                            Some(true) => self.t("模型已加载", "Model loaded"),
+                                            Some(false) => self.t("模型未加载", "Model unloaded"),
+                                            None => {
+                                                self.t("忙碌或状态不可用", "Busy or unavailable")
+                                            }
+                                        }),
+                                ),
+                        ),
+                )
+                .child(
+                    crate::visual::card(cx)
+                        .child(crate::visual::caption(
+                            self.t("数据目录", "Data directory"),
+                            cx,
+                        ))
+                        .child(overview.data_directory.clone())
+                        .child(
+                            Button::new("open-data-directory")
+                                .label(self.t("打开数据目录", "Open data directory"))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    if let Err(error) = this.services.open_data_directory() {
+                                        this.message = error;
+                                        cx.notify();
+                                    }
+                                })),
+                        ),
                 );
+            let mut permissions = crate::visual::card(cx).child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(self.t("权限与系统服务", "Permissions and system services")),
+            );
             for permission in &overview.permissions {
                 let label = match permission.key.as_str() {
                     "administrator" => self.t("管理员权限", "Administrator"),
@@ -75,21 +120,38 @@ impl SettingsView {
                     "file_search" => self.t("文件搜索访问", "File search access"),
                     _ => permission.name.as_str(),
                 };
-                panel = panel.child(format!(
-                    "{label}: {}",
-                    match permission.granted {
-                        Some(true) => self.t("可用", "Available"),
-                        Some(false) => self.t("未授予", "Not granted"),
-                        None => self.t("未知", "Unknown"),
-                    }
-                ));
+                permissions = permissions.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .justify_between()
+                        .gap_2()
+                        .child(label.to_owned())
+                        .child(
+                            div()
+                                .text_color(match permission.granted {
+                                    Some(true) => cx.theme().success,
+                                    Some(false) => cx.theme().danger,
+                                    None => cx.theme().muted_foreground,
+                                })
+                                .child(match permission.granted {
+                                    Some(true) => self.t("可用", "Available"),
+                                    Some(false) => self.t("未授予", "Not granted"),
+                                    None => self.t("未知", "Unknown"),
+                                }),
+                        ),
+                );
                 if permission.key == "administrator" && permission.granted == Some(false) {
-                    panel = panel.child(self.t(
-                        "NTFS 日志索引需要管理员权限。",
-                        "NTFS journal indexing requires administrator privileges.",
+                    permissions = permissions.child(crate::visual::caption(
+                        self.t(
+                            "NTFS 日志索引需要管理员权限。",
+                            "NTFS journal indexing requires administrator privileges.",
+                        ),
+                        cx,
                     ));
                 }
             }
+            panel = panel.child(permissions);
             match overview.autostart {
                 Ok(enabled) => {
                     panel = panel.child(
