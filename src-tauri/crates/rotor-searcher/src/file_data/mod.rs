@@ -521,6 +521,13 @@ impl FileData {
         self.update_valid_vols();
 
         self.finding_name = String::new();
+        // Drop strings and the result vector's allocation, not just its length.
+        // A broad completed query can otherwise outlive the released index.
+        self.finding_result = SearchResult {
+            items: Vec::new(),
+            query: String::new(),
+        };
+        self.show_num = 0;
         let handles = self
             .volume_packs
             .iter()
@@ -590,6 +597,48 @@ impl FileData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn releasing_index_drops_cached_results_and_restarts_query_paging() {
+        let batches = Arc::new(Mutex::new(Vec::new()));
+        let observed = batches.clone();
+        let mut data = FileData::new(
+            move |batch| observed.lock().unwrap().push(batch),
+            None,
+            Arc::new(Mutex::new(FileState::Ready)),
+        );
+        data.finding_name = "same-query".into();
+        data.finding_result.query = "same-query".into();
+        data.finding_result.items = Vec::with_capacity(128);
+        data.finding_result.items.push(SearchResultItem {
+            path: "fixture".repeat(1024),
+            file_path: "fixture/file".into(),
+            file_name: "file".into(),
+            rank: 0,
+            icon_data: None,
+            alias: None,
+        });
+        data.show_num = 80;
+        // No volume workers are attached: even a failed/missing-volume release
+        // must relinquish result ownership and old paging state.
+        let _ = data.release_index();
+        assert!(data.finding_result.items.is_empty());
+        assert_eq!(data.finding_result.items.capacity(), 0);
+        assert!(data.finding_result.query.is_empty());
+        assert_eq!(data.show_num, 0);
+        let (_sender, receiver) = mpsc::channel();
+        data.find(
+            SearchRequest {
+                id: QueryId(20),
+                query: "same-query".into(),
+            },
+            &receiver,
+        );
+        let batches = batches.lock().unwrap();
+        assert_eq!(batches.len(), 1);
+        assert!(!batches[0].append);
+        assert!(batches[0].items.is_empty());
+    }
 
     #[test]
     fn repeated_query_batches_keep_the_original_request_identity() {

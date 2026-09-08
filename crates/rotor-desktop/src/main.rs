@@ -640,6 +640,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                 cx.global_mut::<ShellState>()
                     .windows
                     .retain(|_, entry| entry.window.window_id() != id);
+                if role == Some(WindowRole::Search) {
+                    // Restore the legacy hide/release contract. Resolve by the
+                    // closing window ID above: an obsolete window must not
+                    // release the index after a replacement has been opened.
+                    cx.global::<ShellState>().services.release_search();
+                }
                 if let Some(WindowRole::Mask { session, .. }) = role {
                     cx.defer(move |cx| {
                         if cx.global::<ShellState>().capture.session.generation() == Some(session) {
