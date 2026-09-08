@@ -195,14 +195,21 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
             .map_err(|error| error.to_string())?;
         #[cfg(target_os = "windows")]
         handle
-            .update(cx, |_, window, _| {
+            .update(cx, |_, window, cx| {
                 rotor_platform::overlay::fit_client_bounds(
                     HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
                     monitor.x,
                     monitor.y,
                     monitor.width,
                     monitor.height,
-                )
+                )?;
+                // SetWindowPos sends resize/move messages synchronously while
+                // this GPUI window is already being updated. The platform state
+                // changes, but its callback cannot re-enter the borrowed window.
+                // Refresh GPUI's cached viewport/DPI/display before rendering or
+                // arming the geometry observer (which is still disarmed here).
+                window.bounds_changed(cx);
+                Ok::<_, String>(())
             })
             .map_err(|error| error.to_string())??;
         opened.push((monitor.id, handle));
