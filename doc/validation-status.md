@@ -2,6 +2,7 @@
 
 - Windows x64 是当前工程检查目标；正式发布和更新源推广尚未完成。
 - 后续可视化及人工 UI 验收按用户要求跳过，不计为通过。
+- 2026-09-09 Windows 概览内存改为 `PROCESS_MEMORY_COUNTERS_EX2.PrivateWorkingSetSize`，显示名称改为“进程私有工作集”；保持手动刷新。该计数要求 Windows 10/11 22H2 安装 2023 年 9 月累计更新或更高版本（[系统 API 要求](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex2)），查询失败按既有错误路径显示，不回退到总工作集或私有提交量。格式检查、`cargo clippy -p rotor-platform -p rotor-ui --all-targets --locked -- -D warnings`、本机私有工作集采集测试（1 项）通过。包含 rotor-desktop 的 Clippy 检查失败：工作区已有 capture.rs 修改移除了 `capture::warm`，main.rs 仍调用它；未修改该独立改动，未生成新的桌面可执行文件。视觉 UI 验证跳过，macOS 验证暂缓。
 - 2026-09-09 移除首次启动时自动打开设置窗口的逻辑，默认后台常驻；托盘、设置快捷键及再次启动激活已有实例仍可打开设置。`cargo fmt --all -- --check`、`cargo check -p rotor-desktop --locked` 通过；视觉 UI 验证跳过，macOS 验证暂缓。
 - Windows 托盘右键菜单使用 Win32 原生菜单及 GDI 自绘，仅保留设置和退出；复用托盘窗口并缓存字体和画刷，支持应用主题、系统主题及高对比度。主题切换、混合 DPI 定位、读屏及鼠标/键盘交互的人工验收跳过；实际呼出延迟尚未测量。
 - 本次原生托盘菜单修改的非视觉检查通过：`cargo fmt --all -- --check`、`cargo check -p rotor-desktop --locked`、`cargo clippy -p rotor-desktop -p rotor-ui --all-targets --locked -- -D warnings`、`cargo test -p rotor-desktop -p rotor-ui --locked`（主程序 5 项、恢复程序 2 项、UI 29 项）。新增测试覆盖隐藏的合成原生窗口消息、菜单文字/ID 保留、资源缓存及离屏 GDI 绘制，不计为视觉验收。

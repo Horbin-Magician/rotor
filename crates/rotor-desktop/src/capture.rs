@@ -16,7 +16,6 @@ pub struct CaptureState {
     frames: HashMap<u32, Arc<PreparedCapture>>,
     preparing: Option<Task<()>>,
     detecting: Option<Task<()>>,
-    warming: Option<Task<()>>,
     started: Option<Instant>,
     desktop_dirty: bool,
     shown: HashSet<u32>,
@@ -147,38 +146,6 @@ fn mark(session: u64, stage: &str, cx: &App) {
     }
 }
 
-/// Warm only inert hidden windows; never capture desktop pixels during startup.
-#[cfg(target_os = "windows")]
-pub fn warm(cx: &mut App) {
-    let task = cx.spawn(async move |cx| {
-        let monitors = cx
-            .background_executor()
-            .spawn(async {
-                rotor_runtime::current_monitor_configs().map_err(|error| error.to_string())
-            })
-            .await;
-        cx.update(|cx| {
-            if cx
-                .global::<ShellState>()
-                .capture
-                .session
-                .generation()
-                .is_some()
-            {
-                return;
-            }
-            if let Ok(monitors) = monitors {
-                for monitor in monitors {
-                    if let Err(error) = idle_window(&monitor, cx) {
-                        log::warn!("Capture window warmup: {error}");
-                    }
-                }
-            }
-        });
-    });
-    cx.global_mut::<ShellState>().capture.warming = Some(task);
-}
-
 fn idle_window(
     monitor: &rotor_runtime::MonitorConfig,
     cx: &mut App,
@@ -281,7 +248,6 @@ pub fn stop(cx: &mut App) {
     let state = cx.global_mut::<ShellState>();
     state.capture.session.cancel();
     state.capture.preparing = None;
-    state.capture.warming = None;
     state.capture.detecting = None;
     state.capture.frames.clear();
     state.capture.shown.clear();

@@ -18,6 +18,7 @@ use win_imports::*;
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryUsage {
+    /// Private working set on Windows; total resident memory on macOS.
     pub resident_bytes: u64,
 }
 
@@ -246,21 +247,23 @@ pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
 
 #[cfg(target_os = "windows")]
 pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
-    let mut counters = ProcessStatus::PROCESS_MEMORY_COUNTERS {
-        cb: std::mem::size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS>() as u32,
+    let mut counters = ProcessStatus::PROCESS_MEMORY_COUNTERS_EX2 {
+        cb: std::mem::size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS_EX2>() as u32,
         ..Default::default()
     };
 
     unsafe {
         ProcessStatus::GetProcessMemoryInfo(
             Threading::GetCurrentProcess(),
-            &mut counters,
-            std::mem::size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS>() as u32,
+            // EX2 extends the C-layout base structure; pass the full buffer size.
+            std::ptr::from_mut(&mut counters).cast(),
+            std::mem::size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS_EX2>() as u32,
         )?;
     }
 
     Ok(MemoryUsage {
-        resident_bytes: counters.WorkingSetSize as u64,
+        // PrivateUsage measures commit, not resident private pages.
+        resident_bytes: counters.PrivateWorkingSetSize as u64,
     })
 }
 
@@ -352,6 +355,12 @@ pub fn forbid_window_animation(handle: HWND) {
 
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
+    #[test]
+    fn current_process_private_working_set_is_available() {
+        let memory = super::get_memory_usage().expect("private working set query failed");
+        assert!(memory.resident_bytes > 0);
+    }
+
     #[test]
     fn get_all_window_rect_returns_valid_rects() {
         let rects = super::get_all_window_rect().expect("get_all_window_rect failed");

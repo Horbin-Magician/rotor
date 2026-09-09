@@ -726,8 +726,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         });
         cx.global_mut::<ShellState>()._quit = Some(quit);
         let _ = cx.global::<ShellState>().services.restore_pins();
-        #[cfg(target_os = "windows")]
-        capture::warm(cx);
         let task = cx.spawn(async move |cx| {
             loop {
                 let command = command_receiver.recv();

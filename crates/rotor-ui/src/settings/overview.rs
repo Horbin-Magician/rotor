@@ -171,7 +171,14 @@ impl SettingsView {
                                         .flex_col()
                                         .gap_1()
                                         .child(crate::visual::caption(
-                                            self.t("当前进程内存", "Process memory"),
+                                            if cfg!(target_os = "windows") {
+                                                self.t(
+                                                    "进程私有工作集",
+                                                    "Process private working set",
+                                                )
+                                            } else {
+                                                self.t("当前进程内存", "Process memory")
+                                            },
                                             cx,
                                         ))
                                         .child(div().text_2xl().child(
