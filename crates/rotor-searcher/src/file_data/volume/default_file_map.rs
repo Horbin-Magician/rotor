@@ -45,8 +45,8 @@ impl DirectoryTree {
     }
 
     fn clear(&mut self) {
-        self.nodes.truncate(1);
-        self.lookup.clear();
+        // Release directory storage with the index; only the sentinel survives.
+        *self = Self::new();
     }
 
     fn contains(&self, dir_id: DirId) -> bool {
@@ -620,5 +620,92 @@ mod tests {
 
         file_map.clear();
         assert!(file_map.is_empty());
+    }
+
+    fn populate(map: &mut FileMap, count: usize) {
+        for index in 0..count {
+            let name = if index % 32 == 0 {
+                format!("fixture-{index:06}.exe")
+            } else {
+                format!("other-{index:06}.txt")
+            };
+            map.insert(name, format!("synthetic/dir-{index:06}/nested"));
+        }
+    }
+
+    fn pages(map: &FileMap, batch: u8) -> Vec<(String, i8)> {
+        let mut offset = 0;
+        let mut items = Vec::new();
+        loop {
+            let (page, scanned) = map.search("fixture", offset, batch, &AtomicBool::new(false));
+            items.extend(
+                page.unwrap()
+                    .into_iter()
+                    .map(|item| (item.file_path, item.rank)),
+            );
+            if scanned == 0 {
+                return items;
+            }
+            offset += scanned;
+        }
+    }
+
+    #[test]
+    fn release_drops_directory_capacity_and_reloads_all_pages() {
+        let mut map = FileMap::new();
+        populate(&mut map, 4096);
+        let expected = pages(&map, 255);
+        assert_eq!(expected.len(), 128);
+        assert_eq!(pages(&map, 7), expected);
+        let index = super::super::release_tests::IndexFile::new();
+        map.save(index.path()).unwrap();
+
+        for _ in 0..3 {
+            assert!(map.dir_tree.nodes.capacity() > 4096);
+            assert!(map.dir_tree.lookup.capacity() > 4096);
+            map.clear();
+            assert_eq!(map.dir_tree.nodes.len(), 1);
+            assert_eq!(map.dir_tree.nodes.capacity(), 1);
+            assert_eq!(map.dir_tree.lookup.capacity(), 0);
+            assert!(map.dir_tree.nodes[0].name.is_empty());
+            assert_eq!(map.dir_tree.nodes[0].parent_id, ROOT_DIR_ID);
+            assert!(map.main_set.is_empty());
+            assert!(pages(&map, 7).is_empty());
+            map.read(index.path()).unwrap();
+            assert_eq!(pages(&map, 7), expected);
+        }
+
+        map.clear();
+        map.insert("last.txt".into(), "synthetic/deleted/nested".into());
+        map.remove("last.txt".into(), "synthetic/deleted/nested".into());
+        assert!(map.is_empty());
+        assert!(map.dir_tree.lookup.capacity() > 0);
+        map.clear();
+        map.clear();
+        assert_eq!(map.dir_tree.nodes.capacity(), 1);
+        assert_eq!(map.dir_tree.lookup.capacity(), 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore = "manual process commit measurement; run alone with --ignored --exact --nocapture"]
+    fn measure_default_index_release_commit() {
+        use super::super::release_tests::private_commit_bytes;
+        let baseline = private_commit_bytes();
+        let mut map = FileMap::new();
+        populate(&mut map, 250_000);
+        let loaded = private_commit_bytes();
+        // Reproduce the previous release, then isolate the newly freed storage.
+        map.main_set.clear();
+        map.dir_tree.nodes.truncate(1);
+        map.dir_tree.lookup.clear();
+        let node_capacity = map.dir_tree.nodes.capacity();
+        let lookup_capacity = map.dir_tree.lookup.capacity();
+        let legacy_release = private_commit_bytes();
+        map.clear();
+        let released = private_commit_bytes();
+        assert_eq!(map.dir_tree.nodes.capacity(), 1);
+        assert_eq!(map.dir_tree.lookup.capacity(), 0);
+        println!("default entries=250000 node_capacity={node_capacity} lookup_capacity={lookup_capacity} private_commit_bytes baseline={baseline} loaded={loaded} legacy_release={legacy_release} released={released}");
     }
 }

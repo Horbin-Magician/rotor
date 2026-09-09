@@ -2,6 +2,8 @@
 pub mod default_file_map;
 #[cfg(target_os = "macos")]
 pub mod default_volume;
+#[cfg(test)]
+mod release_tests;
 mod search_match;
 
 use std::fs::Metadata;

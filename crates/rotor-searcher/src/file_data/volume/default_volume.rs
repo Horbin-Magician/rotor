@@ -336,6 +336,8 @@ impl Volume {
         log::info!("{} Begin Volume::release_index", self.drive);
 
         if self.file_map.is_empty() {
+            // Removed files can leave interned directories and paging state.
+            self.release_index_without_save();
             return;
         }
 

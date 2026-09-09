@@ -219,10 +219,7 @@ impl Volume {
 
     // Clears the database
     pub fn release_index(&mut self) {
-        if self.file_map.is_empty() {
-            return;
-        }
-
+        // Even an index emptied by file removals can still own table capacity.
         self.last_query = String::new();
         self.last_search_num = 0;
 
@@ -442,5 +439,67 @@ impl Volume {
         }
 
         !self.file_map.contains_index(&parent_index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_resets_paging_even_when_empty_and_keeps_volume_metadata() {
+        // Construct directly to avoid configuration/profile reads and drive I/O.
+        let mut volume = Volume {
+            drive: "synthetic".into(),
+            drive_frn: 42,
+            ujd: Ioctl::USN_JOURNAL_DATA_V0 {
+                UsnJournalID: 123,
+                NextUsn: 456,
+                ..Default::default()
+            },
+            file_map: FileMap::new(),
+            last_query: String::new(),
+            last_search_num: 0,
+            saved_item_count: 128,
+            excluded_dirs: ExcludedDirs::default(),
+        };
+        volume.file_map.start_usn = 456;
+
+        for remove_all in [false, true] {
+            volume.file_map.insert(1, "fixture-a.txt".into(), 0);
+            volume.file_map.insert(2, "fixture-b.txt".into(), 0);
+            volume.last_query = "fixture".into();
+            volume.last_search_num = 99;
+            if remove_all {
+                volume.file_map.remove(&1);
+                volume.file_map.remove(&2);
+            }
+            volume.release_index();
+            assert!(volume.last_query.is_empty());
+            assert_eq!(volume.last_search_num, 0);
+            assert!(volume.file_map.is_empty());
+            assert_eq!(volume.file_map.start_usn, 456);
+            assert_eq!(volume.drive, "synthetic");
+            assert_eq!(volume.drive_frn, 42);
+            assert_eq!(volume.ujd.UsnJournalID, 123);
+            assert_eq!(volume.ujd.NextUsn, 456);
+            assert_eq!(volume.saved_item_count, 128);
+
+            // Reload synthetically; find must restart the same query at page 1.
+            volume.file_map.insert(1, "fixture-a.txt".into(), 0);
+            volume.file_map.insert(2, "fixture-b.txt".into(), 0);
+            let (sender, receiver) = mpsc::channel();
+            volume.find(
+                "fixture".into(),
+                1,
+                Arc::new(AtomicBool::new(false)),
+                sender,
+            );
+            let page = receiver.recv().unwrap().unwrap();
+            assert_eq!(page.len(), 1);
+            assert_eq!(page[0].file_name, "fixture-b.txt");
+            assert_eq!(volume.last_search_num, 1);
+            volume.release_index();
+        }
     }
 }

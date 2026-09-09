@@ -180,7 +180,9 @@ impl FileMap {
 
     pub fn clear(&mut self) {
         self.main_map.clear();
-        self.rank_map.clear();
+        // Only whole-index release uses this path. Keep start_usn for reload,
+        // but relinquish the hash table allocation instead of retaining it.
+        self.rank_map = HashMap::default();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -246,5 +248,98 @@ impl FileMap {
             path.push('\\');
         }
         Some(path)
+    }
+}
+
+#[cfg(test)]
+mod release_tests {
+    use super::*;
+    use crate::file_data::volume::release_tests::{private_commit_bytes, IndexFile};
+
+    fn populate(map: &mut FileMap, count: u64) {
+        map.insert(1, "X:".into(), 0);
+        for index in 0..count {
+            let name = if index % 32 == 0 {
+                format!("fixture-{index:06}.exe")
+            } else {
+                format!("other-{index:06}.txt")
+            };
+            map.insert(index + 2, name, 1);
+        }
+    }
+
+    fn pages(map: &FileMap, batch: u8) -> Vec<(String, i8)> {
+        let mut offset = 0;
+        let mut items = Vec::new();
+        loop {
+            let (page, scanned) = map.search(
+                "fixture",
+                offset,
+                batch,
+                &AtomicBool::new(false),
+                &ExcludedDirs::default(),
+            );
+            items.extend(
+                page.unwrap()
+                    .into_iter()
+                    .map(|item| (item.file_path, item.rank)),
+            );
+            if scanned == 0 {
+                return items;
+            }
+            offset += scanned;
+        }
+    }
+
+    #[test]
+    fn release_drops_capacity_preserves_usn_and_reloads_all_pages() {
+        let mut map = FileMap::new();
+        map.start_usn = 123456789;
+        populate(&mut map, 4096);
+        let expected = pages(&map, 255);
+        assert_eq!(expected.len(), 128);
+        assert_eq!(pages(&map, 7), expected);
+        let index = IndexFile::new();
+        map.save(index.path()).unwrap();
+
+        for _ in 0..3 {
+            assert!(map.rank_map.capacity() >= 4097);
+            map.clear();
+            assert_eq!(map.rank_map.capacity(), 0);
+            assert!(map.main_map.is_empty());
+            assert_eq!(map.start_usn, 123456789);
+            assert!(!map.contains_index(&1));
+            assert!(pages(&map, 7).is_empty());
+            map.read(index.path()).unwrap();
+            assert_eq!(pages(&map, 7), expected);
+            assert!(map.contains_index(&1));
+        }
+
+        for index in 1..=4097 {
+            map.remove(&index);
+        }
+        assert!(map.is_empty());
+        assert!(map.rank_map.capacity() > 0);
+        map.clear();
+        map.clear();
+        assert_eq!(map.rank_map.capacity(), 0);
+    }
+
+    #[test]
+    #[ignore = "manual process commit measurement; run alone with --ignored --exact --nocapture"]
+    fn measure_ntfs_index_release_commit() {
+        let baseline = private_commit_bytes();
+        let mut map = FileMap::new();
+        populate(&mut map, 250_000);
+        let loaded = private_commit_bytes();
+        // Reproduce the previous release, then isolate the newly freed table.
+        map.main_map.clear();
+        map.rank_map.clear();
+        let retained_capacity = map.rank_map.capacity();
+        let legacy_release = private_commit_bytes();
+        map.clear();
+        let released = private_commit_bytes();
+        assert_eq!(map.rank_map.capacity(), 0);
+        println!("ntfs entries=250001 retained_capacity={retained_capacity} private_commit_bytes baseline={baseline} loaded={loaded} legacy_release={legacy_release} released={released}");
     }
 }

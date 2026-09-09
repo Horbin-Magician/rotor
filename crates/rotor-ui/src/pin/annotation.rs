@@ -24,6 +24,10 @@ enum Rollback {
     Redo,
 }
 
+struct AcceptedRender {
+    retired: Option<Arc<RenderImage>>,
+}
+
 pub(super) struct CanvasState {
     document: Document,
     tool: Tool,
@@ -105,7 +109,7 @@ impl CanvasState {
         epoch: u64,
         key: FrameKey,
         prepared: Result<PreparedImage, String>,
-    ) -> bool {
+    ) -> Option<AcceptedRender> {
         let prepared = prepared.and_then(|frame| {
             if frame.image.dimensions() == (key.output.width, key.output.height) {
                 Ok(frame)
@@ -114,12 +118,13 @@ impl CanvasState {
             }
         });
         if self.epoch != epoch {
-            return false;
+            return None;
         }
         self.rendering = false;
+        let mut retired = None;
         match prepared {
             Ok(frame) => {
-                self.frame = Some(frame);
+                retired = self.frame.replace(frame).map(|old| old.render);
                 self.frame_key = Some(key);
                 self.preview = None;
                 self.rollback = None;
@@ -158,7 +163,7 @@ impl CanvasState {
                 }
             }
         }
-        true
+        Some(AcceptedRender { retired })
     }
 }
 impl PinView {
@@ -254,7 +259,10 @@ impl PinView {
             };
             let _ = cx.update(|window, cx| {
                 view.update(cx, |this, cx| {
-                    if this.canvas.accept_render(epoch, key, prepared) {
+                    if let Some(accepted) = this.canvas.accept_render(epoch, key, prepared) {
+                        if let Some(retired) = accepted.retired {
+                            retire_canvas_frame(retired, window, cx);
+                        }
                         if this.canvas.error.is_some() && this.queued_export.take().is_some() {
                             this.message = this.canvas.error.clone().unwrap();
                         }
@@ -732,6 +740,20 @@ impl PinView {
         layer.into_any_element()
     }
 }
+
+fn retire_canvas_frame(retired: Arc<RenderImage>, window: &Window, cx: &mut App) {
+    // The old scene still refers to this atlas entry. Defer until the view's
+    // mutable borrow ends, then replace the scene before freeing its image.
+    // Explicit drawing also handles hidden pins without waiting for a frame.
+    window.defer(cx, move |window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+        if let Err(error) = window.drop_image(retired) {
+            log::warn!("Pin image release: {error}");
+        }
+    });
+}
+
 fn paint_preview(
     annotation: &Annotation,
     transform: ViewTransform,
@@ -810,6 +832,7 @@ fn is_canvas_undo(key: &Keystroke, editing: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{CanvasState, FrameKey, Rollback};
+    use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window};
 
     #[test]
     fn undo_only_claims_the_plain_editing_chord() {
@@ -864,7 +887,11 @@ mod tests {
         let (mut state, key) = state();
         state.epoch = 2;
         state.rendering = true;
-        assert!(!state.accept_render(1, key, Err("late failure".into())));
+        assert!(
+            state
+                .accept_render(1, key, Err("late failure".into()))
+                .is_none()
+        );
         assert!(state.error.is_none());
         assert!(state.rendering);
         assert_eq!(
@@ -875,6 +902,7 @@ mod tests {
     #[test]
     fn failed_edit_restores_exportable_pixels_and_keeps_redo() {
         let (mut state, mut key) = state();
+        let original = state.frame.as_ref().unwrap().render.clone();
         state
             .document
             .add(Annotation::Pen {
@@ -890,7 +918,14 @@ mod tests {
         state.epoch = 1;
         state.rendering = true;
         state.rollback = Some((key.revision, Rollback::Undo));
-        assert!(state.accept_render(1, key, Err("renderer unavailable".into())));
+        let accepted = state
+            .accept_render(1, key, Err("renderer unavailable".into()))
+            .unwrap();
+        assert!(accepted.retired.is_none());
+        assert!(Arc::ptr_eq(
+            &state.frame.as_ref().unwrap().render,
+            &original
+        ));
         assert!(state.document.scene().annotations.is_empty());
         assert!(state.document.can_redo());
         assert!(state.ready());
@@ -916,5 +951,148 @@ mod tests {
         state.accept_render(3, key, Err("resize failed".into()));
         assert_eq!(state.document.scene().annotations.len(), 1);
         assert!(!state.ready());
+    }
+
+    fn prepared(width: u32, height: u32) -> crate::PreparedImage {
+        crate::prepare_image(Arc::new(image::RgbaImage::from_pixel(
+            width,
+            height,
+            image::Rgba([80, 90, 100, 255]),
+        )))
+        .unwrap()
+    }
+
+    #[test]
+    fn only_successful_current_render_retires_the_previous_frame() {
+        let (mut state, key) = state();
+        let original = state.frame.as_ref().unwrap().render.clone();
+        state.epoch = 2;
+        let stale = prepared(4, 4);
+        let stale_weak = Arc::downgrade(&stale.render);
+        assert!(state.accept_render(1, key, Ok(stale)).is_none());
+        assert!(stale_weak.upgrade().is_none());
+        assert!(Arc::ptr_eq(
+            &state.frame.as_ref().unwrap().render,
+            &original
+        ));
+
+        let invalid = state.accept_render(2, key, Ok(prepared(8, 8))).unwrap();
+        assert!(invalid.retired.is_none());
+        assert!(state.error.is_some());
+        assert!(Arc::ptr_eq(
+            &state.frame.as_ref().unwrap().render,
+            &original
+        ));
+
+        let next = prepared(4, 4);
+        let next_render = next.render.clone();
+        let accepted = state.accept_render(2, key, Ok(next)).unwrap();
+        assert!(Arc::ptr_eq(&accepted.retired.unwrap(), &original));
+        assert!(Arc::ptr_eq(
+            &state.frame.as_ref().unwrap().render,
+            &next_render
+        ));
+    }
+
+    // Mock GPUI window/atlas only: no native window or visual UI validation.
+    struct FrameView {
+        source: crate::PreparedImage,
+        state: CanvasState,
+        retiring: Option<Arc<gpui::RenderImage>>,
+    }
+
+    impl Render for FrameView {
+        fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            if let Some(retiring) = self.retiring.take() {
+                // The previous scene's tile must survive until rebuilding begins.
+                assert!(window.has_image_atlas_entry(&retiring));
+            }
+            gpui::div()
+                .size_full()
+                .child(
+                    gpui::img(self.source.render.clone())
+                        .w(gpui::px(4.))
+                        .h(gpui::px(4.)),
+                )
+                .child(
+                    gpui::img(self.state.frame.as_ref().unwrap().render.clone())
+                        .w(gpui::px(4.))
+                        .h(gpui::px(4.)),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn replacement_scene_releases_retired_atlas_entries(cx: &mut gpui::TestAppContext) {
+        let (state, mut key) = state();
+        let window = cx.add_window(|_, _| FrameView {
+            source: prepared(4, 4),
+            state,
+            retiring: None,
+        });
+        gpui::AnyWindowHandle::from(window)
+            .update(cx, |_, window, cx| window.draw(cx).clear(cx))
+            .unwrap();
+
+        // Revisions, crops, and output sizes all use the same retirement path.
+        for revision in 1..=24 {
+            key.revision = revision;
+            key.crop.x = (revision % 2) as u32;
+            key.crop.width = 4 - key.crop.x;
+            key.output.width = if revision % 3 == 0 { 8 } else { 4 };
+            let old = window
+                .update(cx, |view, window, cx| {
+                    let old = view.state.frame.as_ref().unwrap().render.clone();
+                    assert!(window.has_image_atlas_entry(&old));
+                    view.retiring = Some(old.clone());
+                    view.state.epoch = revision;
+                    let accepted = view
+                        .state
+                        .accept_render(revision, key, Ok(prepared(key.output.width, 4)))
+                        .unwrap();
+                    super::retire_canvas_frame(accepted.retired.unwrap(), window, cx);
+                    // Scheduling retirement must not invalidate the scene still in use.
+                    assert!(window.has_image_atlas_entry(&old));
+                    cx.notify();
+                    old
+                })
+                .unwrap();
+            cx.run_until_parked();
+            window
+                .update(cx, |view, window, _| {
+                    assert!(!window.has_image_atlas_entry(&old));
+                    assert!(window.has_image_atlas_entry(&view.source.render));
+                    assert!(
+                        window.has_image_atlas_entry(&view.state.frame.as_ref().unwrap().render)
+                    );
+                })
+                .unwrap();
+        }
+    }
+
+    #[gpui::test]
+    fn closing_before_retirement_releases_the_pending_image(cx: &mut gpui::TestAppContext) {
+        let (state, key) = state();
+        let old = Arc::downgrade(&state.frame.as_ref().unwrap().render);
+        let window = cx.add_window(|_, _| FrameView {
+            source: prepared(4, 4),
+            state,
+            retiring: None,
+        });
+        gpui::AnyWindowHandle::from(window)
+            .update(cx, |_, window, cx| window.draw(cx).clear(cx))
+            .unwrap();
+        window
+            .update(cx, |view, window, cx| {
+                let accepted = view
+                    .state
+                    .accept_render(0, key, Ok(prepared(4, 4)))
+                    .unwrap();
+                super::retire_canvas_frame(accepted.retired.unwrap(), window, cx);
+                window.remove_window();
+            })
+            .unwrap();
+        cx.run_until_parked();
+        assert!(old.upgrade().is_none());
     }
 }
