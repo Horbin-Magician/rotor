@@ -24,6 +24,9 @@ use tokio::{
     task::JoinHandle,
 };
 
+mod capture_worker;
+use capture_worker::{CaptureRequest, CaptureWorker};
+
 const EVENT_CAPACITY: usize = 64;
 const SETTINGS_CAPACITY: usize = 16;
 const BACKGROUND_LIMIT: usize = 4;
@@ -36,10 +39,9 @@ fn next_operation() -> OperationId {
     OperationId(NEXT_OPERATION.fetch_add(1, Ordering::Relaxed))
 }
 
-#[derive(Clone)]
 pub struct CapturedMonitor {
     pub monitor: MonitorConfig,
-    pub image: Arc<RgbaImage>,
+    pub image: monitor::BgraCapture,
 }
 
 pub struct CaptureBundle {
@@ -167,6 +169,7 @@ pub struct Services {
     translation_id: Arc<AtomicU64>,
     selection: Mutex<Option<Arc<AtomicBool>>>,
     capture_id: Arc<AtomicU64>,
+    capture_worker: CaptureWorker,
     background: Mutex<Vec<JoinHandle<()>>>,
     slots: Arc<Semaphore>,
     canvas_fonts: Arc<Mutex<Option<Arc<rotor_canvas::Renderer>>>>,
@@ -224,6 +227,8 @@ impl Services {
             .build()
             .map_err(|error| error.to_string())?;
         let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
+        let capture_id = Arc::new(AtomicU64::new(0));
+        let capture_worker = CaptureWorker::new(events.clone(), capture_id.clone())?;
         let (settings, settings_receiver) = async_channel::bounded(SETTINGS_CAPACITY);
         let data_directory = lock(&config)
             .data_directory()
@@ -270,7 +275,8 @@ impl Services {
                 translation: Mutex::new(None),
                 translation_id: Arc::new(AtomicU64::new(0)),
                 selection: Mutex::new(None),
-                capture_id: Arc::new(AtomicU64::new(0)),
+                capture_id,
+                capture_worker,
                 background: Mutex::new(Vec::new()),
                 slots: Arc::new(Semaphore::new(BACKGROUND_LIMIT)),
                 canvas_fonts: Arc::new(Mutex::new(None)),
@@ -757,11 +763,25 @@ impl Services {
     }
 
     pub fn capture(&self) -> Result<OperationId, String> {
-        self.spawn_job(
-            capture_monitors,
-            Some(self.capture_id.clone()),
-            |id, result| RuntimeEvent::CaptureFinished { id, result },
-        )
+        self.capture_after_overlay_change(true, std::time::Instant::now())
+    }
+
+    pub fn capture_after_overlay_change(
+        &self,
+        settle: bool,
+        started: std::time::Instant,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.capture_worker.submit(
+            CaptureRequest {
+                id,
+                settle,
+                submitted: started,
+            },
+            &self.capture_id,
+        )?;
+        Ok(id)
     }
 
     pub async fn detect_capture_rectangles(
@@ -904,6 +924,7 @@ impl Services {
         self.slots.close();
         self.cancel_selection();
         self.cancel_capture();
+        self.capture_worker.stop();
         if let Some(searcher) = &self.searcher {
             searcher.shutdown();
         }
@@ -1151,15 +1172,30 @@ fn merge_settings_changes(
     Ok(())
 }
 
-fn capture_monitors() -> Result<CaptureBundle, String> {
-    rotor_platform::overlay::settle_desktop()?;
+fn capture_monitors(
+    pool: &mut monitor::CapturePool,
+    request: CaptureRequest,
+) -> Result<CaptureBundle, String> {
+    let mark = |stage| {
+        log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage={} elapsed_us={}",
+        request.id.0, stage, request.submitted.elapsed().as_micros())
+    };
+    if request.settle {
+        rotor_platform::overlay::settle_desktop()?;
+    }
+    mark("desktop_settled");
     let before =
         monitor::sorted_configs(monitor::current_configs().map_err(|error| error.to_string())?);
-    let windows = rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
-        log::warn!("Capture window rectangles: {error}");
-        Vec::new()
-    });
-    let mut images = rotor_screenshot::capture_images()?;
+    mark("topology_before");
+    let (images, windows) = pool.capture_with(&before, || {
+        let windows = rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
+            log::warn!("Capture window rectangles: {error}");
+            Vec::new()
+        });
+        mark("window_rectangles");
+        windows
+    })?;
+    mark("pixels_captured");
     let after =
         monitor::sorted_configs(monitor::current_configs().map_err(|error| error.to_string())?);
     if before != after {
@@ -1167,19 +1203,10 @@ fn capture_monitors() -> Result<CaptureBundle, String> {
     }
     let monitors = before
         .into_iter()
-        .map(|monitor| {
-            let image = images
-                .remove(&monitor::mask_label(monitor.id))
-                .ok_or("monitor image is missing")?;
-            if image.width() != monitor.width || image.height() != monitor.height {
-                return Err("capture dimensions differ from monitor dimensions".into());
-            }
-            Ok(CapturedMonitor {
-                monitor,
-                image: Arc::new(image),
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+        .zip(images)
+        .map(|(monitor, image)| CapturedMonitor { monitor, image })
+        .collect();
+    mark("capture_complete");
     Ok(CaptureBundle { monitors, windows })
 }
 
@@ -1609,16 +1636,30 @@ mod tests {
     }
 
     #[test]
-    fn saturated_background_capacity_rejects_capture_without_superseding() {
+    fn capture_uses_its_own_worker_when_background_capacity_is_saturated() {
         let directory = tempfile::tempdir().unwrap();
-        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let (mut services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        // Exercise the real Services submission route using synthetic pixels.
+        services.capture_worker.stop();
+        services.capture_worker =
+            CaptureWorker::start(services.events.clone(), services.capture_id.clone(), |_| {
+                Ok(CaptureBundle {
+                    monitors: Vec::new(),
+                    windows: Vec::new(),
+                })
+            })
+            .unwrap();
         let _permit = services
             .slots
             .clone()
             .try_acquire_many_owned(BACKGROUND_LIMIT as u32)
             .unwrap();
+        let id = services.capture().unwrap();
+        assert_eq!(services.capture_id.load(Ordering::Acquire), id.0);
+        services.shutdown();
+        let cancelled = services.capture_id.load(Ordering::Acquire);
         assert!(services.capture().is_err());
-        assert_eq!(services.capture_id.load(Ordering::Acquire), 0);
+        assert_eq!(services.capture_id.load(Ordering::Acquire), cancelled);
     }
 
     #[test]

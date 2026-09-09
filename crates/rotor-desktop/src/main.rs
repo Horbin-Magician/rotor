@@ -728,6 +728,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             cx.quit();
             return;
         }
+        #[cfg(target_os = "windows")]
+        capture::warm(cx);
         let task = cx.spawn(async move |cx| {
             loop {
                 let command = command_receiver.recv();
@@ -742,12 +744,17 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 if quit_in_progress(cx) && !matches!(command, Command::Quit) {
                                     return;
                                 }
+                                let started = match command {
+                                    Command::Shortcut { pressed_at, .. } => pressed_at,
+                                    _ => std::time::Instant::now(),
+                                };
                                 let command = match command {
-                                    Command::Shortcut { key, generation }
-                                        if cx
-                                            .global::<ShellState>()
-                                            .services
-                                            .is_shortcut_recording() =>
+                                    Command::Shortcut {
+                                        key, generation, ..
+                                    } if cx
+                                        .global::<ShellState>()
+                                        .services
+                                        .is_shortcut_recording() =>
                                     {
                                         Command::RecordedShortcut { key, generation }
                                     }
@@ -777,7 +784,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                                     }
                                     return;
                                 }
-                                let command = if let Command::Shortcut { key, generation } = command
+                                let command = if let Command::Shortcut {
+                                    key, generation, ..
+                                } = command
                                 {
                                     if cx
                                         .global::<ShellState>()
@@ -859,7 +868,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                         }
                                     }
                                     Command::Capture => {
-                                        if let Err(error) = capture::begin(cx) {
+                                        if let Err(error) = capture::begin(started, cx) {
                                             capture::report(error, cx);
                                         }
                                     }

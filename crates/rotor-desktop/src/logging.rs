@@ -12,11 +12,13 @@ enum Message {
     Flush,
     Shutdown(SyncSender<()>),
 }
-struct FileLog(SyncSender<Message>);
+struct FileLog(SyncSender<Message>, bool);
 pub struct LogGuard(SyncSender<Message>);
 impl Log for FileLog {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        metadata.level() <= Level::Info && metadata.target().starts_with("rotor")
+        (metadata.level() <= Level::Info
+            || (self.1 && metadata.target() == "rotor_capture_latency"))
+            && metadata.target().starts_with("rotor")
     }
     fn log(&self, record: &Record<'_>) {
         if !self.enabled(record.metadata()) {
@@ -87,7 +89,13 @@ pub fn initialize(directory: &Path) -> Result<LogGuard, String> {
         .spawn(move || write_logs(file, receiver))
         .map_err(|error| error.to_string())?;
     let guard = LogGuard(sender.clone());
-    log::set_boxed_logger(Box::new(FileLog(sender))).map_err(|error| error.to_string())?;
-    log::set_max_level(LevelFilter::Info);
+    let capture_timing = std::env::var_os("ROTOR_CAPTURE_TIMING").is_some_and(|value| value == "1");
+    log::set_boxed_logger(Box::new(FileLog(sender, capture_timing)))
+        .map_err(|error| error.to_string())?;
+    log::set_max_level(if capture_timing {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    });
     Ok(guard)
 }

@@ -8,6 +8,147 @@ use xcap::Monitor;
 
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Top-down BGRA, ready for native rendering without a channel conversion.
+pub struct BgraCapture {
+    pub width: u32,
+    pub height: u32,
+    pub bytes: Vec<u8>,
+}
+
+struct CaptureJob {
+    monitor: MonitorConfig,
+    reply: mpsc::Sender<Result<BgraCapture, String>>,
+}
+
+/// A bounded, persistent worker per output. Native capture resources never cross
+/// thread boundaries. A stalled driver cannot create unbounded replacement threads.
+#[derive(Default)]
+pub struct CapturePool {
+    workers: HashMap<u32, mpsc::SyncSender<CaptureJob>>,
+}
+
+impl CapturePool {
+    pub fn prepare(&mut self, monitors: &[MonitorConfig]) -> Result<(), String> {
+        self.workers
+            .retain(|id, _| monitors.iter().any(|monitor| monitor.id == *id));
+        for monitor in monitors {
+            if self.workers.contains_key(&monitor.id) {
+                continue;
+            }
+            let (sender, receiver) = mpsc::sync_channel::<CaptureJob>(1);
+            #[cfg(target_os = "windows")]
+            let warm_monitor = monitor.clone();
+            thread::Builder::new()
+                .name(format!("rotor-capture-{}", monitor.id))
+                .spawn(move || {
+                    #[cfg(target_os = "windows")]
+                    let mut capture = rotor_platform::capture::DesktopCapture::default();
+                    #[cfg(target_os = "windows")]
+                    let mut previous_config = Some(warm_monitor.clone());
+                    #[cfg(target_os = "windows")]
+                    if let Err(error) = capture.prepare(warm_monitor.width, warm_monitor.height) {
+                        log::warn!("Capture buffer warmup: {error}");
+                    }
+                    while let Ok(job) = receiver.recv() {
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            let expected = &job.monitor;
+                            #[cfg(target_os = "windows")]
+                            let monitor = Monitor::from_point(expected.x, expected.y)
+                                .map_err(|error| error.to_string())?;
+                            #[cfg(not(target_os = "windows"))]
+                            let monitor = Monitor::all()
+                                .map_err(|error| error.to_string())?
+                                .into_iter()
+                                .find(|monitor| monitor.id().ok() == Some(expected.id))
+                                .ok_or("Captured monitor is unavailable")?;
+                            let current = MonitorConfig::from_monitor(&monitor)
+                                .map_err(|error| error.to_string())?;
+                            if current != *expected {
+                                return Err("Display topology changed before capture".into());
+                            }
+                            #[cfg(target_os = "windows")]
+                            let bytes = {
+                                if previous_config.as_ref() != Some(expected) {
+                                    capture = rotor_platform::capture::DesktopCapture::default();
+                                    previous_config = Some(expected.clone());
+                                }
+                                capture.capture(
+                                    expected.x,
+                                    expected.y,
+                                    expected.width,
+                                    expected.height,
+                                )?
+                            };
+                            #[cfg(not(target_os = "windows"))]
+                            let bytes = {
+                                let mut image =
+                                    monitor.capture_image().map_err(|error| error.to_string())?;
+                                if image.dimensions() != (expected.width, expected.height) {
+                                    return Err("Capture dimensions changed".into());
+                                }
+                                for pixel in image.pixels_mut() {
+                                    pixel.0.swap(0, 2);
+                                }
+                                image.into_raw()
+                            };
+                            Ok(BgraCapture {
+                                width: expected.width,
+                                height: expected.height,
+                                bytes,
+                            })
+                        }))
+                        .unwrap_or_else(|_| Err("Screenshot capture worker panicked".into()));
+                        let _ = job.reply.send(result);
+                    }
+                })
+                .map_err(|error| error.to_string())?;
+            self.workers.insert(monitor.id, sender);
+        }
+        Ok(())
+    }
+
+    pub fn capture_with<T>(
+        &mut self,
+        monitors: &[MonitorConfig],
+        alongside: impl FnOnce() -> T,
+    ) -> Result<(Vec<BgraCapture>, T), String> {
+        if monitors.is_empty() {
+            return Err("No monitors available for screenshot capture".into());
+        }
+        self.prepare(monitors)?;
+        let mut pending = Vec::with_capacity(monitors.len());
+        for monitor in monitors {
+            let (reply, receiver) = mpsc::channel();
+            self.workers[&monitor.id]
+                .try_send(CaptureJob {
+                    monitor: monitor.clone(),
+                    reply,
+                })
+                .map_err(|_| format!("Capture worker {} is still busy or stopped", monitor.id))?;
+            pending.push(receiver);
+        }
+        let deadline = Instant::now() + CAPTURE_TIMEOUT;
+        let extra = alongside();
+        let images = pending
+            .into_iter()
+            .enumerate()
+            .map(|(completed, receiver)| {
+                receiver
+                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                    .map_err(|error| match error {
+                        mpsc::RecvTimeoutError::Timeout => {
+                            capture_timeout_message(completed, monitors.len())
+                        }
+                        mpsc::RecvTimeoutError::Disconnected => {
+                            "Capture worker stopped unexpectedly".into()
+                        }
+                    })?
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok((images, extra))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonitorConfig {
     pub id: u32,

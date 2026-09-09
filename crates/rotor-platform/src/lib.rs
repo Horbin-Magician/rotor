@@ -1,6 +1,7 @@
 pub mod file_util;
 pub mod sys_util;
 
+pub mod capture;
 pub mod clipboard;
 pub mod cursor;
 pub mod desktop;

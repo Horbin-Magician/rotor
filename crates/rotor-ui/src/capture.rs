@@ -2,7 +2,10 @@ use gpui_kit::{prelude::*, *};
 use image::RgbaImage;
 use rotor_canvas::{ImagePoint, ImageRect, ImageSize};
 use rotor_runtime::{CaptureBundle, MonitorConfig};
-use std::{rc::Rc, sync::Arc};
+use std::{
+    rc::Rc,
+    sync::{Arc, OnceLock},
+};
 
 #[derive(Clone)]
 pub struct PreparedImage {
@@ -24,8 +27,86 @@ pub fn prepare_image(image: Arc<RgbaImage>) -> Result<PreparedImage, String> {
 }
 pub struct PreparedCapture {
     pub monitor: MonitorConfig,
-    pub image: PreparedImage,
+    pub image: PreparedScreenshot,
     windows: Vec<(i32, ImageRect)>,
+}
+
+pub struct PreparedScreenshot {
+    pub render: Arc<RenderImage>,
+    width: u32,
+    height: u32,
+    rgba: OnceLock<Arc<RgbaImage>>,
+}
+
+impl PreparedScreenshot {
+    fn new(image: rotor_runtime::BgraCapture) -> Result<Self, String> {
+        let (width, height) = (image.width, image.height);
+        if width == 0 || height == 0 {
+            return Err("Image is empty".into());
+        }
+        let expected = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(4));
+        if expected != Some(image.bytes.len()) {
+            return Err("Invalid BGRA capture size".into());
+        }
+        let bgra =
+            RgbaImage::from_raw(width, height, image.bytes).ok_or("Invalid BGRA capture size")?;
+        Ok(Self {
+            render: Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])),
+            width,
+            height,
+            rgba: OnceLock::new(),
+        })
+    }
+
+    /// Materialize export/OCR pixels only after the mask's first frame is ready.
+    pub fn rgba(&self) -> Arc<RgbaImage> {
+        self.rgba
+            .get_or_init(|| {
+                let mut bytes = self
+                    .render
+                    .as_bytes(0)
+                    .expect("capture has one frame")
+                    .to_vec();
+                for pixel in bytes.chunks_exact_mut(4) {
+                    pixel.swap(0, 2);
+                }
+                Arc::new(
+                    RgbaImage::from_raw(self.width, self.height, bytes)
+                        .expect("validated capture dimensions"),
+                )
+            })
+            .clone()
+    }
+
+    fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
+        let offset = (y as usize * self.width as usize + x as usize) * 4;
+        let bytes = self.render.as_bytes(0).expect("capture has one frame");
+        [
+            bytes[offset + 2],
+            bytes[offset + 1],
+            bytes[offset],
+            bytes[offset + 3],
+        ]
+    }
+}
+
+impl PreparedCapture {
+    /// Tiny inert content for hidden windows; never retain a previous screenshot
+    /// while waiting for the next request.
+    pub fn placeholder(monitor: MonitorConfig) -> Arc<Self> {
+        Arc::new(Self {
+            monitor,
+            image: PreparedScreenshot::new(rotor_runtime::BgraCapture {
+                width: 1,
+                height: 1,
+                bytes: vec![0, 0, 0, 255],
+            })
+            .expect("valid placeholder"),
+            windows: Vec::new(),
+        })
+    }
 }
 pub fn prepare_capture(bundle: CaptureBundle) -> Result<Vec<Arc<PreparedCapture>>, String> {
     bundle
@@ -33,7 +114,7 @@ pub fn prepare_capture(bundle: CaptureBundle) -> Result<Vec<Arc<PreparedCapture>
         .into_iter()
         .map(|capture| {
             let monitor = capture.monitor;
-            if capture.image.dimensions() != (monitor.width, monitor.height) {
+            if (capture.image.width, capture.image.height) != (monitor.width, monitor.height) {
                 return Err("Monitor image dimensions changed".into());
             }
             let dimensions = ImageSize {
@@ -60,7 +141,7 @@ pub fn prepare_capture(bundle: CaptureBundle) -> Result<Vec<Arc<PreparedCapture>
                 .collect();
             Ok(Arc::new(PreparedCapture {
                 monitor,
-                image: prepare_image(capture.image)?,
+                image: PreparedScreenshot::new(capture.image)?,
                 windows,
             }))
         })
@@ -84,6 +165,7 @@ pub type MaskCallback = Rc<dyn Fn(MaskAction, &mut Window, &mut App)>;
 
 pub struct MaskView {
     session: u64,
+    active: bool,
     capture: Arc<PreparedCapture>,
     callback: MaskCallback,
     point: ImagePoint,
@@ -111,11 +193,11 @@ impl MaskView {
             capture.monitor.id
         ));
         let focus = cx.focus_handle();
-        focus.focus(window, cx);
         let bounds =
             cx.observe_window_bounds(window, |this, window, cx| this.check_geometry(window, cx));
         Self {
             session,
+            active: session != 0,
             capture,
             callback,
             point: ImagePoint { x: 0., y: 0. },
@@ -129,6 +211,42 @@ impl MaskView {
             copied: false,
         }
     }
+    pub fn monitor(&self) -> &MonitorConfig {
+        &self.capture.monitor
+    }
+    pub fn reset(
+        &mut self,
+        session: u64,
+        capture: Arc<PreparedCapture>,
+        chinese: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.session = session;
+        self.active = true;
+        self.capture = capture;
+        self.chinese = chinese;
+        self.armed = false;
+        self.point = ImagePoint { x: 0., y: 0. };
+        self.start = None;
+        self.click_selection = None;
+        self.detected.clear();
+        self.copied = false;
+        cx.notify();
+    }
+    pub fn suspend(&mut self, session: u64, cx: &mut Context<Self>) -> Option<Arc<RenderImage>> {
+        if self.session != session {
+            return None;
+        }
+        let retired = self.capture.image.render.clone();
+        self.active = false;
+        self.armed = false;
+        self.start = None;
+        self.click_selection = None;
+        self.detected.clear();
+        self.capture = PreparedCapture::placeholder(self.capture.monitor.clone());
+        cx.notify();
+        Some(retired)
+    }
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
     }
@@ -138,7 +256,14 @@ impl MaskView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.move_pointer(point, window, cx);
+        if let Some(point) = ImagePoint::from_logical(
+            point.x.as_f32() as f64,
+            point.y.as_f32() as f64,
+            window.scale_factor() as f64,
+        ) {
+            self.point = point;
+            cx.notify();
+        }
     }
     pub fn set_detected_rectangles(&mut self, rectangles: Vec<ImageRect>, cx: &mut Context<Self>) {
         let size = self.dimensions();
@@ -148,7 +273,10 @@ impl MaskView {
             .collect();
         cx.notify();
     }
-    pub fn arm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn arm(&mut self, session: u64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.session != session || !self.active {
+            return;
+        }
         self.armed = true;
         self.check_geometry(window, cx);
     }
@@ -179,8 +307,8 @@ impl MaskView {
     }
     fn dimensions(&self) -> ImageSize {
         ImageSize {
-            width: self.capture.image.image.width(),
-            height: self.capture.image.image.height(),
+            width: self.capture.image.width,
+            height: self.capture.image.height,
         }
     }
     fn auto_selection(&self) -> Option<ImageRect> {
@@ -201,6 +329,9 @@ impl MaskView {
         }
     }
     fn move_pointer(&mut self, point: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.active || !self.armed {
+            return;
+        }
         if let Some(point) = ImagePoint::from_logical(
             point.x.as_f32() as f64,
             point.y.as_f32() as f64,
@@ -218,7 +349,7 @@ impl MaskView {
         cx.notify();
     }
     fn finish(&mut self, position: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
-        if self.start.is_none() {
+        if !self.active || !self.armed || self.start.is_none() {
             return;
         }
         self.move_pointer(position, window, cx);
@@ -246,11 +377,10 @@ impl MaskView {
         cx.notify();
     }
     fn pixel(&self, dx: i32, dy: i32) -> [u8; 4] {
-        let image = &self.capture.image.image;
-        let x = (self.point.x.floor() as i64 + dx as i64).clamp(0, image.width() as i64 - 1) as u32;
-        let y =
-            (self.point.y.floor() as i64 + dy as i64).clamp(0, image.height() as i64 - 1) as u32;
-        image.get_pixel(x, y).0
+        let image = &self.capture.image;
+        let x = (self.point.x.floor() as i64 + dx as i64).clamp(0, image.width as i64 - 1) as u32;
+        let y = (self.point.y.floor() as i64 + dy as i64).clamp(0, image.height as i64 - 1) as u32;
+        image.pixel(x, y)
     }
     fn color(&self) -> String {
         let [r, g, b, _] = self.pixel(0, 0);
@@ -297,9 +427,12 @@ fn shade(x: f32, y: f32, width: f32, height: f32) -> Div {
 }
 impl Render for MaskView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.active {
+            return div().size_full().bg(rgb(0x000000)).into_any_element();
+        }
         let scale = window.scale_factor();
-        let width = self.capture.image.image.width() as f32 / scale;
-        let height = self.capture.image.image.height() as f32 / scale;
+        let width = self.capture.image.width as f32 / scale;
+        let height = self.capture.image.height as f32 / scale;
         let selected = self.selected();
         let mut root = div()
             .id("capture-mask")
@@ -401,6 +534,9 @@ impl Render for MaskView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    if !this.active || !this.armed {
+                        return;
+                    }
                     this.move_pointer(event.position, window, cx);
                     this.click_selection = this.auto_selection();
                     this.start = Some(this.point);
@@ -420,6 +556,9 @@ impl Render for MaskView {
                 }),
             )
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if !this.active || !this.armed {
+                    return;
+                }
                 if event.keystroke.key == "escape" {
                     let callback = this.callback.clone();
                     callback(
@@ -437,6 +576,7 @@ impl Render for MaskView {
                     cx.stop_propagation();
                 }
             }))
+            .into_any_element()
     }
 }
 
@@ -457,6 +597,43 @@ mod tests {
     use rotor_canvas::ImageRect;
     use rotor_runtime::{CaptureBundle, MonitorConfig};
     use std::sync::Arc;
+    #[test]
+    fn bgra_capture_moves_into_render_storage_and_converts_only_on_demand() {
+        let bytes = vec![50, 100, 200, 255, 3, 2, 1, 128];
+        let allocation = bytes.as_ptr();
+        let prepared = super::PreparedScreenshot::new(rotor_runtime::BgraCapture {
+            width: 2,
+            height: 1,
+            bytes,
+        })
+        .unwrap();
+        assert_eq!(prepared.render.as_bytes(0).unwrap().as_ptr(), allocation);
+        assert!(prepared.rgba.get().is_none());
+        assert_eq!(prepared.pixel(0, 0), [200, 100, 50, 255]);
+        assert_eq!(prepared.pixel(1, 0), [1, 2, 3, 128]);
+        assert!(prepared.rgba.get().is_none());
+        let rgba = prepared.rgba();
+        assert_eq!(rgba.as_raw(), &[200, 100, 50, 255, 1, 2, 3, 128]);
+        assert!(Arc::ptr_eq(&rgba, &prepared.rgba()));
+        assert_eq!(
+            prepared.render.as_bytes(0).unwrap(),
+            &[50, 100, 200, 255, 3, 2, 1, 128]
+        );
+    }
+
+    #[test]
+    fn malformed_capture_buffers_are_rejected() {
+        for (width, height, bytes) in [(0, 1, vec![]), (2, 1, vec![0; 4]), (1, 1, vec![0; 8])] {
+            assert!(
+                super::PreparedScreenshot::new(rotor_runtime::BgraCapture {
+                    width,
+                    height,
+                    bytes,
+                })
+                .is_err()
+            );
+        }
+    }
     #[test]
     fn inspector_stays_on_screen_and_away_from_edge_pixels() {
         for viewport in [600., 1080., 1440.] {
@@ -494,7 +671,11 @@ mod tests {
                     height: 4,
                     scale_factor: 2.,
                 },
-                image: Arc::new(RgbaImage::new(4, 4)),
+                image: rotor_runtime::BgraCapture {
+                    width: 4,
+                    height: 4,
+                    bytes: vec![0; 4 * 4 * 4],
+                },
             }],
             windows: vec![(-99, 1, 2, 4, 4)],
         })

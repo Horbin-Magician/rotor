@@ -28,8 +28,15 @@ pub enum Command {
     Capture,
     ShowPins,
     Quit,
-    Shortcut { key: u32, generation: u64 },
-    RecordedShortcut { key: u32, generation: u64 },
+    Shortcut {
+        key: u32,
+        generation: u64,
+        pressed_at: Instant,
+    },
+    RecordedShortcut {
+        key: u32,
+        generation: u64,
+    },
 }
 const CONTROLS: [(u8, Command); 7] = [
     (1, Command::Quit),
@@ -211,6 +218,7 @@ impl SystemServices {
         let debounce = Mutex::new(ShortcutDebounce::default());
         let dispatch = commands.clone();
         GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
+            let pressed_at = Instant::now();
             let mut debounce = debounce.lock().unwrap_or_else(|error| error.into_inner());
             if event.state == HotKeyState::Released {
                 debounce.release(event.id);
@@ -242,6 +250,7 @@ impl SystemServices {
                 Command::Shortcut {
                     key: event.id,
                     generation: active.generation,
+                    pressed_at,
                 }
             });
         }));
@@ -440,6 +449,7 @@ mod tests {
         bus.request(Command::Shortcut {
             key: 1,
             generation: 1,
+            pressed_at: Instant::now(),
         });
         bus.request(Command::Quit);
         assert_eq!(receiver.len(), 1);
@@ -462,10 +472,12 @@ mod tests {
         let first = Command::Shortcut {
             key: 4,
             generation: 7,
+            pressed_at: Instant::now(),
         };
         let second = Command::Shortcut {
             key: 5,
             generation: 8,
+            pressed_at: Instant::now(),
         };
         bus.request(first);
         bus.request(second);

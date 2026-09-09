@@ -4,6 +4,108 @@ pub fn settle_desktop() -> Result<(), String> {
     Ok(())
 }
 
+/// Synchronously service a hidden window's paint on its owning UI thread.
+/// Call outside any UI framework borrow: WM_PAINT re-enters the window's
+/// renderer. The caller obtains the raw handle immediately before this call
+/// and must keep the owning window alive until it returns.
+#[cfg(target_os = "windows")]
+pub fn paint_hidden_window(handle: raw_window_handle::RawWindowHandle) -> Result<(), String> {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::{
+        Foundation::{HWND, LPARAM, WPARAM},
+        System::Threading::{GetCurrentProcessId, GetCurrentThreadId},
+        UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow, SendMessageW, WM_PAINT},
+    };
+    let RawWindowHandle::Win32(raw) = handle else {
+        return Err("Expected a Windows window".into());
+    };
+    let hwnd = HWND(raw.hwnd.get() as *mut _);
+    unsafe {
+        if !IsWindow(Some(hwnd)).as_bool() {
+            return Err("Capture window is no longer available".into());
+        }
+        let mut process = 0;
+        if GetWindowThreadProcessId(hwnd, Some(&mut process)) != GetCurrentThreadId()
+            || process != GetCurrentProcessId()
+        {
+            return Err("Hidden paint must run on the owning UI thread".into());
+        }
+        // This is deliberately a direct call to our known GPUI paint handler,
+        // not general-purpose Windows invalidation. RedrawWindow/UpdateWindow
+        // do not service hidden windows (covered by a hidden native fixture).
+        // GPUI 0.3.3 handles WM_PAINT by drawing its dirty scene even without
+        // a visible update region. There are no next-frame callbacks here.
+        SendMessageW(hwnd, WM_PAINT, Some(WPARAM(0)), Some(LPARAM(0)));
+    }
+    Ok(())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod repaint_tests {
+    use super::*;
+    use std::cell::Cell;
+    use windows::{
+        core::w,
+        Win32::{
+            Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+            UI::WindowsAndMessaging::{
+                CreateWindowExW, DefWindowProcW, DestroyWindow, IsWindowVisible, RegisterClassW,
+                UnregisterClassW, WINDOW_EX_STYLE, WM_PAINT, WNDCLASSW, WS_POPUP,
+            },
+        },
+    };
+
+    thread_local! { static PAINTS: Cell<u32> = const { Cell::new(0) }; }
+
+    unsafe extern "system" fn fixture(hwnd: HWND, message: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+        if message == WM_PAINT {
+            PAINTS.set(PAINTS.get() + 1);
+        }
+        unsafe { DefWindowProcW(hwnd, message, w, l) }
+    }
+
+    #[test]
+    fn hidden_window_paint_is_serviced_synchronously_without_showing_it() {
+        unsafe {
+            let class = w!("RotorSyntheticHiddenPaintTest");
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(fixture),
+                lpszClassName: class,
+                ..Default::default()
+            };
+            assert_ne!(RegisterClassW(&wc), 0);
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                class,
+                w!(""),
+                WS_POPUP,
+                0,
+                0,
+                2,
+                2,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let result = std::panic::catch_unwind(|| {
+                let raw = raw_window_handle::Win32WindowHandle::new(
+                    std::num::NonZeroIsize::new(hwnd.0 as isize).unwrap(),
+                );
+                let before = PAINTS.get();
+                assert!(!IsWindowVisible(hwnd).as_bool());
+                paint_hidden_window(raw_window_handle::RawWindowHandle::Win32(raw)).unwrap();
+                assert!(PAINTS.get() > before);
+                assert!(!IsWindowVisible(hwnd).as_bool());
+            });
+            DestroyWindow(hwnd).unwrap();
+            UnregisterClassW(class, None).unwrap();
+            result.unwrap();
+        }
+    }
+}
+
 pub fn pointer_capture(
     handle: raw_window_handle::WindowHandle<'_>,
     capture: bool,
