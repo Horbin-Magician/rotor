@@ -396,7 +396,7 @@ impl PinView {
         let view = cx.weak_entity();
         canvas(
             |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::BlockMouse),
-            move |bounds, hitbox, window, _| {
+            move |bounds, hitbox, window, cx| {
                 window.set_cursor_style(CursorStyle::IBeam, &hitbox);
                 if dragging {
                     window.capture_pointer(hitbox.id);
@@ -409,7 +409,7 @@ impl PinView {
                             origin,
                             gpui_kit::size(px(row.width as f32 * sx), px(row.height as f32 * sy)),
                         ),
-                        rgba(0x3388ff22),
+                        cx.theme().primary.opacity(0x22 as f32 / 255.),
                     ));
                     if let Some(selection) = selection {
                         let (start, end) = selection.ordered();
@@ -436,7 +436,7 @@ impl PinView {
                                     origin + point(px(x1.min(x2)), px(0.)),
                                     gpui_kit::size(px((x2 - x1).abs()), px(row.height as f32 * sy)),
                                 ),
-                                rgba(0x2288ff88),
+                                cx.theme().primary.opacity(0x88 as f32 / 255.),
                             ));
                         }
                     }

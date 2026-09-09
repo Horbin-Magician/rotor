@@ -1,4 +1,4 @@
-//! Settings-only surfaces; other tool windows keep their existing palette.
+//! Settings layout helpers using the application theme.
 use super::*;
 use gpui_kit::component::button::ButtonCustomVariant;
 
@@ -13,26 +13,15 @@ pub(super) struct Palette {
 }
 
 pub(super) fn palette(cx: &App) -> Palette {
-    if cx.theme().is_dark() {
-        Palette {
-            background: rgb(0x111111).into(),
-            surface: rgb(0x202020).into(),
-            border: rgb(0x333333).into(),
-            foreground: rgb(0xf1f1f1).into(),
-            secondary: rgb(0xc2c2c2).into(),
-            accent: rgb(0x29a8d8).into(),
-            hover: rgb(0x282828).into(),
-        }
-    } else {
-        Palette {
-            background: rgb(0xffffff).into(),
-            surface: rgb(0xf6f7f8).into(),
-            border: rgb(0xe1e4e8).into(),
-            foreground: rgb(0x202428).into(),
-            secondary: rgb(0x59616a).into(),
-            accent: rgb(0x087fa9).into(),
-            hover: rgb(0xedf4f7).into(),
-        }
+    let theme = cx.theme();
+    Palette {
+        background: theme.background,
+        surface: theme.muted,
+        border: theme.border,
+        foreground: theme.foreground,
+        secondary: theme.muted_foreground,
+        accent: theme.primary,
+        hover: theme.list_hover,
     }
 }
 

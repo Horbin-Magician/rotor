@@ -104,6 +104,7 @@ impl NativeMenuPainter {
             )
         }
         .map_err(|error| format!("Native menu contrast settings: {error}"))?;
+        let palette = crate::visual::surface_palette(dark);
         let (background, foreground, selected, selected_foreground) =
             if contrast.dwFlags.contains(HCF_HIGHCONTRASTON) {
                 unsafe {
@@ -114,17 +115,18 @@ impl NativeMenuPainter {
                         GetSysColor(COLOR_HIGHLIGHTTEXT),
                     )
                 }
-            } else if dark {
-                (rgb(0x1c2027), rgb(0xeef2f8), rgb(0x26303f), rgb(0xeef2f8))
             } else {
-                (rgb(0xffffff), rgb(0x162033), rgb(0xedf3fa), rgb(0x162033))
+                (
+                    rgb(palette.background),
+                    rgb(palette.foreground),
+                    rgb(palette.hover),
+                    rgb(palette.foreground),
+                )
             };
         let border_color = COLORREF(if contrast.dwFlags.contains(HCF_HIGHCONTRASTON) {
             unsafe { GetSysColor(COLOR_WINDOWFRAME) }
-        } else if dark {
-            rgb(0x343a43)
         } else {
-            rgb(0xe3e6eb)
+            rgb(palette.border)
         });
         let mut resources = Resources {
             dpi,
@@ -181,9 +183,10 @@ impl NativeMenuPainter {
     }
 
     pub fn border_color(&self) -> COLORREF {
-        self.resources
-            .as_ref()
-            .map_or(COLORREF(rgb(0xe3e6eb)), |r| r.border_color)
+        self.resources.as_ref().map_or(
+            COLORREF(rgb(crate::visual::surface_palette(false).border)),
+            |r| r.border_color,
+        )
     }
 
     /// Shape the native popup in window coordinates. Windows owns a region

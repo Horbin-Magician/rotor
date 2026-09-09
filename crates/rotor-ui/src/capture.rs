@@ -1,4 +1,4 @@
-use gpui_kit::{prelude::*, *};
+use gpui_kit::{component::ActiveTheme, prelude::*, *};
 use image::RgbaImage;
 use rotor_canvas::{ImagePoint, ImageRect, ImageSize};
 use rotor_runtime::{CaptureBundle, MonitorConfig};
@@ -468,7 +468,7 @@ impl Render for MaskView {
                         .w(px(w))
                         .h(px(h))
                         .border_1()
-                        .border_color(rgba(0x3399ffff)),
+                        .border_color(cx.theme().primary),
                 );
         } else {
             root = root.child(shade(0., 0., width, height));
@@ -487,10 +487,10 @@ impl Render for MaskView {
             .items_center()
             .rounded_lg()
             .border_1()
-            .border_color(rgba(0x555555ff))
+            .border_color(cx.theme().border)
             .shadow_lg()
-            .bg(rgba(0x111111ff))
-            .text_color(rgba(0xffffffff))
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .text_xs()
             .children((-5..=5).map(|dy| {
                 div().flex().children((-5..=5).map(|dx| {
