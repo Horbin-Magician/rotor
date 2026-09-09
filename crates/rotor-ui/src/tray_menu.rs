@@ -189,6 +189,21 @@ impl NativeMenuPainter {
         )
     }
 
+    /// Erase with the same brush as the items, including the first paint.
+    /// Use the supplied DC so Windows can also render into an offscreen buffer.
+    pub fn erase_popup_background(&self, hwnd: HWND, dc: HDC) -> bool {
+        let Some(resources) = &self.resources else {
+            return false;
+        };
+        if dc.is_invalid() {
+            return false;
+        }
+        let mut rect = RECT::default();
+        unsafe {
+            GetClientRect(hwnd, &mut rect).is_ok() && FillRect(dc, &rect, resources.background) != 0
+        }
+    }
+
     /// Shape the native popup in window coordinates. Windows owns a region
     /// after a successful SetWindowRgn; failed transfers remain ours.
     pub fn round_popup(&self, hwnd: HWND) {

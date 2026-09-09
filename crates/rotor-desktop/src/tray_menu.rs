@@ -18,11 +18,10 @@ use windows::core::BOOL;
 
 const MN_GETHMENU: u32 = 0x01e1;
 // tray-icon =0.21.3 uses this notification on its private owner window.
-// Handle only menu-opening clicks here so TrackPopupMenu receives NOANIMATION;
-// changing ContextMenu::show_context_menu_for_hwnd alone does not affect it.
+// Handle menu-opening clicks while preserving Windows' animation preferences.
 const TRAY_ICON_CALLBACK: u32 = 6002;
 const TRAY_MENU_FLAGS: TRACK_POPUP_MENU_FLAGS =
-    TRACK_POPUP_MENU_FLAGS(TPM_BOTTOMALIGN.0 | TPM_LEFTALIGN.0 | TPM_NOANIMATION.0);
+    TRACK_POPUP_MENU_FLAGS(TPM_BOTTOMALIGN.0 | TPM_LEFTALIGN.0);
 
 thread_local! {
     // Only active between WM_INITMENUPOPUP and attachment of its popup.
@@ -278,13 +277,6 @@ fn configure_composited_frame(
         let policy = DWMNCRP_USEWINDOWSTYLE;
         let preference = DWMWCP_ROUNDSMALL;
         let dark = BOOL::from(dark);
-        let disabled = BOOL(1);
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_TRANSITIONS_FORCEDISABLED,
-            (&disabled as *const BOOL).cast(),
-            size_of_val(&disabled) as u32,
-        );
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWA_USE_IMMERSIVE_DARK_MODE,
@@ -324,7 +316,12 @@ impl Drop for State {
 unsafe extern "system" fn popup_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && lparam.0 != 0 {
         let event = unsafe { &*(lparam.0 as *const CWPSTRUCT) };
-        if event.message == WM_WINDOWPOSCHANGING {
+        // Some popup creation paths paint before the first position change.
+        // Attach before either erase or nonclient paint reaches the menu proc.
+        if matches!(
+            event.message,
+            WM_WINDOWPOSCHANGING | WM_ERASEBKGND | WM_NCPAINT
+        ) {
             PENDING_POPUP.with(|pending| {
                 let Some(state) = (unsafe { pending.get().as_ref() }) else {
                     return;
@@ -466,6 +463,16 @@ unsafe extern "system" fn popup_proc(
     data: usize,
 ) -> LRESULT {
     let state = unsafe { &*(data as *const State) };
+    if message == WM_ERASEBKGND {
+        // The native class brush can expose a light surface before owner-drawn
+        // items arrive. Cover the whole client area with our cached background.
+        return LRESULT(isize::from(
+            state
+                .painter
+                .borrow()
+                .erase_popup_background(hwnd, HDC(wparam.0 as _)),
+        ));
+    }
     if message == WM_NCACTIVATE {
         // Activation can paint the native top highlight without WM_NCPAINT.
         // Preserve activation/dismissal handling but suppress that repaint.
@@ -676,6 +683,43 @@ mod tests {
             ReleaseDC(None, screen);
             assert!(!dc.is_invalid() && !bitmap.is_invalid());
             let previous = SelectObject(dc, bitmap.into());
+            // Re-arm before an erase with no intervening position change.
+            // This must attach early and never delegate to the class brush.
+            for dark in [false, true] {
+                menu.state.detach_popup();
+                menu.state.dark.set(dark);
+                menu.state.prepare().unwrap();
+                menu.state.watch_popup();
+                let mut info = MENUINFO {
+                    cbSize: size_of::<MENUINFO>() as u32,
+                    fMask: MIM_BACKGROUND,
+                    ..Default::default()
+                };
+                GetMenuInfo(menu.state.menu, &mut info).unwrap();
+                let mut brush = LOGBRUSH::default();
+                assert_ne!(
+                    GetObjectW(
+                        info.hbrBack.into(),
+                        size_of::<LOGBRUSH>() as i32,
+                        Some((&mut brush as *mut LOGBRUSH).cast()),
+                    ),
+                    0
+                );
+                for _ in 0..2 {
+                    let _ = PatBlt(dc, 0, 0, 160, 80, WHITENESS);
+                    assert_eq!(
+                        SendMessageW(popup, WM_ERASEBKGND, Some(WPARAM(dc.0 as usize)), None),
+                        LRESULT(1)
+                    );
+                    assert_eq!(menu.state.popup.get(), Some(popup));
+                    assert!(menu.state.hook.get().is_none());
+                    let mut client = RECT::default();
+                    GetClientRect(popup, &mut client).unwrap();
+                    for (x, y) in [(0, 0), (80, 40), (client.right - 1, client.bottom - 1)] {
+                        assert_eq!(GetPixel(dc, x, y), brush.lbColor);
+                    }
+                }
+            }
             menu.state
                 .painter
                 .borrow()
