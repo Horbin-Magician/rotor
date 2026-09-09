@@ -57,7 +57,7 @@ cargo +1.97.0 test --manifest-path experiments/gpui-probe/Cargo.toml --release -
 cargo +1.97.0 build --manifest-path experiments/gpui-probe/Cargo.toml --release --locked
 ```
 
-运行、采样、依赖审计与打包见 [原型 README](../../experiments/gpui-probe/README.md)。本轮网络受限，构建使用临时官方索引转发及已校验缓存，并附 `--offline --config ...`；没有提交临时 source 配置，锁文件仍使用 crates.io 标准来源和 checksum。
+运行、采样、依赖审计与打包见 [历史原型恢复记录](evidence/experiment-removal.md)。本轮网络受限，构建使用临时官方索引转发及已校验缓存，并附 `--offline --config ...`；没有提交临时 source 配置，锁文件仍使用 crates.io 标准来源和 checksum。
 
 ## 本轮结果
 

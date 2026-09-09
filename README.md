@@ -33,7 +33,7 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-All application and shared crates live under `crates/`; models, fonts and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes. The independent P0 experiment remains under `experiments/gpui-probe`.
+All application and shared crates live under `crates/`; models, fonts and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes. The P0 experiment was retired on 2026-09-09; see [the retirement record](doc/gpui-migration/evidence/experiment-removal.md) for historical source and local evidence.
 
 The default development identity uses `.rotor-gpui` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
 

@@ -85,7 +85,7 @@ results distinct. Windows silent checks use `.github/scripts/test-windows-instal
 with development identity, an unused registry namespace and a new target subdirectory.
 They preserve synthetic user files and backups and clean their installation entries.
 
-The independent P0 workspace remains in `experiments/gpui-probe`. Historical paths
+The independent P0 workspace was retired on 2026-09-09; see doc/gpui-migration/evidence/experiment-removal.md for source recovery and local evidence. Historical paths
 and screenshots under migration evidence describe their recorded commits; prefer
 current crate paths for ongoing edits. macOS code remains, but Windows results do
 not prove macOS build, runtime or packaging acceptance.

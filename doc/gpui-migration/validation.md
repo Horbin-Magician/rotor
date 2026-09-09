@@ -103,9 +103,9 @@ V09 的细化输入必须包含：Windows 微软拼音、macOS 拼音；常见�
 
 ## 5. 构建与 CI 门槛
 
-根 workspace 和 xtask 已建立，默认原生目标为 `rotor-desktop`。P0 原型仍是 `experiments/gpui-probe` 下的独立 workspace，其结果不能替代当前原生壳的验收。
+根 workspace 和 xtask 已建立，默认原生目标为 `rotor-desktop`。P0 原型已退役，历史结果不能替代当前正式应用的验收；源码恢复方式见[清理记录](evidence/experiment-removal.md)。
 
-### P0 原型
+### P0 原型（历史命令，需恢复历史源码）
 
 ```text
 cargo check --manifest-path experiments/gpui-probe/Cargo.toml --locked

@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let resources = ResourceLocator::from_root(&resource_root)?;
     resources.verify_native_resources()?;
-    let profile = root.join("experiments/gpui-probe/artifacts/ocr-smoke");
+    let profile = root.join("target/ocr-smoke");
     std::fs::create_dir_all(&profile)?;
     let source = image::RgbaImage::from_pixel(900, 220, image::Rgba([255, 255, 255, 255]));
     let size = ImageSize {

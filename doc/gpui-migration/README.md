@@ -4,7 +4,7 @@
 
 优先级更新（2026-09-08）：所有剩余任务之前，先参考旧 UI 完成原生 UI 现代化美化，美观度和实用性均不得低于旧 UI。具体范围与验收要求见 [剩余任务汇总第 0 节](remaining-tasks.md#0-第一优先级ui-现代化美化先于其余剩余任务)；后续阶段按该汇总的执行顺序推进。
 
-当前已建立根 workspace 和原生壳，P1–P8 主要代码通路已接入；44 项当前实现及证据边界见 [功能对照](feature-parity.md)。Windows UI、安装、性能与最终切换仍未完成，macOS 按用户要求暂缓。独立 P0 原型保留在 [experiments/gpui-probe](../../experiments/gpui-probe/README.md)。下文是阶段要求，只有完整证据满足要求才能勾选，代码交付不等于 G0–G9 通过。
+当前已建立根 workspace 和原生壳，P1–P8 主要代码通路已接入；44 项当前实现及证据边界见 [功能对照](feature-parity.md)。Windows UI、安装、性能与最终切换仍未完成，macOS 按用户要求暂缓。独立 P0 原型已于 2026-09-09 退役，历史源码与本地证据见[清理记录](evidence/experiment-removal.md)。下文是阶段要求，只有完整证据满足要求才能勾选，代码交付不等于 G0–G9 通过。
 
 配套文档：
 
