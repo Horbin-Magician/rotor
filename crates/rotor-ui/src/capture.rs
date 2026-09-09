@@ -425,6 +425,13 @@ fn shade(x: f32, y: f32, width: f32, height: f32) -> Div {
         .h(px(height.max(0.)))
         .bg(rgba(0x00000088))
 }
+
+const INSPECTOR_WIDTH: f32 = 145. * 0.7;
+const INSPECTOR_HEIGHT: f32 = 217. * 0.7;
+const INSPECTOR_PREVIEW_SIZE: f32 = INSPECTOR_WIDTH - 2.;
+const INSPECTOR_PIXEL_SIZE: f32 = INSPECTOR_PREVIEW_SIZE / 11.;
+const INSPECTOR_INFO_HEIGHT: f32 = INSPECTOR_HEIGHT - INSPECTOR_PREVIEW_SIZE - 2.;
+
 impl Render for MaskView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.active {
@@ -473,60 +480,100 @@ impl Render for MaskView {
         } else {
             root = root.child(shade(0., 0., width, height));
         }
-        let magnifier_x = inspector_axis(self.point.x as f32 / scale, 144., width, 20.);
-        let magnifier_y = inspector_axis(self.point.y as f32 / scale, 184., height, 24.);
+        let magnifier_x = inspector_axis(self.point.x as f32 / scale, INSPECTOR_WIDTH, width, 20.);
+        let magnifier_y =
+            inspector_axis(self.point.y as f32 / scale, INSPECTOR_HEIGHT, height, 24.);
+        let [r, g, b, _] = self.pixel(0, 0);
+        let sampled_color = rgb(((r as u32) << 16) | ((g as u32) << 8) | b as u32);
+        let dimensions = selected
+            .map(|rect| (rect.width, rect.height))
+            .unwrap_or((self.capture.image.width, self.capture.image.height));
+        let preview = div()
+            .relative()
+            .flex_none()
+            .size(px(INSPECTOR_PREVIEW_SIZE))
+            .overflow_hidden()
+            .children(
+                (-5..=5)
+                    .flat_map(|dy| (-5..=5).map(move |dx| (dx, dy)))
+                    .map(|(dx, dy)| {
+                        let [r, g, b, _] = self.pixel(dx, dy);
+                        div()
+                            .absolute()
+                            .left(px((dx + 5) as f32 * INSPECTOR_PIXEL_SIZE))
+                            .top(px((dy + 5) as f32 * INSPECTOR_PIXEL_SIZE))
+                            .size(px(INSPECTOR_PIXEL_SIZE))
+                            .bg(rgb(((r as u32) << 16) | ((g as u32) << 8) | b as u32))
+                    }),
+            )
+            // Both guides intersect at the center of the sampled source pixel.
+            .child(
+                div()
+                    .absolute()
+                    .left(px(INSPECTOR_PREVIEW_SIZE / 2.))
+                    .top_0()
+                    .w(px(1.))
+                    .h_full()
+                    .bg(rgb(0x50b7e8)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(INSPECTOR_PREVIEW_SIZE / 2.))
+                    .left_0()
+                    .h(px(1.))
+                    .w_full()
+                    .bg(rgb(0x50b7e8)),
+            );
         let magnifier = div()
             .absolute()
             .left(px(magnifier_x))
             .top(px(magnifier_y))
-            .w(px(144.))
-            .h(px(184.))
-            .p_2()
+            .w(px(INSPECTOR_WIDTH))
+            .h(px(INSPECTOR_HEIGHT))
             .flex()
             .flex_col()
             .items_center()
-            .rounded_lg()
+            .overflow_hidden()
             .border_1()
-            .border_color(cx.theme().border)
-            .shadow_lg()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
-            .text_xs()
-            .children((-5..=5).map(|dy| {
-                div().flex().children((-5..=5).map(|dx| {
-                    let [r, g, b, a] = self.pixel(dx, dy);
-                    let color =
-                        ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | a as u32;
-                    div()
-                        .size(px(8.))
-                        .bg(rgba(color))
-                        .when(dx == 0 && dy == 0, |cell| {
-                            cell.border_1().border_color(rgba(0xffffffff))
-                        })
-                }))
-            }))
-            .child(self.color())
+            .border_color(rgb(0x454849))
+            .bg(rgb(0x080a0b))
+            .text_color(rgb(0xeeeeee))
+            .text_size(px(10.5))
+            .line_height(px(14.))
+            .child(preview)
             .child(
-                selected
-                    .map(|rect| format!("{} × {}", rect.width, rect.height))
-                    .unwrap_or_default(),
-            )
-            .child(if self.copied {
-                if self.chinese {
-                    "颜色已复制"
-                } else {
-                    "Color copied"
-                }
-            } else if self.chinese {
-                "C 复制颜色"
-            } else {
-                "C Copy color"
-            })
-            .child(if self.chinese {
-                "Esc 取消截图"
-            } else {
-                "Esc Cancel"
-            });
+                div()
+                    .w_full()
+                    .h(px(INSPECTOR_INFO_HEIGHT))
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .border_t_1()
+                    .border_color(rgb(0x454849))
+                    .child(format!("{} × {}", dimensions.0, dimensions.1))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(4.2))
+                            .child(div().flex_none().size(px(9.1)).bg(sampled_color))
+                            .child(self.color()),
+                    )
+                    .child(if self.copied {
+                        if self.chinese {
+                            "颜色已复制"
+                        } else {
+                            "Color copied"
+                        }
+                    } else if self.chinese {
+                        "复制颜色(C)"
+                    } else {
+                        "Copy color (C)"
+                    }),
+            );
         root.child(magnifier)
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.move_pointer(event.position, window, cx)
@@ -636,14 +683,19 @@ mod tests {
     }
     #[test]
     fn inspector_stays_on_screen_and_away_from_edge_pixels() {
-        for viewport in [600., 1080., 1440.] {
-            for pointer in [0., 1., viewport / 2., viewport - 1., viewport] {
-                let start = super::inspector_axis(pointer, 184., viewport, 24.);
-                assert!(start >= 0. && start + 184. <= viewport);
-                assert!(pointer < start || pointer > start + 184.);
+        for (length, gap) in [
+            (super::INSPECTOR_WIDTH, 20.),
+            (super::INSPECTOR_HEIGHT, 24.),
+        ] {
+            for viewport in [600., 1080., 1440.] {
+                for pointer in [0., 1., viewport / 2., viewport - 1., viewport] {
+                    let start = super::inspector_axis(pointer, length, viewport, gap);
+                    assert!(start >= 0. && start + length <= viewport);
+                    assert!(pointer < start || pointer > start + length);
+                }
             }
+            assert_eq!(super::inspector_axis(40., length, 80., gap), 0.);
         }
-        assert_eq!(super::inspector_axis(40., 184., 80., 24.), 0.);
     }
     #[test]
     fn native_upload_is_straight_bgra_without_mutating_export_pixels() {
