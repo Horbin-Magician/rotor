@@ -169,6 +169,7 @@ pub struct MaskView {
     capture: Arc<PreparedCapture>,
     callback: MaskCallback,
     point: ImagePoint,
+    pointer_inside: bool,
     start: Option<ImagePoint>,
     click_selection: Option<ImageRect>,
     focus: FocusHandle,
@@ -201,6 +202,7 @@ impl MaskView {
             capture,
             callback,
             point: ImagePoint { x: 0., y: 0. },
+            pointer_inside: false,
             start: None,
             click_selection: None,
             focus,
@@ -227,6 +229,7 @@ impl MaskView {
         self.chinese = chinese;
         self.armed = false;
         self.point = ImagePoint { x: 0., y: 0. };
+        self.pointer_inside = false;
         self.start = None;
         self.click_selection = None;
         self.detected.clear();
@@ -239,6 +242,7 @@ impl MaskView {
         }
         let retired = self.capture.image.render.clone();
         self.active = false;
+        self.pointer_inside = false;
         self.armed = false;
         self.start = None;
         self.click_selection = None;
@@ -262,6 +266,7 @@ impl MaskView {
             window.scale_factor() as f64,
         ) {
             self.point = point;
+            self.pointer_inside = self.contains_pointer(point);
             cx.notify();
         }
     }
@@ -311,6 +316,12 @@ impl MaskView {
             height: self.capture.image.height,
         }
     }
+    fn contains_pointer(&self, point: ImagePoint) -> bool {
+        point.x >= 0.
+            && point.y >= 0.
+            && point.x < self.capture.image.width as f64
+            && point.y < self.capture.image.height as f64
+    }
     fn auto_selection(&self) -> Option<ImageRect> {
         choose_rectangle(
             self.point,
@@ -341,8 +352,9 @@ impl MaskView {
                 self.copied = false;
             }
             self.point = point;
+            self.pointer_inside = self.contains_pointer(point);
         }
-        if !window.is_window_active() {
+        if self.pointer_inside && !window.is_window_active() {
             window.activate_window();
             self.focus.focus(window, cx);
         }
@@ -440,7 +452,7 @@ impl Render for MaskView {
         let scale = window.scale_factor();
         let width = self.capture.image.width as f32 / scale;
         let height = self.capture.image.height as f32 / scale;
-        let selected = self.selected();
+        let selected = self.pointer_inside.then(|| self.selected()).flatten();
         let mut root = div()
             .id("capture-mask")
             .track_focus(&self.focus)
@@ -574,7 +586,18 @@ impl Render for MaskView {
                         "Copy color (C)"
                     }),
             );
-        root.child(magnifier)
+        root.when(self.pointer_inside, |root| root.child(magnifier))
+            // Native window hover changes also cover leaving without a final
+            // mouse move (Windows reports this separately from MouseExitEvent).
+            .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                if *hovered {
+                    this.move_pointer(window.mouse_position(), window, cx);
+                } else if this.pointer_inside {
+                    this.pointer_inside = false;
+                    this.copied = false;
+                    cx.notify();
+                }
+            }))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.move_pointer(event.position, window, cx)
             }))
@@ -616,7 +639,7 @@ impl Render for MaskView {
                         cx,
                     );
                     cx.stop_propagation();
-                } else if event.keystroke.key.eq_ignore_ascii_case("c") {
+                } else if this.pointer_inside && event.keystroke.key.eq_ignore_ascii_case("c") {
                     cx.write_to_clipboard(ClipboardItem::new_string(this.color()));
                     this.copied = true;
                     cx.notify();

@@ -3,14 +3,18 @@ use base64::prelude::*;
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, IconName,
-        button::Button,
+        button::{Button, ButtonVariants},
         input::{Input, InputEvent, InputState},
+        scroll::Scrollbar,
     },
     prelude::*,
     *,
 };
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, Services};
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{collections::HashMap, ops::Range, sync::Arc, time::Duration};
+
+const SEARCH_HEADER_HEIGHT: f32 = 50.;
+const SEARCH_ROW_HEIGHT: f32 = 60.;
 
 pub struct SearchView {
     services: Arc<Services>,
@@ -24,6 +28,8 @@ pub struct SearchView {
     index_state_changed: bool,
     message: String,
     suppress_enter: bool,
+    hovered: Option<usize>,
+    hover_generation: usize,
     _input_events: Subscription,
     _activation: Subscription,
 }
@@ -69,6 +75,8 @@ impl SearchView {
             index_state_changed: false,
             message,
             suppress_enter: false,
+            hovered: None,
+            hover_generation: 0,
             _input_events: input_events,
             _activation: activation,
         }
@@ -83,6 +91,7 @@ impl SearchView {
         }
         let query = self.input.read(cx).value().to_string();
         if !append {
+            self.hovered = None;
             self.results.reset();
             self.icons.clear();
             self.resize(window, cx);
@@ -139,6 +148,9 @@ impl SearchView {
                 if !self.results.accept(batch) {
                     return;
                 }
+                if !batch.append {
+                    self.hovered = None;
+                }
                 self.icons.retain(|path, _| {
                     self.results
                         .items
@@ -177,40 +189,87 @@ impl SearchView {
         cx.notify();
     }
     fn resize(&self, window: &mut Window, cx: &App) {
-        let desired = px(140. + 58. * self.results.items.len().min(6) as f32);
+        let desired = px(SEARCH_HEADER_HEIGHT
+            + 2.
+            + SEARCH_ROW_HEIGHT * self.results.items.len().clamp(1, 7) as f32);
         let available = window
             .display(cx)
             .map(|display| {
-                (display.visible_bounds().bottom() - window.bounds().top()).max(px(140.))
+                (display.visible_bounds().bottom() - window.bounds().top()).max(px(112.))
             })
             .unwrap_or(desired);
         window.resize(size(window.viewport_size().width, desired.min(available)));
     }
 
-    fn rows(&mut self, range: Range<usize>, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn rows(
+        &mut self,
+        range: Range<usize>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        // Request the next page only when the viewport reaches the loaded tail.
+        // Defer mutations until the virtual list has finished laying out its rows.
+        let count = self.results.items.len();
+        if range.end >= count
+            && count > 0
+            && count < MAX_RESULTS
+            && !self.results.loading
+            && !self.results.exhausted
+            && self.message.is_empty()
+        {
+            let query = self.input.read(cx).value();
+            cx.defer_in(window, move |this, window, cx| {
+                if this.results.items.len() == count
+                    && this.input.read(cx).value() == query
+                    && this.message.is_empty()
+                {
+                    this.search(true, window, cx);
+                }
+            });
+        }
+        let chinese = rotor_common::i18n::language_for_config(&self.services.settings()) == "zh-CN";
+        let hover_color = if cx.theme().is_dark() {
+            rgb(0x15212a).into()
+        } else {
+            cx.theme().list_hover
+        };
         range
             .map(|index| {
                 let item = &self.results.items[index];
+                let (display_name, is_app) = result_label(&item.file_name);
                 let icon = self.icons.get(&item.file_path).cloned();
                 div()
                     .id(("result", index))
-                    .h(px(58.))
+                    .relative()
+                    .overflow_hidden()
+                    .h(px(SEARCH_ROW_HEIGHT))
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap_3()
-                    .px_3()
-                    .rounded_lg()
+                    .gap(px(10.))
+                    .px(px(12.))
+                    .cursor_pointer()
                     .when(index == self.results.selected, |row| {
-                        row.bg(cx.theme().list_active)
-                            .text_color(cx.theme().foreground)
+                        row.bg(if cx.theme().is_dark() {
+                            rgb(0x15212a).into()
+                        } else {
+                            cx.theme().list_active
+                        })
+                        .text_color(cx.theme().foreground)
                     })
-                    .when(index != self.results.selected, |row| {
-                        row.hover(|row| row.bg(cx.theme().list_hover))
-                    })
+                    .when(self.hovered == Some(index), |row| row.bg(hover_color))
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        if *hovered && this.hovered != Some(index) {
+                            this.hovered = Some(index);
+                            this.hover_generation = this.hover_generation.wrapping_add(1);
+                        } else if !*hovered && this.hovered == Some(index) {
+                            this.hovered = None;
+                        }
+                        cx.notify();
+                    }))
                     .child(
                         div()
-                            .size(px(32.))
+                            .size(px(34.))
                             .flex_shrink_0()
                             .flex()
                             .items_center()
@@ -222,22 +281,117 @@ impl SearchView {
                         div()
                             .flex()
                             .flex_col()
+                            .gap(px(4.))
                             .min_w_0()
                             .flex_1()
                             .child(
                                 div()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .truncate()
-                                    .child(item.file_name.clone()),
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.))
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .text_size(px(16.))
+                                            .truncate()
+                                            .child(display_name.to_owned()),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_shrink_0()
+                                            .rounded_full()
+                                            .px(px(6.))
+                                            .text_size(px(11.))
+                                            .line_height(px(16.))
+                                            .bg(rgb(if is_app { 0x306acb } else { 0x09966e }))
+                                            .text_color(rgb(if is_app {
+                                                0xb9d7ff
+                                            } else {
+                                                0xa0e8d4
+                                            }))
+                                            .child(match (is_app, chinese) {
+                                                (true, true) => "应用",
+                                                (true, false) => "App",
+                                                (false, true) => "文件",
+                                                (false, false) => "File",
+                                            }),
+                                    ),
                             )
                             .child(
                                 div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
+                                    .text_size(px(13.))
+                                    .text_color(if cx.theme().is_dark() {
+                                        rgb(0xbfc1c3).into()
+                                    } else {
+                                        cx.theme().muted_foreground
+                                    })
                                     .truncate()
                                     .child(item.path.clone()),
                             ),
                     )
+                    .when(self.hovered == Some(index), |row| {
+                        let width = if cfg!(target_os = "windows") {
+                            104.
+                        } else {
+                            56.
+                        };
+                        row.child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .h_full()
+                                .w(px(width))
+                                .px_2()
+                                .flex()
+                                .items_center()
+                                .justify_end()
+                                .gap_2()
+                                .bg(hover_color)
+                                .when(cfg!(target_os = "windows"), |bar| {
+                                    bar.child(
+                                        Button::new(("open-admin", index))
+                                            .ghost()
+                                            .icon(IconName::CircleUser)
+                                            .tooltip(if chinese {
+                                                "管理员打开"
+                                            } else {
+                                                "Open as administrator"
+                                            })
+                                            .disabled(self.opening.is_some())
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                cx.stop_propagation();
+                                                this.results.selected = index;
+                                                this.open(false, true, cx);
+                                            })),
+                                    )
+                                })
+                                .child(
+                                    Button::new(("open-folder", index))
+                                        .ghost()
+                                        .icon(IconName::FolderOpen)
+                                        .tooltip(if chinese {
+                                            "打开目录"
+                                        } else {
+                                            "Open folder"
+                                        })
+                                        .disabled(self.opening.is_some())
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.results.selected = index;
+                                            this.open(true, false, cx);
+                                        })),
+                                )
+                                .with_animation(
+                                    ("reveal-actions", self.hover_generation),
+                                    Animation::new(Duration::from_millis(160)),
+                                    move |bar, progress| {
+                                        let eased = 1. - (1. - progress).powi(3);
+                                        bar.right(px(-width * (1. - eased)))
+                                    },
+                                ),
+                        )
+                    })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.results.selected = index;
                         this.open(false, false, cx);
@@ -300,17 +454,23 @@ impl Render for SearchView {
             }
             .into()
         } else {
-            format!("{} {}", count, if chinese { "个结果" } else { "results" })
+            String::new()
         };
         div()
             .id("searcher")
             .flex()
             .flex_col()
             .size_full()
-            .p_3()
-            .gap_2()
+            .rounded(px(10.))
+            .border_1()
+            .border_color(cx.theme().border)
+            .overflow_hidden()
             .text_sm()
-            .bg(cx.theme().background)
+            .bg(if cx.theme().is_dark() {
+                rgb(0x111111).into()
+            } else {
+                cx.theme().background
+            })
             .text_color(cx.theme().foreground)
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let composing = this.input.update(cx, |input, cx| {
@@ -343,99 +503,78 @@ impl Render for SearchView {
                 cx.notify();
             }))
             .child(
-                Input::new(&self.input)
-                    .prefix(IconName::Search)
-                    .aria_label(if chinese {
-                        "搜索文件"
-                    } else {
-                        "Search files"
-                    }),
-            )
-            .child(
-                uniform_list("results", count, move |range, _, cx| {
-                    weak.update(cx, |this, cx| this.rows(range, cx))
-                        .unwrap_or_default()
-                })
-                .track_scroll(&self.scroll)
-                .flex_1()
-                .min_h_0(),
-            )
-            .child(
                 div()
-                    .flex()
-                    .flex_wrap()
+                    .mx(px(12.))
+                    .h(px(SEARCH_HEADER_HEIGHT))
                     .flex_shrink_0()
-                    .gap_2()
+                    .flex()
+                    .items_center()
+                    .border_b_2()
+                    .border_color(rgb(0x6099ed))
                     .child(
-                        Button::new("open-folder")
-                            .compact()
-                            .icon(IconName::FolderOpen)
-                            .label(if chinese {
-                                "打开目录"
+                        Input::new(&self.input)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false)
+                            .h(px(42.))
+                            .text_size(px(18.))
+                            .prefix(IconName::Search)
+                            .aria_label(if chinese {
+                                "搜索文件"
                             } else {
-                                "Open folder"
-                            })
-                            .disabled(count == 0 || self.opening.is_some())
-                            .on_click(cx.listener(|this, _, _, cx| this.open(true, false, cx))),
-                    )
-                    .when(cfg!(target_os = "windows"), |row| {
-                        row.child(
-                            Button::new("open-admin")
-                                .compact()
-                                .label(if chinese {
-                                    "管理员打开"
-                                } else {
-                                    "Open as administrator"
-                                })
-                                .disabled(count == 0 || self.opening.is_some())
-                                .on_click(cx.listener(|this, _, _, cx| this.open(false, true, cx))),
-                        )
-                    })
-                    .child(
-                        Button::new("load-more")
-                            .compact()
-                            .label(if chinese { "加载更多" } else { "Load more" })
-                            .disabled(
-                                self.results.loading
-                                    || self.results.exhausted
-                                    || count == 0
-                                    || count >= MAX_RESULTS,
-                            )
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.search(true, window, cx)),
-                            ),
+                                "Search files"
+                            }),
                     ),
             )
             .child(
                 div()
-                    .flex()
-                    .justify_between()
-                    .gap_2()
-                    .flex_shrink_0()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
                     .child(
-                        div()
-                            .id("search-status")
-                            .text_xs()
-                            .max_h(px(48.))
-                            .overflow_y_scroll()
-                            .text_color(
-                                if self.message.is_empty() && self.index_state != IndexState::Error
-                                {
-                                    cx.theme().muted_foreground
-                                } else {
-                                    cx.theme().danger
-                                },
-                            )
-                            .child(status),
+                        uniform_list("results", count, move |range, window, cx| {
+                            weak.update(cx, |this, cx| this.rows(range, window, cx))
+                                .unwrap_or_default()
+                        })
+                        .track_scroll(&self.scroll)
+                        .size_full(),
                     )
-                    .child(crate::visual::caption(
-                        if chinese {
-                            "↑↓ 选择 · Enter 打开 · Esc 关闭"
-                        } else {
-                            "↑↓ Select · Enter Open · Esc Close"
+                    .child(Scrollbar::vertical(&self.scroll))
+                    .when(
+                        count == 0
+                            || !self.message.is_empty()
+                            || self.index_state == IndexState::Error,
+                        |list| {
+                            list.child(
+                                div()
+                                    .id("search-status")
+                                    .absolute()
+                                    .bottom_0()
+                                    .left_0()
+                                    .w_full()
+                                    .px_3()
+                                    .py_2()
+                                    .max_h(px(60.))
+                                    .overflow_y_scroll()
+                                    .text_size(px(12.))
+                                    .bg(if cx.theme().is_dark() {
+                                        rgb(0x111111).into()
+                                    } else {
+                                        cx.theme().background
+                                    })
+                                    .text_color(
+                                        if self.message.is_empty()
+                                            && self.index_state != IndexState::Error
+                                        {
+                                            cx.theme().muted_foreground
+                                        } else {
+                                            cx.theme().danger
+                                        },
+                                    )
+                                    .child(status),
+                            )
                         },
-                        cx,
-                    )),
+                    ),
             )
     }
 }
@@ -445,5 +584,20 @@ fn search_title(config: &rotor_common::Config) -> &'static str {
         "Rotor · 文件搜索"
     } else {
         "Rotor · File search"
+    }
+}
+
+// Only simplify application suffixes in the label; opening always uses the
+// original result path, and ordinary file extensions remain visible.
+fn result_label(name: &str) -> (&str, bool) {
+    if let Some((stem, extension)) = name.rsplit_once('.')
+        && !stem.is_empty()
+        && ["exe", "lnk", "app"]
+            .iter()
+            .any(|app| extension.eq_ignore_ascii_case(app))
+    {
+        (stem, true)
+    } else {
+        (name, false)
     }
 }
