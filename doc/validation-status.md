@@ -2,6 +2,7 @@
 
 - Windows x64 是当前工程检查目标；正式发布和更新源推广尚未完成。
 - 后续可视化及人工 UI 验收按用户要求跳过，不计为通过。
+- 2026-09-09 移除首次启动时自动打开设置窗口的逻辑，默认后台常驻；托盘、设置快捷键及再次启动激活已有实例仍可打开设置。`cargo fmt --all -- --check`、`cargo check -p rotor-desktop --locked` 通过；视觉 UI 验证跳过，macOS 验证暂缓。
 - Windows 托盘右键菜单使用 Win32 原生菜单及 GDI 自绘，仅保留设置和退出；复用托盘窗口并缓存字体和画刷，支持应用主题、系统主题及高对比度。主题切换、混合 DPI 定位、读屏及鼠标/键盘交互的人工验收跳过；实际呼出延迟尚未测量。
 - 本次原生托盘菜单修改的非视觉检查通过：`cargo fmt --all -- --check`、`cargo check -p rotor-desktop --locked`、`cargo clippy -p rotor-desktop -p rotor-ui --all-targets --locked -- -D warnings`、`cargo test -p rotor-desktop -p rotor-ui --locked`（主程序 5 项、恢复程序 2 项、UI 29 项）。新增测试覆盖隐藏的合成原生窗口消息、菜单文字/ID 保留、资源缓存及离屏 GDI 绘制，不计为视觉验收。
 - macOS 构建、运行、安装、签名和性能验收暂缓；Windows 结果不替代 macOS 验收。

@@ -618,7 +618,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     let config = services.settings();
     let app_services = services.clone();
-    let background = args.iter().any(|arg| arg == "--background");
     let enable_hotkeys = !args.iter().any(|arg| arg == "--no-hotkeys");
     let development_shortcuts = !rotor_common::native_app::PRODUCTION
         && !args.iter().any(|arg| arg == "--production-shortcuts");
@@ -727,12 +726,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         });
         cx.global_mut::<ShellState>()._quit = Some(quit);
         let _ = cx.global::<ShellState>().services.restore_pins();
-        if !background && let Err(error) = show_settings(cx) {
-            eprintln!("Settings: {error}");
-            startup_failed.set(true);
-            cx.quit();
-            return;
-        }
         #[cfg(target_os = "windows")]
         capture::warm(cx);
         let task = cx.spawn(async move |cx| {
