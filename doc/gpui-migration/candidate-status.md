@@ -1,10 +1,18 @@
-# GPUI 迁移候选验收记录（2026-09-08）
+# GPUI 迁移候选验收记录（2026-09-09）
 
 当前状态：**代码与 Windows 候选已准备；迁移没有完成，G8/G9 未通过。**
 
-## 原生 workspace 切换后的双身份候选（最新）
+## 递增版本与独立恢复候选（最新）
 
-`0dd6792` 已移除旧壳构建依赖、切换版本/CI/发布草稿流程，并完成独立副本无 Node/Yarn 构建。两种身份的 release/NSIS 包、资源和安装器身份均通过核验，见[原生工程记录](evidence/windows-native-workspace.md)和[候选哈希](evidence/windows-native-cutover-candidates-2026-09-08.json)。没有安装本批候选、签名或发布。旧源码物理清理仍被自动审批拦截，91 个文件保留；可视化测试跳过、macOS 暂缓。
+本轮版本为 `2.6.1-rc.1`，源码收口提交 `89311a8`。`e968779` 已物理删除清单中的 91 个旧文件，旧公钥证据和历史 Git 源码保留。`e992a80` 增加真实 socket 下载失败与重试验证，`9fa21cf` 完成开发身份从 2.6.0 的递增安装、自启动项清理及限定待机采样。
+
+独立 Windows 恢复启动器已接入 NSIS 重启入口，真实子进程验证退出/挂起/就绪；测试安装的损坏 PE 恢复备份并后台重启通过。详见[剩余任务及本轮证据](remaining-tasks.md)。正式身份没有安装到本机既有 Rotor 上，真实更新签名、远端工作流和发布未执行；不将本地安装器递增替代旧客户端在线更新链。G8/G9 仍未通过。
+
+最终 Windows 双身份 release/NSIS、哈希库存、身份与资源诊断均通过，源码摘要相同。[候选及哈希](evidence/windows-final-candidates-rc1-2026-09-09.json)记录 `89311a8` 的产物；[最终开发身份安装/恢复记录](evidence/windows-final-recovery-rc1-2026-09-09.json)与[故障、重试和验收边界](evidence/windows-nonvisual-rc1.md)分别保留。两包均未签名、未发布。
+
+## 原生 workspace 切换后的双身份候选（历史）
+
+`0dd6792` 已移除旧壳构建依赖、切换版本/CI/发布草稿流程，并完成独立副本无 Node/Yarn 构建。两种身份的 release/NSIS 包、资源和安装器身份均通过核验，见[原生工程记录](evidence/windows-native-workspace.md)和[候选哈希](evidence/windows-native-cutover-candidates-2026-09-08.json)。当时没有安装本批候选、签名或发布；其开发安装包现用作递增验收的旧版本。旧源码物理清理当时受阻，已在 2026-09-09 完成；可视化测试跳过、macOS 暂缓。
 
 ## 静默安装修复后的开发包（历史）
 

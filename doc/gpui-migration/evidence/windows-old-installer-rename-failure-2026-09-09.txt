@@ -1,0 +1,2 @@
+Install directory: D:\Project\rotor\target\windows-final-recovery-rc1\安装 Rotor
+Install failed. The previous installation has been retained.

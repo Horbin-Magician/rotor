@@ -1,0 +1,68 @@
+{
+  "utc": "2026-09-09T01:51:38.8679341Z",
+  "source_commit": "89311a86d0e2cd297f67049121bfcb51dd2acf5f",
+  "candidates": [
+    {
+      "flavor": "development",
+      "identity": {
+        "version": "2.6.1-rc.1",
+        "production": false,
+        "product_name": "Rotor GPUI Development",
+        "identifier": "cc.fluctus.rotor.gpui-dev",
+        "profile_directory": ".rotor-gpui",
+        "executable_name": "rotor-desktop"
+      },
+      "source_sha256": "baeca3ab308fe0bc060c126cf1512260e290177d7a50a416b2653c8b9b7382bc",
+      "installer": "D:\\Project\\rotor\\target\\native-final-rc1-development-package\\Rotor-GPUI_2.6.1-rc.1_x64-setup.exe",
+      "installer_sha256": "109376ad2a01c7dcc047c6423977fcfec4d0ae77217878284637b8ac2bdd6f30",
+      "installer_bytes": 37733807,
+      "binary_sha256": "8802fd389d65274db8495482c586101f0156f943055f405d61c637cfcefdc672",
+      "recovery_sha256": "24278097d98a70a2207eb6f7ef0a0c50124295636cd3cdb3fd323d3f7212d915",
+      "diagnostics": [
+        {
+          "argument": "--build-info",
+          "exit_code": 0,
+          "stdout": "{\"version\":\"2.6.1-rc.1\",\"production\":false,\"product_name\":\"Rotor GPUI Development\",\"identifier\":\"cc.fluctus.rotor.gpui-dev\",\"profile_directory\":\".rotor-gpui\",\"executable_name\":\"rotor-desktop\"}"
+        },
+        {
+          "argument": "--check-resources",
+          "exit_code": 0,
+          "stdout": "Native resources verified at \\\\?\\D:\\Project\\rotor\\target\\native-final-rc1-development-stage\\assets"
+        }
+      ],
+      "signed": false,
+      "installed": true
+    },
+    {
+      "flavor": "production",
+      "identity": {
+        "version": "2.6.1-rc.1",
+        "production": true,
+        "product_name": "Rotor",
+        "identifier": "cc.fluctus.rotor",
+        "profile_directory": ".rotor",
+        "executable_name": "rotor"
+      },
+      "source_sha256": "baeca3ab308fe0bc060c126cf1512260e290177d7a50a416b2653c8b9b7382bc",
+      "installer": "D:\\Project\\rotor\\target\\native-final-rc1-production-package\\Rotor_2.6.1-rc.1_x64-setup.exe",
+      "installer_sha256": "9b29ee90a4f2fb615ed7e87bc41dede66819d9dedda5ef15e30d4da98a255cbc",
+      "installer_bytes": 37785803,
+      "binary_sha256": "7e01e8429535f6dd2d4fd4e1cc8e1b4fc21f22cf0850a7e32a51f536ad4d5b4d",
+      "recovery_sha256": "09a8642b116ede973d1362e5cabf203e25c8d3d726746dbb2d0ca8a882e50455",
+      "diagnostics": [
+        {
+          "argument": "--build-info",
+          "exit_code": 0,
+          "stdout": "{\"version\":\"2.6.1-rc.1\",\"production\":true,\"product_name\":\"Rotor\",\"identifier\":\"cc.fluctus.rotor\",\"profile_directory\":\".rotor\",\"executable_name\":\"rotor\"}"
+        },
+        {
+          "argument": "--check-resources",
+          "exit_code": 0,
+          "stdout": "Native resources verified at \\\\?\\D:\\Project\\rotor\\target\\native-final-rc1-production-stage\\assets"
+        }
+      ],
+      "signed": false,
+      "installed": false
+    }
+  ]
+}
