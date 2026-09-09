@@ -1,4 +1,4 @@
-name: gpui-migration
+name: native-checks
 on:
   workflow_dispatch:
     inputs:
@@ -17,7 +17,7 @@ on:
       - 'assets/**'
       - '.cargo/**'
       - '.gitattributes'
-      - '.github/workflows/gpui-migration.yml'
+      - '.github/workflows/native-checks.yml'
       - '.github/workflows/sync-to-gitee.yml'
       - '.github/workflows/native-candidate.yml'
       - '.github/scripts/**'

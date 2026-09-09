@@ -352,10 +352,8 @@ mod tests {
     use super::*;
     #[test]
     fn legacy_metadata_shape_is_understood_without_downgrading() {
-        let manifest: Manifest = serde_json::from_str(include_str!(
-            "../../../doc/gpui-migration/evidence/v2.6.0-latest.json"
-        ))
-        .unwrap();
+        let manifest: Manifest =
+            serde_json::from_str(include_str!("../tests/fixtures/legacy-manifest.json")).unwrap();
         assert!(select_release(manifest.clone(), "2.6.0", "windows-x86_64")
             .unwrap()
             .is_none());
@@ -449,10 +447,8 @@ mod tests {
 
     #[test]
     fn native_and_legacy_public_keys_are_identical() {
-        let config: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../doc/gpui-migration/evidence/legacy-update-key.json"
-        ))
-        .unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/legacy-update-key.json")).unwrap();
         assert_eq!(PUBLIC_KEY.trim(), config["pubkey"].as_str().unwrap());
     }
 

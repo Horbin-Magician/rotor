@@ -1,8 +1,0 @@
-# Synthetic settings-only profile; no credentials, commands or pinned images.
-language = "1"
-theme = "1"
-quick_actions = "[]"
-quick_actions_revision = "2"
-translator_engine = "deepseek"
-translator_deepseek_api_key = ""
-translator_deepseek_model = "fixture-before"

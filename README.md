@@ -1,10 +1,10 @@
-<p align="center"><img width="100" src="./doc/branding/logo.png" alt="Rotor logo"></p>
+<p align="center"><img width="100" src="./assets/icons/icon.png" alt="Rotor logo"></p>
 
 # Rotor
 
 A native desktop toolbox built with Rust, GPUI and gpui-component.
 
-[中文](doc/README_CN.md) · [Migration status](doc/gpui-migration/remaining-tasks.md) · [Packaging and recovery](native/README.md)
+[中文](doc/README_CN.md) · [Validation status](doc/validation-status.md) · [Packaging and recovery](native/README.md)
 
 ## Features
 
@@ -17,7 +17,7 @@ A native desktop toolbox built with Rust, GPUI and gpui-component.
 
 ## Current platform status
 
-Windows x64 is the active validation target; current local checks use Windows 11. macOS arm64 implementation and packaging remain in the source, with a minimum configured macOS version of 15.0, but macOS validation is deferred. Further visual acceptance tests were explicitly skipped; see the migration records for passed, skipped and pending checks.
+Windows x64 is the active validation target; current local checks use Windows 11. macOS arm64 implementation and packaging remain in the source, with a minimum configured macOS version of 15.0, but macOS validation is deferred. Further visual acceptance tests were explicitly skipped; see the validation status for pending checks.
 
 Published releases and update feeds have not been promoted by the source migration. Build native candidates locally or use the `native-candidate` workflow, which defaults to Windows. The release workflow prepares signed **drafts**; publishing and feed promotion remain separate actions.
 
@@ -33,7 +33,7 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-All application and shared crates live under `crates/`; models, fonts and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes. The P0 experiment was retired on 2026-09-09; see [the retirement record](doc/gpui-migration/evidence/experiment-removal.md) for historical source and local evidence.
+All application and shared crates live under `crates/`; models, fonts and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes.
 
 The default development identity uses `.rotor-gpui` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
 
@@ -64,7 +64,7 @@ cargo run -p xtask -- version
 cargo run -p xtask -- set-version 2.7.0-beta.1 --dry-run
 ```
 
-Version changes do not commit, tag or push automatically. Legacy source removal is separately tracked in the migration plan; it is no longer part of the native workspace or CI build path.
+Version changes do not commit, tag or push automatically.
 
 ## Contributing and license
 

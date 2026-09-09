@@ -5,8 +5,7 @@ and `xtask version` do not read a frontend package manifest.
 
 All native and shared crates now live under root `crates/`; bundled models,
 fonts and icons live under root `assets/`. Native packages retain the installed
-`assets/` resource layout. Packaging recipes remain in `native/`. Legacy sources
-await physical removal separately and are not native build targets.
+`assets/` resource layout. Packaging recipes remain in `native/`.
 
 ```powershell
 cargo run -p xtask -- version
@@ -121,13 +120,7 @@ uploads review artifacts and preview metadata; it never creates a release or
 updates a published feed. Real production signatures and remote CI have not been
 run in the migration workspace.
 
-Static inspection of the old 2.6.0 macOS archive found a single CodeDirectory
-with flags `0x20002` (ad-hoc and linker-signed per Apple's
-[code-signing definitions](https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/osfmk/kern/cs_blobs.h)),
-without a bundle CodeResources file. The evidence is recorded under
-`doc/gpui-migration/evidence/v2.6.0-macos-signature.json`. This records the old
-artifact's structure; macOS signature validation, Gatekeeper and notarization
-acceptance remain pending. No new Developer ID certificate requirement is imposed.
+macOS signature validation, Gatekeeper and notarization acceptance remain pending.
 
 ## Production-identity acceptance packages
 
@@ -148,8 +141,8 @@ Production identity preserves `Rotor`, `rotor.exe`/`rotor`, `cc.fluctus.rotor`, 
 old Windows uninstall key/install location, and macOS `Rotor.app`. The first real
 production startup holds the old instance namespace and backs up legacy profile
 files before native writes. It preserves existing startup choices and uses the
-old shortcut values. These packages are for upgrade acceptance until G8 passes;
-none have been installed or published by the migration task.
+old shortcut values. Production installation and upgrade acceptance remain pending;
+these packages have not been promoted to the release channel.
 
 Development uses `gpui-latest.json`; production identity uses
 `gpui-production-latest.json`, both under the isolated `gpui-latest` release.

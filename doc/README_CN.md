@@ -1,10 +1,10 @@
-<p align="center"><img width="100" src="./branding/logo.png" alt="Rotor logo"></p>
+<p align="center"><img width="100" src="../assets/icons/icon.png" alt="Rotor logo"></p>
 
 # Rotor
 
 使用 Rust、GPUI 和 gpui-component 构建的原生桌面工具箱。
 
-[English](../README.md) · [迁移状态](gpui-migration/remaining-tasks.md) · [打包与恢复](../native/README.md)
+[English](../README.md) · [验收状态](validation-status.md) · [打包与恢复](../native/README.md)
 
 ## 功能
 
@@ -17,7 +17,7 @@
 
 ## 当前平台状态
 
-当前验收范围为 Windows x64，本机检查使用 Windows 11。macOS arm64 实现与打包配方仍保留，配置最低版本为 macOS 15.0，但 macOS 验收暂缓。后续可视化测试已按用户要求跳过；已通过、跳过和未完成项目见迁移记录。
+当前验收范围为 Windows x64，本机检查使用 Windows 11。macOS arm64 实现与打包配方仍保留，配置最低版本为 macOS 15.0，但 macOS 验收暂缓。后续可视化测试已按用户要求跳过；未完成项目见验收状态。
 
 代码迁移没有发布新版本或切换更新源。原生候选可在本地构建，或运行默认 Windows 的 `native-candidate` 工作流；发布工作流只准备带签名的草稿，公开发布和更新源切换仍是后续操作。
 
@@ -33,7 +33,7 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-应用及共享 crate 均位于 `crates/`，模型、字体与图标位于 `assets/`；`xtask/` 管理版本、暂存、打包与签名，`native/` 保存分发配方。P0 实验已于 2026-09-09 退役；历史源码与本地证据位置见[清理记录](gpui-migration/evidence/experiment-removal.md)。
+应用及共享 crate 均位于 `crates/`，模型、字体与图标位于 `assets/`；`xtask/` 管理版本、暂存、打包与签名，`native/` 保存分发配方。
 
 开发身份默认使用 `.rotor-gpui`，并在保存的全局快捷键上增加 Alt。正式身份使用 `.rotor`，通过 `production` feature 启用。可用 `--data-dir` 或 `ROTOR_DATA_DIR` 指定资料目录。
 
@@ -64,7 +64,7 @@ cargo run -p xtask -- version
 cargo run -p xtask -- set-version 2.7.0-beta.1 --dry-run
 ```
 
-版本工具不会自动提交、打标签或推送。旧源码清理单独跟踪，它们已不再参与原生 workspace 和 CI 构建。
+版本工具不会自动提交、打标签或推送。
 
 ## 贡献与许可证
 

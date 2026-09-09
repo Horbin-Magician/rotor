@@ -1,6 +1,6 @@
 # AGENTS.md
 
-## Project and migration state
+## Project
 
 Rotor is a Rust/GPUI native desktop toolbox. The root Cargo workspace is the
 application workspace; `rotor-desktop` is the default target. All application and
@@ -9,12 +9,7 @@ shared crates live in `crates/`, models/fonts/icons in `assets/`, packaging in
 
 The user explicitly waived further visual UI tests and deferred macOS validation.
 Continue Windows engineering and nonvisual checks. Record skipped tests as skipped,
-never passed. Current work and evidence are in `doc/gpui-migration/remaining-tasks.md`.
-
-Legacy frontend/Tauri sources are no longer workspace members or native CI inputs.
-The 91 tracked legacy files were removed on 2026-09-09 after renewed user
-authorization. The removal inventory and historical Git source remain in the
-migration evidence; ignored legacy build caches are not development targets.
+never passed. Current pending validation is listed in `doc/validation-status.md`.
 
 ## Constraints
 
@@ -25,8 +20,7 @@ migration evidence; ignored legacy build caches are not development targets.
 - Do not move old integration adapters into shared crates.
 - Preserve unknown config/record fields, accepted write ordering and request identities.
 - Use isolated synthetic profiles for tests; avoid real credentials and user data.
-- Do not edit generated/dependency output such as node_modules, dist, target or retained
-  src-tauri target/gen directories unless explicitly required.
+- Do not edit generated/dependency output under target unless explicitly required.
 - Preserve model/font bytes and their licenses. `.github/scripts/check-annotation-font.ps1`
   verifies the font and OFL checksums.
 
@@ -85,7 +79,4 @@ results distinct. Windows silent checks use `.github/scripts/test-windows-instal
 with development identity, an unused registry namespace and a new target subdirectory.
 They preserve synthetic user files and backups and clean their installation entries.
 
-The independent P0 workspace was retired on 2026-09-09; see doc/gpui-migration/evidence/experiment-removal.md for source recovery and local evidence. Historical paths
-and screenshots under migration evidence describe their recorded commits; prefer
-current crate paths for ongoing edits. macOS code remains, but Windows results do
-not prove macOS build, runtime or packaging acceptance.
+macOS code remains, but Windows results do not prove macOS build, runtime or packaging acceptance.
