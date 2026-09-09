@@ -182,6 +182,12 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
         snapshot.join(builder::binary_name()),
         executable_dir.join(binary),
     )?;
+    if cfg!(windows) {
+        fs::copy(
+            snapshot.join("rotor-recovery.exe"),
+            executable_dir.join("rotor-recovery.exe"),
+        )?;
+    }
     for entry in fs::read_dir(&snapshot)? {
         let entry = entry?;
         if matches!(

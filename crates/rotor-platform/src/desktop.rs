@@ -188,6 +188,7 @@ fn update_installer_parameters(
             "--no-index" => " /NOINDEX",
             "--no-hotkeys" => " /NOHOTKEYS",
             "--production-shortcuts" => " /PRODUCTIONSHORTCUTS",
+            "--background" => " /BACKGROUND",
             _ => "",
         };
         parameters.push_str(switch);

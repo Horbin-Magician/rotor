@@ -162,7 +162,10 @@ with technical inventories kept outside the user-facing disk image.
 Windows installation stages complete files beside the destination and keeps the
 previous installation before switching directories. The registered
 PreviousInstallLocation is retained for recovery. The initial installer-launched
-startup can invoke a dedicated rollback entry if native startup fails; it waits
+startup uses the separate `rotor-recovery.exe` launcher, so GUI loader failures
+cannot prevent recovery. It waits up to 30 seconds for a startup acknowledgement
+and one second of continued process survival. Early exit or timeout invokes the
+dedicated rollback entry; it waits
 for that process to exit, restores the old directory, keeps the failed new files,
 and leaves user data untouched. Ordinary uninstalls never execute the rollback
 entry. File/registry permissions, UAC, actual process exit and rollback still need
@@ -188,5 +191,12 @@ uses a new directory under this workspace's target tree and cleans its registry
 entries and Start menu shortcut. It does not run the app's visual entry point.
 
 Installers support `/S` and optional `/LOG=<file>` diagnostics. Logs use UTF-16LE
-with a BOM so Unicode paths remain readable. Production identity, increasing-version
-updates, old-client handoff and startup crash/hang recovery require separate evidence.
+with a BOM so Unicode paths remain readable. Add `-PreviousPackageDirectory` with
+a verified lower-version development package to exercise incremental installation.
+`-TestRecovery` corrupts only the dedicated test installation's executable and
+checks backup restoration plus background restart. `-MeasureIdle` samples that
+installation for 120 seconds after 60 seconds of stabilization; indexing and
+hotkeys are disabled and the profile is synthetic. These switches do not validate
+production identity, old-client update handoff, login restart or the full performance
+matrix. The recovery monitor's process fixtures cover exit, hang and acknowledgement;
+the actual installed rollback evidence currently covers an invalid executable.

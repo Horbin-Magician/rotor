@@ -63,7 +63,7 @@ Var InstallLogPath
 Function RestartRotor
   ${If} $PreviousDirectory != ""
   ${AndIf} ${FileExists} "$PreviousDirectory\${APP_EXE}"
-    ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments --installation-check"
+    ExecShell "open" "$INSTDIR\rotor-recovery.exe" "$RestartArguments"
   ${Else}
     ExecShell "open" "$INSTDIR\${APP_EXE}" "$RestartArguments"
   ${EndIf}
@@ -122,6 +122,11 @@ Function .onInit
   ${GetOptions} $R0 "/PRODUCTIONSHORTCUTS" $R1
   ${IfNot} ${Errors}
     StrCpy $RestartArguments "$RestartArguments --production-shortcuts"
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/BACKGROUND" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --background"
   ${EndIf}
   ClearErrors
   ${GetOptions} $R0 "/UPDATE" $R1
@@ -369,6 +374,11 @@ Function un.onInit
   ${un.GetOptions} $R0 "/PRODUCTIONSHORTCUTS" $R1
   ${IfNot} ${Errors}
     StrCpy $RestartArguments "$RestartArguments --production-shortcuts"
+  ${EndIf}
+  ClearErrors
+  ${un.GetOptions} $R0 "/BACKGROUND" $R1
+  ${IfNot} ${Errors}
+    StrCpy $RestartArguments "$RestartArguments --background"
   ${EndIf}
   System::Call 'kernel32::OpenProcess(i 0x100000, i 0, i $ParentPid) p.r1'
   ${If} $1 != 0

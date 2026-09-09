@@ -117,7 +117,7 @@ jobs:
         if: runner.os == 'Windows' && inputs.test_installation && !inputs.production_identity
         shell: pwsh
         run: |
-          ./.github/scripts/test-windows-install.ps1 -PackageDirectory "$env:RUNNER_TEMP/native-package" -TestDirectory "$env:GITHUB_WORKSPACE/target/windows-install-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          ./.github/scripts/test-windows-install.ps1 -PackageDirectory "$env:RUNNER_TEMP/native-package" -TestDirectory "$env:GITHUB_WORKSPACE/target/windows-install-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT" -TestRecovery
       - name: Retain Windows installation evidence
         if: always() && runner.os == 'Windows' && inputs.test_installation && !inputs.production_identity
         uses: actions/upload-artifact@v4

@@ -160,6 +160,12 @@ pub fn build(production: bool, options: &[String]) -> Result<()> {
         .tempdir_in(snapshot_root())?
         .keep();
     fs::copy(release.join(binary_name()), snapshot.join(binary_name()))?;
+    if cfg!(windows) {
+        fs::copy(
+            release.join("rotor-recovery.exe"),
+            snapshot.join("rotor-recovery.exe"),
+        )?;
+    }
     for entry in fs::read_dir(&release)? {
         let entry = entry?;
         if matches!(

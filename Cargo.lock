@@ -7430,6 +7430,7 @@ dependencies = [
  "rotor-runtime",
  "rotor-ui",
  "rotor-updater",
+ "tempfile",
  "tray-icon",
 ]
 

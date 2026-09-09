@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)][string]$PackageDirectory,
     [Parameter(Mandatory)][string]$TestDirectory,
     [string]$PreviousPackageDirectory,
-    [switch]$MeasureIdle
+    [switch]$MeasureIdle,
+    [switch]$TestRecovery
 )
 $ErrorActionPreference = 'Stop'
 if (!$IsWindows -or [IntPtr]::Size -ne 8) { throw 'Requires PowerShell 7 on 64-bit Windows' }
@@ -162,6 +163,36 @@ try {
     if ((Get-FileHash -LiteralPath (Join-Path $backup 'user-added.txt')).Hash -ne $retainedHash) {
         throw 'Upgrade did not retain user files in its backup'
     }
+    if ($TestRecovery) {
+        $recoveryProfile = Join-Path $testRoot 'recovery-profile'
+        $helper = Join-Path $installRoot 'rotor-recovery.exe'
+        if (!(Test-Path -LiteralPath $helper)) { throw 'Recovery launcher is missing from package' }
+        # Corrupt only this test installation; the registered backup is verified above.
+        [IO.File]::WriteAllBytes($binary, [Text.Encoding]::UTF8.GetBytes('synthetic invalid PE'))
+        $launch = Start-Process -FilePath $helper -ArgumentList "--background --no-elevate --no-index --no-hotkeys --data-dir `"$recoveryProfile`"" -WindowStyle Hidden -PassThru
+        if (!$launch.WaitForExit(45000)) { $launch.Kill(); throw 'Recovery launcher timed out' }
+        if ($launch.ExitCode -ne 0) { throw 'Recovery launcher failed' }
+        $deadline = [DateTime]::UtcNow.AddSeconds(40)
+        do {
+            Start-Sleep -Milliseconds 250
+            $failedLocation = (Get-ItemProperty -LiteralPath $productKey).FailedInstallLocation
+        } while (!$failedLocation -and [DateTime]::UtcNow -lt $deadline)
+        if (!$failedLocation -or !$failedLocation.StartsWith($testRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            (Get-FileHash -LiteralPath $binary).Hash -ne $binaryHash -or
+            [IO.File]::ReadAllText((Join-Path $failedLocation 'rotor-desktop.exe')) -ne 'synthetic invalid PE') {
+            throw 'Loader failure did not restore the old binary and retain the failed installation'
+        }
+        # Wait for the rollback's background restart before releasing the test installation.
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        do {
+            Start-Sleep -Milliseconds 250
+            $restarted = @(Get-Process -Name rotor-desktop -ErrorAction SilentlyContinue | Where-Object Path -EQ $binary)
+        } while (!$restarted.Count -and [DateTime]::UtcNow -lt $deadline)
+        if (!$restarted.Count) { throw 'Restored application was not restarted' }
+        foreach ($owned in $restarted) { $owned.Kill(); $owned.WaitForExit() }
+        Assert-Installed
+        $results.Add([ordered]@{ case = 'loader_failure_rollback'; failed_installation = $failedLocation; previous_binary_restored = $true; background_restart = $true })
+    }
     Set-Content -LiteralPath $retained -Value 'retain on uninstall'
     $retainedHash = (Get-FileHash -LiteralPath $retained).Hash
     if ($MeasureIdle) {
@@ -187,6 +218,11 @@ try {
     Write-Output "Silent install/replacement/uninstall checks passed: $testRoot"
 }
 finally {
+    if ($TestRecovery -and $binary) {
+        foreach ($owned in @(Get-Process -Name rotor-desktop -ErrorAction SilentlyContinue | Where-Object Path -EQ $binary)) {
+            $owned.Kill(); $owned.WaitForExit()
+        }
+    }
     # Clean only a remaining installation whose registered path is this test's
     # dedicated directory. Never force-delete directories or unrelated entries.
     if ((Test-Path $uninstallKey) -and

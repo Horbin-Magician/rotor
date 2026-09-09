@@ -474,7 +474,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         return rotor_updater::run_helper(std::path::Path::new(&job)).map_err(Into::into);
     }
-    #[cfg(target_os = "macos")]
     let update_ready = option("--update-ready")?.map(PathBuf::from);
     #[cfg(target_os = "macos")]
     let update_warning = option("--update-error-file")?.and_then(|path| {
@@ -878,7 +877,6 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         });
         cx.global_mut::<ShellState>()._task = Some(task);
-        #[cfg(target_os = "macos")]
         if let Some(path) = update_ready {
             std::thread::spawn(move || {
                 use std::io::Write;

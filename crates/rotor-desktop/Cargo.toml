@@ -3,6 +3,7 @@ name = "rotor-desktop"
 version.workspace = true
 edition = "2024"
 publish = false
+default-run = "rotor-desktop"
 
 [features]
 production = ["rotor-common/production"]
@@ -24,6 +25,7 @@ rotor-canvas.workspace = true
 rotor-updater.workspace = true
 raw-window-handle = "=0.6.2"
 log = { version = "0.4", features = ["std"] }
+tempfile = "3"
 
 [build-dependencies]
 embed-resource = "=3.0.9"
