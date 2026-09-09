@@ -28,7 +28,7 @@ impl SettingsView {
         let mut panel = div()
             .flex()
             .flex_col()
-            .gap_1()
+            .gap(px(6.))
             .child(appearance::heading(self.t("索引情况", "Index details"), cx))
             .child(appearance::detail_row(
                 self.t("索引状态", "Index status"),
@@ -68,38 +68,31 @@ impl SettingsView {
         if let Some(status) = status {
             for volume in &status.volumes {
                 panel = panel.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .mx_0()
-                        .py_2()
-                        .border_t_1()
-                        .border_color(colors.border)
+                    appearance::card(cx)
+                        .ml(px(12.))
+                        .gap(px(4.))
+                        .px(px(10.))
+                        .py(px(8.))
                         .child(
                             div()
-                                .flex()
-                                .flex_wrap()
-                                .justify_between()
-                                .gap_2()
+                                .min_w_0()
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::BOLD)
                                 .child(volume.name.clone())
-                                .child(appearance::caption(
-                                    if volume.indexed {
-                                        self.t("已索引", "Indexed")
-                                    } else {
-                                        self.t("未索引", "Not indexed")
-                                    },
-                                    cx,
-                                )),
+                                .when(!volume.indexed, |name| {
+                                    name.child(appearance::caption(
+                                        self.t("未索引", "Not indexed"),
+                                        cx,
+                                    ))
+                                }),
                         )
                         .child(appearance::caption(
                             format!(
-                                "{} {} · {} · {}",
+                                "{} · {} · {}",
                                 volume
                                     .index_item_count
                                     .map(|count| count.to_string())
                                     .unwrap_or_else(|| unavailable.into()),
-                                self.t("项", "items"),
                                 byte_size(volume.index_file_size_bytes),
                                 modified_at(volume.index_file_modified_at)
                                     .unwrap_or_else(|| unavailable.into())
@@ -274,146 +267,91 @@ impl SettingsView {
                 cx,
             ));
             for permission in &overview.permissions {
-                let label = match permission.key.as_str() {
-                    "administrator" => self.t("管理员权限", "Administrator"),
-                    "screen_capture" => self.t("屏幕捕获权限", "Screen capture"),
-                    "accessibility" => self.t(
-                        "辅助功能权限（划词翻译）",
-                        "Accessibility (selection translation)",
+                let (label, detail) = match permission.key.as_str() {
+                    "administrator" => (
+                        self.t("管理员权限", "Administrator"),
+                        self.t(
+                            "用于 NTFS 日志索引及管理员启动",
+                            "For NTFS journal indexing and admin launches",
+                        ),
                     ),
-                    "file_search" => self.t("文件搜索访问", "File search access"),
-                    _ => permission.name.as_str(),
+                    "screen_capture" => (
+                        self.t("屏幕录制", "Screen recording"),
+                        self.t("用于截图捕获", "For screenshot capture"),
+                    ),
+                    "accessibility" => (
+                        self.t("辅助功能", "Accessibility"),
+                        self.t("用于划词翻译", "For selection translation"),
+                    ),
+                    "file_search" => (
+                        self.t("文件搜索", "File search"),
+                        self.t(
+                            "使用当前用户可读取的目录或卷",
+                            "Uses folders or volumes readable by the current user",
+                        ),
+                    ),
+                    _ => (permission.name.as_str(), permission.detail.as_str()),
                 };
-                permissions = permissions.child(appearance::detail_row(
-                    label.to_owned(),
+                let colors = appearance::palette(cx);
+                let (status_color, status_label, status_symbol) = match permission.granted {
+                    Some(true) => (cx.theme().success, self.t("可用", "Available"), ""),
+                    Some(false) => (cx.theme().danger, self.t("未授予", "Not granted"), "×"),
+                    None => (colors.secondary, self.t("未知", "Unknown"), "?"),
+                };
+                permissions = permissions.child(
                     div()
-                        .text_color(match permission.granted {
-                            Some(true) => cx.theme().success,
-                            Some(false) => cx.theme().danger,
-                            None => appearance::palette(cx).secondary,
-                        })
-                        .child(match permission.granted {
-                            Some(true) => self.t("可用", "Available"),
-                            Some(false) => self.t("未授予", "Not granted"),
-                            None => self.t("未知", "Unknown"),
-                        }),
-                    cx,
-                ));
-                if permission.key == "administrator" && permission.granted == Some(false) {
-                    permissions = permissions.child(
-                        appearance::caption(
-                            self.t(
-                                "NTFS 日志索引需要管理员权限。",
-                                "NTFS journal indexing requires administrator privileges.",
-                            ),
-                            cx,
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_3()
+                        .min_h(px(32.))
+                        .pl(px(12.))
+                        .py(px(4.))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_baseline()
+                                .min_w_0()
+                                .gap_x(px(8.))
+                                .gap_y(px(4.))
+                                .text_color(colors.secondary)
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .text_size(px(13.))
+                                        .font_weight(FontWeight::BOLD)
+                                        .child(label.to_owned()),
+                                )
+                                .child(appearance::caption(detail.to_owned(), cx)),
                         )
-                        .px_2(),
-                    );
-                }
-            }
-            panel = panel.child(permissions);
-
-            let mut application = div().flex().flex_col().gap_3()
-                .child(appearance::heading(self.t("应用信息", "Application"), cx))
-                .child(appearance::detail_row(self.t("当前版本", "Version"),
-                    format!("Rotor {} · {} / {}", overview.version, overview.platform, overview.architecture), cx))
-                .child(appearance::detail_row("OCR", match overview.ocr_loaded {
-                    Some(true) => self.t("模型已加载", "Model loaded"),
-                    Some(false) => self.t("模型未加载", "Model unloaded"),
-                    None => self.t("忙碌或状态不可用", "Busy or unavailable"),
-                }, cx))
-                .child(appearance::caption(if cfg!(target_os = "windows") {
-                    self.t("内存占用统计当前进程的私有工作集，点击刷新更新。", "Memory usage is the process private working set. Refresh to update.")
-                } else {
-                    self.t("内存占用统计当前进程内存，点击刷新更新。", "Memory usage is for the current process. Refresh to update.")
-                }, cx).px_2());
-            if let Err(error) = &overview.resident_bytes {
-                application = application.child(
-                    appearance::caption(error.clone(), cx)
-                        .px_2()
-                        .text_color(cx.theme().danger),
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("permission-{}", permission.key)))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .flex_shrink_0()
+                                .size(px(16.))
+                                .rounded_full()
+                                .bg(status_color)
+                                .text_color(colors.background)
+                                .text_size(px(13.))
+                                .font_weight(FontWeight::BOLD)
+                                .tooltip(move |window, cx| {
+                                    gpui_kit::component::tooltip::Tooltip::new(status_label)
+                                        .build(window, cx)
+                                })
+                                .when(permission.granted == Some(true), |indicator| {
+                                    indicator.child(Icon::new(IconName::Check).size(px(13.)))
+                                })
+                                .when(permission.granted != Some(true), |indicator| {
+                                    indicator.child(status_symbol)
+                                }),
+                        ),
                 );
             }
-            application = application.child(
-                appearance::card(cx)
-                    .child(appearance::caption(
-                        self.t("数据目录", "Data directory"),
-                        cx,
-                    ))
-                    .child(div().min_w_0().child(overview.data_directory.clone()))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_2()
-                            .child(
-                                Button::new("open-data-directory")
-                                    .label(self.t("打开数据目录", "Open data directory"))
-                                    .disabled(self.controls_locked())
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        if let Err(error) = this.services.open_data_directory() {
-                                            this.message = error;
-                                            cx.notify();
-                                        }
-                                    })),
-                            )
-                            .child(
-                                Button::new("project-home")
-                                    .label(self.t("项目主页", "Project home"))
-                                    .disabled(self.controls_locked())
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        if let Err(error) = this.services.open_url(
-                                            "https://github.com/Horbin-Magician/rotor".into(),
-                                        ) {
-                                            this.message = error;
-                                            cx.notify();
-                                        }
-                                    })),
-                            ),
-                    ),
-            );
-            match overview.autostart {
-                Ok(enabled) => {
-                    application = application.child(appearance::detail_row(
-                        self.t("登录启动", "Launch at login"),
-                        Button::new("toggle-startup")
-                            .label(if enabled {
-                                self.t("关闭登录启动", "Disable login startup")
-                            } else {
-                                self.t("启用登录启动", "Enable login startup")
-                            })
-                            .disabled(self.startup_request.is_some() || self.controls_locked())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                match this.services.set_autostart(!enabled) {
-                                    Ok(id) => this.startup_request = Some(id),
-                                    Err(error) => this.message = error,
-                                }
-                                cx.notify();
-                            })),
-                        cx,
-                    ));
-                }
-                Err(ref error) => {
-                    application = application.child(appearance::caption(
-                        format!(
-                            "{}: {error}",
-                            self.t("启动项状态不可用", "Startup status unavailable")
-                        ),
-                        cx,
-                    ));
-                }
-            }
-            if !rotor_common::native_app::PRODUCTION {
-                application = application.child(appearance::caption(
-                    self.t(
-                        "开发版启动项使用独立名称和当前资料目录。",
-                        "Development startup uses an independent entry and the current profile.",
-                    ),
-                    cx,
-                ));
-            }
-            panel = panel.child(application);
+            panel = panel.child(permissions);
         } else {
             panel = panel.child(appearance::caption(
                 if self.overview_request.is_some() {
@@ -435,11 +373,11 @@ fn byte_size(bytes: u64) -> String {
     if bytes < 1024 {
         format!("{bytes} B")
     } else if bytes < 1048576 {
-        format!("{:.1} KiB", bytes as f64 / 1024.)
+        format!("{:.0} KB", bytes as f64 / 1024.)
     } else if bytes < 1073741824 {
-        format!("{:.1} MiB", bytes as f64 / 1048576.)
+        format!("{:.1} MB", bytes as f64 / 1048576.)
     } else {
-        format!("{:.1} GiB", bytes as f64 / 1073741824.)
+        format!("{:.1} GB", bytes as f64 / 1073741824.)
     }
 }
 
@@ -447,7 +385,7 @@ fn modified_at(milliseconds: Option<u64>) -> Option<String> {
     let timestamp = i64::try_from(milliseconds?).ok()?;
     chrono::DateTime::from_timestamp_millis(timestamp).map(|time| {
         time.with_timezone(&chrono::Local)
-            .format("%Y-%m-%d %H:%M")
+            .format("%Y/%-m/%-d %H:%M:%S")
             .to_string()
     })
 }

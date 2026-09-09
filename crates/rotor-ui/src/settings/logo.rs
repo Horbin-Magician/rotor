@@ -7,6 +7,7 @@ use std::{io::Cursor, sync::Arc};
 pub(super) struct Logo {
     source: Rgba32FImage,
     cached: Option<(u32, Arc<Image>)>,
+    glow: Option<Arc<Image>>,
 }
 
 impl Logo {
@@ -17,6 +18,7 @@ impl Logo {
         Self {
             source: premultiply(source),
             cached: None,
+            glow: None,
         }
     }
 
@@ -28,14 +30,47 @@ impl Logo {
             return image.clone();
         }
         let thumbnail = thumbnail(&self.source, pixels);
-        let mut encoded = Cursor::new(Vec::new());
-        thumbnail
-            .write_to(&mut encoded, image::ImageFormat::Png)
-            .expect("encoding settings logo in memory must succeed");
-        let image = Arc::new(Image::from_bytes(ImageFormat::Png, encoded.into_inner()));
+        self.glow = Some(encode(&contour_glow(&thumbnail)));
+        let image = encode(&thumbnail);
         self.cached = Some((pixels, image.clone()));
         image
     }
+
+    pub(super) fn glow(&self) -> Arc<Image> {
+        self.glow
+            .as_ref()
+            .expect("logo image initializes glow")
+            .clone()
+    }
+}
+
+fn encode(image: &RgbaImage) -> Arc<Image> {
+    let mut encoded = Cursor::new(Vec::new());
+    image
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .expect("encoding settings logo in memory must succeed");
+    Arc::new(Image::from_bytes(ImageFormat::Png, encoded.into_inner()))
+}
+
+pub(super) fn glow_padding(pixels: u32) -> u32 {
+    (pixels as f32 * 0.1).ceil() as u32
+}
+
+fn contour_glow(logo: &RgbaImage) -> RgbaImage {
+    // The padded alpha mask follows both the outside contour and the cutouts.
+    // All dimensions scale with the thumbnail's physical size for Retina displays.
+    let padding = glow_padding(logo.width());
+    let size = logo.width() + padding * 2;
+    let mut mask = image::GrayImage::new(size, size);
+    for (x, y, pixel) in logo.enumerate_pixels() {
+        mask.put_pixel(x + padding, y + padding, image::Luma([pixel[3]]));
+    }
+    let blurred = image::imageops::blur(&mask, logo.width() as f32 * 0.025);
+    RgbaImage::from_fn(size, size, |x, y| {
+        let alpha = blurred.get_pixel(x, y)[0] as f32;
+        let outside = 1. - mask.get_pixel(x, y)[0] as f32 / 255.;
+        image::Rgba([70, 190, 245, (alpha * outside * 1.8).min(255.) as u8])
+    })
 }
 
 fn premultiply(mut source: Rgba32FImage) -> Rgba32FImage {
@@ -68,6 +103,23 @@ fn thumbnail(source: &Rgba32FImage, pixels: u32) -> RgbaImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn glow_follows_outer_and_cutout_edges() {
+        let logo = RgbaImage::from_fn(50, 50, |x, y| {
+            let outer = (5..45).contains(&x) && (5..45).contains(&y);
+            let hole = (15..35).contains(&x) && (15..35).contains(&y);
+            image::Rgba([41, 167, 215, if outer && !hole { 255 } else { 0 }])
+        });
+        let glow = contour_glow(&logo);
+        let padding = (glow.width() - logo.width()) / 2;
+        let alpha = |x: u32, y: u32| glow.get_pixel(x + padding, y + padding)[3];
+        assert!(alpha(4, 25) > 0, "outer edge glows");
+        assert!(alpha(15, 25) > 0, "cutout edge glows");
+        assert_eq!(alpha(10, 25), 0, "opaque logo stays unchanged");
+        assert_eq!(alpha(25, 25), 0, "cutout center stays clear");
+        assert_eq!(glow.get_pixel(0, 0)[3], 0);
+    }
 
     #[test]
     fn downsampling_preserves_edge_color_without_transparent_rgb_bleed() {

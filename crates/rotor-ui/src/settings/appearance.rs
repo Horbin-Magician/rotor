@@ -84,11 +84,33 @@ pub(super) fn quiet_button(button: Button, cx: &App) -> Button {
     )
 }
 
-pub(super) fn navigation(button: Button, selected: bool, cx: &App) -> Button {
+pub(super) fn navigation(
+    button: Button,
+    label: impl Into<SharedString>,
+    selected: bool,
+    disabled: bool,
+    highlight: f32,
+    cx: &App,
+) -> Button {
     let colors = palette(cx);
+    let label = label.into();
+    let foreground = colors.foreground.blend(colors.accent.opacity(highlight));
     button
+        .group("settings-navigation-button")
         .font_weight(FontWeight::NORMAL)
         .toggled(selected)
+        .disabled(disabled)
+        .accessibility_label(label.clone())
+        .child(
+            div()
+                .id("navigation-label")
+                .min_w_0()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .line_height(relative(1.))
+                .when(!disabled, |label| label.text_color(foreground))
+                .child(label),
+        )
         .custom(
             ButtonCustomVariant::new(cx)
                 .color(colors.background)
@@ -97,7 +119,53 @@ pub(super) fn navigation(button: Button, selected: bool, cx: &App) -> Button {
                 } else {
                     colors.foreground
                 })
-                .hover(colors.hover)
-                .active(colors.surface),
+                .hover(colors.background)
+                .active(colors.background),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::navigation;
+    use gpui::{Context, IntoElement, ParentElement, Render, Window, div};
+    use gpui_kit::component::button::Button;
+
+    #[gpui::test]
+    fn navigation_buttons_render_without_conflicting_hover_styles(cx: &mut gpui::TestAppContext) {
+        struct NavigationHarness;
+
+        impl Render for NavigationHarness {
+            fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                div()
+                    .child(navigation(
+                        Button::new("idle"),
+                        "General",
+                        false,
+                        false,
+                        0.,
+                        cx,
+                    ))
+                    .child(navigation(
+                        Button::new("selected"),
+                        "Pins",
+                        true,
+                        false,
+                        1.,
+                        cx,
+                    ))
+                    .child(navigation(
+                        Button::new("disabled"),
+                        "Updates",
+                        false,
+                        true,
+                        0.,
+                        cx,
+                    ))
+            }
+        }
+
+        cx.update(gpui_kit::component::init);
+        let (_, cx) = cx.add_window_view(|_, _| NavigationHarness);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
 }

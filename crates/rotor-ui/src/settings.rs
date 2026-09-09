@@ -17,6 +17,7 @@ mod appearance;
 mod automatic;
 mod autosave;
 mod logo;
+mod motion;
 mod overview;
 mod updates;
 
@@ -90,6 +91,11 @@ pub struct SettingsView {
     overview_request: Option<OperationId>,
     startup_request: Option<OperationId>,
     logo: logo::Logo,
+    navigation_hover: Option<Section>,
+    navigation_highlights: [motion::Transition; 8],
+    navigation_indicator: motion::Transition,
+    logo_hover: bool,
+    logo_glow: motion::Transition,
 }
 impl SettingsView {
     pub fn show_message(&mut self, message: String, cx: &mut Context<Self>) {
@@ -304,6 +310,13 @@ impl SettingsView {
             overview_request,
             startup_request: None,
             logo: logo::Logo::new(),
+            navigation_hover: None,
+            navigation_highlights: std::array::from_fn(|index| {
+                motion::Transition::new(if index == 0 { 1. } else { 0. }, 160)
+            }),
+            navigation_indicator: motion::Transition::new(0., 240),
+            logo_hover: false,
+            logo_glow: motion::Transition::new(0., 220),
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
@@ -546,6 +559,9 @@ impl Render for SettingsView {
         let compact = window.viewport_size().width < px(760.);
         let logo_size = 50.;
         let logo = self.logo.image(logo_size, window.scale_factor());
+        let logo_glow = self.logo.glow();
+        let logo_pixels = (logo_size * window.scale_factor()).round().max(1.);
+        let glow_padding = logo::glow_padding(logo_pixels as u32) as f32 / logo_pixels * logo_size;
         let can_save = matches!(self.section, Section::Quick | Section::Search)
             || self.fields.iter().any(|field| self.field_visible(field));
         let sections = [
@@ -614,6 +630,42 @@ impl Render for SettingsView {
                 "Version details and download progress",
             ),
         ];
+        let now = std::time::Instant::now();
+        let reduce_motion = cx.reduce_motion();
+        let row_height = if compact { 36. } else { 38. };
+        let separator_height = f32::from(window.rem_size()) + 1.;
+        let indicator_inset = f32::from(window.rem_size()) * 0.25;
+        let mut row_top = 0.;
+        let mut indicator_target = 0.;
+        let mut highlights = [0.; 8];
+        let (glow_opacity, mut animating) =
+            self.logo_glow
+                .sample(if self.logo_hover { 1. } else { 0. }, now, reduce_motion);
+        for (index, (_, section, ..)) in sections.iter().enumerate() {
+            if matches!(section, Section::Pin | Section::Updates) {
+                row_top += separator_height;
+            }
+            let selected = self.section == *section;
+            if selected {
+                indicator_target = row_top;
+            }
+            let highlighted = selected
+                || (self.close_request.is_none() && self.navigation_hover == Some(*section));
+            let (value, running) = self.navigation_highlights[index].sample(
+                if highlighted { 1. } else { 0. },
+                now,
+                reduce_motion,
+            );
+            highlights[index] = value;
+            animating |= running;
+            row_top += row_height;
+        }
+        let (indicator_top, moving) =
+            self.navigation_indicator
+                .sample(indicator_target, now, reduce_motion);
+        if animating || moving {
+            window.request_animation_frame();
+        }
         let current = sections.iter().find(|item| item.1 == self.section).unwrap();
         let mut content = div().flex().flex_col().min_w_0().gap_3();
         match self.section {
@@ -892,9 +944,32 @@ impl Render for SettingsView {
                                 .h(px(100.)).pt(px(20.))
                                 .when(cfg!(target_os = "macos"), |logo| logo.h(px(60.)).pt_0())
                                 .flex_shrink_0()
-                                .child(img(logo).size(px(logo_size))),
+                                .child(
+                                    div()
+                                        .id("settings-project-link")
+                                        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                                            this.logo_hover = *hovered;
+                                            cx.notify();
+                                        }))
+                                        .relative()
+                                        .size(px(logo_size))
+                                        .cursor_pointer()
+                                        .on_click(|_, _, cx| {
+                                            cx.open_url("https://github.com/Horbin-Magician/rotor");
+                                        })
+                                        .child(
+                                            img(logo_glow)
+                                                .absolute()
+                                                .top(px(-glow_padding))
+                                                .left(px(-glow_padding))
+                                                .size(px(logo_size + glow_padding * 2.))
+                                                .opacity(glow_opacity),
+                                        )
+                                        .child(img(logo).size(px(logo_size))),
+                                ),
                         )
-                        .children(sections.into_iter().map(|(id, section, zh, en, _, _)| {
+                        .child(div().relative().flex().flex_col().flex_shrink_0()
+                        .children(sections.into_iter().enumerate().map(|(index, (id, section, zh, en, _, _))| {
                             let selected = self.section == section;
                             div()
                                 .flex()
@@ -908,24 +983,38 @@ impl Render for SettingsView {
                                         appearance::navigation(
                                             Button::new(id)
                                                 .w_full()
-                                                .h(px(if compact { 36. } else { 38. }))
+                                                .h(px(row_height))
                                                 .rounded_none()
-                                                .text_size(px(14.))
-                                                .label(self.t(zh, en)),
+                                                .text_size(px(14.)),
+                                            self.t(zh, en),
                                             selected,
+                                            self.close_request.is_some(),
+                                            highlights[index],
                                             cx,
                                         )
-                                        .disabled(self.close_request.is_some())
+                                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                            if *hovered {
+                                                this.navigation_hover = Some(section);
+                                            } else if this.navigation_hover == Some(section) {
+                                                this.navigation_hover = None;
+                                            }
+                                            cx.notify();
+                                        }))
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.section = section;
                                             cx.notify();
                                         })),
-                                    ).when(selected, |row| row.child(
-                                        div().absolute().right_0().top_1().bottom_1().w(px(2.))
-                                            .bg(appearance::palette(cx).accent)
-                                    ))
+                                    )
                                 )
-                        })),
+                        }))
+                        .child(
+                            div().absolute()
+                                .top(px(indicator_top + indicator_inset))
+                                .h(px(row_height - indicator_inset * 2.))
+                                .w(px(2.))
+                                .right_0()
+                                .bg(appearance::palette(cx).accent)
+                        )),
                     ),
             )
             .child(
