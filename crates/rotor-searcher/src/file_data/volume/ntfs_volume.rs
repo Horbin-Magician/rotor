@@ -101,11 +101,11 @@ impl Volume {
     }
 
     // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
-    pub fn build_index(&mut self) {
-        self.build_index_with_cancel(None);
+    pub fn build_index(&mut self) -> io::Result<()> {
+        self.build_index_with_cancel(None)
     }
 
-    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) {
+    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
@@ -171,7 +171,11 @@ impl Volume {
                     {
                         log::info!("{} Volume::build_index cancelled by user", self.drive);
                         Self::close_drive(h_vol);
-                        return;
+                        self.release_index();
+                        return Err(io::Error::new(
+                            io::ErrorKind::Interrupted,
+                            "Index build cancelled",
+                        ));
                     }
 
                     let record = &*record_ptr;
@@ -212,9 +216,14 @@ impl Volume {
         );
 
         Self::close_drive(h_vol);
-        self.serialization_write().unwrap_or_else(|e| {
-            log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e)
-        });
+        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            self.release_index();
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Index build cancelled",
+            ));
+        }
+        self.serialization_write()
     }
 
     // Clears the database
@@ -254,10 +263,14 @@ impl Volume {
         }
 
         if self.file_map.is_empty() {
-            self.serialization_read().unwrap_or_else(|e| {
-                log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
-                self.build_index_with_cancel(Some(&cancel));
-            });
+            if let Err(e) = self.serialization_read() {
+                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
+                if let Err(error) = self.build_index_with_cancel(Some(&cancel)) {
+                    log::error!("{} Rebuild index failed: {error}", self.drive);
+                    let _ = sender.send(None);
+                    return;
+                }
+            }
         };
 
         let (result, search_num) = self.file_map.search(
@@ -293,11 +306,13 @@ impl Volume {
         log::info!("{} Begin Volume::update_index", self.drive);
 
         if self.file_map.is_empty() {
-            self.serialization_read()
-                .unwrap_or_else(|e: Box<dyn Error>| {
-                    log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e);
-                    self.build_index();
-                });
+            if let Err(e) = self.serialization_read() {
+                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
+                if let Err(error) = self.build_index() {
+                    log::error!("{} Rebuild index failed: {error}", self.drive);
+                    return;
+                }
+            }
         };
 
         let mut data = [0i64; 0x10000];
@@ -382,17 +397,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_write", self.drive);
 
-        if self.file_map.is_empty() {
-            return Ok(());
-        };
-
-        let index_dir = file_util::get_tmp_path();
-        fs::create_dir_all(index_dir)?;
-        self.saved_item_count = self.file_map.len();
-        self.file_map
-            .save(&self.index_file_path().to_string_lossy())?;
-
-        self.release_index();
+        let result = self.serialization_write_to(&self.index_file_path());
 
         #[cfg(debug_assertions)]
         log::info!(
@@ -401,7 +406,25 @@ impl Volume {
             sys_time.elapsed().unwrap_or_default().as_millis()
         );
 
-        Ok(())
+        result
+    }
+
+    fn serialization_write_to(&mut self, path: &std::path::Path) -> io::Result<()> {
+        let result = (|| {
+            if self.file_map.is_empty() {
+                return Ok(());
+            }
+            if let Some(directory) = path.parent() {
+                fs::create_dir_all(directory)?;
+            }
+            self.file_map.save(&path.to_string_lossy())?;
+            self.saved_item_count = self.file_map.len();
+            Ok(())
+        })();
+        // The index can be rebuilt. A failed cache write must not retain the
+        // entire file tree while the service is idle in its error state.
+        self.release_index();
+        result
     }
 
     // deserializate file_map from file
@@ -444,10 +467,10 @@ impl Volume {
 
 #[cfg(test)]
 mod tests {
+    use super::super::release_tests::IndexFile;
     use super::*;
 
-    #[test]
-    fn release_resets_paging_even_when_empty_and_keeps_volume_metadata() {
+    fn synthetic_volume() -> Volume {
         // Construct directly to avoid configuration/profile reads and drive I/O.
         let mut volume = Volume {
             drive: "synthetic".into(),
@@ -464,6 +487,102 @@ mod tests {
             excluded_dirs: ExcludedDirs::default(),
         };
         volume.file_map.start_usn = 456;
+        volume
+    }
+
+    fn populate(volume: &mut Volume) {
+        volume.file_map.insert(1, "fixture-a.txt".into(), 0);
+        volume.file_map.insert(2, "fixture-b.txt".into(), 0);
+        volume.last_query = "fixture".into();
+        volume.last_search_num = 99;
+    }
+
+    fn assert_released(volume: &Volume) {
+        assert!(volume.file_map.is_empty());
+        assert!(volume.last_query.is_empty());
+        assert_eq!(volume.last_search_num, 0);
+        assert_eq!(volume.file_map.start_usn, 456);
+    }
+
+    #[test]
+    fn persistence_success_releases_memory_and_can_reload() {
+        let index = IndexFile::new();
+        let mut volume = synthetic_volume();
+        populate(&mut volume);
+        volume
+            .serialization_write_to(std::path::Path::new(index.path()))
+            .unwrap();
+        assert_released(&volume);
+        assert_eq!(volume.saved_item_count, 2);
+
+        volume.file_map.read(index.path()).unwrap();
+        assert_eq!(volume.file_map.len(), 2);
+        assert!(volume.file_map.contains_index(&1));
+        assert!(volume.file_map.contains_index(&2));
+        assert_eq!(volume.file_map.start_usn, 456);
+    }
+
+    #[test]
+    fn directory_creation_failure_releases_memory_and_reports_error() {
+        let blocked_directory = IndexFile::new();
+        let mut volume = synthetic_volume();
+        populate(&mut volume);
+        let result = volume.serialization_write_to(
+            &std::path::Path::new(blocked_directory.path()).join("nested/index.fd"),
+        );
+        assert!(result.is_err());
+        assert_released(&volume);
+        assert_eq!(volume.saved_item_count, 128);
+    }
+
+    #[test]
+    fn file_write_failure_releases_memory_and_allows_retry() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let index = IndexFile::new();
+        let path = std::path::Path::new(index.path());
+        fs::write(path, b"existing synthetic index").unwrap();
+        let locked_file = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .unwrap();
+        let mut volume = synthetic_volume();
+        populate(&mut volume);
+
+        assert!(volume.serialization_write_to(path).is_err());
+        assert_released(&volume);
+        assert_eq!(volume.saved_item_count, 128);
+        drop(locked_file);
+        assert_eq!(fs::read(path).unwrap(), b"existing synthetic index");
+
+        // A subsequent rebuild can persist and release normally.
+        populate(&mut volume);
+        volume.serialization_write_to(path).unwrap();
+        assert_released(&volume);
+        assert_eq!(volume.saved_item_count, 2);
+        volume.file_map.read(index.path()).unwrap();
+        assert_eq!(volume.file_map.len(), 2);
+    }
+
+    #[test]
+    fn persistence_of_empty_index_resets_paging_without_writing() {
+        let index = IndexFile::new();
+        let mut volume = synthetic_volume();
+        populate(&mut volume);
+        volume.file_map.remove(&1);
+        volume.file_map.remove(&2);
+        volume
+            .serialization_write_to(std::path::Path::new(index.path()))
+            .unwrap();
+        assert_released(&volume);
+        assert_eq!(volume.saved_item_count, 128);
+        assert_eq!(fs::metadata(index.path()).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn release_resets_paging_even_when_empty_and_keeps_volume_metadata() {
+        let mut volume = synthetic_volume();
 
         for remove_all in [false, true] {
             volume.file_map.insert(1, "fixture-a.txt".into(), 0);

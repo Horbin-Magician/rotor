@@ -217,12 +217,7 @@ impl FileData {
                 match msg {
                     Ok(SearcherMessage::Init) => {
                         file_data.set_state(FileState::Building);
-                        let ok = file_data.init_volumes();
-                        file_data.set_state(if ok {
-                            FileState::Released
-                        } else {
-                            FileState::Error
-                        });
+                        file_data.init_volumes();
                     }
                     Ok(SearcherMessage::Update) => {
                         file_data.set_state(FileState::Loading);
@@ -440,7 +435,7 @@ impl FileData {
         reply
     }
 
-    pub fn init_volumes(&mut self) -> bool {
+    pub fn init_volumes(&mut self) {
         self.volume_packs.clear();
         self.update_valid_vols();
 
@@ -472,22 +467,39 @@ impl FileData {
                 });
 
                 thread::spawn(move || {
-                    volume
+                    let mut volume = volume
                         .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .build_index();
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    volume.build_index().map_err(|error| {
+                        std::io::Error::new(error.kind(), format!("{}: {error}", volume.drive))
+                    })
                 })
             })
             .collect::<Vec<_>>();
 
-        let mut ok = true;
+        self.finish_index_builds(handles);
+    }
+
+    fn finish_index_builds(&self, handles: Vec<thread::JoinHandle<std::io::Result<()>>>) {
+        let mut ok = !handles.is_empty();
         for handle in handles {
-            if let Err(e) = handle.join() {
-                log::error!("Init volume failed: {:?}", e);
-                ok = false;
+            match handle.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    log::error!("Init volume failed: {error}");
+                    ok = false;
+                }
+                Err(error) => {
+                    log::error!("Init volume worker panicked: {error:?}");
+                    ok = false;
+                }
             }
         }
-        ok && !self.volume_packs.is_empty()
+        self.set_state(if ok {
+            FileState::Released
+        } else {
+            FileState::Error
+        });
     }
 
     pub fn update_index(&mut self) -> bool {
@@ -597,6 +609,66 @@ impl FileData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_volume_build_reports_error_and_successful_retry_reports_released() {
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let callback_states = observed.clone();
+        let data = FileData::new(
+            |_| {},
+            Some(Box::new(move |state| {
+                callback_states.lock().unwrap().push(state)
+            })),
+            Arc::new(Mutex::new(FileState::Unbuild)),
+        );
+        data.set_state(FileState::Building);
+        let completed = Arc::new(AtomicBool::new(false));
+        let worker_completed = completed.clone();
+        data.finish_index_builds(vec![
+            thread::spawn(|| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "synthetic cache write failure",
+                ))
+            }),
+            thread::spawn(move || {
+                worker_completed.store(true, Ordering::Release);
+                Ok(())
+            }),
+        ]);
+        assert_eq!(data.state(), FileState::Error);
+        assert!(
+            completed.load(Ordering::Acquire),
+            "all volume workers must finish before publishing state"
+        );
+        assert_eq!(
+            *observed.lock().unwrap(),
+            vec![FileState::Building, FileState::Error]
+        );
+
+        data.set_state(FileState::Building);
+        data.finish_index_builds(vec![thread::spawn(|| Ok(())), thread::spawn(|| Ok(()))]);
+        assert_eq!(data.state(), FileState::Released);
+        assert_eq!(
+            *observed.lock().unwrap(),
+            vec![
+                FileState::Building,
+                FileState::Error,
+                FileState::Building,
+                FileState::Released
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_or_panicked_volume_builds_never_report_released() {
+        let data = FileData::new(|_| {}, None, Arc::new(Mutex::new(FileState::Building)));
+        data.finish_index_builds(Vec::new());
+        assert_eq!(data.state(), FileState::Error);
+        data.set_state(FileState::Building);
+        data.finish_index_builds(vec![thread::spawn(|| panic!("synthetic build panic"))]);
+        assert_eq!(data.state(), FileState::Error);
+    }
 
     #[test]
     fn releasing_index_drops_cached_results_and_restarts_query_paging() {

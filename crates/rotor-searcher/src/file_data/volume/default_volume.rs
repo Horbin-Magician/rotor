@@ -196,11 +196,11 @@ impl Volume {
     }
 
     // Enumerate the filesystem using walkdir. Store the file entries in the database.
-    pub fn build_index(&mut self) {
-        self.build_index_with_cancel(None);
+    pub fn build_index(&mut self) -> io::Result<()> {
+        self.build_index_with_cancel(None)
     }
 
-    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) {
+    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let sys_time = SystemTime::now();
 
         self.excluded_dirs = ExcludedDirs::from_config();
@@ -221,7 +221,10 @@ impl Volume {
                 self.drive,
                 root_path
             );
-            return;
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Root path {root_path} does not exist"),
+            ));
         }
 
         // Walk the directory tree using walkdir
@@ -239,7 +242,11 @@ impl Volume {
                 .unwrap_or(false)
             {
                 log::info!("{} Volume::build_index cancelled by user", self.drive);
-                return;
+                self.release_index_without_save();
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "Index build cancelled",
+                ));
             }
 
             let path = entry.path();
@@ -263,6 +270,17 @@ impl Volume {
             self.file_map.insert(file_name, parent_path);
         }
 
+        if cancel
+            .map(|cancel| cancel.load(Ordering::Relaxed))
+            .unwrap_or(false)
+        {
+            self.release_index_without_save();
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Index build cancelled",
+            ));
+        }
+
         log::info!(
             "{} End Volume::build_index, use time: {:?} ms",
             self.drive,
@@ -273,7 +291,9 @@ impl Volume {
             log::error!("{} Failed to start file watching: {:?}", self.drive, e);
         }
 
-        self.release_index();
+        let result = self.serialization_write();
+        self.release_index_without_save();
+        result
     }
 
     // searching
@@ -301,10 +321,14 @@ impl Volume {
         }
 
         if self.file_map.is_empty() {
-            self.serialization_read().unwrap_or_else(|e| {
+            if let Err(e) = self.serialization_read() {
                 log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
-                self.build_index_with_cancel(Some(&cancel));
-            });
+                if let Err(e) = self.build_index_with_cancel(Some(&cancel)) {
+                    log::error!("{} Volume::build_index, error: {:?}", self.drive, e);
+                    let _ = sender.send(None);
+                    return;
+                }
+            }
         };
 
         let (result, search_num) =
@@ -360,10 +384,13 @@ impl Volume {
         log::info!("{} Begin Volume::update_index", self.drive);
 
         if self.file_map.is_empty() {
-            self.serialization_read().unwrap_or_else(|e| {
+            if let Err(e) = self.serialization_read() {
                 log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
-                self.build_index();
-            });
+                if let Err(e) = self.build_index() {
+                    log::error!("{} Volume::build_index, error: {:?}", self.drive, e);
+                    return;
+                }
+            }
         };
 
         self.handle_file_events();
@@ -385,9 +412,9 @@ impl Volume {
 
         let index_dir = file_util::get_tmp_path();
         fs::create_dir_all(index_dir)?;
-        self.saved_item_count = self.file_map.len();
         self.file_map
             .save(&self.index_file_path().to_string_lossy())?;
+        self.saved_item_count = self.file_map.len();
 
         #[cfg(debug_assertions)]
         log::info!(

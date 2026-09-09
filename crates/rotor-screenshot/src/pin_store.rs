@@ -145,30 +145,47 @@ impl PinStore {
     }
 
     pub fn load_pins(&self) -> (Vec<StoredPin>, Vec<String>) {
+        self.load_pins_for_restore(true, &[])
+    }
+
+    /// Filter metadata before opening PNGs so hidden or already-open pins do
+    /// not allocate image buffers during background startup/restoration.
+    pub fn load_pins_for_restore(
+        &self,
+        include_hidden: bool,
+        excluded_ids: &[u32],
+    ) -> (Vec<StoredPin>, Vec<String>) {
         let mut pins = Vec::new();
         let mut warnings = Vec::new();
         let records = self.document["workspaces"]["default"]["shotters"]
             .as_table()
             .expect("validated at load");
         for (key, value) in records {
-            let load = || -> Result<StoredPin, String> {
+            let load = || -> Result<Option<StoredPin>, String> {
                 let id = key.parse::<u32>().map_err(|error| error.to_string())?;
+                if excluded_ids.contains(&id) {
+                    return Ok(None);
+                }
                 let config: ShotterConfig = value
                     .clone()
                     .try_into()
                     .map_err(|error| error.to_string())?;
+                if config.minimized && !include_hidden {
+                    return Ok(None);
+                }
                 let image = image::open(self.image_path(id))
                     .map_err(|error| error.to_string())?
                     .into_rgba8();
                 validate(&config, image.width(), image.height())?;
-                Ok(StoredPin {
+                Ok(Some(StoredPin {
                     id,
                     config,
                     image: Arc::new(image),
-                })
+                }))
             };
             match load() {
-                Ok(pin) => pins.push(pin),
+                Ok(Some(pin)) => pins.push(pin),
+                Ok(None) => {}
                 Err(error) => warnings.push(format!("Pin {key}: {error}")),
             }
         }
@@ -312,6 +329,46 @@ mod tests {
             mask_label: "ssmask-1".into(),
             minimized: false,
         }
+    }
+
+    #[test]
+    fn startup_skips_hidden_png_and_explicit_restore_can_load_it_later() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = PinStore::load_from(directory.path()).unwrap();
+        let image = RgbaImage::new(2, 3);
+        let visible = store.create(&image, config()).unwrap();
+        let mut hidden_config = config();
+        hidden_config.minimized = true;
+        let hidden = store.create(&image, hidden_config).unwrap();
+        let hidden_path = store.image_path(hidden);
+        let original_png = fs::read(&hidden_path).unwrap();
+        let original_record = fs::read(store.root.join("record.toml")).unwrap();
+        // An unreadable hidden image must neither be decoded nor warn at startup.
+        fs::write(&hidden_path, b"not a PNG").unwrap();
+        let (pins, warnings) = store.load_pins_for_restore(false, &[]);
+        assert!(warnings.is_empty());
+        assert_eq!(
+            pins.iter().map(|pin| pin.id).collect::<Vec<_>>(),
+            vec![visible]
+        );
+        let (pins, warnings) = store.load_pins_for_restore(true, &[visible]);
+        assert!(pins.is_empty());
+        assert_eq!(warnings.len(), 1);
+
+        fs::write(&hidden_path, &original_png).unwrap();
+        // Existing windows are filtered before opening their images too.
+        fs::write(store.image_path(visible), b"not a PNG").unwrap();
+        let (pins, warnings) = store.load_pins_for_restore(true, &[visible]);
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].id, hidden);
+        assert!(pins[0].config.minimized);
+        assert_eq!(*pins[0].image, image);
+        assert_eq!(
+            fs::read(store.root.join("record.toml")).unwrap(),
+            original_record
+        );
+        assert_eq!(fs::read(hidden_path).unwrap(), original_png);
     }
     #[test]
     fn pins_round_trip_and_unknown_workspaces_survive() {

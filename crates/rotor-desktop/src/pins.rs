@@ -25,12 +25,14 @@ pub struct PinWindows {
     next: u64,
     deferred: Vec<DeferredPin>,
     restoring: Option<Task<()>>,
+    reveal_request: Option<OperationId>,
     creating: HashMap<OperationId, PendingImage>,
     preparing: HashMap<u64, Task<()>>,
 }
 pub fn stop(cx: &mut App) {
     let state = cx.global_mut::<ShellState>();
     state.pins.restoring = None;
+    state.pins.reveal_request = None;
     state.pins.deferred.clear();
     state.pins.creating.clear();
     state.pins.preparing.clear();
@@ -70,6 +72,20 @@ pub fn show_all(cx: &mut App) {
             let _ = crate::capture::show(window);
             let _ = view.update(cx, |view, cx| view.reveal(window, cx));
         });
+    }
+    if cx.global::<ShellState>().pins.reveal_request.is_none() {
+        let excluded_ids = views(cx)
+            .into_iter()
+            .filter_map(|(_, view)| view.upgrade().and_then(|view| view.read(cx).persisted_id()))
+            .collect();
+        match cx
+            .global::<ShellState>()
+            .services
+            .restore_hidden_pins(excluded_ids)
+        {
+            Ok(id) => cx.global_mut::<ShellState>().pins.reveal_request = Some(id),
+            Err(error) => crate::capture::report(error, cx),
+        }
     }
 }
 pub fn from_capture(
@@ -189,7 +205,12 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
             crate::capture::report(error, cx);
         }
     }
-    if let RuntimeEvent::Pin(PinEvent::Restored { result, .. }) = event {
+    if let RuntimeEvent::Pin(PinEvent::Restored { id, reveal, result }) = event {
+        let id = *id;
+        let reveal = *reveal;
+        if reveal && cx.global::<ShellState>().pins.reveal_request != Some(id) {
+            return;
+        }
         match result {
             Ok(restored) => {
                 log::info!(
@@ -208,43 +229,59 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
                             let monitors = rotor_runtime::current_monitor_configs()
                                 .map_err(|error| error.to_string())?;
                             let mut images = Vec::new();
-                            for pin in pins {
+                            for mut pin in pins {
+                                if reveal {
+                                    pin.config.minimized = false;
+                                }
                                 images.push(DeferredPin {
                                     image: rotor_ui::prepare_image(pin.image)?,
                                     config: pin.config,
                                     id: Some(pin.id),
                                     error: None,
-                                    activate: false,
+                                    activate: reveal,
                                 });
                             }
                             Ok::<_, String>((monitors, images))
                         })
                         .await;
-                    cx.update(|cx| match prepared {
-                        Ok((monitors, images)) => {
-                            log::info!(
-                                "Prepared {} restored pins across {} displays",
-                                images.len(),
-                                monitors.len()
-                            );
-                            if cx
-                                .global::<ShellState>()
-                                .capture
-                                .session
-                                .generation()
-                                .is_none()
-                            {
-                                cx.global_mut::<ShellState>().monitors = monitors;
+                    cx.update(|cx| {
+                        if reveal {
+                            if cx.global::<ShellState>().pins.reveal_request != Some(id) {
+                                return;
                             }
-                            cx.global_mut::<ShellState>().pins.deferred.extend(images);
-                            drain_deferred(cx);
+                            cx.global_mut::<ShellState>().pins.reveal_request = None;
                         }
-                        Err(error) => crate::capture::report(error, cx),
+                        match prepared {
+                            Ok((monitors, images)) => {
+                                log::info!(
+                                    "Prepared {} restored pins across {} displays",
+                                    images.len(),
+                                    monitors.len()
+                                );
+                                if cx
+                                    .global::<ShellState>()
+                                    .capture
+                                    .session
+                                    .generation()
+                                    .is_none()
+                                {
+                                    cx.global_mut::<ShellState>().monitors = monitors;
+                                }
+                                cx.global_mut::<ShellState>().pins.deferred.extend(images);
+                                drain_deferred(cx);
+                            }
+                            Err(error) => crate::capture::report(error, cx),
+                        }
                     });
                 });
                 cx.global_mut::<ShellState>().pins.restoring = Some(task);
             }
-            Err(error) => crate::capture::report(error.clone(), cx),
+            Err(error) => {
+                if reveal {
+                    cx.global_mut::<ShellState>().pins.reveal_request = None;
+                }
+                crate::capture::report(error.clone(), cx);
+            }
         }
     }
     for (handle, view) in views(cx) {

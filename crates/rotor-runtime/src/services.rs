@@ -485,9 +485,25 @@ impl Services {
     }
 
     pub fn restore_pins(&self) -> Result<OperationId, String> {
+        self.restore_pins_matching(false, Vec::new())
+    }
+
+    pub fn restore_hidden_pins(&self, excluded_ids: Vec<u32>) -> Result<OperationId, String> {
+        self.restore_pins_matching(true, excluded_ids)
+    }
+
+    fn restore_pins_matching(
+        &self,
+        include_hidden: bool,
+        excluded_ids: Vec<u32>,
+    ) -> Result<OperationId, String> {
         self.ensure_running()?;
         let id = next_operation();
-        self.pins.submit(PinCommand::Restore { id })?;
+        self.pins.submit(PinCommand::Restore {
+            id,
+            include_hidden,
+            excluded_ids,
+        })?;
         Ok(id)
     }
     pub fn create_pin(
@@ -1237,6 +1253,54 @@ mod tests {
     }
 
     #[test]
+    fn hidden_pin_restore_is_explicit_preserves_ids_and_does_not_rewrite_records() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let mut config = pin_config();
+        config.minimized = true;
+        let created_id = services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), config)
+            .unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            id,
+            result: Ok(pin),
+        }) = receive()
+        else {
+            panic!("expected created pin");
+        };
+        assert_eq!(id, created_id);
+        let record_path = directory.path().join("shotter/record.toml");
+        let record = std::fs::read(&record_path).unwrap();
+        for (request, expected_reveal, expected_count) in [
+            (services.restore_pins().unwrap(), false, 0),
+            (services.restore_hidden_pins(Vec::new()).unwrap(), true, 1),
+            (services.restore_hidden_pins(vec![pin.id]).unwrap(), true, 0),
+        ] {
+            let RuntimeEvent::Pin(crate::PinEvent::Restored {
+                id,
+                reveal,
+                result: Ok(restored),
+            }) = receive()
+            else {
+                panic!("expected restored pins");
+            };
+            assert_eq!(id, request);
+            assert_eq!(reveal, expected_reveal);
+            assert_eq!(restored.pins.len(), expected_count);
+            assert!(restored.warnings.is_empty());
+            assert_eq!(std::fs::read(&record_path).unwrap(), record);
+        }
+    }
+
+    #[test]
     fn shutdown_drains_accepted_configuration_writes_in_order() {
         let directory = tempfile::tempdir().unwrap();
         let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
@@ -1540,6 +1604,8 @@ mod tests {
                         .sender
                         .send(PinCommand::Restore {
                             id: next_operation(),
+                            include_hidden: false,
+                            excluded_ids: Vec::new(),
                         })
                         .await
                         .unwrap();
