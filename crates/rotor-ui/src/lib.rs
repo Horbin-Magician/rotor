@@ -5,6 +5,8 @@ mod searcher;
 mod settings;
 mod shortcut;
 mod translator;
+#[cfg(target_os = "windows")]
+mod tray_menu;
 mod visual;
 pub use capture::{
     MaskAction, MaskCallback, MaskView, PreparedCapture, PreparedImage, prepare_capture,
@@ -14,4 +16,6 @@ pub use pin::{PinBounds, PinBoundsSetter, PinInit, PinPointerCapture, PinPositio
 pub use searcher::SearchView;
 pub use settings::{SettingsView, settings_title};
 pub use translator::TranslatorView;
+#[cfg(target_os = "windows")]
+pub use tray_menu::NativeMenuPainter;
 pub use visual::configure_theme;

@@ -9,6 +9,8 @@ mod logging;
 mod pins;
 mod placement;
 mod system;
+#[cfg(target_os = "windows")]
+mod tray_menu;
 
 use futures::future::{Either, select};
 use gpui_kit::{
@@ -393,11 +395,14 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
         if theme_changed {
             apply_theme(config, cx);
         }
-        if language_changed {
+        if language_changed || theme_changed {
             let state = cx.global_mut::<ShellState>();
             if let Err(error) = state.system.update_menu(state.commands.clone(), config) {
                 eprintln!("Tray menu: {error}");
             }
+        }
+        if language_changed {
+            let state = cx.global_mut::<ShellState>();
             let handles: Vec<_> = state
                 .windows
                 .iter()

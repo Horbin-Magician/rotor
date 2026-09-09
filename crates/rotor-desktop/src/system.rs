@@ -14,10 +14,8 @@ use std::{
     },
     time::Instant,
 };
-use tray_icon::{
-    TrayIcon, TrayIconBuilder,
-    menu::{Menu, MenuEvent, MenuItem},
-};
+use tray_icon::menu::{Menu, MenuEvent, MenuItem};
+use tray_icon::{TrayIcon, TrayIconBuilder};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
@@ -368,10 +366,6 @@ impl SystemServices {
         let chinese = rotor_common::i18n::language_for_config(config) == "zh-CN";
         let items: Vec<_> = [
             ("设置", "Settings", Command::ShowSettings),
-            ("文件搜索", "File search", Command::ShowSearch),
-            ("输入翻译", "Translate text", Command::ShowTranslator),
-            ("截图", "Screenshot", Command::Capture),
-            ("显示贴图", "Show pins", Command::ShowPins),
             ("退出", "Quit", Command::Quit),
         ]
         .into_iter()
@@ -389,6 +383,8 @@ impl SystemServices {
             .iter()
             .map(|(item, command)| (item.id().clone(), *command))
             .collect();
+        #[cfg(target_os = "windows")]
+        let menu = crate::tray_menu::NativeMenu::new(menu, config)?;
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             if let Some((_, command)) = actions.iter().find(|(id, _)| *id == event.id) {
                 commands.request(*command);
