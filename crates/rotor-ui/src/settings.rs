@@ -873,48 +873,60 @@ impl Render for SettingsView {
                     .flex_shrink_0()
                     .border_r_1()
                     .border_color(appearance::palette(cx).border)
-                    .overflow_y_scroll()
+                    .when(cfg!(target_os = "macos"), |navigation| {
+                        navigation.child(
+                            div().h(px(40.)).w_full().flex_shrink_0()
+                                .window_control_area(WindowControlArea::Drag)
+                        )
+                    })
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .h(px(100.)).pt(px(20.))
-                            .flex_shrink_0()
-                            .child(img(logo).size(px(logo_size))),
-                    )
-                    .children(sections.into_iter().map(|(id, section, zh, en, _, _)| {
-                        let selected = self.section == section;
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_shrink_0()
-                            .when(matches!(section, Section::Pin | Section::Updates), |row| {
-                                row.child(div().mx_4().my_2().h(px(1.)).bg(appearance::palette(cx).border))
-                            })
-                            .child(
-                                div().relative().child(
-                                    appearance::navigation(
-                                        Button::new(id)
-                                            .w_full()
-                                            .h(px(if compact { 36. } else { 38. }))
-                                            .rounded_none()
-                                            .text_size(px(14.))
-                                            .label(self.t(zh, en)),
-                                        selected,
-                                        cx,
-                                    )
-                                    .disabled(self.close_request.is_some())
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.section = section;
-                                        cx.notify();
-                                    })),
-                                ).when(selected, |row| row.child(
-                                    div().absolute().right_0().top_1().bottom_1().w(px(2.))
-                                        .bg(appearance::palette(cx).accent)
-                                ))
-                            )
-                    })),
+                        .id("settings-navigation-scroll")
+                        .flex().flex_col().flex_1().min_h_0()
+                        .overflow_y_scroll()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .h(px(100.)).pt(px(20.))
+                                .when(cfg!(target_os = "macos"), |logo| logo.h(px(60.)).pt_0())
+                                .flex_shrink_0()
+                                .child(img(logo).size(px(logo_size))),
+                        )
+                        .children(sections.into_iter().map(|(id, section, zh, en, _, _)| {
+                            let selected = self.section == section;
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_shrink_0()
+                                .when(matches!(section, Section::Pin | Section::Updates), |row| {
+                                    row.child(div().mx_4().my_2().h(px(1.)).bg(appearance::palette(cx).border))
+                                })
+                                .child(
+                                    div().relative().child(
+                                        appearance::navigation(
+                                            Button::new(id)
+                                                .w_full()
+                                                .h(px(if compact { 36. } else { 38. }))
+                                                .rounded_none()
+                                                .text_size(px(14.))
+                                                .label(self.t(zh, en)),
+                                            selected,
+                                            cx,
+                                        )
+                                        .disabled(self.close_request.is_some())
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.section = section;
+                                            cx.notify();
+                                        })),
+                                    ).when(selected, |row| row.child(
+                                        div().absolute().right_0().top_1().bottom_1().w(px(2.))
+                                            .bg(appearance::palette(cx).accent)
+                                    ))
+                                )
+                        })),
+                    ),
             )
             .child(
                 div()
@@ -923,6 +935,12 @@ impl Render for SettingsView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
+                    .when(cfg!(target_os = "macos"), |body| {
+                        body.child(
+                            div().h(px(40.)).w_full().flex_shrink_0()
+                                .window_control_area(WindowControlArea::Drag)
+                        )
+                    })
                     .when(cfg!(target_os = "windows"), |body| {
                         body.child(
                             div().flex().h(px(28.)).flex_shrink_0()

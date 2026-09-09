@@ -239,7 +239,18 @@ fn fit_mask(
             Ok::<_, String>(())
         })
         .map_err(|error| error.to_string())??;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    handle
+        .update(cx, |_, window, cx| {
+            rotor_platform::overlay::fit_capture_screen(
+                HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+                monitor.id,
+            )?;
+            window.bounds_changed(cx);
+            Ok::<_, String>(())
+        })
+        .map_err(|error| error.to_string())??;
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = (handle, monitor, cx);
     Ok(())
 }

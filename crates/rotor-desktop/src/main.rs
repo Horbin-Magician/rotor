@@ -159,8 +159,9 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
         window_min_size: Some(size(px(500.), px(400.))),
         titlebar: Some(TitlebarOptions {
             title: Some(rotor_ui::settings_title(&config).into()),
-            appears_transparent: cfg!(target_os = "windows"),
-            ..Default::default()
+            appears_transparent: cfg!(any(target_os = "windows", target_os = "macos")),
+            // Keep native AppKit controls in the reserved strip above the sidebar logo.
+            traffic_light_position: cfg!(target_os = "macos").then_some(point(px(18.), px(12.))),
         }),
         app_id: Some(rotor_common::native_app::IDENTIFIER.into()),
         ..Default::default()
@@ -198,6 +199,19 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
         cx.new(|cx| Root::new(view, window, cx))
     })
     .map_err(|error| error.to_string())?;
+    if let Err(error) = rotor_platform::desktop::set_dock_visible(true) {
+        log::warn!("Application policy: {error}");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // Apply the icon after the accessory-to-regular transition creates the Dock tile.
+        if let Err(error) = rotor_platform::desktop::set_application_icon(include_bytes!(
+            "../../../assets/icons/icon.icns"
+        )) {
+            log::warn!("Application icon: {error}");
+        }
+        cx.activate(true);
+    }
     Ok(())
 }
 
@@ -696,6 +710,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                 cx.global_mut::<ShellState>()
                     .windows
                     .retain(|_, entry| entry.window.window_id() != id);
+                if role == Some(WindowRole::Settings)
+                    && let Err(error) = rotor_platform::desktop::configure_background_application()
+                {
+                    log::warn!("Application policy: {error}");
+                }
                 if role == Some(WindowRole::Search) {
                     // Restore the legacy hide/release contract. Resolve by the
                     // closing window ID above: an obsolete window must not

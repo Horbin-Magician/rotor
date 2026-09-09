@@ -184,6 +184,50 @@ pub fn set_client_bounds(
     }
 }
 
+/// Fit a capture mask to the entire display, including the menu bar and Dock.
+#[cfg(target_os = "macos")]
+pub fn fit_capture_screen(
+    handle: raw_window_handle::WindowHandle<'_>,
+    display_id: u32,
+) -> Result<(), String> {
+    use core_graphics::display::CGDisplay;
+    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindowStyleMask};
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    use raw_window_handle::RawWindowHandle;
+
+    let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
+        return Err("Expected an AppKit window".into());
+    };
+    let bounds = CGDisplay::new(display_id).bounds();
+    if bounds.size.width <= 0. || bounds.size.height <= 0. {
+        return Err("Captured display is no longer available".into());
+    }
+    // The borrowed handle refers to a live NSView on the owning UI thread.
+    let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
+    let window = view.window().ok_or("View is not attached to a window")?;
+    // GPUI's titlebar: None still uses Titled | FullSizeContentView on macOS.
+    // Remove those flags so AppKit does not constrain the mask below the menu
+    // bar. Preserve the popup's nonactivating panel behavior.
+    window.setStyleMask(
+        window.styleMask() & !(NSWindowStyleMask::Titled | NSWindowStyleMask::FullSizeContentView),
+    );
+    window.setLevel(NSScreenSaverWindowLevel);
+    // Quartz display bounds are global logical points with a top-left origin;
+    // AppKit uses a bottom-left origin relative to the primary display.
+    let primary_height = CGDisplay::main().bounds().size.height;
+    window.setFrame_display(
+        NSRect::new(
+            NSPoint::new(
+                bounds.origin.x,
+                primary_height - bounds.origin.y - bounds.size.height,
+            ),
+            NSSize::new(bounds.size.width, bounds.size.height),
+        ),
+        true,
+    );
+    Ok(())
+}
+
 pub fn hide_window(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {

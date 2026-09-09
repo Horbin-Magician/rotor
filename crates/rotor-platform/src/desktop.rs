@@ -41,17 +41,42 @@ pub fn open_url(value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Sets the running application's icon, including launches outside an app bundle.
+#[cfg(target_os = "macos")]
+pub fn set_application_icon(bytes: &[u8]) -> Result<(), String> {
+    let main = objc2_foundation::MainThreadMarker::new()
+        .ok_or("Application icon must be changed on the main thread")?;
+    let data = objc2_foundation::NSData::with_bytes(bytes);
+    let image = objc2_app_kit::NSImage::initWithData(main.alloc(), &data)
+        .ok_or("Could not decode the application icon")?;
+    let application = objc2_app_kit::NSApplication::sharedApplication(main);
+    // SAFETY: AppKit is accessed on the main thread with a valid, retained image.
+    unsafe { application.setApplicationIconImage(Some(&image)) };
+    Ok(())
+}
+
 pub fn configure_background_application() -> Result<(), String> {
+    set_dock_visible(false)
+}
+
+/// Changes the macOS application policy; call from the desktop main thread.
+pub fn set_dock_visible(visible: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let main = objc2_foundation::MainThreadMarker::new()
             .ok_or("Application policy must be changed on the main thread")?;
         let application = objc2_app_kit::NSApplication::sharedApplication(main);
-        if !application.setActivationPolicy(objc2_app_kit::NSApplicationActivationPolicy::Accessory)
-        {
-            return Err("Could not hide the Dock icon".into());
+        let policy = if visible {
+            objc2_app_kit::NSApplicationActivationPolicy::Regular
+        } else {
+            objc2_app_kit::NSApplicationActivationPolicy::Accessory
+        };
+        if !application.setActivationPolicy(policy) {
+            return Err("Could not change Dock icon visibility".into());
         }
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = visible;
     Ok(())
 }
 

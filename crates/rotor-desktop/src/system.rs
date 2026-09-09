@@ -180,6 +180,8 @@ impl SystemServices {
             .map_err(|error| error.to_string())?;
         let tray = TrayIconBuilder::new()
             .with_icon(icon)
+            // Let macOS render the alpha mask in the menu bar's native monochrome color.
+            .with_icon_as_template(cfg!(target_os = "macos"))
             .with_tooltip(rotor_common::native_app::PRODUCT_NAME)
             .build()
             .map_err(|error| error.to_string())?;
