@@ -17,7 +17,7 @@ default-members = ["crates/rotor-desktop"]
 exclude = ["experiments/gpui-probe"]
 
 [workspace.package]
-version = "2.6.0"
+version = "2.6.1-rc.1"
 
 [workspace.dependencies]
 gpui-kit = { version = "=0.6.0", default-features = false, features = ["component", "assets"] }
