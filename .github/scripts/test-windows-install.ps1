@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory)][string]$PackageDirectory,
-    [Parameter(Mandatory)][string]$TestDirectory
+    [Parameter(Mandatory)][string]$TestDirectory,
+    [string]$PreviousPackageDirectory,
+    [switch]$MeasureIdle
 )
 $ErrorActionPreference = 'Stop'
 if (!$IsWindows -or [IntPtr]::Size -ne 8) { throw 'Requires PowerShell 7 on 64-bit Windows' }
@@ -33,6 +35,22 @@ $inventory = Get-Content -LiteralPath (Join-Path $packageRoot 'resources.json') 
 $expected = $inventory.files[$installerName]
 if (!$expected -or (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $expected.sha256 -or
     (Get-Item -LiteralPath $installer).Length -ne $expected.bytes) { throw 'Installer inventory mismatch' }
+$previousInstaller = $null
+if ($PreviousPackageDirectory) {
+    $previousRoot = (Resolve-Path -LiteralPath $PreviousPackageDirectory).Path
+    $previousIdentity = Get-Content -LiteralPath (Join-Path $previousRoot 'native-build.json') -Raw | ConvertFrom-Json
+    if ($previousIdentity.production -or $previousIdentity.identifier -ne $identity.identifier -or
+        [System.Management.Automation.SemanticVersion]$previousIdentity.version -ge
+        [System.Management.Automation.SemanticVersion]$identity.version) {
+        throw 'Previous package must have the same development identity and a strictly lower version'
+    }
+    $previousName = "Rotor-GPUI_$($previousIdentity.version)_x64-setup.exe"
+    $previousInstaller = Join-Path $previousRoot $previousName
+    $previousInventory = Get-Content -LiteralPath (Join-Path $previousRoot 'resources.json') -Raw | ConvertFrom-Json -AsHashtable
+    $previousExpected = $previousInventory.files[$previousName]
+    if (!$previousExpected -or (Get-FileHash -LiteralPath $previousInstaller).Hash -ne $previousExpected.sha256 -or
+        (Get-Item -LiteralPath $previousInstaller).Length -ne $previousExpected.bytes) { throw 'Previous installer inventory mismatch' }
+}
 $productKey = 'HKLM:\Software\RotorGpuiDevelopment'
 $uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment'
 $shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Rotor GPUI Development.lnk'
@@ -108,7 +126,23 @@ try {
         throw 'Rejected installation changed existing data or registration'
     }
     $arguments = "/S /NOELEVATE /NOINDEX /NOHOTKEYS /PROFILE=$profileRoot /D=$installRoot"
-    Invoke-CheckedInstaller $installer $arguments $true 'fresh_install'
+    if ($previousInstaller) {
+        Invoke-CheckedInstaller $previousInstaller $arguments $true 'previous_version_install'
+        if ((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne $previousIdentity.version) {
+            throw 'Previous version was not registered'
+        }
+        $previousBinaryHash = (Get-FileHash -LiteralPath (Join-Path $installRoot 'rotor-desktop.exe')).Hash
+        Invoke-CheckedInstaller $installer $arguments $true 'incremental_upgrade'
+        $incrementalBackup = (Get-ItemProperty -LiteralPath $productKey).PreviousInstallLocation
+        if (!$incrementalBackup -or !$incrementalBackup.StartsWith($testRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            (Get-FileHash -LiteralPath (Join-Path $incrementalBackup 'rotor-desktop.exe')).Hash -ne $previousBinaryHash -or
+            (Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne $identity.version) {
+            throw 'Incremental upgrade did not retain the old binary or register the new version'
+        }
+        $results.Add([ordered]@{ case = 'incremental_versions'; previous = $previousIdentity.version; current = $identity.version; backup = $incrementalBackup })
+    } else {
+        Invoke-CheckedInstaller $installer $arguments $true 'fresh_install'
+    }
     Assert-Installed
     $binary = Join-Path $installRoot 'rotor-desktop.exe'
     $binaryHash = (Get-FileHash -LiteralPath $binary).Hash
@@ -130,7 +164,18 @@ try {
     }
     Set-Content -LiteralPath $retained -Value 'retain on uninstall'
     $retainedHash = (Get-FileHash -LiteralPath $retained).Hash
+    if ($MeasureIdle) {
+        & "$PSScriptRoot/measure-windows-idle.ps1" -Executable $binary -TestDirectory (Join-Path $testRoot 'idle')
+    }
+    # Exercise cleanup without logging in or launching an application window.
+    New-Item -Path $runKeyPath -Force | Out-Null
+    $testStartup = '"' + $binary + '" --no-elevate --data-dir "' + $profileRoot + '"'
+    New-ItemProperty -LiteralPath $runKeyPath -Name $identity.product_name -Value $testStartup -PropertyType String -Force | Out-Null
     Invoke-CheckedInstaller (Join-Path $installRoot 'uninstall.exe') '/S' $true 'uninstall'
+    if ($null -ne (Get-Item -LiteralPath $runKeyPath).GetValue($identity.product_name, $null)) {
+        throw 'Uninstall left its own synthetic startup entry'
+    }
+    $results.Add([ordered]@{ case = 'startup_entry_cleanup'; passed = $true; login_restart = 'skipped' })
     if ((Test-Path $productKey) -or (Test-Path $uninstallKey) -or (Test-Path -LiteralPath $shortcut) -or
         (Test-Path -LiteralPath $binary)) { throw 'Uninstall left application files or registration' }
     if ((Get-FileHash -LiteralPath $retained).Hash -ne $retainedHash -or
@@ -148,5 +193,9 @@ finally {
         (Get-ItemProperty -LiteralPath $uninstallKey).InstallLocation -eq $installRoot -and
         (Test-Path -LiteralPath (Join-Path $installRoot 'uninstall.exe'))) {
         Start-Process -FilePath (Join-Path $installRoot 'uninstall.exe') -ArgumentList '/S' -WindowStyle Hidden -Wait
+    }
+    if ($testStartup -and (Test-Path $runKeyPath) -and
+        (Get-Item -LiteralPath $runKeyPath).GetValue($identity.product_name, $null) -eq $testStartup) {
+        Remove-ItemProperty -LiteralPath $runKeyPath -Name $identity.product_name
     }
 }
