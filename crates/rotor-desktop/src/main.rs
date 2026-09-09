@@ -264,7 +264,7 @@ fn show_search(cx: &mut App) -> Result<(), String> {
     }
     let services = cx.global::<ShellState>().services.clone();
     cx.open_window(
-        placement::utility_options(size(px(680.), px(140.)), false, cx),
+        placement::utility_options(size(px(500.), px(112.)), false, cx),
         |window, cx| {
             let appearance = window.observe_window_appearance(|window, cx| {
                 if !matches!(
