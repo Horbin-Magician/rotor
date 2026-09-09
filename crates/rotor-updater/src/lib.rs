@@ -434,11 +434,10 @@ mod tests {
 
     #[test]
     fn native_and_legacy_public_keys_are_identical() {
-        let config: serde_json::Value =
-            serde_json::from_str(include_str!("../../../src-tauri/tauri.conf.json")).unwrap();
-        assert_eq!(
-            PUBLIC_KEY.trim(),
-            config["plugins"]["updater"]["pubkey"].as_str().unwrap()
-        );
+        let config: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../doc/gpui-migration/evidence/legacy-update-key.json"
+        ))
+        .unwrap();
+        assert_eq!(PUBLIC_KEY.trim(), config["pubkey"].as_str().unwrap());
     }
 }

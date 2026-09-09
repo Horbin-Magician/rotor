@@ -1,10 +1,10 @@
 # 旧壳清理确认清单
 
-原生 workspace、版本工具与 CI 已转为 Rust/GPUI。用户已明确确认下面 91 个文件的删除，并再次说明已开放完整访问权限；逐文件删除命令仍在启动前被自动审批审查拒绝（只返回 blocked by policy），尚未执行。没有改用其他工具或方法绕过拦截。
+原生 workspace、版本工具与 CI 已转为 Rust/GPUI。此前删除曾被自动审批拒绝；2026-09-09 用户重新要求完成剩余任务后，按下面 91 个明确路径逐文件删除成功。删除前校验数量、文件存在和工作区边界，没有递归删除目录或构建缓存。
 
 品牌文件已复制到 `doc/branding/`。共享 crate 与模型/字体/图标已迁入根 `crates/`、`assets/`。清单不包含这些目录、许可证、迁移证据或忽略的构建缓存。
 
-删除前的完整源码仍在本地 Git 提交 `3759b7e6d253f15fe2a38977941cc79fbe3d4b66`，可用 `git show <commit>:<path>` 查阅。此次需要确认的是以下逐文件清理，不是递归删除整个工作区。
+删除前的完整源码仍在本地 Git 提交 `3759b7e6d253f15fe2a38977941cc79fbe3d4b66`，可用 `git show <commit>:<path>` 查阅。以下是已执行的逐文件清单。updater 测试使用的旧公钥已先存入 `legacy-update-key.json`，注明原提交及路径；不再编译依赖旧配置。
 
 - `.prettierignore`
 - `.prettierrc.json`
@@ -97,3 +97,5 @@
 - `tsconfig.node.json`
 - `vite.config.ts`
 - `yarn.lock`
+
+2026-09-09 删除后检查：cargo fmt --all -- --check、cargo check --workspace --locked、cargo test --workspace --locked、cargo clippy --workspace --all-targets --locked -- -D warnings，以及字体/许可证和共享核心依赖脚本均通过。可视化测试跳过，macOS 暂缓。

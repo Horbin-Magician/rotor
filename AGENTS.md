@@ -12,9 +12,9 @@ Continue Windows engineering and nonvisual checks. Record skipped tests as skipp
 never passed. Current work and evidence are in `doc/gpui-migration/remaining-tasks.md`.
 
 Legacy frontend/Tauri sources are no longer workspace members or native CI inputs.
-Their physical deletion was blocked by automatic approval review; use the explicit
-removal plan and do not retry deletion through an alternative method without new
-user authorization. Retained legacy code is historical, not a development target.
+The 91 tracked legacy files were removed on 2026-09-09 after renewed user
+authorization. The removal inventory and historical Git source remain in the
+migration evidence; ignored legacy build caches are not development targets.
 
 ## Constraints
 
