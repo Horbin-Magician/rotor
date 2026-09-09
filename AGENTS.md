@@ -25,6 +25,24 @@ file focused on durable working instructions, not historical test-pass claims.
 - Preserve model/font bytes and their licenses. `.github/scripts/check-annotation-font.ps1`
   verifies the font and OFL checksums.
 
+## Commit messages
+
+- Write commit subjects and bodies in English.
+- Use Conventional Commits: `<type>(<scope>): <summary>`. Omit the scope when
+  the change spans the repository or has no meaningful component scope.
+- Choose from `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`,
+  `chore`, and `revert`; use a concise scope such as `ui`, `desktop`, `runtime`,
+  `search`, `capture`, `updater`, or `windows` when appropriate.
+- Start the summary with a lowercase imperative verb, describe the concrete
+  change, and omit the trailing period. Aim for 72 characters or fewer, but
+  prioritize clarity. Avoid vague summaries such as "update" or "tiny fix".
+- Add a body when needed to explain motivation, behavior changes, or validation
+  limits. Separate it from the subject with a blank line.
+- Mark breaking changes with `!` before the colon and explain the impact and
+  migration in a `BREAKING CHANGE:` footer.
+- Examples: `fix(capture): correct mouse bounds on scaled displays` and
+  `docs: document native packaging requirements`.
+
 ## Commands
 
 Run from the repository root. Use the toolchain pinned in `rust-toolchain.toml`
