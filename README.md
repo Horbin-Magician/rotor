@@ -17,7 +17,7 @@ A native desktop toolbox built with Rust, GPUI and gpui-component.
 
 ## Current platform status
 
-Windows x64 is the active validation target; current local checks use Windows 11. macOS arm64 implementation and packaging remain in the source, with a minimum configured macOS version of 15.0, but macOS validation is deferred. Further visual acceptance tests were explicitly skipped; see the validation status for pending checks.
+Windows x64 and macOS arm64 (macOS 15.0 or later) are included in the default native CI matrix. macOS has local compilation coverage and Retina capture geometry regression tests. Interactive multi-display capture, permissions, signing/notarization and upgrade installation still require platform acceptance; automated checks do not establish those results.
 
 Published releases and update feeds have not been promoted by the source migration. Build native candidates locally or use the `native-candidate` workflow, which defaults to Windows. The release workflow prepares signed **drafts**; publishing and feed promotion remain separate actions.
 

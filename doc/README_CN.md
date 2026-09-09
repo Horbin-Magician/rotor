@@ -17,13 +17,15 @@
 
 ## 当前平台状态
 
-当前验收范围为 Windows x64，本机检查使用 Windows 11。macOS arm64 实现与打包配方仍保留，配置最低版本为 macOS 15.0，但 macOS 验收暂缓。后续可视化测试已按用户要求跳过；未完成项目见验收状态。
+默认原生 CI 已覆盖 Windows x64 和 macOS arm64（最低 macOS 15.0）。macOS 已进行本机编译检查，并补充 Retina 截图坐标回归测试。多屏交互、系统授权、签名公证及升级安装仍需实际验收，自动检查不代表这些交互已经通过。
 
 代码迁移没有发布新版本或切换更新源。原生候选可在本地构建，或运行默认 Windows 的 `native-candidate` 工作流；发布工作流只准备带签名的草稿，公开发布和更新源切换仍是后续操作。
 
 ## 开发
 
 Windows 需要 `rust-toolchain.toml` 指定的 Rust、MSVC C++ Build Tools 和 Windows SDK；打包需要 NSIS 3.11。原生构建不需要 Node.js、Yarn、浏览器运行时或前端构建命令。
+
+macOS 需要 Apple Silicon Mac、macOS 15.0 或更新版本以及 Xcode Command Line Tools（`xcode-select --install`）。使用相同的 Cargo 命令；`.app` 和 `.dmg` 构建见[打包说明](../native/README.md)。截图需要系统“屏幕与系统音频录制”权限，划词翻译需要“辅助功能”权限。请给实际运行的应用授权，终端开发运行与打包后的应用可能需要分别授权。
 
 ```powershell
 cargo run -p rotor-desktop -- --no-elevate --data-dir target/dev-profile
@@ -45,6 +47,8 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 | 输入翻译 | Ctrl+Shift+W | Ctrl+Alt+Shift+W |
 
 开发模式设置入口为 Ctrl+Alt+Shift+G。贴图局部默认键为 S 保存、Enter 复制、H 隐藏、Escape 关闭；文字编辑时采用独立的确认/取消行为。
+
+macOS 保存的全局快捷键使用 Cmd+Shift+F/S/D/W；开发模式额外增加 Option。划词复制使用 Cmd+C。
 
 ## 原生打包
 

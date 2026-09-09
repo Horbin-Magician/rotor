@@ -34,9 +34,11 @@ handoff; installer elevation does not change application startup policy.
 
 On macOS arm64, the same commands stage an app bundle and generate `.app.tar.gz`
 and `.dmg` files using the host's `tar` and `hdiutil`. Minimum macOS is 15.0.
-These development artifacts are not Developer ID signed or notarized. macOS
-compilation, quarantine behavior, signing/notarization, and upgrade installation
-remain acceptance gates before release use.
+These development artifacts are not Developer ID signed or notarized. Default
+native CI includes macOS compilation, tests and app staging. Quarantine behavior,
+signing/notarization, interactive multi-display capture and upgrade installation
+remain acceptance gates before release use. Local development requires the pinned
+Rust toolchain and Xcode Command Line Tools (`xcode-select --install`).
 
 The native preview feed is `gpui-latest/gpui-latest.json`. It has not been
 published. Keep the existing Tauri `latest.json` channel until upgrade/rollback

@@ -1,11 +1,6 @@
 name: native-checks
 on:
   workflow_dispatch:
-    inputs:
-      include_macos:
-        description: 'Also build macOS (validation currently deferred)'
-        type: boolean
-        default: false
   pull_request:
     paths:
       - 'Cargo.toml'
@@ -34,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.include_macos && '["windows-latest","macos-15"]' || '["windows-latest"]') }}
+        os: [windows-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +41,9 @@ jobs:
       - shell: pwsh
         run: ./.github/scripts/check-annotation-font.ps1
       - run: cargo fmt --all -- --check
+      # Standalone builds must not borrow AppKit features from desktop dependencies.
+      - run: cargo check -p rotor-platform --locked
+      - run: cargo check --workspace --locked
       - run: cargo test --workspace --locked
       - shell: pwsh
         run: ./.github/scripts/check-core-dependencies.ps1

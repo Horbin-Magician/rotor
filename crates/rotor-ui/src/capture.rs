@@ -125,14 +125,22 @@ pub fn prepare_capture(bundle: CaptureBundle) -> Result<Vec<Arc<PreparedCapture>
                 .windows
                 .iter()
                 .filter_map(|&(x, y, z, width, height)| {
+                    // Quartz window bounds and display origins are in points.
+                    // Convert after subtracting the origin so mixed-DPI displays
+                    // use the scale of the capture being prepared.
+                    let scale = if cfg!(target_os = "macos") {
+                        monitor.scale_factor as f64
+                    } else {
+                        1.
+                    };
                     ImageRect::from_drag(
                         ImagePoint {
-                            x: x as f64 - monitor.x as f64,
-                            y: y as f64 - monitor.y as f64,
+                            x: (x as f64 - monitor.x as f64) * scale,
+                            y: (y as f64 - monitor.y as f64) * scale,
                         },
                         ImagePoint {
-                            x: x as f64 + width as f64 - monitor.x as f64,
-                            y: y as f64 + height as f64 - monitor.y as f64,
+                            x: (x as f64 + width as f64 - monitor.x as f64) * scale,
+                            y: (y as f64 + height as f64 - monitor.y as f64) * scale,
                         },
                         dimensions,
                     )
@@ -760,10 +768,64 @@ mod tests {
             vec![(
                 2,
                 ImageRect {
-                    x: 1,
+                    x: if cfg!(target_os = "macos") { 2 } else { 1 },
+                    y: if cfg!(target_os = "macos") { 2 } else { 1 },
+                    width: if cfg!(target_os = "macos") { 2 } else { 3 },
+                    height: if cfg!(target_os = "macos") { 2 } else { 3 }
+                }
+            )]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn window_crossing_mixed_scale_displays_uses_each_capture_scale() {
+        let prepared = prepare_capture(CaptureBundle {
+            monitors: [(-4, 1., 4), (0, 2., 8)]
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(id, (x, scale_factor, width))| rotor_runtime::CapturedMonitor {
+                        monitor: MonitorConfig {
+                            id: id as u32,
+                            x,
+                            y: -2,
+                            width,
+                            height: width,
+                            scale_factor,
+                        },
+                        image: rotor_runtime::BgraCapture {
+                            width,
+                            height: width,
+                            bytes: vec![0; (width * width * 4) as usize],
+                        },
+                    },
+                )
+                .collect(),
+            windows: vec![(-2, -1, 7, 4, 2)],
+        })
+        .unwrap();
+        assert_eq!(
+            prepared[0].windows,
+            vec![(
+                7,
+                ImageRect {
+                    x: 2,
                     y: 1,
-                    width: 3,
-                    height: 3
+                    width: 2,
+                    height: 2
+                }
+            )]
+        );
+        assert_eq!(
+            prepared[1].windows,
+            vec![(
+                7,
+                ImageRect {
+                    x: 0,
+                    y: 2,
+                    width: 4,
+                    height: 4
                 }
             )]
         );

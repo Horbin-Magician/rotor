@@ -152,8 +152,10 @@ impl CapturePool {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonitorConfig {
     pub id: u32,
+    /// Desktop origin: points on macOS, physical pixels on Windows.
     pub x: i32,
     pub y: i32,
+    /// Capture dimensions in physical pixels on every platform.
     pub width: u32,
     pub height: u32,
     pub scale_factor: f32,
@@ -161,15 +163,35 @@ pub struct MonitorConfig {
 
 impl MonitorConfig {
     pub fn from_monitor(monitor: &Monitor) -> Result<Self, Box<dyn Error>> {
+        let scale_factor = monitor.scale_factor()?;
+        let (width, height) = (monitor.width()?, monitor.height()?);
+        #[cfg(target_os = "macos")]
+        let (width, height) = pixel_dimensions(width, height, scale_factor)?;
         Ok(Self {
             id: monitor.id()?,
             x: monitor.x()?,
             y: monitor.y()?,
-            width: monitor.width()?,
-            height: monitor.height()?,
-            scale_factor: monitor.scale_factor()?,
+            width,
+            height,
+            scale_factor,
         })
     }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn pixel_dimensions(width: u32, height: u32, scale: f32) -> Result<(u32, u32), String> {
+    if !scale.is_finite() || scale <= 0. {
+        return Err("Invalid display scale".into());
+    }
+    let convert = |length: u32| {
+        let pixels = (length as f64 * scale as f64).round();
+        if pixels < 1. || pixels > u32::MAX as f64 {
+            Err("Invalid capture dimensions".to_string())
+        } else {
+            Ok(pixels as u32)
+        }
+    };
+    Ok((convert(width)?, convert(height)?))
 }
 
 pub fn mask_label(id: u32) -> String {
@@ -300,4 +322,20 @@ fn capture_current_monitor(monitor: Monitor) -> Result<(String, RgbaImage), Stri
         .capture_image()
         .map_err(|error| format!("monitor {id}: {error}"))?;
     Ok((mask_label(id), image))
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::pixel_dimensions;
+
+    #[test]
+    fn retina_and_external_display_dimensions_are_pixels() {
+        assert_eq!(pixel_dimensions(1512, 982, 2.).unwrap(), (3024, 1964));
+        assert_eq!(pixel_dimensions(1920, 1080, 1.).unwrap(), (1920, 1080));
+        for scale in [0., -1., f32::NAN, f32::INFINITY] {
+            assert!(pixel_dimensions(1512, 982, scale).is_err());
+        }
+        assert!(pixel_dimensions(0, 982, 2.).is_err());
+        assert!(pixel_dimensions(u32::MAX, 982, 2.).is_err());
+    }
 }
