@@ -231,16 +231,6 @@ pub async fn download(
     cancelled: &CancellationToken,
     progress: impl Fn(DownloadProgress),
 ) -> Result<PathBuf, String> {
-    let version = semver::Version::parse(&release.version).map_err(|error| error.to_string())?;
-    let extension = match release.target.as_str() {
-        "windows-x86_64" | "windows-x86_64-nsis" => "exe",
-        "darwin-aarch64" | "darwin-aarch64-app" => "app.tar.gz",
-        _ => return Err("Unsupported update platform".into()),
-    };
-    if cancelled.is_cancelled() {
-        return Err("Update download cancelled".into());
-    }
-    decode_signature(&release.artifact.signature, PUBLIC_KEY)?;
     let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::builder()
         .https_only(true)
@@ -252,6 +242,30 @@ pub async fn download(
     if url.scheme() != "https" {
         return Err("Update artifacts require HTTPS".into());
     }
+    download_with_client(release, directory, cancelled, progress, &client, PUBLIC_KEY).await
+}
+
+// Transport/key injection is private so production callers cannot bypass HTTPS
+// or substitute a test signing key. Tests exercise the actual streaming path.
+async fn download_with_client(
+    release: &Release,
+    directory: &Path,
+    cancelled: &CancellationToken,
+    progress: impl Fn(DownloadProgress),
+    client: &reqwest::Client,
+    public_key: &str,
+) -> Result<PathBuf, String> {
+    let version = semver::Version::parse(&release.version).map_err(|error| error.to_string())?;
+    let extension = match release.target.as_str() {
+        "windows-x86_64" | "windows-x86_64-nsis" => "exe",
+        "darwin-aarch64" | "darwin-aarch64-app" => "app.tar.gz",
+        _ => return Err("Unsupported update platform".into()),
+    };
+    if cancelled.is_cancelled() {
+        return Err("Update download cancelled".into());
+    }
+    decode_signature(&release.artifact.signature, public_key)?;
+    let url = url::Url::parse(&release.artifact.url).map_err(|error| error.to_string())?;
     tokio::fs::create_dir_all(directory)
         .await
         .map_err(|error| error.to_string())?;
@@ -301,7 +315,8 @@ pub async fn download(
     }
     let checked = temporary_path.clone();
     let signature = release.artifact.signature.clone();
-    tokio::task::spawn_blocking(move || verify_file(&checked, &signature, PUBLIC_KEY))
+    let public_key = public_key.to_owned();
+    tokio::task::spawn_blocking(move || verify_file(&checked, &signature, &public_key))
         .await
         .map_err(|error| error.to_string())??;
     if cancelled.is_cancelled() {
@@ -439,5 +454,99 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(PUBLIC_KEY.trim(), config["pubkey"].as_str().unwrap());
+    }
+
+    #[tokio::test]
+    async fn transport_failures_preserve_previous_download_and_retry_cleanly() {
+        use std::io::{Read, Write};
+        let key = BASE64_STANDARD.encode(
+            "untrusted comment: test key\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
+        );
+        let signature = BASE64_STANDARD.encode("untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==");
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("Rotor-2.7.0.exe");
+        std::fs::write(&destination, b"previous verified artifact").unwrap();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(3))
+            .build()
+            .unwrap();
+        // Real socket failures, including a truncated body and a validly encoded
+        // signature over different bytes, must leave no partial download behind.
+        for (response, cancel, success) in [
+            (
+                "HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n",
+                false,
+                false,
+            ),
+            (
+                "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\ntest",
+                false,
+                false,
+            ),
+            (
+                "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nTest",
+                false,
+                false,
+            ),
+            (
+                "HTTP/1.1 200 OK\r\nContent-Length: 1073741825\r\n\r\n",
+                false,
+                false,
+            ),
+            ("", true, false),
+            (
+                "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ntest",
+                false,
+                true,
+            ),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/update.exe", listener.local_addr().unwrap());
+            let cancelled = CancellationToken::new();
+            let server_cancel = cancelled.clone();
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = [0_u8; 4096];
+                assert!(socket.read(&mut request).unwrap() > 0);
+                if cancel {
+                    server_cancel.cancel();
+                } else {
+                    socket.write_all(response.as_bytes()).unwrap();
+                }
+            });
+            let release = Release {
+                version: "2.7.0".into(),
+                notes: String::new(),
+                target: "windows-x86_64".into(),
+                artifact: Artifact {
+                    signature: signature.clone(),
+                    url,
+                },
+            };
+            let result = download_with_client(
+                &release,
+                directory.path(),
+                &cancelled,
+                |_| {},
+                &client,
+                &key,
+            )
+            .await;
+            server.join().unwrap();
+            assert_eq!(result.is_ok(), success, "{result:?}");
+            assert_eq!(
+                std::fs::read(&destination).unwrap(),
+                if success {
+                    b"test".as_slice()
+                } else {
+                    b"previous verified artifact".as_slice()
+                }
+            );
+            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        }
     }
 }
