@@ -331,7 +331,7 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap_4()
+            .gap_3()
             .child(
                 div()
                     .flex()
@@ -448,7 +448,7 @@ impl SettingsView {
                                 this.change_action(ActionChange::Delete(delete_id.clone()), cx);
                             })),
                     );
-                crate::visual::card(cx)
+                appearance::card(cx)
                     .p_3()
                     .child(
                         div()
@@ -465,33 +465,38 @@ impl SettingsView {
                                     .child(
                                         div()
                                             .truncate()
-                                            .font_weight(FontWeight::MEDIUM)
+                                            .font_weight(FontWeight::BOLD)
                                             .child(action.name.read(cx).value()),
                                     )
                                     .child(
-                                        crate::visual::caption(
-                                            action.shortcut.read(cx).value(),
-                                            cx,
-                                        )
-                                        .truncate(),
+                                        appearance::caption(action.shortcut.read(cx).value(), cx)
+                                            .truncate(),
                                     ),
                             )
                             .child(controls),
                     )
                     .when(!editing, |card| {
                         card.child(
-                            crate::visual::caption(action.command.read(cx).value(), cx).truncate(),
+                            appearance::caption(action.command.read(cx).value(), cx).truncate(),
                         )
                     })
                     .when(editing, |card| {
-                        card.child(crate::visual::caption(self.t("名称", "Name"), cx))
-                            .child(Input::new(&action.name).disabled(disabled))
-                            .child(crate::visual::caption(self.t("快捷键", "Shortcut"), cx))
+                        card.child(appearance::caption(self.t("名称", "Name"), cx))
+                            .child(
+                                Input::new(&action.name)
+                                    .text_size(px(13.))
+                                    .disabled(disabled),
+                            )
+                            .child(appearance::caption(self.t("快捷键", "Shortcut"), cx))
                             .child(
                                 div()
                                     .flex()
                                     .gap_2()
-                                    .child(Input::new(&action.shortcut).disabled(disabled))
+                                    .child(
+                                        Input::new(&action.shortcut)
+                                            .text_size(px(13.))
+                                            .disabled(disabled),
+                                    )
                                     .child(
                                         Button::new(("record-action", index))
                                             .label(self.t("录制", "Record"))
@@ -505,8 +510,13 @@ impl SettingsView {
                                             })),
                                     ),
                             )
-                            .child(crate::visual::caption(self.t("命令", "Command"), cx))
-                            .child(Textarea::new(&action.command).h(px(72.)).disabled(disabled))
+                            .child(appearance::caption(self.t("命令", "Command"), cx))
+                            .child(
+                                Textarea::new(&action.command)
+                                    .text_size(px(13.))
+                                    .h(px(72.))
+                                    .disabled(disabled),
+                            )
                     })
             }))
     }

@@ -17,10 +17,10 @@ impl SettingsView {
             ),
             UpdatePhase::Failed => self.t("更新未完成", "Update did not complete"),
         };
-        let mut panel = crate::visual::card(cx)
+        let mut panel = appearance::card(cx)
             .child(format!("Rotor {} · GPUI Preview", env!("CARGO_PKG_VERSION")))
             .child(self.t("预览更新通道独立于正式版；通道尚未发布时检查会报错。", "The preview feed is separate from stable. Checks fail until the feed is published."))
-            .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child(status))
+            .child(div().text_size(px(13.)).font_weight(FontWeight::BOLD).child(status))
             .child(Button::new("check-updates").primary().label(self.t("检查更新", "Check for updates"))
                 .disabled(self.update.busy() || self.controls_locked())
                 .on_click(cx.listener(|this, _, _, cx| {

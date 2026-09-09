@@ -155,9 +155,11 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
     let services = state.services.clone();
     let warning = state.system.warning.clone();
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::centered(size(px(820.), px(600.)), cx)),
+        window_bounds: Some(WindowBounds::centered(size(px(500.), px(400.)), cx)),
+        window_min_size: Some(size(px(500.), px(400.))),
         titlebar: Some(TitlebarOptions {
             title: Some(rotor_ui::settings_title(&config).into()),
+            appears_transparent: cfg!(target_os = "windows"),
             ..Default::default()
         }),
         app_id: Some(rotor_common::native_app::IDENTIFIER.into()),

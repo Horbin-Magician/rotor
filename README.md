@@ -37,6 +37,8 @@ All application and shared crates live under `crates/`; models, fonts and icons 
 
 The default development identity uses `.rotor-gpui` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
 
+Development builds, including `cargo build --release`, fall back to this checkout's `assets/` when no deployed assets are found. This lookup is independent of the working directory. `--resource-dir` or `ROTOR_RESOURCE_DIR` explicitly overrides the resource root. Production builds require deployed assets (or an explicit override) and never fall back to the build checkout; use the staging commands below when distributing the app.
+
 | Action | Stored Windows shortcut | Effective development shortcut |
 |---|---|---|
 | File search | Ctrl+Shift+F | Ctrl+Alt+Shift+F |

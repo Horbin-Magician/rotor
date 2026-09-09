@@ -76,12 +76,25 @@ impl ResourceLocator {
 
     pub fn for_current_process() -> io::Result<Self> {
         let override_root = env::var_os("ROTOR_RESOURCE_DIR").map(PathBuf::from);
-        let development = cfg!(debug_assertions)
-            .then(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets"));
-        Self::discover(
+        let workspace_assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        Self::discover_for_build(
             &env::current_exe()?,
             override_root.as_deref(),
-            development.as_deref(),
+            &workspace_assets,
+        )
+    }
+
+    fn discover_for_build(
+        executable: &Path,
+        override_root: Option<&Path>,
+        workspace_assets: &Path,
+    ) -> io::Result<Self> {
+        // Optimization does not change the app's identity: local release builds
+        // still use development resources. Production must use deployed assets.
+        Self::discover(
+            executable,
+            override_root,
+            (!crate::native_app::PRODUCTION).then_some(workspace_assets),
         )
     }
 
@@ -114,6 +127,57 @@ impl ResourceLocator {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn source_fallback_follows_app_identity_including_release_builds() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace_assets = directory.path().join("workspace/assets");
+        let executable = directory.path().join("output/release/rotor.exe");
+        fs::create_dir_all(workspace_assets.join("fonts")).unwrap();
+        fs::write(workspace_assets.join("fonts/sample.otf"), b"fixture").unwrap();
+
+        let result = ResourceLocator::discover_for_build(&executable, None, &workspace_assets);
+        if crate::native_app::PRODUCTION {
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+        } else {
+            let located = result.unwrap();
+            assert_eq!(
+                located.resolve(Path::new("fonts/sample.otf")).unwrap(),
+                workspace_assets
+                    .join("fonts/sample.otf")
+                    .canonicalize()
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn deployed_assets_and_explicit_overrides_precede_source_fallback() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace_assets = directory.path().join("workspace/assets");
+        let deployed_assets = directory.path().join("install/assets");
+        let override_assets = directory.path().join("custom/assets");
+        let executable = directory.path().join("install/rotor.exe");
+        for path in [&workspace_assets, &deployed_assets, &override_assets] {
+            fs::create_dir_all(path).unwrap();
+        }
+        let located =
+            ResourceLocator::discover_for_build(&executable, None, &workspace_assets).unwrap();
+        assert_eq!(located.root(), deployed_assets.canonicalize().unwrap());
+        let located = ResourceLocator::discover_for_build(
+            &executable,
+            Some(&override_assets),
+            &workspace_assets,
+        )
+        .unwrap();
+        assert_eq!(located.root(), override_assets.canonicalize().unwrap());
+        assert!(ResourceLocator::discover_for_build(
+            &executable,
+            Some(&directory.path().join("missing")),
+            &workspace_assets,
+        )
+        .is_err());
+    }
 
     #[test]
     fn installed_layout_and_explicit_override_do_not_depend_on_cwd() {

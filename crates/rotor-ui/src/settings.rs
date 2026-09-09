@@ -1,8 +1,9 @@
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Selectable,
+        ActiveTheme, Disableable, Icon, IconName, Selectable,
         button::{Button, ButtonVariants},
         input::{Input, InputEvent, InputState, Textarea, TextareaState},
+        scroll::ScrollableElement,
     },
     prelude::*,
     *,
@@ -12,8 +13,10 @@ use rotor_runtime::{IndexState, OperationId, RuntimeEvent, SearchIndexStatus, Se
 use std::sync::Arc;
 mod action_change;
 mod actions;
+mod appearance;
 mod automatic;
 mod autosave;
+mod logo;
 mod overview;
 mod updates;
 
@@ -86,6 +89,7 @@ pub struct SettingsView {
     overview: Option<rotor_runtime::Overview>,
     overview_request: Option<OperationId>,
     startup_request: Option<OperationId>,
+    logo: logo::Logo,
 }
 impl SettingsView {
     pub fn show_message(&mut self, message: String, cx: &mut Context<Self>) {
@@ -299,6 +303,7 @@ impl SettingsView {
             overview: None,
             overview_request,
             startup_request: None,
+            logo: logo::Logo::new(),
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
@@ -506,14 +511,14 @@ impl SettingsView {
         options: &[(&'static str, &'static str, &'static str)],
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        crate::visual::card(cx)
+        appearance::card(cx)
             .flex()
             .flex_col()
             .gap_2()
             .child(self.t(label.0, label.1))
             .when(self.autosave.failed(key), |row| {
                 row.child(
-                    crate::visual::caption(self.t("未保存", "Not saved"), cx)
+                    appearance::caption(self.t("未保存", "Not saved"), cx)
                         .text_color(cx.theme().danger),
                 )
             })
@@ -539,6 +544,8 @@ impl SettingsView {
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let compact = window.viewport_size().width < px(760.);
+        let logo_size = 50.;
+        let logo = self.logo.image(logo_size, window.scale_factor());
         let can_save = matches!(self.section, Section::Quick | Section::Search)
             || self.fields.iter().any(|field| self.field_visible(field));
         let sections = [
@@ -553,10 +560,18 @@ impl Render for SettingsView {
             (
                 "general",
                 Section::General,
-                "通用",
+                "基础",
                 "General",
                 "让 Rotor 符合你的使用习惯",
                 "Make Rotor feel at home",
+            ),
+            (
+                "pin",
+                Section::Pin,
+                "截图",
+                "Screenshots",
+                "保存位置与缩放行为",
+                "Save locations and zoom behavior",
             ),
             (
                 "search",
@@ -565,14 +580,6 @@ impl Render for SettingsView {
                 "Search",
                 "管理文件索引与排除目录",
                 "Manage your file index and exclusions",
-            ),
-            (
-                "pin",
-                Section::Pin,
-                "贴图",
-                "Pinned images",
-                "保存位置与缩放行为",
-                "Save locations and zoom behavior",
             ),
             (
                 "translation",
@@ -608,7 +615,7 @@ impl Render for SettingsView {
             ),
         ];
         let current = sections.iter().find(|item| item.1 == self.section).unwrap();
-        let mut content = div().flex().flex_col().min_w_0().gap_4();
+        let mut content = div().flex().flex_col().min_w_0().gap_3();
         match self.section {
             Section::Updates => {
                 content = content.child(self.update_panel(cx));
@@ -678,7 +685,8 @@ impl Render for SettingsView {
                     ))
                     .child(
                         Textarea::new(&self.excluded)
-                            .h(px(150.))
+                            .text_size(px(13.))
+                            .h(px(112.))
                             .disabled(self.controls_locked()),
                     );
             }
@@ -758,7 +766,7 @@ impl Render for SettingsView {
         }
         if self.fields.iter().any(|field| self.field_visible(field)) {
             content = content.child(
-                crate::visual::card(cx).gap_3().children(
+                appearance::card(cx).gap_3().children(
                     self.fields
                         .iter()
                         .filter(|field| self.field_visible(field))
@@ -776,13 +784,13 @@ impl Render for SettingsView {
                                     div()
                                         .when(self.section == Section::Shortcuts, |label| {
                                             label
-                                                .w(px(if compact { 110. } else { 165. }))
+                                                .w(px(if compact { 90. } else { 140. }))
                                                 .flex_shrink_0()
                                         })
                                         .child(self.t(field.label.0, field.label.1))
                                         .when(self.autosave.failed(key), |label| {
                                             label.child(
-                                                crate::visual::caption(
+                                                appearance::caption(
                                                     self.t("未保存", "Not saved"),
                                                     cx,
                                                 )
@@ -798,6 +806,7 @@ impl Render for SettingsView {
                                         .gap_2()
                                         .child(
                                             Input::new(&field.state)
+                                                .text_size(px(13.))
                                                 .aria_label(self.t(field.label.0, field.label.1))
                                                 .disabled(
                                                     self.controls_locked() || self.choosing_path,
@@ -842,9 +851,9 @@ impl Render for SettingsView {
             .track_focus(&self.focus)
             .flex()
             .size_full()
-            .text_sm()
-            .text_color(cx.theme().foreground)
-            .bg(cx.theme().muted)
+            .text_size(px(13.))
+            .text_color(appearance::palette(cx).foreground)
+            .bg(appearance::palette(cx).background)
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
                 if this.recording.take().is_some() {
                     this.services.set_shortcut_recording(false);
@@ -859,38 +868,52 @@ impl Render for SettingsView {
                     .id("settings-navigation")
                     .flex()
                     .flex_col()
-                    .gap_2()
-                    .w(px(if compact { 150. } else { 184. }))
+                    .w(px(if compact { 100. } else { 120. }))
                     .h_full()
                     .flex_shrink_0()
-                    .p_3()
                     .border_r_1()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().background)
+                    .border_color(appearance::palette(cx).border)
                     .overflow_y_scroll()
                     .child(
                         div()
-                            .px_3()
-                            .py_4()
-                            .text_2xl()
-                            .font_weight(FontWeight::BOLD)
-                            .child("Rotor"),
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .h(px(100.)).pt(px(20.))
+                            .flex_shrink_0()
+                            .child(img(logo).size(px(logo_size))),
                     )
                     .children(sections.into_iter().map(|(id, section, zh, en, _, _)| {
-                        crate::visual::choice(
-                            Button::new(id)
-                                .ghost()
-                                .w_full()
-                                .justify_start()
-                            .label(self.t(zh, en)),
-                            self.section == section,
-                            cx,
-                        )
-                        .disabled(self.close_request.is_some())
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.section = section;
-                            cx.notify();
-                        }))
+                        let selected = self.section == section;
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_shrink_0()
+                            .when(matches!(section, Section::Pin | Section::Updates), |row| {
+                                row.child(div().mx_4().my_2().h(px(1.)).bg(appearance::palette(cx).border))
+                            })
+                            .child(
+                                div().relative().child(
+                                    appearance::navigation(
+                                        Button::new(id)
+                                            .w_full()
+                                            .h(px(if compact { 36. } else { 38. }))
+                                            .rounded_none()
+                                            .text_size(px(14.))
+                                            .label(self.t(zh, en)),
+                                        selected,
+                                        cx,
+                                    )
+                                    .disabled(self.close_request.is_some())
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.section = section;
+                                        cx.notify();
+                                    })),
+                                ).when(selected, |row| row.child(
+                                    div().absolute().right_0().top_1().bottom_1().w(px(2.))
+                                        .bg(appearance::palette(cx).accent)
+                                ))
+                            )
                     })),
             )
             .child(
@@ -900,20 +923,42 @@ impl Render for SettingsView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .gap_4()
-                    .p(if compact { px(16.) } else { px(24.) })
-                    .child(crate::visual::heading(
-                        self.t(current.2, current.3),
-                        self.t(current.4, current.5),
-                        cx,
-                    ))
+                    .when(cfg!(target_os = "windows"), |body| {
+                        body.child(
+                            div().flex().h(px(28.)).flex_shrink_0()
+                                .child(div().flex_1().h_full().window_control_area(WindowControlArea::Drag))
+                                .child(appearance::quiet_button(
+                                    Button::new("settings-minimize").icon(IconName::WindowMinimize)
+                                        .tooltip(self.t("最小化", "Minimize"))
+                                        .accessibility_label(self.t("最小化", "Minimize")).w(px(44.)).h_full().rounded_none(), cx)
+                                    .on_click(|_, window, _| window.minimize_window()))
+                                .child(appearance::quiet_button(
+                                    Button::new("settings-window-close").icon(IconName::WindowClose)
+                                        .tooltip(self.t("关闭", "Close"))
+                                        .accessibility_label(self.t("关闭", "Close")).w(px(44.)).h_full().rounded_none(), cx)
+                                    .disabled(self.close_request.is_some())
+                                    .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))))
+                        )
+                    })
                     .child(
                         div()
-                            .id("settings-content")
                             .flex_1()
                             .min_h_0()
-                            .overflow_y_scroll()
-                            .child(content),
+                            .min_w_0()
+                            .p(px(16.))
+                            .pr(px(20.))
+                            .pt(px(4.))
+                            .child(
+                                div().flex().flex_col().gap_3()
+                                    .when(self.section != Section::Overview, |page| page.child(
+                                        div().flex().flex_col().gap_2()
+                                            .child(appearance::heading(self.t(current.2, current.3), cx))
+                                            .child(appearance::caption(self.t(current.4, current.5), cx))
+                                    ))
+                                    .child(content)
+                            )
+                            .overflow_y_scrollbar()
+                            .id(("settings-content", self.section as usize)),
                     )
                     .child(
                         div()
@@ -921,6 +966,11 @@ impl Render for SettingsView {
                             .flex_col()
                             .gap_2()
                             .flex_shrink_0()
+                            .px_3()
+                            .when(can_save || !self.message.is_empty() || self.recording.is_some()
+                                || self.manual_failed || self.autosave.has_failures(), |footer| {
+                                footer.py_2().border_t_1().border_color(appearance::palette(cx).border)
+                            })
                             .when(!self.message.is_empty(), |footer| {
                                 footer.child(
                                     div()
@@ -942,15 +992,19 @@ impl Render for SettingsView {
                                         })),
                                 )
                             })
-                            .child(
+                            .when(can_save || self.manual_failed || self.autosave.has_failures(), |footer| footer.child(
                                 div()
                                     .flex()
                                     .flex_wrap()
                                     .items_center()
                                     .justify_between()
                                     .gap_2()
-                                    .child(crate::visual::caption(
-                                        self.t("Rotor · 随时待命", "Rotor · Ready when you are"),
+                                    .child(appearance::caption(
+                                        if self.section == Section::Quick {
+                                            self.t("编辑完成后保存更改", "Save changes when finished editing")
+                                        } else {
+                                            self.t("更改会自动保存", "Changes save automatically")
+                                        },
                                         cx,
                                     ))
                                     .child(
@@ -976,15 +1030,9 @@ impl Render for SettingsView {
                                                         self.t("放弃未保存并退出", "Discard unsaved changes and quit")
                                                     } else { self.t("放弃未保存并关闭", "Discard unsaved changes and close") })
                                                     .disabled(self.pending.is_some() || self.autosave.has_pending())
-                                                    .on_click(cx.listener(|this, _, window, cx| this.discard_and_close(window, cx)))))
-                                            .child(
-                                                Button::new("close")
-                                                    .label(self.t("关闭", "Close"))
-                                                    .disabled(self.close_request.is_some())
-                                                    .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))),
-                                            ),
+                                                    .on_click(cx.listener(|this, _, window, cx| this.discard_and_close(window, cx))))),
                                     ),
-                            ),
+                            )),
                     ),
             )
     }
