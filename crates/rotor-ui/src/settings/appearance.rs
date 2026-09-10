@@ -1,6 +1,6 @@
 //! Settings layout helpers using the application theme.
 use super::*;
-use gpui_kit::component::button::ButtonCustomVariant;
+use gpui_kit::component::{Colorize, button::ButtonCustomVariant};
 
 pub(super) struct Palette {
     pub background: Hsla,
@@ -91,7 +91,7 @@ pub(super) fn close_button(button: Button, cx: &App) -> Button {
             .color(colors.background)
             .foreground(colors.secondary)
             .hover(cx.theme().danger)
-            .active(colors.surface),
+            .active(cx.theme().danger.darken(0.2)),
     )
 }
 

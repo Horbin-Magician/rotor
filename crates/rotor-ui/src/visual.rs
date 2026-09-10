@@ -66,6 +66,7 @@ fn palette(mut theme: ThemeConfig, dark: bool) -> ThemeConfig {
     colors.muted = Some(muted.clone().into());
     colors.muted_foreground = Some(hex(palette.secondary).into());
     colors.border = Some(border.clone().into());
+    colors.danger = Some("#e5484d".into());
     colors.input = Some(border.clone().into());
     colors.popover = Some(background.clone().into());
     colors.popover_foreground = Some(foreground.clone().into());
