@@ -168,6 +168,7 @@ impl CanvasState {
 }
 impl PinView {
     pub(super) fn cancel_pointer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.finish_move(window, cx);
         if self.crop_drag.is_some() {
             self.finish_crop(window, cx);
         }
@@ -186,7 +187,7 @@ impl PinView {
         match self.canvas.document.set_crop(crop) {
             Ok(_) => {
                 self.canvas.rollback = None;
-                self.ensure_canvas(window, cx);
+                self.ensure_canvas_after_bounds(window, cx);
             }
             Err(error) => self.canvas.error = Some(error),
         }
@@ -205,6 +206,11 @@ impl PinView {
         }
     }
     pub(super) fn ensure_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The retained frame is positioned and clipped by canvas_element.
+        // Resampling/uploading a new image here would compete with every drag frame.
+        if self.crop_drag.is_some() {
+            return;
+        }
         let transform = self.transform(window);
         let size = window.viewport_size();
         let output = ImageSize {
@@ -272,6 +278,16 @@ impl PinView {
                 })
             });
         }));
+    }
+    pub(super) fn ensure_canvas_after_bounds(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.weak_entity();
+        window.defer(cx, move |window, cx| {
+            let _ = view.update(cx, |this, cx| this.ensure_canvas(window, cx));
+        });
     }
     pub(super) fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
         self.canvas.tool = tool;
@@ -352,8 +368,7 @@ impl PinView {
             if self.crop_edges(point, window).any() {
                 return !self.canvas.rendering && self.begin_crop(point, window, cx);
             }
-            window.start_window_move();
-            return false;
+            return self.begin_move(point, window, cx);
         }
         if self.canvas.rendering {
             return false;
@@ -406,6 +421,10 @@ impl PinView {
         true
     }
     fn move_mark(&mut self, point: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.move_drag.is_some() {
+            self.move_pin(point, window, cx);
+            return;
+        }
         if self.crop_drag.is_some() {
             self.move_crop(point, window, cx);
             return;
@@ -445,6 +464,10 @@ impl PinView {
         cx.notify();
     }
     fn end_mark(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.move_drag.is_some() {
+            self.finish_move(window, cx);
+            return;
+        }
         if self.crop_drag.is_some() {
             self.finish_crop(window, cx);
             return;
@@ -663,7 +686,8 @@ impl PinView {
             .as_ref()
             .or(self.canvas.preview.as_ref())
             .cloned();
-        let dragging = self.canvas.draft.is_some() || self.crop_drag.is_some();
+        let dragging =
+            self.canvas.draft.is_some() || self.crop_drag.is_some() || self.move_drag.is_some();
         let cursor = match self.canvas.tool {
             Tool::Move => self.crop_cursor(),
             Tool::Text => CursorStyle::IBeam,
@@ -701,15 +725,30 @@ impl PinView {
                     let move_view = weak.clone();
                     let move_hitbox = hitbox.clone();
                     window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
-                        if phase == DispatchPhase::Bubble && move_hitbox.is_hovered(window) {
+                        if phase == DispatchPhase::Bubble
+                            && (dragging || move_hitbox.is_hovered(window))
+                        {
                             let _ = move_view.update(cx, |this, cx| {
+                                if event.pressed_button != Some(MouseButton::Left)
+                                    && (this.move_drag.is_some()
+                                        || this.crop_drag.is_some()
+                                        || this.canvas.draft.is_some())
+                                {
+                                    this.end_mark(window, cx);
+                                    return;
+                                }
                                 this.move_mark(event.position - bounds.origin, window, cx)
                             });
                         }
                     });
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
-                            let _ = weak.update(cx, |this, cx| this.end_mark(window, cx));
+                            let _ = weak.update(cx, |this, cx| {
+                                if this.crop_drag.is_some() {
+                                    this.move_crop(event.position - bounds.origin, window, cx);
+                                }
+                                this.end_mark(window, cx);
+                            });
                         }
                     });
                 },

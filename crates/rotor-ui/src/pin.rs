@@ -74,6 +74,7 @@ pub struct PinView {
     bounds: PinBoundsSetter,
     pointer: PinPointerCapture,
     pointer_owned: bool,
+    move_drag: Option<crop::MoveDrag>,
     crop_drag: Option<crop::CropDrag>,
     crop_hover: rotor_canvas::CropEdges,
     ocr: ocr::OcrState,
@@ -121,6 +122,7 @@ impl PinView {
             bounds: init.bounds,
             pointer: init.pointer,
             pointer_owned: false,
+            move_drag: None,
             crop_drag: None,
             crop_hover: Default::default(),
             ocr: Default::default(),
@@ -429,7 +431,7 @@ impl PinView {
         window.minimize_window();
     }
     fn zoom(&mut self, delta: f32, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() || delta == 0. {
+        if self.busy() || delta == 0. || self.crop_drag.is_some() || self.move_drag.is_some() {
             return;
         }
         let step = self
