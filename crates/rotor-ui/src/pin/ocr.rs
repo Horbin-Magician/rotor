@@ -1,4 +1,5 @@
 use super::*;
+use gpui_kit::component::input::{Textarea, TextareaState};
 use rotor_canvas::{ImageRect, ImageSize};
 use rotor_runtime::OcrTextResult;
 
@@ -32,10 +33,16 @@ pub(super) struct OcrState {
     rows: Vec<OcrTextResult>,
     lines: Vec<ShapedLine>,
     selection: Option<Selection>,
+    input: Option<Entity<TextareaState>>,
+    _input_observer: Option<Subscription>,
     dragging: bool,
     pub(super) error: Option<String>,
 }
 impl OcrState {
+    pub(super) fn loading(&self) -> bool {
+        self.render_task.is_some() || self.pending.is_some()
+    }
+
     fn accepts_render(&self, revision: u64, signature: (u64, ImageRect)) -> bool {
         self.active && self.revision == revision && self.signature == Some(signature)
     }
@@ -46,17 +53,6 @@ impl OcrState {
             && self.revision == revision
             && self.signature == Some(signature)
     }
-    fn text(&self, all: bool) -> String {
-        if all {
-            return self
-                .rows
-                .iter()
-                .map(|row| row.text.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-        }
-        selected_text(&self.rows, self.selection)
-    }
 }
 fn boundary(text: &str, byte: usize) -> usize {
     let mut byte = byte.min(text.len());
@@ -65,31 +61,24 @@ fn boundary(text: &str, byte: usize) -> usize {
     }
     byte
 }
-fn selected_text(rows: &[OcrTextResult], selection: Option<Selection>) -> String {
-    let Some(selection) = selection else {
-        return String::new();
-    };
-    let (start, end) = selection.ordered();
-    if start.row >= rows.len() || end.row >= rows.len() {
-        return String::new();
-    }
-    let mut selected = Vec::new();
-    for (row, item) in rows.iter().enumerate().take(end.row + 1).skip(start.row) {
-        let from = if row == start.row {
-            boundary(&item.text, start.byte)
-        } else {
-            0
-        };
-        let to = if row == end.row {
-            boundary(&item.text, end.byte)
-        } else {
-            item.text.len()
-        };
-        if from <= to {
-            selected.push(&item.text[from..to]);
+fn text_offset(rows: &[OcrTextResult], position: TextPosition) -> usize {
+    rows.iter()
+        .take(position.row)
+        .map(|row| row.text.len() + 1)
+        .sum::<usize>()
+        + boundary(&rows[position.row].text, position.byte)
+}
+fn text_position(rows: &[OcrTextResult], mut offset: usize) -> TextPosition {
+    for (row, item) in rows.iter().enumerate() {
+        if offset <= item.text.len() || row + 1 == rows.len() {
+            return TextPosition {
+                row,
+                byte: boundary(&item.text, offset),
+            };
         }
+        offset -= item.text.len() + 1;
     }
-    selected.join("\n")
+    TextPosition { row: 0, byte: 0 }
 }
 impl PinView {
     pub(super) fn clear_ocr(&mut self, window: &mut Window) {
@@ -115,8 +104,12 @@ impl PinView {
         )
     }
     pub(super) fn toggle_ocr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ocr.loading() {
+            return;
+        }
         if self.ocr.active {
             self.clear_ocr(window);
+            self.focus.focus(window, cx);
             self.crop_hover = Default::default();
             cx.notify();
         } else {
@@ -219,17 +212,21 @@ impl PinView {
                         )
                     })
                     .collect();
+                let text = self
+                    .ocr
+                    .rows
+                    .iter()
+                    .map(|row| row.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let input = cx.new(|cx| TextareaState::new(window, cx).default_value(text));
+                self.ocr._input_observer = Some(cx.observe(&input, |_, _, cx| cx.notify()));
+                input.update(cx, |input, cx| input.focus(window, cx));
+                self.ocr.input = Some(input);
             }
             Err(error) => self.ocr.error = Some(error.clone()),
         }
         cx.notify();
-    }
-    fn ocr_copy(&mut self, all: bool, cx: &mut Context<Self>) {
-        let text = self.ocr.text(all);
-        if !text.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
-            cx.notify();
-        }
     }
     pub(super) fn ocr_keys(
         &mut self,
@@ -244,22 +241,7 @@ impl PinView {
             self.clear_ocr(window);
             cx.stop_propagation();
             cx.notify();
-        } else if event.keystroke.modifiers.control || event.keystroke.modifiers.platform {
-            if event.keystroke.key.eq_ignore_ascii_case("c") {
-                self.ocr_copy(false, cx);
-                cx.stop_propagation();
-            } else if event.keystroke.key.eq_ignore_ascii_case("a") && !self.ocr.rows.is_empty() {
-                let last = self.ocr.rows.len() - 1;
-                self.ocr.selection = Some(Selection {
-                    anchor: TextPosition { row: 0, byte: 0 },
-                    head: TextPosition {
-                        row: last,
-                        byte: self.ocr.rows[last].text.len(),
-                    },
-                });
-                cx.stop_propagation();
-                cx.notify();
-            }
+            self.focus.focus(window, cx);
         }
         true
     }
@@ -314,11 +296,16 @@ impl PinView {
     ) -> bool {
         let Some(position) = self.ocr_position(event.position, window, false) else {
             self.ocr.selection = None;
+            if let Some(input) = &self.ocr.input {
+                input.update(cx, |input, cx| input.set_selected_range(0..0, cx));
+            }
             cx.notify();
             return false;
         };
         window.activate_window();
-        self.focus.focus(window, cx);
+        if let Some(input) = &self.ocr.input {
+            input.update(cx, |input, cx| input.focus(window, cx));
+        }
         self.ocr.selection = Some(if event.click_count >= 2 {
             Selection {
                 anchor: TextPosition {
@@ -336,6 +323,7 @@ impl PinView {
                 head: position,
             }
         });
+        self.sync_ocr_selection(cx);
         self.ocr.dragging = self.capture_native_pointer(window);
         cx.notify();
         self.ocr.dragging
@@ -348,13 +336,27 @@ impl PinView {
             && let Some(selection) = self.ocr.selection.as_mut()
         {
             selection.head = position;
+            self.sync_ocr_selection(cx);
             cx.notify();
+        }
+    }
+    fn sync_ocr_selection(&self, cx: &mut Context<Self>) {
+        if let (Some(input), Some(selection)) = (&self.ocr.input, self.ocr.selection) {
+            let (start, end) = selection.ordered();
+            let range = text_offset(&self.ocr.rows, start)..text_offset(&self.ocr.rows, end);
+            input.update(cx, |input, cx| input.set_selected_range(range, cx));
         }
     }
     pub(super) fn ocr_layer(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let rows = self.ocr.rows.clone();
         let lines = self.ocr.lines.clone();
-        let selection = self.ocr.selection;
+        let selection = self.ocr.input.as_ref().map(|input| {
+            let range = input.read(cx).selected_range();
+            Selection {
+                anchor: text_position(&rows, range.start),
+                head: text_position(&rows, range.end),
+            }
+        });
         let dragging = self.ocr.dragging;
         let size = self.ocr.size.unwrap_or(ImageSize {
             width: 1,
@@ -364,7 +366,7 @@ impl PinView {
         let sx = viewport.width.as_f32() / size.width as f32;
         let sy = viewport.height.as_f32() / size.height as f32;
         let view = cx.weak_entity();
-        canvas(
+        let overlay = canvas(
             |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::BlockMouse),
             move |bounds, hitbox, window, cx| {
                 window.set_cursor_style(CursorStyle::IBeam, &hitbox);
@@ -445,15 +447,82 @@ impl PinView {
             },
         )
         .absolute()
-        .size_full()
+        .size_full();
+        div()
+            .absolute()
+            .size_full()
+            .when_some(self.ocr.input.as_ref(), |root, input| {
+                // Keep the control in the focus/action tree without painting its text.
+                root.child(
+                    div()
+                        .absolute()
+                        .size(px(1.))
+                        .overflow_hidden()
+                        .opacity(0.)
+                        .child(Textarea::new(input).readonly(true).appearance(false)),
+                )
+            })
+            .child(overlay)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{OcrState, Selection, TextPosition, selected_text};
+    use super::{OcrState, TextPosition, text_offset, text_position};
+    use gpui_kit::component::input::{Textarea, TextareaState};
+    use gpui_kit::{
+        Context, Entity, IntoElement, Render, TestAppContext, Window, div, prelude::*, px,
+    };
     use rotor_canvas::ImageRect;
     use rotor_runtime::{OcrTextResult, OperationId};
+    #[gpui::test]
+    fn hidden_readonly_textbox_handles_copy_and_select_all(cx: &mut TestAppContext) {
+        struct Harness(Entity<TextareaState>);
+        impl Render for Harness {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div().size_full().child(
+                    div()
+                        .absolute()
+                        .size(px(1.))
+                        .overflow_hidden()
+                        .opacity(0.)
+                        .child(Textarea::new(&self.0).readonly(true).appearance(false)),
+                )
+            }
+        }
+        cx.update(gpui_kit::component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let input =
+                cx.new(|cx| TextareaState::new(window, cx).default_value("中文hello\n第二行"));
+            input.update(cx, |input, cx| {
+                input.focus(window, cx);
+                input.set_selected_range(3..15, cx);
+            });
+            Harness(input)
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+            "cmd-c"
+        } else {
+            "ctrl-c"
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard().and_then(|item| item.text()),
+                Some("文hello\n第".into())
+            )
+        });
+        cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        });
+        cx.simulate_keystrokes("backspace");
+        view.read_with(cx, |view, cx| {
+            assert_eq!(view.0.read(cx).value().as_ref(), "中文hello\n第二行");
+            assert_eq!(view.0.read(cx).selected_range(), 0..21);
+        });
+    }
     fn rows() -> Vec<OcrTextResult> {
         ["中文hello", "第二行"]
             .into_iter()
@@ -467,18 +536,36 @@ mod tests {
             .collect()
     }
     #[test]
-    fn selections_cross_lines_and_never_slice_inside_utf8() {
-        let selection = Selection {
-            anchor: TextPosition { row: 1, byte: 3 },
-            head: TextPosition { row: 0, byte: 3 },
-        };
-        assert_eq!(selected_text(&rows(), Some(selection)), "文hello\n第");
-        let selection = Selection {
-            anchor: TextPosition { row: 0, byte: 1 },
-            head: TextPosition { row: 0, byte: 5 },
-        };
-        assert_eq!(selected_text(&rows(), Some(selection)), "中");
+    fn positions_map_to_multiline_textbox_utf8_offsets() {
+        let rows = rows();
+        for position in [
+            TextPosition { row: 0, byte: 3 },
+            TextPosition { row: 1, byte: 3 },
+        ] {
+            assert_eq!(text_position(&rows, text_offset(&rows, position)), position);
+        }
+        assert_eq!(text_offset(&rows, TextPosition { row: 1, byte: 0 }), 12);
+        assert_eq!(text_position(&rows, 1), TextPosition { row: 0, byte: 0 });
     }
+
+    #[test]
+    fn loading_covers_render_and_recognition_and_clears_after_completion() {
+        let mut state = OcrState {
+            active: true,
+            render_task: Some(gpui_kit::Task::ready(())),
+            ..Default::default()
+        };
+        assert!(state.loading());
+        state.render_task = None;
+        state.pending = Some(OperationId(1));
+        assert!(state.loading());
+        state.pending = None;
+        assert!(!state.loading());
+        state.error = Some("recognition failed".into());
+        assert!(!state.loading());
+        assert!(!OcrState::default().loading());
+    }
+
     #[test]
     fn stale_request_or_changed_image_cannot_restore_ocr_mode() {
         let crop = ImageRect {

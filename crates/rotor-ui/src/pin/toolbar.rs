@@ -61,7 +61,7 @@ pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
                 .active(rgba(0xffffff30).into())
                 .shadow(false),
         )
-        .child(
+        .icon(
             Icon::new(match glyph {
                 Glyph::Back => IconName::ChevronLeft,
                 Glyph::Rectangle => IconName::Square,

@@ -154,6 +154,7 @@ impl PinView {
             || self.dialog
             || self.preparing_export
             || self.queued_export.is_some()
+            || self.ocr.loading()
     }
     pub fn config(&self) -> &ShotterConfig {
         &self.record
@@ -639,7 +640,11 @@ impl Render for PinView {
                                             ),
                                         )
                                         .selected(self.ocr.active)
-                                        .disabled(!self.ocr.active && export_disabled)
+                                        .loading(self.ocr.loading())
+                                        .disabled(
+                                            self.ocr.loading()
+                                                || (!self.ocr.active && export_disabled),
+                                        )
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.toggle_ocr(window, cx)
                                         })),
@@ -683,18 +688,20 @@ impl Render for PinView {
                                             this.close(window, cx)
                                         })),
                                 )
-                                .child(
-                                    toolbar::button("pin-copy", toolbar::Glyph::Copy, cx)
-                                        .accessibility_label(self.t("复制", "Copy"))
-                                        .tooltip(self.shortcut_hint(
-                                            self.t("复制", "Copy"),
-                                            "shortcut_pinwin_copy",
-                                        ))
-                                        .disabled(export_disabled)
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.export(PinExportTarget::Clipboard, window, cx)
-                                        })),
-                                ),
+                                .when(!self.ocr.active, |tools| {
+                                    tools.child(
+                                        toolbar::button("pin-copy", toolbar::Glyph::Copy, cx)
+                                            .accessibility_label(self.t("复制", "Copy"))
+                                            .tooltip(self.shortcut_hint(
+                                                self.t("复制", "Copy"),
+                                                "shortcut_pinwin_copy",
+                                            ))
+                                            .disabled(export_disabled)
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.export(PinExportTarget::Clipboard, window, cx);
+                                            })),
+                                    )
+                                }),
                         ),
                     )
                     .with_spring(
