@@ -1143,7 +1143,7 @@ fn normalize_shortcut_changes(
             "shortcut_pinwin_save" => ("贴图保存", "Save pinned image"),
             "shortcut_pinwin_close" => ("贴图关闭", "Close pinned image"),
             "shortcut_pinwin_copy" => ("贴图复制", "Copy pinned image"),
-            "shortcut_pinwin_hide" => ("贴图隐藏", "Hide pinned image"),
+            "shortcut_pinwin_hide" => ("贴图最小化", "Minimize pinned image"),
             _ => continue,
         };
         let normalized = value.trim();

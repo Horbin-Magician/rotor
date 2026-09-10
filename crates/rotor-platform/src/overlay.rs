@@ -1,3 +1,56 @@
+/// Give a hidden pin a taskbar entry while preserving its borderless, topmost style.
+#[cfg(target_os = "windows")]
+pub fn enable_pin_taskbar(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::{
+        Foundation::{GetLastError, SetLastError, HWND, WIN32_ERROR},
+        UI::WindowsAndMessaging::{
+            GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, GWL_STYLE, WS_EX_APPWINDOW,
+            WS_EX_TOOLWINDOW, WS_MINIMIZEBOX, WS_SYSMENU,
+        },
+    };
+    let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+        return Err("Expected a Windows window handle".into());
+    };
+    let hwnd = HWND(raw.hwnd.get() as *mut _);
+    // Called on the owning UI thread before the window is first shown.
+    unsafe {
+        for (index, remove, add) in [
+            (GWL_EXSTYLE, WS_EX_TOOLWINDOW.0, WS_EX_APPWINDOW.0),
+            (GWL_STYLE, 0, WS_MINIMIZEBOX.0 | WS_SYSMENU.0),
+        ] {
+            let style = GetWindowLongW(hwnd, index) as u32;
+            SetLastError(WIN32_ERROR(0));
+            if SetWindowLongW(hwnd, index, ((style & !remove) | add) as i32) == 0 {
+                let error = GetLastError();
+                if error != WIN32_ERROR(0) {
+                    return Err(std::io::Error::from_raw_os_error(error.0 as i32).to_string());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub fn window_minimized(handle: raw_window_handle::WindowHandle<'_>) -> Option<bool> {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{IsIconic, IsWindowVisible},
+    };
+    let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+        return None;
+    };
+    let hwnd = HWND(raw.hwnd.get() as *mut _);
+    // Hidden windows are still being initialized; retain their saved state.
+    unsafe {
+        IsWindowVisible(hwnd)
+            .as_bool()
+            .then(|| IsIconic(hwnd).as_bool())
+    }
+}
+
 /// Keep capture overlays rectangular even when DWM rounds ordinary windows.
 #[cfg(target_os = "windows")]
 pub fn disable_window_rounding(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
@@ -159,6 +212,48 @@ mod repaint_tests {
             PAINTS.set(PAINTS.get() + 1);
         }
         unsafe { DefWindowProcW(hwnd, message, w, l) }
+    }
+
+    #[test]
+    fn pin_taskbar_preserves_topmost_and_tracks_minimization() {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        unsafe {
+            let hwnd = CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                w!("STATIC"),
+                w!("Rotor synthetic pin"),
+                WS_POPUP,
+                0,
+                0,
+                32,
+                32,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let result = std::panic::catch_unwind(|| {
+                let raw = raw_window_handle::Win32WindowHandle::new(
+                    std::num::NonZeroIsize::new(hwnd.0 as isize).unwrap(),
+                );
+                let handle = raw_window_handle::WindowHandle::borrow_raw(
+                    raw_window_handle::RawWindowHandle::Win32(raw),
+                );
+                enable_pin_taskbar(handle).unwrap();
+                let style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+                assert_eq!(style & WS_EX_TOOLWINDOW.0, 0);
+                assert_ne!(style & WS_EX_APPWINDOW.0, 0);
+                assert_ne!(style & WS_EX_TOPMOST.0, 0);
+                assert_eq!(window_minimized(handle), None);
+                let _ = ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
+                assert_eq!(window_minimized(handle), Some(true));
+                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                assert_eq!(window_minimized(handle), Some(false));
+            });
+            DestroyWindow(hwnd).unwrap();
+            result.unwrap();
+        }
     }
 
     #[test]

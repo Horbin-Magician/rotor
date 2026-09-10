@@ -106,10 +106,21 @@ impl PinView {
             },
         )
     }
+    pub(super) fn toggle_ocr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ocr.active {
+            self.clear_ocr(window);
+            self.crop_hover = Default::default();
+            cx.notify();
+        } else {
+            self.start_ocr(window, cx);
+        }
+    }
     pub(super) fn start_ocr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy() || !self.canvas.ready() || self.crop_drag.is_some() {
             return;
         }
+        self.finish_move(window, cx);
+        self.crop_hover = Default::default();
         self.cancel_editing(window, cx);
         self.clear_ocr(window);
         let Some(frame) = self.canvas.frame() else {
@@ -196,7 +207,6 @@ impl PinView {
         let text = self.ocr.text(all);
         if !text.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
-            self.message = self.t("文字已复制", "Text copied").into();
             cx.notify();
         }
     }
@@ -231,67 +241,6 @@ impl PinView {
             }
         }
         true
-    }
-    pub(super) fn ocr_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_wrap()
-            .gap_1()
-            .child(
-                Button::new("ocr-copy-all")
-                    .label(self.t("全部复制", "Copy all"))
-                    .compact()
-                    .disabled(self.ocr.rows.is_empty())
-                    .on_click(cx.listener(|this, _, _, cx| this.ocr_copy(true, cx))),
-            )
-            .child(
-                Button::new("ocr-copy-selection")
-                    .label(self.t("复制选区", "Copy selection"))
-                    .compact()
-                    .disabled(self.ocr.text(false).is_empty())
-                    .on_click(cx.listener(|this, _, _, cx| this.ocr_copy(false, cx))),
-            )
-            .child(
-                Button::new("ocr-retry")
-                    .icon(IconName::RotateCw)
-                    .accessibility_label(self.t("重新识别", "Recognize again"))
-                    .tooltip(self.t("重新识别", "Recognize again"))
-                    .compact()
-                    .disabled(self.ocr.pending.is_some() || !self.canvas.ready())
-                    .on_click(cx.listener(|this, _, window, cx| this.start_ocr(window, cx))),
-            )
-            .child(
-                Button::new("ocr-exit")
-                    .label(self.t("退出 OCR", "Exit OCR"))
-                    .compact()
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.clear_ocr(window);
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .text_xs()
-                    .text_color(if self.ocr.error.is_some() {
-                        cx.theme().danger
-                    } else {
-                        cx.theme().muted_foreground
-                    })
-                    .child(if self.ocr.pending.is_some() {
-                        self.t("识别中…", "Recognizing…").to_owned()
-                    } else if let Some(error) = &self.ocr.error {
-                        error.clone()
-                    } else if self.ocr.rows.is_empty() {
-                        self.t("未识别到文字", "No text detected").into()
-                    } else {
-                        self.t(
-                            "拖选文字 · 双击选行",
-                            "Drag to select · Double-click a line",
-                        )
-                        .into()
-                    }),
-            )
     }
     fn ocr_position(
         &self,

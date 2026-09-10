@@ -31,6 +31,9 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.ocr.active || self.canvas.editing() {
+            return false;
+        }
         let Some(bounds) = self.current_bounds(window) else {
             return false;
         };
@@ -86,6 +89,9 @@ impl PinView {
     }
     pub(super) fn crop_edges(&self, local: Point<Pixels>, window: &Window) -> CropEdges {
         let size = window.viewport_size();
+        if self.ocr.active || self.canvas.editing() {
+            return CropEdges::default();
+        }
         if size.width < px(24.) || size.height < px(24.) {
             return CropEdges::default();
         }
@@ -162,6 +168,9 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.ocr.active || self.canvas.editing() {
+            return false;
+        }
         let edges = self.crop_edges(local, window);
         if !edges.any() {
             return false;
@@ -483,6 +492,7 @@ mod tests {
                         error: None,
                         content_scale: 2.,
                         position: Rc::new(move |_| Some((read.get().x, read.get().y))),
+                        minimized: Rc::new(|_| None),
                         bounds: Rc::new(move |_, bounds| {
                             write.set(bounds);
                             calls.set(calls.get() + 1);
@@ -505,6 +515,24 @@ mod tests {
                 window.resize(size(px(200.), px(200.)));
                 window.bounds_changed(cx);
                 pin.update(cx, |pin, cx| {
+                    // OCR blocks geometry changes even when events bypass its text overlay.
+                    pin.ocr.active = true;
+                    assert!(!pin.begin_move(point(px(100.), px(100.)), window, cx));
+                    assert!(!pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                    assert!(!pin.crop_edges(point(px(0.), px(100.)), window).any());
+                    assert!(pin.move_drag.is_none());
+                    assert!(pin.crop_drag.is_none());
+                    assert_eq!(calls.get(), 0);
+                    pin.toggle_ocr(window, cx);
+                    assert!(!pin.ocr.active);
+                    assert!(pin.begin_move(point(px(100.), px(100.)), window, cx));
+                    pin.finish_move(window, cx);
+                    pin.set_tool(super::super::annotation::Tool::Pen, window, cx);
+                    assert!(pin.canvas.editing());
+                    assert!(!pin.begin_move(point(px(100.), px(100.)), window, cx));
+                    assert!(!pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                    pin.cancel_editing(window, cx);
+                    assert!(!pin.canvas.editing());
                     assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
                     let epoch = pin.canvas.frame_revision();
                     for x in 1..=50 {

@@ -294,6 +294,9 @@ impl PinView {
         });
     }
     pub(super) fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
+        self.finish_move(window, cx);
+        self.cancel_crop(window, cx);
+        self.crop_hover = Default::default();
         self.canvas.tool = tool;
         self.canvas.draft = None;
         self.canvas.editor = None;
@@ -365,7 +368,7 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.busy() || self.canvas.editor.is_some() {
+        if self.ocr.active || self.busy() || self.canvas.editor.is_some() {
             return false;
         }
         if self.canvas.tool == Tool::Move {
@@ -564,22 +567,54 @@ impl PinView {
         div()
             .flex()
             .flex_wrap()
-            .gap_1()
+            .items_center()
+            .justify_center()
+            .gap(px(2.))
+            .child(
+                toolbar::button("canvas-back", toolbar::Glyph::Back, cx)
+                    .accessibility_label(self.t("返回", "Back"))
+                    .tooltip(self.t("返回", "Back"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.cancel_editing(window, cx);
+                    })),
+            )
+            .child(toolbar::separator())
             .children(
                 [
-                    (Tool::Move, "移动", "Move"),
-                    (Tool::Pen, "画笔", "Pen"),
-                    (Tool::Rectangle, "矩形", "Rectangle"),
-                    (Tool::Arrow, "箭头", "Arrow"),
-                    (Tool::Text, "文字", "Text"),
+                    (
+                        "canvas-pen",
+                        Tool::Pen,
+                        toolbar::Glyph::Pen,
+                        "自由绘制",
+                        "Free draw",
+                    ),
+                    (
+                        "canvas-rectangle",
+                        Tool::Rectangle,
+                        toolbar::Glyph::Rectangle,
+                        "矩形",
+                        "Rectangle",
+                    ),
+                    (
+                        "canvas-arrow",
+                        Tool::Arrow,
+                        toolbar::Glyph::Arrow,
+                        "箭头",
+                        "Arrow",
+                    ),
+                    (
+                        "canvas-text",
+                        Tool::Text,
+                        toolbar::Glyph::Text,
+                        "文字",
+                        "Text",
+                    ),
                 ]
                 .into_iter()
-                .enumerate()
-                .map(|(index, (tool, zh, en))| {
-                    Button::new(("canvas-tool", index))
-                        .label(self.t(zh, en))
+                .map(|(id, tool, glyph, zh, en)| {
+                    toolbar::button(id, glyph, cx)
+                        .accessibility_label(self.t(zh, en))
                         .tooltip(self.t(zh, en))
-                        .compact()
                         .selected(self.canvas.tool == tool)
                         .toggled(self.canvas.tool == tool)
                         .disabled(disabled)
@@ -588,12 +623,11 @@ impl PinView {
                         )
                 }),
             )
+            .child(toolbar::separator())
             .child(
-                Button::new("canvas-undo")
-                    .icon(IconName::Undo2)
-                    .accessibility_label(self.t("撤销", "Undo"))
-                    .tooltip(self.t("撤销", "Undo"))
-                    .compact()
+                toolbar::button("canvas-undo", toolbar::Glyph::Undo, cx)
+                    .accessibility_label(self.t("撤回", "Undo"))
+                    .tooltip(self.t("撤回", "Undo"))
                     .disabled(
                         disabled
                             || !self.canvas.document.can_undo()
@@ -607,6 +641,7 @@ impl PinView {
                         .icon(IconName::Check)
                         .accessibility_label(self.t("完成文字标注", "Finish text annotation"))
                         .tooltip(self.t("完成文字标注", "Finish text annotation"))
+                        .ghost()
                         .compact()
                         .disabled(disabled)
                         .on_click(cx.listener(|this, _, window, cx| this.finish_text(window, cx))),

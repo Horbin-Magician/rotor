@@ -295,7 +295,9 @@ pub fn drain_deferred(cx: &mut App) {
                     }
                 });
             }
-            Ok(_) => {}
+            Ok((handle, _)) => {
+                let _ = handle.update(cx, |_, window, _| window.minimize_window());
+            }
             Err(error) => crate::capture::report(error, cx),
         }
     }
@@ -481,6 +483,19 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             pending: None,
                             error,
                             position: reader,
+                            minimized: Rc::new(|window| {
+                                #[cfg(target_os = "windows")]
+                                {
+                                    rotor_platform::overlay::window_minimized(
+                                        HasWindowHandle::window_handle(window).ok()?,
+                                    )
+                                }
+                                #[cfg(not(target_os = "windows"))]
+                                {
+                                    let _ = window;
+                                    None
+                                }
+                            }),
                             content_scale,
                             bounds: bounds_setter,
                             pointer,
@@ -509,6 +524,9 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
     #[cfg(target_os = "windows")]
     let fitted = handle
         .update(cx, |_, window, _| {
+            rotor_platform::overlay::enable_pin_taskbar(
+                HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+            )?;
             rotor_platform::overlay::use_small_window_corners(
                 HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
             )?;

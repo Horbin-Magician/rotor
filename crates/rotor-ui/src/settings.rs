@@ -162,7 +162,7 @@ impl SettingsView {
             (
                 "shortcut_pinwin_hide",
                 Section::Pin,
-                ("贴图隐藏", "Pin hide"),
+                ("贴图最小化", "Pin minimize"),
                 false,
             ),
             (
