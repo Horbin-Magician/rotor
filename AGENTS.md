@@ -4,7 +4,7 @@
 
 Rotor is a Rust/GPUI native desktop toolbox. The root Cargo workspace is the
 application workspace; `rotor-desktop` is the default target. All application and
-shared crates live in `crates/`, models/fonts/icons in `assets/`, packaging in
+shared crates live in `crates/`, models/icons in `assets/`, packaging in
 `native/`, and release tooling in `xtask/`.
 
 Use `Cargo.toml`, `rust-toolchain.toml`, `.github/workflows/native-checks.yml`,
@@ -22,8 +22,7 @@ file focused on durable working instructions, not historical test-pass claims.
 - Preserve unknown config/record fields, accepted write ordering and request identities.
 - Use isolated synthetic profiles for tests; avoid real credentials and user data.
 - Do not edit generated/dependency output under target unless explicitly required.
-- Preserve model/font bytes and their licenses. `.github/scripts/check-annotation-font.ps1`
-  verifies the font and OFL checksums.
+- Preserve model bytes and their licenses. Text annotations use installed system fonts.
 
 ## Commit messages
 
@@ -56,7 +55,6 @@ cargo check --workspace --locked
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ./.github/scripts/check-core-dependencies.ps1
-./.github/scripts/check-annotation-font.ps1
 ```
 
 Use checks appropriate to the change; the commands above are the workspace

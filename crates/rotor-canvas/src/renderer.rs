@@ -15,20 +15,26 @@ impl Renderer {
             fonts: Arc::new(usvg::fontdb::Database::new()),
         }
     }
-    pub fn with_font(bytes: Vec<u8>, system_fallback: bool) -> Result<Self, String> {
+    /// Load installed fonts once; no application font resources are required.
+    pub fn with_system_fonts() -> Result<Self, String> {
         let mut fonts = usvg::fontdb::Database::new();
-        fonts.load_font_data(bytes);
-        if !fonts.faces().any(|face| {
+        fonts.load_system_fonts();
+        let fallback = fonts
+            .faces()
+            .flat_map(|face| &face.families)
+            .map(|(family, _)| family.clone())
+            .next()
+            .ok_or("No system fonts are available for text annotations")?;
+        let preferred_available = fonts.faces().any(|face| {
             face.families
                 .iter()
                 .any(|(family, _)| family == FONT_FAMILY)
-        }) {
-            return Err("Bundled annotation font is invalid".into());
-        }
-        if system_fallback {
-            fonts.load_system_fonts();
-        }
-        fonts.set_sans_serif_family(FONT_FAMILY);
+        });
+        fonts.set_sans_serif_family(if preferred_available {
+            FONT_FAMILY.to_owned()
+        } else {
+            fallback
+        });
         Ok(Self {
             fonts: Arc::new(fonts),
         })
@@ -334,18 +340,13 @@ mod tests {
         assert_eq!(rendered.get_pixel(6, 8).0, [255, 255, 255, 255]);
     }
     #[test]
-    fn bundled_chinese_text_renders_and_markup_is_literal() {
-        let bytes = std::fs::read(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../assets/fonts/NotoSansCJKsc-Regular.otf"),
-        )
-        .unwrap();
-        let renderer = Renderer::with_font(bytes, false).unwrap();
+    fn system_text_renders_and_markup_is_literal() {
+        let renderer = Renderer::with_system_fonts().unwrap();
         let image = RgbaImage::new(128, 64);
         let mut scene = scene(128, 64);
         scene.annotations.push(Annotation::Text {
             origin: ImagePoint { x: 5., y: 5. },
-            text: "中文".into(),
+            text: "Rotor".into(),
             font_size: 20.,
             color: Color::RED,
         });

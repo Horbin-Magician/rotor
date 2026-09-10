@@ -1,5 +1,0 @@
-# Preserve the upstream bytes used by the annotation resource checksums.
-assets/fonts/*.otf -text
-assets/fonts/LICENSE-NotoSansCJK.txt -text
-assets/fonts/*.json text eol=lf
-assets/fonts/*.md text eol=lf

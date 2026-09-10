@@ -3,8 +3,8 @@
 The root `workspace.package.version` is the sole version authority. Native builds
 and `xtask version` do not read a frontend package manifest.
 
-All native and shared crates now live under root `crates/`; bundled models,
-fonts and icons live under root `assets/`. Native packages retain the installed
+All native and shared crates now live under root `crates/`; bundled models
+and icons live under root `assets/`. Native packages retain the installed
 `assets/` resource layout. Packaging recipes remain in `native/`.
 
 ```powershell
@@ -18,7 +18,7 @@ cargo run -p xtask -- package target/native-stage target/native-package
 
 Stage and package destinations must not already exist. Build/stage/package
 generate local artifacts; signing uses the separate command below. Staging copies the release
-executable, native dynamic libraries, all model/font/icon assets, native metadata,
+executable, native dynamic libraries, all model/icon assets, native metadata,
 and the update public key. `resources.json` records every staged file's size and
 SHA-256; packaging verifies it before reading the files. This checksum manifest is
 an integrity check, not a signature or trust root.

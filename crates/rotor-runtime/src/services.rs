@@ -453,7 +453,6 @@ impl Services {
             .await
             .map_err(|_| "canvas rendering service is closed")?;
         self.ensure_running()?;
-        let resources = self.resources.clone();
         let fonts = self.canvas_fonts.clone();
         self.runtime()
             .spawn_blocking(move || {
@@ -462,14 +461,7 @@ impl Services {
                     let renderer = {
                         let mut loaded = lock(&fonts);
                         if loaded.is_none() {
-                            let path = resources
-                                .as_ref()
-                                .ok_or("Annotation resources are unavailable")?
-                                .resolve(Path::new("fonts/NotoSansCJKsc-Regular.otf"))
-                                .map_err(|error| error.to_string())?;
-                            let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
-                            *loaded =
-                                Some(Arc::new(rotor_canvas::Renderer::with_font(bytes, true)?));
+                            *loaded = Some(Arc::new(rotor_canvas::Renderer::with_system_fonts()?));
                         }
                         loaded.as_ref().unwrap().clone()
                     };

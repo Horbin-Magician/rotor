@@ -74,4 +74,4 @@ cargo run -p xtask -- set-version 2.7.0-beta.1 --dry-run
 
 共享业务 crate 不引入 GPUI、Tauri 或 WebView 依赖。测试使用独立合成资料，失败与回退时保留用户数据。
 
-项目采用 [MIT License](../LICENSE)；内置 Noto Sans CJK 的 OFL 许可证位于 `assets/fonts/`。
+项目采用 [MIT License](../LICENSE)。文字标注使用系统已安装的字体。

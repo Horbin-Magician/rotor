@@ -54,10 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         font_size: 44.,
         color: Color::RED,
     })?;
-    let renderer = Renderer::with_font(
-        std::fs::read(resources.resolve(std::path::Path::new("fonts/NotoSansCJKsc-Regular.otf"))?)?,
-        false,
-    )?;
+    let renderer = Renderer::with_system_fonts()?;
     let image = renderer.render(&source, document.scene(), size)?;
     image.save(profile.join("fixture.png"))?;
     let config = ConfigService::load_from(&profile)?;

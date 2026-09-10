@@ -43,8 +43,6 @@ pub fn inspect(app: &Path) -> Result<BundleInfo> {
         "Contents/Resources/assets/model/pp-ocrv6_tiny_det.onnx",
         "Contents/Resources/assets/model/pp-ocrv6_tiny_rec.onnx",
         "Contents/Resources/assets/model/ppocrv6_tiny_dict.txt",
-        "Contents/Resources/assets/fonts/NotoSansCJKsc-Regular.otf",
-        "Contents/Resources/assets/fonts/LICENSE-NotoSansCJK.txt",
     ] {
         let resource = app
             .join(relative)
@@ -313,8 +311,6 @@ mod tests {
             "model/pp-ocrv6_tiny_det.onnx",
             "model/pp-ocrv6_tiny_rec.onnx",
             "model/ppocrv6_tiny_dict.txt",
-            "fonts/NotoSansCJKsc-Regular.otf",
-            "fonts/LICENSE-NotoSansCJK.txt",
         ] {
             let resource = path.join("Contents/Resources/assets").join(relative);
             fs::create_dir_all(resource.parent().unwrap()).unwrap();

@@ -15,8 +15,6 @@ impl ResourceLocator {
             "model/pp-ocrv6_tiny_det.onnx",
             "model/pp-ocrv6_tiny_rec.onnx",
             "model/ppocrv6_tiny_dict.txt",
-            "fonts/NotoSansCJKsc-Regular.otf",
-            "fonts/LICENSE-NotoSansCJK.txt",
         ] {
             let path = self.resolve(Path::new(name))?;
             let metadata = std::fs::metadata(path)?;

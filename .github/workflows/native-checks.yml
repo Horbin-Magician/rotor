@@ -38,8 +38,6 @@ jobs:
           toolchain: '1.97.0'
           components: rustfmt, clippy
       - uses: swatinem/rust-cache@v2
-      - shell: pwsh
-        run: ./.github/scripts/check-annotation-font.ps1
       - run: cargo fmt --all -- --check
       # Standalone builds must not borrow AppKit features from desktop dependencies.
       - run: cargo check -p rotor-platform --locked

@@ -4,7 +4,6 @@
 )]
 
 mod capture;
-mod fonts;
 mod logging;
 mod pins;
 mod placement;
@@ -59,7 +58,6 @@ struct ShellState {
     capture: capture::CaptureState,
     pins: pins::PinWindows,
     monitors: Vec<rotor_runtime::MonitorConfig>,
-    fonts: Option<Task<()>>,
     index_rebuild: Option<Task<()>>,
 }
 impl Global for ShellState {}
@@ -606,7 +604,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     let _instance = instance;
     let _legacy_guard = legacy_guard;
-    let font_resources = resources.clone();
     let (services, events) = Services::new(
         AppConfig::shared_global(),
         resources,
@@ -696,7 +693,6 @@ fn run() -> Result<(), Box<dyn Error>> {
             capture: capture::CaptureState::default(),
             pins: pins::PinWindows::default(),
             monitors: Vec::new(),
-            fonts: None,
             index_rebuild: None,
         });
         let closed = cx.on_window_closed(|cx, id| {
@@ -730,15 +726,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                 }
             }
         });
-        let font_task = fonts::load(font_resources, cx);
-        cx.global_mut::<ShellState>().fonts = Some(font_task);
         cx.global_mut::<ShellState>()._closed = Some(closed);
         let quit = cx.on_app_quit(|cx| {
             let final_records = pins::final_records(cx);
             capture::stop(cx);
             pins::stop(cx);
             let state = cx.global_mut::<ShellState>();
-            state.fonts = None;
             state.index_rebuild = None;
             state.commands.close();
             state.system.stop_events();

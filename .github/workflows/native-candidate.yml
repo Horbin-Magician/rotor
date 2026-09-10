@@ -82,8 +82,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
       - run: cargo test -p xtask -p rotor-updater --locked
       - run: cargo test -p rotor-common --features production --locked
-      - shell: pwsh
-        run: ./.github/scripts/check-annotation-font.ps1
       - name: Build and stage selected identity
         shell: pwsh
         run: |

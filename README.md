@@ -72,4 +72,4 @@ Version changes do not commit, tag or push automatically.
 
 Keep business crates free of GPUI, Tauri and WebView dependencies. Use isolated synthetic profiles for tests and preserve user data during failures and recovery.
 
-[MIT License](LICENSE). Bundled Noto Sans CJK includes its OFL license under `assets/fonts/`.
+[MIT License](LICENSE). Text annotations use installed system fonts.

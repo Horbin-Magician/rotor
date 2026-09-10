@@ -1,6 +1,12 @@
 use crate::{ImagePoint, ImageRect, ImageSize};
 
-pub const FONT_FAMILY: &str = "Noto Sans CJK SC";
+/// System family shared by annotation previews and offscreen rendering.
+#[cfg(target_os = "windows")]
+pub const FONT_FAMILY: &str = "Microsoft YaHei";
+#[cfg(target_os = "macos")]
+pub const FONT_FAMILY: &str = "PingFang SC";
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub const FONT_FAMILY: &str = "DejaVu Sans";
 const MAX_MARKS: usize = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
