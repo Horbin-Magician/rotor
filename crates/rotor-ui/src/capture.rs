@@ -2,10 +2,7 @@ use gpui_kit::{component::ActiveTheme, prelude::*, *};
 use image::RgbaImage;
 use rotor_canvas::{ImagePoint, ImageRect, ImageSize};
 use rotor_runtime::{CaptureBundle, MonitorConfig};
-use std::{
-    rc::Rc,
-    sync::{Arc, OnceLock},
-};
+use std::{rc::Rc, sync::Arc};
 
 #[derive(Clone)]
 pub struct PreparedImage {
@@ -35,7 +32,6 @@ pub struct PreparedScreenshot {
     pub render: Arc<RenderImage>,
     width: u32,
     height: u32,
-    rgba: OnceLock<Arc<RgbaImage>>,
 }
 
 impl PreparedScreenshot {
@@ -56,28 +52,39 @@ impl PreparedScreenshot {
             render: Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])),
             width,
             height,
-            rgba: OnceLock::new(),
         })
     }
 
-    /// Materialize export/OCR pixels only after the mask's first frame is ready.
-    pub fn rgba(&self) -> Arc<RgbaImage> {
-        self.rgba
-            .get_or_init(|| {
-                let mut bytes = self
-                    .render
-                    .as_bytes(0)
-                    .expect("capture has one frame")
-                    .to_vec();
-                for pixel in bytes.chunks_exact_mut(4) {
-                    pixel.swap(0, 2);
-                }
-                Arc::new(
-                    RgbaImage::from_raw(self.width, self.height, bytes)
-                        .expect("validated capture dimensions"),
-                )
-            })
-            .clone()
+    /// Copy only selected pixels at native resolution, preserving every channel.
+    pub fn crop_rgba(&self, rect: ImageRect) -> Result<Arc<RgbaImage>, String> {
+        if rect.width == 0
+            || rect.height == 0
+            || rect
+                .x
+                .checked_add(rect.width)
+                .is_none_or(|x| x > self.width)
+            || rect
+                .y
+                .checked_add(rect.height)
+                .is_none_or(|y| y > self.height)
+        {
+            return Err("Capture source rectangle is invalid".into());
+        }
+        let bytes = self.render.as_bytes(0).expect("capture has one frame");
+        Ok(Arc::new(RgbaImage::from_fn(
+            rect.width,
+            rect.height,
+            |x, y| {
+                let offset =
+                    ((rect.y + y) as usize * self.width as usize + (rect.x + x) as usize) * 4;
+                image::Rgba([
+                    bytes[offset + 2],
+                    bytes[offset + 1],
+                    bytes[offset],
+                    bytes[offset + 3],
+                ])
+            },
+        )))
     }
 
     fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
@@ -89,6 +96,58 @@ impl PreparedScreenshot {
             bytes[offset],
             bytes[offset + 3],
         ]
+    }
+}
+
+impl rotor_runtime::CapturePixels for PreparedCapture {
+    fn pixels(&self) -> (&[u8], u32, u32, rotor_runtime::PixelFormat) {
+        (
+            self.image
+                .render
+                .as_bytes(0)
+                .expect("capture has one frame"),
+            self.image.width,
+            self.image.height,
+            rotor_runtime::PixelFormat::Bgra,
+        )
+    }
+}
+
+/// Display-only composition; editable source pixels belong to PreparedImage.
+#[derive(Clone)]
+pub(crate) struct PreparedFrame {
+    pub render: Arc<RenderImage>,
+    pub dimensions: (u32, u32),
+}
+impl PreparedFrame {
+    pub fn new(image: Arc<RgbaImage>) -> Result<Self, String> {
+        let mut bgra = Arc::unwrap_or_clone(image);
+        let dimensions = bgra.dimensions();
+        if dimensions.0 == 0 || dimensions.1 == 0 {
+            return Err("Image is empty".into());
+        }
+        for pixel in bgra.pixels_mut() {
+            pixel.0.swap(0, 2);
+        }
+        Ok(Self {
+            render: Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])),
+            dimensions,
+        })
+    }
+    /// Temporary OCR input; never cached alongside display pixels.
+    pub fn rgba(&self) -> Arc<RgbaImage> {
+        let mut bytes = self
+            .render
+            .as_bytes(0)
+            .expect("display has one frame")
+            .to_vec();
+        for pixel in bytes.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        Arc::new(
+            RgbaImage::from_raw(self.dimensions.0, self.dimensions.1, bytes)
+                .expect("validated frame"),
+        )
     }
 }
 
@@ -670,13 +729,17 @@ mod tests {
         })
         .unwrap();
         assert_eq!(prepared.render.as_bytes(0).unwrap().as_ptr(), allocation);
-        assert!(prepared.rgba.get().is_none());
         assert_eq!(prepared.pixel(0, 0), [200, 100, 50, 255]);
         assert_eq!(prepared.pixel(1, 0), [1, 2, 3, 128]);
-        assert!(prepared.rgba.get().is_none());
-        let rgba = prepared.rgba();
-        assert_eq!(rgba.as_raw(), &[200, 100, 50, 255, 1, 2, 3, 128]);
-        assert!(Arc::ptr_eq(&rgba, &prepared.rgba()));
+        let rgba = prepared
+            .crop_rgba(ImageRect {
+                x: 1,
+                y: 0,
+                width: 1,
+                height: 1,
+            })
+            .unwrap();
+        assert_eq!(rgba.as_raw(), &[1, 2, 3, 128]);
         assert_eq!(
             prepared.render.as_bytes(0).unwrap(),
             &[50, 100, 200, 255, 3, 2, 1, 128]
@@ -695,6 +758,51 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn capture_crop_preserves_rows_and_rejects_invalid_bounds() {
+        let prepared = super::PreparedScreenshot::new(rotor_runtime::BgraCapture {
+            width: 2,
+            height: 2,
+            bytes: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        })
+        .unwrap();
+        let rect = ImageRect {
+            x: 1,
+            y: 0,
+            width: 1,
+            height: 2,
+        };
+        assert_eq!(
+            prepared.crop_rgba(rect).unwrap().as_raw(),
+            &[7, 6, 5, 8, 15, 14, 13, 16]
+        );
+        for invalid in [
+            ImageRect { width: 0, ..rect },
+            ImageRect { x: 2, ..rect },
+            ImageRect { y: 1, ..rect },
+            ImageRect {
+                x: u32::MAX,
+                ..rect
+            },
+        ] {
+            assert!(prepared.crop_rgba(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn display_frame_reuses_owned_pixels_and_leaves_shared_sources_intact() {
+        let source = Arc::new(RgbaImage::from_raw(1, 1, vec![12, 34, 56, 78]).unwrap());
+        let allocation = source.as_raw().as_ptr();
+        let frame = super::PreparedFrame::new(source).unwrap();
+        assert_eq!(frame.render.as_bytes(0).unwrap().as_ptr(), allocation);
+        assert_eq!(frame.render.as_bytes(0).unwrap(), &[56, 34, 12, 78]);
+        assert_eq!(frame.rgba().as_raw(), &[12, 34, 56, 78]);
+        let source = frame.rgba();
+        let shared = super::PreparedFrame::new(source.clone()).unwrap();
+        assert_eq!(source.as_raw(), &[12, 34, 56, 78]);
+        assert_eq!(shared.render.as_bytes(0).unwrap(), &[56, 34, 12, 78]);
     }
     #[test]
     fn inspector_stays_on_screen_and_away_from_edge_pixels() {

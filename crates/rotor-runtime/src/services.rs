@@ -792,14 +792,11 @@ impl Services {
         Ok(id)
     }
 
-    pub async fn detect_capture_rectangles(
+    pub async fn detect_capture_rectangles<T: crate::CapturePixels>(
         &self,
-        image: Arc<RgbaImage>,
+        image: Arc<T>,
     ) -> Result<Vec<rotor_canvas::ImageRect>, String> {
         self.ensure_running()?;
-        if image.width() == 0 || image.height() == 0 {
-            return Err("Capture image is empty".into());
-        }
         let permit = self
             .slots
             .clone()
@@ -810,7 +807,7 @@ impl Services {
         self.runtime()
             .spawn_blocking(move || {
                 let _permit = permit;
-                img_util::detect_rect(&image)
+                Ok(img_util::detect_pixels(image.as_ref())?
                     .into_iter()
                     .map(|(x, y, width, height)| rotor_canvas::ImageRect {
                         x,
@@ -818,10 +815,10 @@ impl Services {
                         width,
                         height,
                     })
-                    .collect()
+                    .collect())
             })
             .await
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?
     }
 
     pub fn cancel_capture(&self) {
@@ -1469,6 +1466,42 @@ mod tests {
             image::imageops::crop_imm(image.as_ref(), 1, 1, 2, 2).to_image()
         );
         assert_eq!(pins[0].config.image_rect, Some((1, 1, 2, 2)));
+    }
+
+    #[test]
+    fn pre_cropped_capture_keeps_monitor_origin_and_request_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let image = Arc::new(RgbaImage::from_pixel(2, 2, image::Rgba([12, 34, 56, 78])));
+        let mut config = pin_config();
+        config.monitor_size = (3840, 2160);
+        config.rect = (1200, 900, 2, 2);
+        config.image_rect = Some(config.rect);
+        let request = services.create_pin(image.clone(), config.clone()).unwrap();
+        let event = services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            id,
+            result: Ok(pin),
+        }) = event
+        else {
+            panic!("expected created pin");
+        };
+        assert_eq!(id, request);
+        assert!(Arc::ptr_eq(&pin.image, &image));
+        assert_eq!(pin.config.image_rect, config.image_rect);
+        services.shutdown();
+        let (pins, warnings) = rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+            .unwrap()
+            .load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+        assert_eq!(*pins[0].image, *image);
+        assert_eq!(pins[0].config.image_rect, config.image_rect);
     }
 
     #[test]

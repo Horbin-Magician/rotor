@@ -377,11 +377,7 @@ fn start_detection(session: u64, cx: &mut App) {
     let task = cx.spawn(async move |cx| {
         for frame in frames {
             let monitor = frame.monitor.id;
-            let image = cx
-                .background_executor()
-                .spawn(async move { frame.image.rgba() })
-                .await;
-            let rectangles = services.detect_capture_rectangles(image).await;
+            let rectangles = services.detect_capture_rectangles(frame).await;
             let current = cx.update(|cx| {
                 if !cx
                     .global::<ShellState>()
@@ -471,7 +467,11 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
                 mask_label: format!("ssmask-{monitor}"),
                 minimized: false,
             };
-            match crate::pins::from_capture(frame.image.rgba(), config, cx) {
+            match frame
+                .image
+                .crop_rgba(rect)
+                .and_then(|image| crate::pins::from_capture(image, config, cx))
+            {
                 Ok(()) => {
                     cx.global_mut::<ShellState>()
                         .capture

@@ -61,6 +61,7 @@ pub struct PinView {
     pending_finish: Option<PendingFinish>,
     queued_export: Option<ExportIntent>,
     dialog: bool,
+    preparing_export: bool,
     hovered: bool,
     dirty: bool,
     message: String,
@@ -109,6 +110,7 @@ impl PinView {
             pending_finish: None,
             queued_export: None,
             dialog: false,
+            preparing_export: false,
             hovered: false,
             dirty: false,
             message: init.error.unwrap_or_default(),
@@ -145,6 +147,7 @@ impl PinView {
         self.pending_create.is_some()
             || self.pending_finish.is_some()
             || self.dialog
+            || self.preparing_export
             || self.queued_export.is_some()
     }
     pub fn config(&self) -> &ShotterConfig {
@@ -275,6 +278,7 @@ impl PinView {
     ) {
         if self.pending_finish.is_some()
             || self.dialog
+            || self.preparing_export
             || self.queued_export.is_some()
             || self.crop_drag.is_some()
             || !self.canvas.can_request_export()
@@ -321,15 +325,39 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.message.clear();
-        match intent {
-            ExportIntent::Save => self.save_ready(window, cx),
-            ExportIntent::Target(target) => {
-                if let Some(frame) = self.canvas.frame() {
-                    self.export_frame(target, frame.image.clone(), cx);
-                }
-            }
-        }
+        let scene = self.canvas.export_scene();
+        let output = rotor_canvas::ImageSize {
+            width: scene.crop.width,
+            height: scene.crop.height,
+        };
+        let source = self.image.image.clone();
+        let services = self.services.clone();
+        self.preparing_export = true;
+        self.message = self.t("正在准备导出…", "Preparing export…").into();
+        cx.notify();
+        cx.spawn_in(window, async move |view, cx| {
+            // Render the document at source resolution, independent of display zoom.
+            let result = services.render_canvas(source, scene, output).await;
+            let _ = cx.update(|window, cx| {
+                view.update(cx, |this, cx| {
+                    this.preparing_export = false;
+                    match result {
+                        Ok(image) => {
+                            this.message.clear();
+                            match intent {
+                                ExportIntent::Save => this.save_ready(image, window, cx),
+                                ExportIntent::Target(target) => {
+                                    this.export_frame(target, image, cx)
+                                }
+                            }
+                        }
+                        Err(error) => this.message = error,
+                    }
+                    cx.notify();
+                })
+            });
+        })
+        .detach();
     }
     fn export_frame(
         &mut self,
@@ -366,13 +394,17 @@ impl PinView {
         }
         cx.notify();
     }
-    fn save_ready(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() || !self.canvas.ready() || self.crop_drag.is_some() {
+    fn save_ready(
+        &mut self,
+        frame: Arc<image::RgbaImage>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // The accepted document snapshot is already rendered; display resizes
+        // during that work must not discard the requested export.
+        if self.busy() {
             return;
         }
-        let Some(frame) = self.canvas.frame().map(|frame| frame.image.clone()) else {
-            return;
-        };
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()

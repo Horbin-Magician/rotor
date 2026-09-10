@@ -27,11 +27,38 @@ pub fn ocr_cache_loaded() -> Option<bool> {
     })
 }
 
+/// Packed four-channel pixels borrowed from their owner (no UI dependency).
+#[derive(Clone, Copy)]
+pub enum PixelFormat {
+    Rgba,
+    Bgra,
+}
+pub trait CapturePixels: Send + Sync + 'static {
+    fn pixels(&self) -> (&[u8], u32, u32, PixelFormat);
+}
+impl CapturePixels for RgbaImage {
+    fn pixels(&self) -> (&[u8], u32, u32, PixelFormat) {
+        (
+            self.as_raw(),
+            self.width(),
+            self.height(),
+            PixelFormat::Rgba,
+        )
+    }
+}
 pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
-    let original_width = original_img.width();
-    let original_height = original_img.height();
-    let scale_factor = calculate_optimal_scale_factor(original_img.width(), original_img.height());
-    let gray = image_to_scaled_gray(original_img, scale_factor);
+    detect_pixels(original_img).unwrap_or_default()
+}
+pub fn detect_pixels(image: &impl CapturePixels) -> Result<Vec<(u32, u32, u32, u32)>, String> {
+    let (bytes, original_width, original_height, format) = image.pixels();
+    let expected = (original_width as usize)
+        .checked_mul(original_height as usize)
+        .and_then(|pixels| pixels.checked_mul(4));
+    if original_width == 0 || original_height == 0 || expected != Some(bytes.len()) {
+        return Err("Invalid capture pixel buffer".into());
+    }
+    let scale_factor = calculate_optimal_scale_factor(original_width, original_height);
+    let gray = image_to_scaled_gray(bytes, original_width, original_height, format, scale_factor);
     let edge_image = canny_edge_detection(&gray, 10.0, 30.0);
 
     let morph_size = cmp::max(1, 4 / scale_factor) as u8;
@@ -41,7 +68,7 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
     let rects = find_bounding_boxes(&processed_image, min_size);
 
     // 6. Rescale back
-    rects
+    Ok(rects
         .into_iter()
         .map(|(x, y, w, h)| {
             let left = x * scale_factor;
@@ -51,7 +78,7 @@ pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
 
             (left, top, right - left, bottom - top)
         })
-        .collect()
+        .collect())
 }
 
 fn calculate_optimal_scale_factor(width: u32, height: u32) -> u32 {
@@ -64,12 +91,19 @@ fn calculate_optimal_scale_factor(width: u32, height: u32) -> u32 {
     }
 }
 
-fn image_to_scaled_gray(img: &RgbaImage, scale_factor: u32) -> GrayImage {
-    let src_width = img.width();
-    let src_height = img.height();
+fn image_to_scaled_gray(
+    img_data: &[u8],
+    src_width: u32,
+    src_height: u32,
+    format: PixelFormat,
+    scale_factor: u32,
+) -> GrayImage {
+    let (red, blue) = match format {
+        PixelFormat::Rgba => (0, 2),
+        PixelFormat::Bgra => (2, 0),
+    };
     let dst_width = src_width.div_ceil(scale_factor);
     let dst_height = src_height.div_ceil(scale_factor);
-    let img_data = img.as_raw();
 
     let mut gray_data = vec![0u8; (dst_width * dst_height) as usize];
     let src_width_usize = src_width as usize;
@@ -86,15 +120,10 @@ fn image_to_scaled_gray(img: &RgbaImage, scale_factor: u32) -> GrayImage {
                 let src_x = (dst_x * scale_factor_usize).min(src_width_usize - 1);
                 let src_offset = src_row_offset + src_x * 4;
 
-                unsafe {
-                    // SAFETY: src_x/src_y are clamped to src_width-1 / src_height-1, so
-                    // src_offset + 2 stays within img_data (length src_width*src_height*4).
-                    let r = *img_data.get_unchecked(src_offset) as u32;
-                    let g = *img_data.get_unchecked(src_offset + 1) as u32;
-                    let b = *img_data.get_unchecked(src_offset + 2) as u32;
-                    // Y = 0.299R + 0.587G + 0.114B
-                    *gray = ((r * 299 + g * 587 + b * 114) / 1000) as u8;
-                }
+                let r = img_data[src_offset + red] as u32;
+                let g = img_data[src_offset + 1] as u32;
+                let b = img_data[src_offset + blue] as u32;
+                *gray = ((r * 299 + g * 587 + b * 114) / 1000) as u8;
             }
         });
 
@@ -799,6 +828,52 @@ fn horizontal_gap(left: &TextResult, right: &TextResult) -> i32 {
 mod tests {
     use super::*;
     use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    struct Pixels(Vec<u8>, u32, u32, PixelFormat);
+    impl CapturePixels for Pixels {
+        fn pixels(&self) -> (&[u8], u32, u32, PixelFormat) {
+            (&self.0, self.1, self.2, self.3)
+        }
+    }
+
+    #[test]
+    fn detection_formats_have_identical_gray_and_rectangles() {
+        let rgba = RgbaImage::from_fn(123, 107, |x, y| {
+            image::Rgba(if (10..110).contains(&x) && (5..100).contains(&y) {
+                [240, 80, 13, 128]
+            } else {
+                [3, 20, 90, 255]
+            })
+        });
+        let mut bgra = rgba.as_raw().clone();
+        for pixel in bgra.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        for scale in 1..=4 {
+            let expected = image_to_scaled_gray(rgba.as_raw(), 123, 107, PixelFormat::Rgba, scale);
+            assert_eq!(
+                expected,
+                image_to_scaled_gray(&bgra, 123, 107, PixelFormat::Bgra, scale)
+            );
+            assert_eq!(expected.get_pixel(0, 0).0, [22]);
+        }
+        assert_eq!(
+            detect_rect(&rgba),
+            detect_pixels(&Pixels(bgra, 123, 107, PixelFormat::Bgra)).unwrap()
+        );
+    }
+
+    #[test]
+    fn detection_rejects_empty_truncated_and_overflowing_buffers() {
+        for (width, height, bytes) in [
+            (0, 1, vec![]),
+            (2, 1, vec![0; 4]),
+            (1, 1, vec![0; 8]),
+            (u32::MAX, u32::MAX, vec![]),
+        ] {
+            assert!(detect_pixels(&Pixels(bytes, width, height, PixelFormat::Bgra)).is_err());
+        }
+    }
 
     fn text_result(left: i32, top: i32, width: u32, height: u32, text: &str) -> TextResult {
         TextResult {

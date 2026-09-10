@@ -1,4 +1,5 @@
 use super::*;
+use crate::capture::PreparedFrame;
 use gpui_kit::component::input::{Textarea, TextareaState};
 use rotor_canvas::{
     Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, StrokeStyle, ViewTransform,
@@ -35,7 +36,7 @@ pub(super) struct CanvasState {
     preview: Option<Annotation>,
     pub(super) editor: Option<Entity<TextareaState>>,
     editor_origin: ImagePoint,
-    frame: Option<PreparedImage>,
+    frame: Option<PreparedFrame>,
     frame_key: Option<FrameKey>,
     requested: Option<FrameKey>,
     pub(super) rendering: bool,
@@ -86,8 +87,11 @@ impl CanvasState {
             text_pending: false,
         }
     }
-    pub(super) fn frame(&self) -> Option<&PreparedImage> {
+    pub(super) fn frame(&self) -> Option<&PreparedFrame> {
         self.frame.as_ref()
+    }
+    pub(super) fn export_scene(&self) -> rotor_canvas::Scene {
+        self.document.scene().clone()
     }
     pub(super) fn can_request_export(&self) -> bool {
         self.draft.is_none() && self.editor.is_none()
@@ -108,10 +112,10 @@ impl CanvasState {
         &mut self,
         epoch: u64,
         key: FrameKey,
-        prepared: Result<PreparedImage, String>,
+        prepared: Result<PreparedFrame, String>,
     ) -> Option<AcceptedRender> {
         let prepared = prepared.and_then(|frame| {
-            if frame.image.dimensions() == (key.output.width, key.output.height) {
+            if frame.dimensions == (key.output.width, key.output.height) {
                 Ok(frame)
             } else {
                 Err("Rendered frame dimensions differ from its viewport".into())
@@ -258,7 +262,7 @@ impl PinView {
             let prepared = match result {
                 Ok(image) => {
                     cx.background_executor()
-                        .spawn(async move { crate::prepare_image(image) })
+                        .spawn(async move { PreparedFrame::new(image) })
                         .await
                 }
                 Err(error) => Err(error),
@@ -870,7 +874,7 @@ fn is_canvas_undo(key: &Keystroke, editing: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{CanvasState, FrameKey, Rollback};
+    use super::{CanvasState, FrameKey, PreparedFrame, Rollback};
     use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window};
 
     #[test]
@@ -916,7 +920,7 @@ mod tests {
             crop: state.document.scene().crop,
             output: state.document.scene().size,
         };
-        state.frame = Some(image);
+        state.frame = Some(PreparedFrame::new(image.image).unwrap());
         state.frame_key = Some(key);
         state.requested = Some(key);
         (state, key)
@@ -934,8 +938,40 @@ mod tests {
         assert!(state.error.is_none());
         assert!(state.rendering);
         assert_eq!(
-            state.frame.unwrap().image.get_pixel(0, 0).0,
+            state.frame.unwrap().rgba().get_pixel(0, 0).0,
             [10, 20, 30, 128]
+        );
+    }
+
+    #[test]
+    fn export_uses_document_pixels_after_display_frame_is_released() {
+        let (mut state, _) = state();
+        state
+            .document
+            .set_crop(rotor_canvas::ImageRect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 3,
+            })
+            .unwrap();
+        state.frame = None;
+        let scene = state.export_scene();
+        let source =
+            image::RgbaImage::from_fn(4, 4, |x, y| image::Rgba([x as u8, y as u8, 80, 128]));
+        let rendered = rotor_canvas::Renderer::without_fonts()
+            .render(
+                &source,
+                &scene,
+                rotor_canvas::ImageSize {
+                    width: scene.crop.width,
+                    height: scene.crop.height,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            rendered,
+            image::imageops::crop_imm(&source, 1, 1, 2, 3).to_image()
         );
     }
     #[test]
@@ -992,8 +1028,8 @@ mod tests {
         assert!(!state.ready());
     }
 
-    fn prepared(width: u32, height: u32) -> crate::PreparedImage {
-        crate::prepare_image(Arc::new(image::RgbaImage::from_pixel(
+    fn prepared(width: u32, height: u32) -> PreparedFrame {
+        PreparedFrame::new(Arc::new(image::RgbaImage::from_pixel(
             width,
             height,
             image::Rgba([80, 90, 100, 255]),
@@ -1065,7 +1101,7 @@ mod tests {
     fn replacement_scene_releases_retired_atlas_entries(cx: &mut gpui::TestAppContext) {
         let (state, mut key) = state();
         let window = cx.add_window(|_, _| FrameView {
-            source: prepared(4, 4),
+            source: crate::prepare_image(prepared(4, 4).rgba()).unwrap(),
             state,
             retiring: None,
         });
@@ -1114,7 +1150,7 @@ mod tests {
         let (state, key) = state();
         let old = Arc::downgrade(&state.frame.as_ref().unwrap().render);
         let window = cx.add_window(|_, _| FrameView {
-            source: prepared(4, 4),
+            source: crate::prepare_image(prepared(4, 4).rgba()).unwrap(),
             state,
             retiring: None,
         });

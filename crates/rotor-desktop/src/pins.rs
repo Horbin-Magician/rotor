@@ -17,7 +17,6 @@ struct PendingImage {
     config: ShotterConfig,
     id: Option<u32>,
     error: Option<String>,
-    crop_from_capture: bool,
     activate: bool,
 }
 #[derive(Default)]
@@ -98,14 +97,9 @@ pub fn from_capture(
         config: config.clone(),
         id: None,
         error: None,
-        crop_from_capture: true,
         activate: true,
     };
-    match cx
-        .global::<ShellState>()
-        .services
-        .create_pin_from_capture(image, config)
-    {
+    match cx.global::<ShellState>().services.create_pin(image, config) {
         Ok(id) => {
             cx.global_mut::<ShellState>()
                 .pins
@@ -134,27 +128,7 @@ fn queue_image(pending: PendingImage, cx: &mut App) -> Result<(), String> {
         let prepared = cx
             .background_executor()
             .spawn(async move {
-                let image = if pending.crop_from_capture {
-                    let (x, y, width, height) = pending
-                        .config
-                        .image_rect
-                        .ok_or("Capture source rectangle missing")?;
-                    if width == 0
-                        || height == 0
-                        || x.checked_add(width)
-                            .is_none_or(|right| right > pending.image.width())
-                        || y.checked_add(height)
-                            .is_none_or(|bottom| bottom > pending.image.height())
-                    {
-                        return Err("Capture source rectangle is invalid".to_owned());
-                    }
-                    Arc::new(
-                        image::imageops::crop_imm(pending.image.as_ref(), x, y, width, height)
-                            .to_image(),
-                    )
-                } else {
-                    pending.image
-                };
+                let image = pending.image;
                 Ok::<_, String>(DeferredPin {
                     image: rotor_ui::prepare_image(image)?,
                     config: pending.config,
@@ -191,7 +165,6 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
                 config: pin.config.clone(),
                 id: Some(pin.id),
                 error: None,
-                crop_from_capture: false,
                 activate: true,
             },
             Err(error) => PendingImage {

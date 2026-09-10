@@ -115,7 +115,7 @@ impl PinView {
         let Some(frame) = self.canvas.frame() else {
             return;
         };
-        let image = frame.image.clone();
+        let image = frame.rgba();
         let revision = self.canvas.frame_revision();
         self.ocr.active = true;
         self.ocr.revision = revision;
