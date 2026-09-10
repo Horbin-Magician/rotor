@@ -92,6 +92,12 @@ pub enum RuntimeEvent {
         id: OperationId,
         result: Result<TranslateResult, String>,
     },
+    /// The capture topology is known; the shell can prepare hidden windows while
+    /// pixels are captured. This is not a ready frame or permission to show it.
+    CapturePreparing {
+        id: OperationId,
+        monitors: Vec<MonitorConfig>,
+    },
     CaptureFinished {
         id: OperationId,
         result: Result<CaptureBundle, String>,
@@ -1180,6 +1186,7 @@ fn merge_settings_changes(
 fn capture_monitors(
     pool: &mut monitor::CapturePool,
     request: CaptureRequest,
+    events: &Sender<RuntimeEvent>,
 ) -> Result<CaptureBundle, String> {
     let mark = |stage| {
         log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage={} elapsed_us={}",
@@ -1189,30 +1196,59 @@ fn capture_monitors(
         rotor_platform::overlay::settle_desktop()?;
     }
     mark("desktop_settled");
-    let before =
-        monitor::sorted_configs(monitor::current_configs().map_err(|error| error.to_string())?);
+    capture_with_preparation(
+        request,
+        events,
+        || monitor::current_configs().map_err(|error| error.to_string()),
+        |before| {
+            let (images, windows) = pool.capture_with(&before, || {
+                let windows =
+                    rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
+                        log::warn!("Capture window rectangles: {error}");
+                        Vec::new()
+                    });
+                mark("window_rectangles");
+                windows
+            })?;
+            let monitors = before
+                .into_iter()
+                .zip(images)
+                .map(|(monitor, image)| CapturedMonitor { monitor, image })
+                .collect();
+            Ok(CaptureBundle { monitors, windows })
+        },
+    )
+}
+
+/// Publish preparation before starting the pixel read, without waiting for the
+/// shell. The same topology is passed to capture and checked again afterwards.
+fn capture_with_preparation(
+    request: CaptureRequest,
+    events: &Sender<RuntimeEvent>,
+    mut current_configs: impl FnMut() -> Result<Vec<MonitorConfig>, String>,
+    capture: impl FnOnce(Vec<MonitorConfig>) -> Result<CaptureBundle, String>,
+) -> Result<CaptureBundle, String> {
+    let mark = |stage| {
+        log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage={} elapsed_us={}",
+        request.id.0, stage, request.submitted.elapsed().as_micros())
+    };
+    let before = monitor::sorted_configs(current_configs()?);
     mark("topology_before");
-    let (images, windows) = pool.capture_with(&before, || {
-        let windows = rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
-            log::warn!("Capture window rectangles: {error}");
-            Vec::new()
-        });
-        mark("window_rectangles");
-        windows
-    })?;
+    events
+        .send_blocking(RuntimeEvent::CapturePreparing {
+            id: request.id,
+            monitors: before.clone(),
+        })
+        .map_err(|_| "Screenshot event receiver is closed")?;
+    mark("capture_preparation_sent");
+    let bundle = capture(before.clone())?;
     mark("pixels_captured");
-    let after =
-        monitor::sorted_configs(monitor::current_configs().map_err(|error| error.to_string())?);
+    let after = monitor::sorted_configs(current_configs()?);
     if before != after {
         return Err("display topology changed during capture; retry screenshot".into());
     }
-    let monitors = before
-        .into_iter()
-        .zip(images)
-        .map(|(monitor, image)| CapturedMonitor { monitor, image })
-        .collect();
     mark("capture_complete");
-    Ok(CaptureBundle { monitors, windows })
+    Ok(bundle)
 }
 
 fn redact_error(message: String, config: &EngineConfig) -> String {

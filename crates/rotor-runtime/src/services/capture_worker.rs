@@ -21,7 +21,8 @@ pub(super) struct CaptureWorker {
 
 impl CaptureWorker {
     pub fn new(events: Sender<RuntimeEvent>, current: Arc<AtomicU64>) -> Result<Self, String> {
-        Self::start_initialized(events, current, || {
+        let preparation_events = events.clone();
+        Self::start_initialized(events, current, move || {
             let mut pool = monitor::CapturePool::default();
             // Prestart output workers without reading any desktop pixels.
             #[cfg(not(test))]
@@ -30,7 +31,7 @@ impl CaptureWorker {
                     log::warn!("Capture worker warmup: {error}");
                 }
             }
-            move |request| capture_monitors(&mut pool, request)
+            move |request| capture_monitors(&mut pool, request, &preparation_events)
         })
     }
 
@@ -108,19 +109,52 @@ impl Drop for CaptureWorker {
 mod tests {
     use super::*;
 
+    fn monitor() -> MonitorConfig {
+        MonitorConfig {
+            id: 9,
+            x: -2,
+            y: 0,
+            width: 2,
+            height: 3,
+            scale_factor: 1.,
+        }
+    }
+
+    fn synthetic_bundle(monitors: Vec<MonitorConfig>) -> CaptureBundle {
+        CaptureBundle {
+            monitors: monitors
+                .into_iter()
+                .map(|monitor| CapturedMonitor {
+                    image: monitor::BgraCapture {
+                        width: monitor.width,
+                        height: monitor.height,
+                        bytes: vec![255; (monitor.width * monitor.height * 4) as usize],
+                    },
+                    monitor,
+                })
+                .collect(),
+            windows: Vec::new(),
+        }
+    }
+
     #[test]
-    fn latest_request_replaces_pending_and_cancelled_result_is_not_published() {
+    fn preparation_overlaps_capture_and_superseded_results_are_not_published() {
         let (events, received) = async_channel::bounded(4);
+        let preparation_events = events.clone();
         let current = Arc::new(AtomicU64::new(0));
         let (started, starts) = std::sync::mpsc::channel();
         let (release, wait) = std::sync::mpsc::channel();
         let worker = CaptureWorker::start(events, current.clone(), move |request| {
-            started.send(request.id).unwrap();
-            wait.recv_timeout(Duration::from_secs(5)).unwrap();
-            Ok(CaptureBundle {
-                monitors: Vec::new(),
-                windows: Vec::new(),
-            })
+            capture_with_preparation(
+                request,
+                &preparation_events,
+                || Ok(vec![monitor()]),
+                |monitors| {
+                    started.send(request.id).unwrap();
+                    wait.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(synthetic_bundle(monitors))
+                },
+            )
         })
         .unwrap();
         let request = |id| CaptureRequest {
@@ -133,6 +167,14 @@ mod tests {
             starts.recv_timeout(Duration::from_secs(5)).unwrap(),
             OperationId(1)
         );
+        // The shell receives the exact topology while the pixel read is still
+        // blocked, without acknowledging window preparation to the worker.
+        assert!(matches!(
+            received.try_recv().unwrap(),
+            RuntimeEvent::CapturePreparing { id: OperationId(1), monitors }
+                if monitors == vec![monitor()]
+        ));
+        assert!(received.is_empty());
         worker.submit(request(2), &current).unwrap();
         worker.submit(request(3), &current).unwrap();
         release.send(()).unwrap();
@@ -140,6 +182,11 @@ mod tests {
             starts.recv_timeout(Duration::from_secs(5)).unwrap(),
             OperationId(3)
         );
+        assert!(matches!(
+            received.try_recv().unwrap(),
+            RuntimeEvent::CapturePreparing { id: OperationId(3), monitors }
+                if monitors == vec![monitor()]
+        ));
         assert!(received.is_empty());
         release.send(()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -159,5 +206,50 @@ mod tests {
         ));
         worker.stop();
         assert!(worker.submit(request(4), &current).is_err());
+    }
+
+    #[test]
+    fn prepared_windows_do_not_make_failed_or_changed_captures_ready() {
+        for fail_pixels in [false, true] {
+            let (events, received) = async_channel::bounded(4);
+            let mut topology_reads = 0;
+            let result = capture_with_preparation(
+                CaptureRequest {
+                    id: OperationId(7),
+                    settle: false,
+                    submitted: Instant::now(),
+                },
+                &events,
+                || {
+                    let mut monitor = monitor();
+                    topology_reads += 1;
+                    if topology_reads > 1 {
+                        monitor.scale_factor = 2.;
+                    }
+                    Ok(vec![monitor])
+                },
+                |monitors| {
+                    assert!(matches!(
+                        received.try_recv().unwrap(),
+                        RuntimeEvent::CapturePreparing { id: OperationId(7), monitors }
+                            if monitors == vec![monitor()]
+                    ));
+                    if fail_pixels {
+                        Err("synthetic pixel failure".into())
+                    } else {
+                        Ok(synthetic_bundle(monitors))
+                    }
+                },
+            );
+            let error = result.err().expect("capture must fail after preparation");
+            if fail_pixels {
+                assert_eq!(error, "synthetic pixel failure");
+                assert_eq!(topology_reads, 1);
+            } else {
+                assert!(error.contains("display topology changed"));
+                assert_eq!(topology_reads, 2);
+            }
+            assert!(received.is_empty());
+        }
     }
 }

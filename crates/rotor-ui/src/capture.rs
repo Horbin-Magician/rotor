@@ -215,6 +215,10 @@ pub fn prepare_capture(bundle: CaptureBundle) -> Result<Vec<Arc<PreparedCapture>
 }
 #[derive(Clone, Copy)]
 pub enum MaskAction {
+    Activate {
+        session: u64,
+        monitor: u32,
+    },
     Cancel {
         session: u64,
     },
@@ -406,7 +410,14 @@ impl MaskView {
             self.pointer_inside = self.contains_pointer(point);
         }
         if self.pointer_inside && !window.is_window_active() {
-            window.activate_window();
+            (self.callback)(
+                MaskAction::Activate {
+                    session: self.session,
+                    monitor: self.capture.monitor.id,
+                },
+                window,
+                cx,
+            );
             self.focus.focus(window, cx);
         }
         cx.notify();

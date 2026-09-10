@@ -509,6 +509,9 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
     #[cfg(target_os = "windows")]
     let fitted = handle
         .update(cx, |_, window, _| {
+            rotor_platform::overlay::use_small_window_corners(
+                HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+            )?;
             rotor_platform::overlay::fit_client_bounds(
                 HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
                 (position.x.as_f32() * scale).round() as i32,

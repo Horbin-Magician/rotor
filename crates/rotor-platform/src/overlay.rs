@@ -1,6 +1,103 @@
+/// Keep capture overlays rectangular even when DWM rounds ordinary windows.
+#[cfg(target_os = "windows")]
+pub fn disable_window_rounding(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
+    set_window_corner_preference(handle, windows::Win32::Graphics::Dwm::DWMWCP_DONOTROUND)
+}
+
+/// Use DWM's smaller corner radius for compact floating windows such as pins.
+#[cfg(target_os = "windows")]
+pub fn use_small_window_corners(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
+    set_window_corner_preference(handle, windows::Win32::Graphics::Dwm::DWMWCP_ROUNDSMALL)
+}
+
+#[cfg(target_os = "windows")]
+fn set_window_corner_preference(
+    handle: raw_window_handle::WindowHandle<'_>,
+    preference: windows::Win32::Graphics::Dwm::DWM_WINDOW_CORNER_PREFERENCE,
+) -> Result<(), String> {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::{
+        Foundation::{E_INVALIDARG, HWND},
+        Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE},
+    };
+    let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+        return Err("Expected a Windows window handle".into());
+    };
+    // The borrowed handle keeps the native window alive for this synchronous call.
+    let result = unsafe {
+        DwmSetWindowAttribute(
+            HWND(raw.hwnd.get() as *mut _),
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            std::ptr::from_ref(&preference).cast(),
+            std::mem::size_of_val(&preference) as u32,
+        )
+    };
+    match result {
+        // Windows 10 does not support this attribute and already uses square corners.
+        Err(error) if error.code() == E_INVALIDARG => Ok(()),
+        result => result.map_err(|error| error.to_string()),
+    }
+}
+
 pub fn settle_desktop() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     unsafe { windows::Win32::Graphics::Dwm::DwmFlush() }.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Activate a visible overlay without restoring or changing its calibrated bounds.
+#[cfg(target_os = "windows")]
+pub fn activate_window_in_place(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::{
+            Input::KeyboardAndMouse::{
+                SendInput, SetActiveWindow, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+                KEYEVENTF_KEYUP, VK_MENU,
+            },
+            WindowsAndMessaging::SetForegroundWindow,
+        },
+    };
+    let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+        return Err("Expected a Windows window handle".into());
+    };
+    let hwnd = HWND(raw.hwnd.get() as *mut _);
+    // These calls run on the owning UI thread with a borrowed live handle.
+    // The return handles describe the previous focus, which may legitimately be null.
+    unsafe {
+        let _ = SetActiveWindow(hwnd);
+        let _ = SetFocus(Some(hwnd));
+        if !SetForegroundWindow(hwnd).as_bool() {
+            // Retain GPUI's foreground activation fallback, but never apply its
+            // cached initial placement after the capture client has been fitted.
+            let inputs = [
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_MENU,
+                            ..Default::default()
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_MENU,
+                            dwFlags: KEYEVENTF_KEYUP,
+                            ..Default::default()
+                        },
+                    },
+                },
+            ];
+            SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            if !SetForegroundWindow(hwnd).as_bool() {
+                log::warn!("Windows declined capture overlay foreground activation");
+            }
+        }
+    }
     Ok(())
 }
 

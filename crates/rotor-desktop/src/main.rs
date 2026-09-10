@@ -332,6 +332,10 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
         }
         return;
     }
+    if let RuntimeEvent::CapturePreparing { id, monitors } = event {
+        capture::prepare_masks(id, monitors, cx);
+        return;
+    }
     if let RuntimeEvent::CaptureFinished { id, result } = event {
         capture::completed(id, result, cx);
         return;

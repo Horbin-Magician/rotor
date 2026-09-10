@@ -45,6 +45,18 @@ pub fn show(window: &mut Window) -> Result<(), String> {
     window.refresh();
     Ok(())
 }
+
+fn activate_mask(window: &mut Window) -> Result<(), String> {
+    // GPUI 0.3.3 applies cached initial placement on the first activation of
+    // show:false windows, overwriting fit_mask's exact physical client bounds.
+    #[cfg(target_os = "windows")]
+    rotor_platform::overlay::activate_window_in_place(
+        HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+    )?;
+    #[cfg(not(target_os = "windows"))]
+    window.activate_window();
+    Ok(())
+}
 fn close_masks(current: Option<&mut Window>, cx: &mut App) -> Result<(), String> {
     let current_id = current
         .as_ref()
@@ -87,11 +99,12 @@ fn mark(session: u64, stage: &str, cx: &App) {
 }
 
 fn create_mask_window(
+    session: u64,
     monitor: &rotor_runtime::MonitorConfig,
     cx: &mut App,
 ) -> Result<AnyWindowHandle, String> {
     let role = WindowRole::Mask {
-        session: 0,
+        session,
         monitor: monitor.id,
     };
     let display = cx
@@ -149,6 +162,9 @@ fn fit_mask(
     #[cfg(target_os = "windows")]
     handle
         .update(cx, |_, window, cx| {
+            rotor_platform::overlay::disable_window_rounding(
+                HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+            )?;
             rotor_platform::overlay::fit_client_bounds(
                 HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
                 monitor.x,
@@ -205,6 +221,24 @@ pub fn begin(started: Instant, cx: &mut App) -> Result<(), String> {
     cx.global_mut::<ShellState>().capture.session.begin(id.0);
     Ok(())
 }
+pub fn prepare_masks(id: OperationId, monitors: Vec<rotor_runtime::MonitorConfig>, cx: &mut App) {
+    if !cx.global::<ShellState>().capture.session.is_capturing(id.0) {
+        return;
+    }
+    mark(id.0, "mask_windows_preparing", cx);
+    // The worker can capture pixels concurrently. These windows stay hidden and
+    // inert until completed() supplies a validated frame. Register them under
+    // this generation immediately so cancellation also closes unfinished masks.
+    for monitor in monitors {
+        if let Err(error) = create_mask_window(id.0, &monitor, cx) {
+            let _ = cancel(None, cx);
+            report(error, cx);
+            return;
+        }
+    }
+    mark(id.0, "mask_windows_prepared", cx);
+}
+
 pub fn completed(id: OperationId, result: Result<CaptureBundle, String>, cx: &mut App) {
     if !cx.global::<ShellState>().capture.session.is_capturing(id.0) {
         return;
@@ -273,22 +307,22 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
         .or_else(|| frames.first().map(|frame| frame.monitor.id));
     for frame in frames {
         let monitor = frame.monitor.id;
-        let handle = create_mask_window(&frame.monitor, cx)?;
         let entry = cx
-            .global_mut::<ShellState>()
+            .global::<ShellState>()
             .windows
-            .remove(&WindowRole::Mask {
-                session: 0,
-                monitor,
-            })
-            .ok_or("New mask is unavailable")?;
+            .get(&WindowRole::Mask { session, monitor })
+            .ok_or("Prepared mask is unavailable")?;
         let WindowView::Mask(view) = &entry.view else {
-            return Err("New mask view is unavailable".into());
+            return Err("Prepared mask view is unavailable".into());
         };
+        if !view
+            .upgrade()
+            .is_some_and(|view| view.read(cx).monitor() == &frame.monitor)
+        {
+            return Err("Display topology changed while preparing masks".into());
+        }
+        let handle = entry.window;
         let view = view.clone();
-        cx.global_mut::<ShellState>()
-            .windows
-            .insert(WindowRole::Mask { session, monitor }, entry);
         cx.global_mut::<ShellState>()
             .capture
             .frames
@@ -335,9 +369,11 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                     mark(session, "mask_paint_returned", cx);
                     handle.update(cx, |_, window, cx| {
                         show(window)?;
+                        if Some(monitor) == focus_id {
+                            activate_mask(window)?;
+                        }
                         view.update(cx, |view, cx| {
                             if Some(monitor) == focus_id {
-                                window.activate_window();
                                 view.focus(window, cx);
                             }
                             view.arm(session, window, cx);
@@ -416,6 +452,24 @@ fn start_detection(session: u64, cx: &mut App) {
 }
 fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
     match action {
+        MaskAction::Activate { session, monitor } => {
+            if cx
+                .global::<ShellState>()
+                .capture
+                .session
+                .is_ready(session, monitor)
+                && cx
+                    .global::<ShellState>()
+                    .windows
+                    .get(&WindowRole::Mask { session, monitor })
+                    .is_some_and(|slot| {
+                        slot.window.window_id() == Window::window_handle(window).window_id()
+                    })
+                && let Err(error) = activate_mask(window)
+            {
+                report(error, cx);
+            }
+        }
         MaskAction::Cancel { session } | MaskAction::Invalidated { session } => {
             if cx.global::<ShellState>().capture.session.generation() != Some(session) {
                 return;
