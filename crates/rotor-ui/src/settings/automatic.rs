@@ -54,7 +54,7 @@ impl SettingsView {
             {
                 Ok(id) => {
                     self.autosave.accepted(key, &value, id);
-                    self.message = self.t("正在自动保存…", "Saving automatically…").into();
+                    self.message.clear();
                 }
                 Err(error) => {
                     self.autosave.rejected(key);
@@ -103,16 +103,6 @@ impl SettingsView {
         }));
     }
 
-    pub(super) fn has_marked_fields(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        self.fields.iter().any(|field| {
-            field.state.update(cx, |input, cx| {
-                input.marked_text_range(window, cx).is_some()
-            })
-        }) || self.excluded.update(cx, |input, cx| {
-            input.marked_text_range(window, cx).is_some()
-        }) || self.action_has_marked_text(window, cx)
-    }
-
     pub(super) fn apply_saved_fields(
         &mut self,
         fields: Vec<autosave::SavedField>,
@@ -157,14 +147,14 @@ impl SettingsView {
 
     pub(super) fn saved_feedback(&mut self) {
         self.message = if self.pending.is_some() || self.autosave.has_pending() {
-            self.t("正在保存…", "Saving…")
+            ""
         } else if self.autosave.has_failures() || self.manual_failed {
             self.t(
                 "部分设置未保存，请检查并重试",
                 "Some settings were not saved; review and retry",
             )
         } else {
-            self.t("设置已保存", "Settings saved")
+            ""
         }
         .into();
     }
@@ -189,12 +179,36 @@ impl SettingsView {
         self.recording = None;
         self.services.set_shortcut_recording(false);
         self.observe_all_fields(true, window, cx);
+        if self.autosave.has_composition() || self.action_has_marked_text(window, cx) {
+            self.message = self
+                .t("请先完成输入法组字", "Finish composing text before closing")
+                .into();
+            cx.notify();
+            return;
+        }
+        self.flush_actions(window, cx);
         self.close_request = Some(target);
         self.last_close_target = target;
         self.settle_close(window, cx);
         cx.notify();
     }
     pub(super) fn settle_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.close_request.is_some() && self.action_save.is_some() {
+            if self.pending.is_some() {
+                return;
+            }
+            self.close_request = None;
+            self.flush_actions(window, cx);
+            self.close_request = Some(self.last_close_target);
+            if self.action_save.is_some() {
+                self.close_request = None;
+                self.manual_failed = true;
+                self.message = self
+                    .t("请先完成输入法组字", "Finish composing text before closing")
+                    .into();
+                return;
+            }
+        }
         let state = self
             .autosave
             .close_state(self.pending.is_some(), self.manual_failed);
@@ -227,6 +241,7 @@ impl SettingsView {
             return;
         }
         // In particular, blur must not retry a draft the user just discarded.
+        self.action_save = None;
         self.close_request = Some(self.last_close_target);
         match self.last_close_target {
             CloseTarget::Window => window.remove_window(),

@@ -84,6 +84,17 @@ pub(super) fn quiet_button(button: Button, cx: &App) -> Button {
     )
 }
 
+pub(super) fn close_button(button: Button, cx: &App) -> Button {
+    let colors = palette(cx);
+    button.custom(
+        ButtonCustomVariant::new(cx)
+            .color(colors.background)
+            .foreground(colors.secondary)
+            .hover(cx.theme().danger)
+            .active(colors.surface),
+    )
+}
+
 pub(super) fn navigation(
     button: Button,
     label: impl Into<SharedString>,
@@ -122,6 +133,39 @@ pub(super) fn navigation(
                 .hover(colors.background)
                 .active(colors.background),
         )
+}
+
+pub(super) fn control_row(label: impl Into<SharedString>, control: impl IntoElement) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_3()
+        .min_w_0()
+        .min_h(px(36.))
+        .pl(px(12.))
+        .child(div().flex_1().min_w_0().child(label.into()))
+        .child(div().w(relative(0.57)).flex_shrink_0().child(control))
+}
+
+pub(super) fn group(title: &'static str, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .min_w_0()
+        .gap(px(6.))
+        .child(heading(title, cx))
+}
+
+pub(super) fn control_button(button: Button, cx: &App) -> Button {
+    let colors = palette(cx);
+    button.w_full().h(px(30.)).rounded_sm().custom(
+        ButtonCustomVariant::new(cx)
+            .color(cx.theme().tokens.switch.color)
+            .foreground(colors.secondary)
+            .hover(colors.hover)
+            .active(cx.theme().tokens.switch.color),
+    )
 }
 
 #[cfg(test)]

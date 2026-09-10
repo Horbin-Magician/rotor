@@ -17,16 +17,40 @@ impl SettingsView {
             ),
             UpdatePhase::Failed => self.t("更新未完成", "Update did not complete"),
         };
-        let mut panel = appearance::card(cx)
-            .child(format!("Rotor {} · GPUI Preview", env!("CARGO_PKG_VERSION")))
-            .child(self.t("预览更新通道独立于正式版；通道尚未发布时检查会报错。", "The preview feed is separate from stable. Checks fail until the feed is published."))
-            .child(div().text_size(px(13.)).font_weight(FontWeight::BOLD).child(status))
-            .child(Button::new("check-updates").primary().label(self.t("检查更新", "Check for updates"))
-                .disabled(self.update.busy() || self.controls_locked())
-                .on_click(cx.listener(|this, _, _, cx| {
-                    if let Err(error) = this.services.check_updates() { this.message = error; }
-                    this.update = this.services.update_snapshot(); cx.notify();
-                })));
+        let mut panel = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .pl(px(12.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_3()
+                    .min_h(px(36.))
+                    .child(format!(
+                        "{} {}",
+                        self.t("当前版本：", "Current version:"),
+                        env!("CARGO_PKG_VERSION")
+                    ))
+                    .child(
+                        Button::new("check-updates")
+                            .h(px(32.))
+                            .label(self.t("检查更新", "Check for updates"))
+                            .disabled(self.update.busy() || self.controls_locked())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Err(error) = this.services.check_updates() {
+                                    this.message = error;
+                                }
+                                this.update = this.services.update_snapshot();
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .when(self.update.phase != UpdatePhase::Idle, |panel| {
+                panel.child(appearance::caption(status, cx))
+            });
         if let Some(release) = &self.update.release {
             panel = panel
                 .child(format!("v{}", release.version))

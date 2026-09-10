@@ -1,6 +1,21 @@
 //! Interruptible transitions, sampled only while the settings view is drawing.
 use std::time::{Duration, Instant};
 
+pub(super) fn refresh_rotation(
+    started: Option<Instant>,
+    now: Instant,
+    reduce_motion: bool,
+) -> (f32, bool) {
+    let Some(started) = started.filter(|_| !reduce_motion) else {
+        return (0., false);
+    };
+    let progress = now.saturating_duration_since(started).as_secs_f32() / 0.6;
+    if progress >= 1. {
+        return (0., false);
+    }
+    (progress * std::f32::consts::TAU, true)
+}
+
 pub(super) struct Transition {
     from: f32,
     target: f32,
@@ -42,6 +57,21 @@ impl Transition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_rotates_once_then_stops() {
+        let start = Instant::now();
+        assert_eq!(refresh_rotation(None, start, false), (0., false));
+        assert_eq!(refresh_rotation(Some(start), start, false), (0., true));
+        let (angle, running) =
+            refresh_rotation(Some(start), start + Duration::from_millis(300), false);
+        assert!(running && (angle - std::f32::consts::PI).abs() < 0.001);
+        assert_eq!(
+            refresh_rotation(Some(start), start + Duration::from_millis(600), false),
+            (0., false)
+        );
+        assert_eq!(refresh_rotation(Some(start), start, true), (0., false));
+    }
 
     #[test]
     fn reversal_starts_at_current_value_and_settles() {

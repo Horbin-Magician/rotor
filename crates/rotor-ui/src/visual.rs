@@ -1,9 +1,6 @@
 //! Shared surfaces use semantic colors so every window follows the active theme.
 use gpui_kit::{
-    component::{
-        ActiveTheme, Selectable, Theme, ThemeConfig,
-        button::{Button, ButtonCustomVariant, ButtonVariants},
-    },
+    component::{ActiveTheme, Theme, ThemeConfig},
     prelude::*,
     *,
 };
@@ -116,21 +113,6 @@ fn palette(mut theme: ThemeConfig, dark: bool) -> ThemeConfig {
     colors.title_bar = colors.background.clone();
     colors.title_bar_border = colors.border.clone();
     theme
-}
-
-pub(crate) fn choice(button: Button, selected: bool, cx: &App) -> Button {
-    button
-        .selected(selected)
-        .toggled(selected)
-        .when(selected, |button| {
-            button.custom(
-                ButtonCustomVariant::new(cx)
-                    .color(cx.theme().list_active)
-                    .foreground(cx.theme().primary)
-                    .hover(cx.theme().list_active)
-                    .active(cx.theme().list_active),
-            )
-        })
 }
 
 pub(crate) fn caption(value: impl Into<SharedString>, cx: &App) -> Div {

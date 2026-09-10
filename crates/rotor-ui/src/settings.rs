@@ -1,9 +1,11 @@
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Icon, IconName, Selectable,
+        ActiveTheme, Disableable, Icon, IconName, WindowExt,
         button::{Button, ButtonVariants},
         input::{Input, InputEvent, InputState, Textarea, TextareaState},
+        notification::Notification,
         scroll::ScrollableElement,
+        slider::{Slider, SliderEvent, SliderState},
     },
     prelude::*,
     *,
@@ -16,9 +18,13 @@ mod actions;
 mod appearance;
 mod automatic;
 mod autosave;
+mod controls;
+mod general;
 mod logo;
 mod motion;
 mod overview;
+#[cfg(test)]
+mod tests;
 mod updates;
 
 pub fn settings_title(config: &Config) -> &'static str {
@@ -46,9 +52,7 @@ enum Section {
     Search,
     Pin,
     Translation,
-    Shortcuts,
     Quick,
-    Updates,
 }
 struct Field {
     key: &'static str,
@@ -68,6 +72,7 @@ pub struct SettingsView {
     section: Section,
     fields: Vec<Field>,
     excluded: Entity<TextareaState>,
+    zoom_step: Entity<SliderState>,
     index_state: IndexState,
     index_status: Option<SearchIndexStatus>,
     index_request: Option<OperationId>,
@@ -75,11 +80,13 @@ pub struct SettingsView {
     autosave: autosave::FieldSaves,
     _field_observers: Vec<Subscription>,
     composition_check: Option<Task<()>>,
+    action_save: Option<Task<()>>,
     close_request: Option<CloseTarget>,
     last_close_target: CloseTarget,
     manual_failed: bool,
     choosing_path: bool,
     message: String,
+    displayed_message: String,
     actions: Vec<actions::ActionFields>,
     editing_action: Option<String>,
     recording: Option<actions::Recording>,
@@ -89,10 +96,11 @@ pub struct SettingsView {
     _activation: Subscription,
     overview: Option<rotor_runtime::Overview>,
     overview_request: Option<OperationId>,
+    overview_refresh_started: Option<std::time::Instant>,
     startup_request: Option<OperationId>,
     logo: logo::Logo,
     navigation_hover: Option<Section>,
-    navigation_highlights: [motion::Transition; 8],
+    navigation_highlights: [motion::Transition; 6],
     navigation_indicator: motion::Transition,
     logo_hover: bool,
     logo_glow: motion::Transition,
@@ -111,49 +119,49 @@ impl SettingsView {
         let definitions = [
             (
                 "shortcut_search",
-                Section::Shortcuts,
-                ("搜索快捷键", "Search shortcut"),
+                Section::General,
+                ("搜索", "Search"),
                 false,
             ),
             (
                 "shortcut_screenshot",
-                Section::Shortcuts,
-                ("截图快捷键", "Screenshot shortcut"),
+                Section::General,
+                ("截图", "Screenshot"),
                 false,
             ),
             (
                 "shortcut_translate_select",
-                Section::Shortcuts,
-                ("划词翻译快捷键", "Selection translation shortcut"),
+                Section::General,
+                ("划词翻译", "Selection translation"),
                 false,
             ),
             (
                 "shortcut_translate_input",
-                Section::Shortcuts,
-                ("输入翻译快捷键", "Input translation shortcut"),
+                Section::General,
+                ("输入翻译", "Input translation"),
                 false,
             ),
             (
                 "shortcut_pinwin_save",
-                Section::Shortcuts,
+                Section::Pin,
                 ("贴图保存", "Pin save"),
                 false,
             ),
             (
                 "shortcut_pinwin_copy",
-                Section::Shortcuts,
+                Section::Pin,
                 ("贴图复制", "Pin copy"),
                 false,
             ),
             (
                 "shortcut_pinwin_close",
-                Section::Shortcuts,
+                Section::Pin,
                 ("贴图关闭", "Pin close"),
                 false,
             ),
             (
                 "shortcut_pinwin_hide",
-                Section::Shortcuts,
+                Section::Pin,
                 ("贴图隐藏", "Pin hide"),
                 false,
             ),
@@ -234,7 +242,23 @@ impl SettingsView {
                     .map(|key| (key, config.get(key).cloned().unwrap_or_default())),
                 ),
         );
-        let mut field_observers = Vec::new();
+        let zoom_step = cx.new(|_| {
+            SliderState::new().min(1.).max(10.).step(1.).default_value(
+                config
+                    .get("zoom_delta")
+                    .and_then(|value| value.parse::<u8>().ok())
+                    .unwrap_or(2)
+                    .clamp(1, 10) as f32,
+            )
+        });
+        let mut field_observers =
+            vec![cx.subscribe(&zoom_step, |this, _, event, cx| match event {
+                SliderEvent::Change(_) => cx.notify(),
+                SliderEvent::Release(value) if !this.controls_locked() => {
+                    this.save(vec![("zoom_delta".into(), value.to_string())], cx);
+                }
+                _ => {}
+            })];
         for field in &fields {
             let key = field.key;
             field_observers.push(cx.observe_in(
@@ -287,6 +311,7 @@ impl SettingsView {
             section: Section::Overview,
             fields,
             excluded,
+            zoom_step,
             index_state: IndexState::Unavailable,
             index_status: None,
             index_request,
@@ -294,11 +319,13 @@ impl SettingsView {
             autosave,
             _field_observers: field_observers,
             composition_check: None,
+            action_save: None,
             close_request: None,
             last_close_target: CloseTarget::Window,
             manual_failed: false,
             choosing_path: false,
             message,
+            displayed_message: String::new(),
             actions,
             editing_action: None,
             recording: None,
@@ -308,6 +335,7 @@ impl SettingsView {
             _activation: activation,
             overview: None,
             overview_request,
+            overview_refresh_started: None,
             startup_request: None,
             logo: logo::Logo::new(),
             navigation_hover: None,
@@ -342,7 +370,12 @@ impl SettingsView {
             RuntimeEvent::StartupChanged { id, result } if self.startup_request == Some(id) => {
                 self.startup_request = None;
                 self.message = match result {
-                    Ok(_) => self.t("启动项已更新", "Startup entry updated").into(),
+                    Ok(enabled) => {
+                        if let Some(overview) = &mut self.overview {
+                            overview.autostart = Ok(enabled);
+                        }
+                        self.t("启动项已更新", "Startup entry updated").into()
+                    }
                     Err(error) => error,
                 };
                 self.refresh_overview(cx);
@@ -414,7 +447,7 @@ impl SettingsView {
                 }
                 self.pending = Some(id);
                 self.pending_keys = keys;
-                self.message = self.t("正在保存…", "Saving…").into();
+                self.message.clear();
             }
             Err(error) => {
                 for (key, value) in &changes {
@@ -425,36 +458,6 @@ impl SettingsView {
         }
         cx.notify();
     }
-    fn save_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.has_marked_fields(window, cx) {
-            self.message = self
-                .t(
-                    "请先确认中文组字，再保存",
-                    "Confirm the composed text before saving",
-                )
-                .into();
-            cx.notify();
-            return;
-        }
-        if self.section == Section::Quick {
-            self.save_actions(cx);
-            return;
-        }
-        let changes = if self.section == Section::Search {
-            vec![(
-                "search_excluded_dirs".into(),
-                self.excluded.read(cx).value().to_string(),
-            )]
-        } else {
-            self.fields
-                .iter()
-                .filter(|field| self.field_visible(field))
-                .map(|field| (field.key.into(), field.state.read(cx).value().to_string()))
-                .collect()
-        };
-        self.save(changes, cx);
-    }
-
     fn field_visible(&self, field: &Field) -> bool {
         if field.section != self.section {
             return false;
@@ -517,53 +520,24 @@ impl SettingsView {
         .detach();
         cx.notify();
     }
-    fn choices(
-        &self,
-        key: &'static str,
-        label: (&'static str, &'static str),
-        options: &[(&'static str, &'static str, &'static str)],
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        appearance::card(cx)
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(self.t(label.0, label.1))
-            .when(self.autosave.failed(key), |row| {
-                row.child(
-                    appearance::caption(self.t("未保存", "Not saved"), cx)
-                        .text_color(cx.theme().danger),
-                )
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .children(options.iter().enumerate().map(|(index, &(value, zh, en))| {
-                        crate::visual::choice(
-                            Button::new((key, index)).label(self.t(zh, en)),
-                            self.config.get(key).is_some_and(|current| current == value),
-                            cx,
-                        )
-                        .disabled(self.controls_locked())
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.save(vec![(key.into(), value.into())], cx)
-                        }))
-                    })),
-            )
-    }
 }
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.message != self.displayed_message {
+            self.displayed_message = self.message.clone();
+            if !self.message.is_empty() && !self.manual_failed && !self.autosave.has_failures() {
+                let message = self.message.clone();
+                cx.defer_in(window, move |_, window, cx| {
+                    window.push_notification(Notification::info(message).id::<SettingsView>(), cx);
+                });
+            }
+        }
         let compact = window.viewport_size().width < px(760.);
         let logo_size = 50.;
         let logo = self.logo.image(logo_size, window.scale_factor());
         let logo_glow = self.logo.glow();
         let logo_pixels = (logo_size * window.scale_factor()).round().max(1.);
         let glow_padding = logo::glow_padding(logo_pixels as u32) as f32 / logo_pixels * logo_size;
-        let can_save = matches!(self.section, Section::Quick | Section::Search)
-            || self.fields.iter().any(|field| self.field_visible(field));
         let sections = [
             (
                 "overview",
@@ -606,28 +580,12 @@ impl Render for SettingsView {
                 "Choose an engine and target language",
             ),
             (
-                "shortcuts",
-                Section::Shortcuts,
-                "快捷键",
-                "Shortcuts",
-                "录制后自动保存；手动输入按 Enter 确认",
-                "Recording saves automatically; Enter confirms typed shortcuts",
-            ),
-            (
                 "quick",
                 Section::Quick,
-                "快捷操作",
+                "快捷",
                 "Quick actions",
                 "通过快捷键运行常用命令",
                 "Run your everyday commands with a shortcut",
-            ),
-            (
-                "updates",
-                Section::Updates,
-                "更新",
-                "Updates",
-                "版本信息与下载进度",
-                "Version details and download progress",
             ),
         ];
         let now = std::time::Instant::now();
@@ -637,12 +595,12 @@ impl Render for SettingsView {
         let indicator_inset = f32::from(window.rem_size()) * 0.25;
         let mut row_top = 0.;
         let mut indicator_target = 0.;
-        let mut highlights = [0.; 8];
+        let mut highlights = [0.; 6];
         let (glow_opacity, mut animating) =
             self.logo_glow
                 .sample(if self.logo_hover { 1. } else { 0. }, now, reduce_motion);
         for (index, (_, section, ..)) in sections.iter().enumerate() {
-            if matches!(section, Section::Pin | Section::Updates) {
+            if matches!(section, Section::Pin) {
                 row_top += separator_height;
             }
             let selected = self.section == *section;
@@ -666,54 +624,29 @@ impl Render for SettingsView {
         if animating || moving {
             window.request_animation_frame();
         }
-        let current = sections.iter().find(|item| item.1 == self.section).unwrap();
-        let mut content = div().flex().flex_col().min_w_0().gap_3();
+        let mut content = div().flex().flex_col().min_w_0().gap(px(6.));
         match self.section {
-            Section::Updates => {
-                content = content.child(self.update_panel(cx));
-            }
             Section::Overview => {
-                content = content.child(self.overview_panel(cx));
+                let (rotation, spinning) =
+                    motion::refresh_rotation(self.overview_refresh_started, now, reduce_motion);
+                if spinning {
+                    window.request_animation_frame();
+                } else {
+                    self.overview_refresh_started = None;
+                }
+                content = content.child(self.overview_panel(rotation, cx));
             }
             Section::General => {
-                content = content
-                    .child(self.choices(
-                        "language",
-                        ("语言", "Language"),
-                        &[
-                            ("0", "跟随系统", "System"),
-                            ("1", "简体中文", "简体中文"),
-                            ("2", "English", "English"),
-                        ],
-                        cx,
-                    ))
-                    .child(self.choices(
-                        "theme",
-                        ("主题", "Theme"),
-                        &[
-                            ("0", "跟随系统", "System"),
-                            ("1", "浅色", "Light"),
-                            ("2", "深色", "Dark"),
-                        ],
-                        cx,
-                    ));
+                content = content.child(self.general_panel(cx));
             }
             Section::Search => {
                 content = content
-                    .child(self.index_panel(cx))
                     .child(
                         div()
                             .flex()
                             .flex_wrap()
+                            .pl(px(12.))
                             .gap_2()
-                            .child(
-                                Button::new("refresh-index")
-                                    .label(self.t("刷新状态", "Refresh status"))
-                                    .disabled(
-                                        self.index_request.is_some() || self.controls_locked(),
-                                    )
-                                    .on_click(cx.listener(|this, _, _, cx| this.refresh_index(cx))),
-                            )
                             .child(
                                 Button::new("rebuild-index")
                                     .label(self.t("重建索引", "Rebuild index"))
@@ -731,52 +664,51 @@ impl Render for SettingsView {
                                     ),
                             ),
                     )
-                    .child(self.t(
-                        "排除目录（每行一个名称或路径）",
-                        "Excluded directories (one name or path per line)",
-                    ))
                     .child(
-                        Textarea::new(&self.excluded)
-                            .text_size(px(13.))
-                            .h(px(112.))
-                            .disabled(self.controls_locked()),
+                        appearance::group(self.t("排除目录", "Excluded directories"), cx)
+                            .mt(px(10.))
+                            .child(
+                                appearance::caption(
+                                    self.t("每行一个名称或路径", "One name or path per line"),
+                                    cx,
+                                )
+                                .pl(px(12.)),
+                            ),
+                    )
+                    .child(
+                        div().pl(px(12.)).child(
+                            Textarea::new(&self.excluded)
+                                .text_size(px(13.))
+                                .h(px(112.))
+                                .disabled(self.controls_locked()),
+                        ),
                     );
             }
             Section::Pin => {
                 content = content
-                    .child(self.choices(
+                    .child(appearance::heading(
+                        self.t("保存与缩放", "Saving and zoom"),
+                        cx,
+                    ))
+                    .child(self.toggle(
                         "if_ask_save_path",
                         ("保存时选择路径", "Choose a path when saving"),
-                        &[("true", "开启", "On"), ("false", "关闭", "Off")],
                         cx,
                     ))
-                    .child(self.choices(
+                    .child(self.toggle(
                         "if_auto_change_save_path",
                         ("记住上次保存目录", "Remember last save directory"),
-                        &[("true", "开启", "On"), ("false", "关闭", "Off")],
                         cx,
                     ))
-                    .child(self.choices(
-                        "zoom_delta",
-                        ("滚轮缩放步长", "Scroll zoom step"),
-                        &[
-                            ("1", "1", "1"),
-                            ("2", "2", "2"),
-                            ("3", "3", "3"),
-                            ("4", "4", "4"),
-                            ("5", "5", "5"),
-                            ("6", "6", "6"),
-                            ("7", "7", "7"),
-                            ("8", "8", "8"),
-                            ("9", "9", "9"),
-                            ("10", "10", "10"),
-                        ],
-                        cx,
-                    ));
+                    .child(self.zoom_step_slider(cx));
             }
             Section::Translation => {
                 content = content
-                    .child(self.choices(
+                    .child(appearance::heading(
+                        self.t("翻译服务", "Translation service"),
+                        cx,
+                    ))
+                    .child(self.dropdown(
                         "translator_engine",
                         ("翻译引擎", "Translation engine"),
                         &[
@@ -786,7 +718,7 @@ impl Render for SettingsView {
                         ],
                         cx,
                     ))
-                    .child(self.choices(
+                    .child(self.dropdown(
                         "translator_target_lang",
                         ("目标语言", "Target language"),
                         &[
@@ -799,104 +731,71 @@ impl Render for SettingsView {
                         cx,
                     ));
             }
-            Section::Shortcuts => {
-                content = content.child(if self.services.uses_development_shortcuts() {
-                    self.t(
-                        "开发模式会为全局快捷键加入 Alt；贴图按键不变。",
-                        "Development mode adds Alt to global shortcuts; pin keys are unchanged.",
-                    )
-                } else {
-                    self.t(
-                        "全局快捷键使用下面保存的组合。",
-                        "Global shortcuts use the combinations saved below.",
-                    )
-                });
-            }
             Section::Quick => {
                 content = content.child(self.action_editor(cx));
             }
         }
-        if self.fields.iter().any(|field| self.field_visible(field)) {
-            content = content.child(
-                appearance::card(cx).gap_3().children(
-                    self.fields
-                        .iter()
-                        .filter(|field| self.field_visible(field))
-                        .map(|field| {
-                            let key = field.key;
-                            div()
-                                .flex()
-                                .flex_col()
-                                .min_w_0()
-                                .when(self.section == Section::Shortcuts, |row| {
-                                    row.flex_row().items_center()
-                                })
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .when(self.section == Section::Shortcuts, |label| {
-                                            label
-                                                .w(px(if compact { 90. } else { 140. }))
-                                                .flex_shrink_0()
-                                        })
-                                        .child(self.t(field.label.0, field.label.1))
-                                        .when(self.autosave.failed(key), |label| {
-                                            label.child(
-                                                appearance::caption(
-                                                    self.t("未保存", "Not saved"),
-                                                    cx,
-                                                )
-                                                .text_color(cx.theme().danger),
-                                            )
-                                        }),
+        if matches!(self.section, Section::Pin | Section::Translation) {
+            let mut fields = appearance::group(
+                if self.section == Section::Pin {
+                    self.t("贴图快捷键", "Pin shortcuts")
+                } else {
+                    self.t("引擎配置", "Engine configuration")
+                },
+                cx,
+            )
+            .mt(px(10.));
+            for field in self.fields.iter().filter(|field| self.field_visible(field)) {
+                if field.key.starts_with("shortcut_") {
+                    fields = fields.child(self.shortcut_field(field, cx));
+                } else {
+                    let control = div()
+                        .flex()
+                        .items_center()
+                        .min_w_0()
+                        .gap_2()
+                        .child(
+                            div().flex_1().min_w_0().child(
+                                Input::new(&field.state)
+                                    .text_size(px(13.))
+                                    .aria_label(self.t(field.label.0, field.label.1))
+                                    .disabled(self.controls_locked() || self.choosing_path),
+                            ),
+                        )
+                        .when(field.key == "save_path", |row| {
+                            row.child(
+                                Button::new("choose-save-directory")
+                                    .label("…")
+                                    .accessibility_label(self.t("浏览目录…", "Browse…"))
+                                    .tooltip(self.t("浏览目录…", "Browse…"))
+                                    .disabled(self.controls_locked() || self.choosing_path)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.choose_save_directory(window, cx)
+                                    })),
+                            )
+                        });
+                    let row =
+                        appearance::control_row(self.t(field.label.0, field.label.1), control)
+                            .when(self.autosave.failed(field.key), |row| {
+                                row.child(
+                                    appearance::caption(self.t("未保存", "Not saved"), cx)
+                                        .text_color(cx.theme().danger),
                                 )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .gap_2()
-                                        .child(
-                                            Input::new(&field.state)
-                                                .text_size(px(13.))
-                                                .aria_label(self.t(field.label.0, field.label.1))
-                                                .disabled(
-                                                    self.controls_locked() || self.choosing_path,
-                                                ),
-                                        )
-                                        .when(self.section == Section::Shortcuts, |row| {
-                                            row.child(
-                                                Button::new((key, 0usize))
-                                                    .label(self.t("录制", "Record"))
-                                                    .tooltip(
-                                                        self.t("录制快捷键", "Record shortcut"),
-                                                    )
-                                                    .disabled(self.controls_locked())
-                                                    .on_click(cx.listener(
-                                                        move |this, _, window, cx| {
-                                                            this.start_recording(
-                                                                actions::Recording::Setting(key),
-                                                                window,
-                                                                cx,
-                                                            )
-                                                        },
-                                                    )),
-                                            )
-                                        }),
-                                )
-                        }),
-                ),
-            );
-        }
-        if self.section == Section::Pin {
-            content = content.child(
-                Button::new("choose-save-directory")
-                    .label(self.t("浏览目录…", "Browse…"))
-                    .disabled(self.controls_locked() || self.choosing_path)
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.choose_save_directory(window, cx)),
-                    ),
-            );
+                            });
+                    if field.key == "save_path" {
+                        content = content.child(row);
+                    } else {
+                        fields = fields.child(row);
+                    }
+                }
+            }
+            if self
+                .fields
+                .iter()
+                .any(|field| self.field_visible(field) && field.key != "save_path")
+            {
+                content = content.child(fields);
+            }
         }
         div()
             .id("settings")
@@ -927,94 +826,125 @@ impl Render for SettingsView {
                     .border_color(appearance::palette(cx).border)
                     .when(cfg!(target_os = "macos"), |navigation| {
                         navigation.child(
-                            div().h(px(40.)).w_full().flex_shrink_0()
-                                .window_control_area(WindowControlArea::Drag)
+                            div()
+                                .h(px(40.))
+                                .w_full()
+                                .flex_shrink_0()
+                                .window_control_area(WindowControlArea::Drag),
                         )
                     })
                     .child(
                         div()
-                        .id("settings-navigation-scroll")
-                        .flex().flex_col().flex_1().min_h_0()
-                        .overflow_y_scroll()
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .h(px(100.)).pt(px(20.))
-                                .when(cfg!(target_os = "macos"), |logo| logo.h(px(60.)).pt_0())
-                                .flex_shrink_0()
-                                .child(
-                                    div()
-                                        .id("settings-project-link")
-                                        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                                            this.logo_hover = *hovered;
-                                            cx.notify();
-                                        }))
-                                        .relative()
-                                        .size(px(logo_size))
-                                        .cursor_pointer()
-                                        .on_click(|_, _, cx| {
-                                            cx.open_url("https://github.com/Horbin-Magician/rotor");
-                                        })
-                                        .child(
-                                            img(logo_glow)
-                                                .absolute()
-                                                .top(px(-glow_padding))
-                                                .left(px(-glow_padding))
-                                                .size(px(logo_size + glow_padding * 2.))
-                                                .opacity(glow_opacity),
-                                        )
-                                        .child(img(logo).size(px(logo_size))),
-                                ),
-                        )
-                        .child(div().relative().flex().flex_col().flex_shrink_0()
-                        .children(sections.into_iter().enumerate().map(|(index, (id, section, zh, en, _, _))| {
-                            let selected = self.section == section;
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_shrink_0()
-                                .when(matches!(section, Section::Pin | Section::Updates), |row| {
-                                    row.child(div().mx_4().my_2().h(px(1.)).bg(appearance::palette(cx).border))
-                                })
-                                .child(
-                                    div().relative().child(
-                                        appearance::navigation(
-                                            Button::new(id)
-                                                .w_full()
-                                                .h(px(row_height))
-                                                .rounded_none()
-                                                .text_size(px(14.)),
-                                            self.t(zh, en),
-                                            selected,
-                                            self.close_request.is_some(),
-                                            highlights[index],
-                                            cx,
-                                        )
-                                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                            if *hovered {
-                                                this.navigation_hover = Some(section);
-                                            } else if this.navigation_hover == Some(section) {
-                                                this.navigation_hover = None;
-                                            }
-                                            cx.notify();
-                                        }))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.section = section;
-                                            cx.notify();
-                                        })),
-                                    )
-                                )
-                        }))
-                        .child(
-                            div().absolute()
-                                .top(px(indicator_top + indicator_inset))
-                                .h(px(row_height - indicator_inset * 2.))
-                                .w(px(2.))
-                                .right_0()
-                                .bg(appearance::palette(cx).accent)
-                        )),
+                            .id("settings-navigation-scroll")
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .h(px(100.))
+                                    .pt(px(20.))
+                                    .when(cfg!(target_os = "macos"), |logo| logo.h(px(60.)).pt_0())
+                                    .flex_shrink_0()
+                                    .child(
+                                        div()
+                                            .id("settings-project-link")
+                                            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                                                this.logo_hover = *hovered;
+                                                cx.notify();
+                                            }))
+                                            .relative()
+                                            .size(px(logo_size))
+                                            .cursor_pointer()
+                                            .on_click(|_, _, cx| {
+                                                cx.open_url(
+                                                    "https://github.com/Horbin-Magician/rotor",
+                                                );
+                                            })
+                                            .child(
+                                                img(logo_glow)
+                                                    .absolute()
+                                                    .top(px(-glow_padding))
+                                                    .left(px(-glow_padding))
+                                                    .size(px(logo_size + glow_padding * 2.))
+                                                    .opacity(glow_opacity),
+                                            )
+                                            .child(img(logo).size(px(logo_size))),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .relative()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_shrink_0()
+                                    .children(sections.into_iter().enumerate().map(
+                                        |(index, (id, section, zh, en, _, _))| {
+                                            let selected = self.section == section;
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .flex_shrink_0()
+                                                .when(matches!(section, Section::Pin), |row| {
+                                                    row.child(
+                                                        div()
+                                                            .mx_4()
+                                                            .my_2()
+                                                            .h(px(1.))
+                                                            .bg(appearance::palette(cx).border),
+                                                    )
+                                                })
+                                                .child(
+                                                    div().relative().child(
+                                                        appearance::navigation(
+                                                            Button::new(id)
+                                                                .w_full()
+                                                                .h(px(row_height))
+                                                                .rounded_none()
+                                                                .text_size(px(14.)),
+                                                            self.t(zh, en),
+                                                            selected,
+                                                            self.close_request.is_some(),
+                                                            highlights[index],
+                                                            cx,
+                                                        )
+                                                        .on_hover(cx.listener(
+                                                            move |this, hovered: &bool, _, cx| {
+                                                                if *hovered {
+                                                                    this.navigation_hover =
+                                                                        Some(section);
+                                                                } else if this.navigation_hover
+                                                                    == Some(section)
+                                                                {
+                                                                    this.navigation_hover = None;
+                                                                }
+                                                                cx.notify();
+                                                            },
+                                                        ))
+                                                        .on_click(cx.listener(
+                                                            move |this, _, _, cx| {
+                                                                this.section = section;
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                    ),
+                                                )
+                                        },
+                                    ))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top(px(indicator_top + indicator_inset))
+                                            .h(px(row_height - indicator_inset * 2.))
+                                            .w(px(2.))
+                                            .right_0()
+                                            .bg(appearance::palette(cx).accent),
+                                    ),
+                            ),
                     ),
             )
             .child(
@@ -1026,25 +956,54 @@ impl Render for SettingsView {
                     .h_full()
                     .when(cfg!(target_os = "macos"), |body| {
                         body.child(
-                            div().h(px(40.)).w_full().flex_shrink_0()
-                                .window_control_area(WindowControlArea::Drag)
+                            div()
+                                .h(px(40.))
+                                .w_full()
+                                .flex_shrink_0()
+                                .window_control_area(WindowControlArea::Drag),
                         )
                     })
                     .when(cfg!(target_os = "windows"), |body| {
                         body.child(
-                            div().flex().h(px(28.)).flex_shrink_0()
-                                .child(div().flex_1().h_full().window_control_area(WindowControlArea::Drag))
-                                .child(appearance::quiet_button(
-                                    Button::new("settings-minimize").icon(IconName::WindowMinimize)
-                                        .tooltip(self.t("最小化", "Minimize"))
-                                        .accessibility_label(self.t("最小化", "Minimize")).w(px(44.)).h_full().rounded_none(), cx)
-                                    .on_click(|_, window, _| window.minimize_window()))
-                                .child(appearance::quiet_button(
-                                    Button::new("settings-window-close").icon(IconName::WindowClose)
-                                        .tooltip(self.t("关闭", "Close"))
-                                        .accessibility_label(self.t("关闭", "Close")).w(px(44.)).h_full().rounded_none(), cx)
+                            div()
+                                .flex()
+                                .h(px(28.))
+                                .flex_shrink_0()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .h_full()
+                                        .window_control_area(WindowControlArea::Drag),
+                                )
+                                .child(
+                                    appearance::quiet_button(
+                                        Button::new("settings-minimize")
+                                            .icon(IconName::WindowMinimize)
+                                            .tooltip(self.t("最小化", "Minimize"))
+                                            .accessibility_label(self.t("最小化", "Minimize"))
+                                            .w(px(44.))
+                                            .h_full()
+                                            .rounded_none(),
+                                        cx,
+                                    )
+                                    .on_click(|_, window, _| window.minimize_window()),
+                                )
+                                .child(
+                                    appearance::close_button(
+                                        Button::new("settings-window-close")
+                                            .icon(IconName::WindowClose)
+                                            .tooltip(self.t("关闭", "Close"))
+                                            .accessibility_label(self.t("关闭", "Close"))
+                                            .w(px(44.))
+                                            .h_full()
+                                            .rounded_none(),
+                                        cx,
+                                    )
                                     .disabled(self.close_request.is_some())
-                                    .on_click(cx.listener(|this, _, window, cx| this.request_close(window, cx))))
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| this.request_close(window, cx),
+                                    )),
+                                ),
                         )
                     })
                     .child(
@@ -1056,90 +1015,55 @@ impl Render for SettingsView {
                             .pr(px(20.))
                             .pt(px(4.))
                             .child(
-                                div().flex().flex_col().gap_3()
-                                    .when(self.section != Section::Overview, |page| page.child(
-                                        div().flex().flex_col().gap_2()
-                                            .child(appearance::heading(self.t(current.2, current.3), cx))
-                                            .child(appearance::caption(self.t(current.4, current.5), cx))
-                                    ))
-                                    .child(content)
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_3()
+                                    .when(
+                                        self.manual_failed || self.autosave.has_failures(),
+                                        |body| {
+                                            body.child(
+                                                appearance::card(cx)
+                                                    .p_3()
+                                                    .child(self.message.clone())
+                                                    .child(
+                                                        Button::new("retry-settings")
+                                                            .label(self.t("重试", "Retry"))
+                                                            .disabled(self.controls_locked())
+                                                            .on_click(cx.listener(
+                                                                |this, _, window, cx| {
+                                                                    this.observe_all_fields(
+                                                                        true, window, cx,
+                                                                    );
+                                                                    this.flush_actions(window, cx);
+                                                                },
+                                                            )),
+                                                    )
+                                                    .child(
+                                                        Button::new("discard-settings-close")
+                                                            .label(self.t(
+                                                                "放弃更改并关闭",
+                                                                "Discard changes and close",
+                                                            ))
+                                                            .disabled(
+                                                                self.pending.is_some()
+                                                                    || self.autosave.has_pending(),
+                                                            )
+                                                            .on_click(cx.listener(
+                                                                |this, _, window, cx| {
+                                                                    this.discard_and_close(
+                                                                        window, cx,
+                                                                    )
+                                                                },
+                                                            )),
+                                                    ),
+                                            )
+                                        },
+                                    )
+                                    .child(content),
                             )
                             .overflow_y_scrollbar()
                             .id(("settings-content", self.section as usize)),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .flex_shrink_0()
-                            .px_3()
-                            .when(can_save || !self.message.is_empty() || self.recording.is_some()
-                                || self.manual_failed || self.autosave.has_failures(), |footer| {
-                                footer.py_2().border_t_1().border_color(appearance::palette(cx).border)
-                            })
-                            .when(!self.message.is_empty(), |footer| {
-                                footer.child(
-                                    div()
-                                        .id("settings-feedback")
-                                        .max_h(px(100.))
-                                        .overflow_y_scroll()
-                                        .child(self.message.clone()),
-                                )
-                            })
-                            .when(self.recording.is_some(), |root| {
-                                root.child(
-                                    Button::new("cancel-recording")
-                                        .label(self.t("取消录制", "Cancel recording"))
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.recording = None;
-                                            this.services.set_shortcut_recording(false);
-                                            this.message.clear();
-                                            cx.notify();
-                                        })),
-                                )
-                            })
-                            .when(can_save || self.manual_failed || self.autosave.has_failures(), |footer| footer.child(
-                                div()
-                                    .flex()
-                                    .flex_wrap()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap_2()
-                                    .child(appearance::caption(
-                                        if self.section == Section::Quick {
-                                            self.t("编辑完成后保存更改", "Save changes when finished editing")
-                                        } else {
-                                            self.t("更改会自动保存", "Changes save automatically")
-                                        },
-                                        cx,
-                                    ))
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_wrap()
-                                            .max_w_full()
-                                            .gap_2()
-                                            .when(can_save, |row| {
-                                                row.child(
-                                                    Button::new("save-fields")
-                                                        .primary()
-                                                        .label(self.t("保存更改", "Save changes"))
-                                                        .disabled(self.controls_locked())
-                                                        .on_click(cx.listener(|this, _, window, cx| {
-                                                            this.save_fields(window, cx)
-                                                        })),
-                                                )
-                                            })
-                                            .when(self.manual_failed || self.autosave.has_failures(), |row| row.child(
-                                                Button::new("discard-settings-close")
-                                                    .label(if self.last_close_target == CloseTarget::Application {
-                                                        self.t("放弃未保存并退出", "Discard unsaved changes and quit")
-                                                    } else { self.t("放弃未保存并关闭", "Discard unsaved changes and close") })
-                                                    .disabled(self.pending.is_some() || self.autosave.has_pending())
-                                                    .on_click(cx.listener(|this, _, window, cx| this.discard_and_close(window, cx))))),
-                                    ),
-                            )),
                     ),
             )
     }

@@ -163,7 +163,49 @@ impl SettingsView {
             )
     }
 
-    pub(super) fn overview_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn overview_refresh_button(&self, rotation: f32, cx: &mut Context<Self>) -> Button {
+        let colors = appearance::palette(cx);
+        let disabled = self.overview_request.is_some()
+            || self.index_request.is_some()
+            || self.controls_locked();
+        let icon = div()
+            .id("overview-refresh-icon")
+            .debug_selector(|| "overview-refresh-content".into())
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .when(!disabled, |icon| {
+                icon.group_hover("overview-refresh-button", |style| {
+                    style.text_color(colors.accent)
+                })
+            })
+            .child(
+                Icon::new(IconName::RotateCw)
+                    .size(px(16.))
+                    .rotate(radians(rotation)),
+            );
+        Button::new("refresh-overview")
+            .group("overview-refresh-button")
+            .size(px(24.))
+            // Custom children use the text-button padding by default. Reserve
+            // the whole square for the icon, including its rotated bounds.
+            .p_0()
+            .custom(
+                gpui_kit::component::button::ButtonCustomVariant::new(cx)
+                    .foreground(colors.secondary),
+            )
+            .child(icon)
+            .tooltip(self.t("刷新概览", "Refresh overview"))
+            .accessibility_label(self.t("刷新概览", "Refresh overview"))
+            .disabled(disabled)
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.overview_refresh_started = Some(std::time::Instant::now());
+                this.refresh_overview(cx);
+            }))
+    }
+
+    pub(super) fn overview_panel(&self, rotation: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let mut panel = div()
             .flex()
             .flex_col()
@@ -187,25 +229,7 @@ impl SettingsView {
                                     .font_weight(FontWeight::BOLD)
                                     .child(self.t("系统概览", "System overview")),
                             )
-                            .child(
-                                appearance::quiet_button(
-                                    Button::new("refresh-overview")
-                                        .w(px(24.))
-                                        .h(px(20.))
-                                        .icon(IconName::RotateCw)
-                                        .tooltip(self.t("刷新概览", "Refresh overview"))
-                                        .accessibility_label(
-                                            self.t("刷新概览", "Refresh overview"),
-                                        ),
-                                    cx,
-                                )
-                                .disabled(
-                                    self.overview_request.is_some()
-                                        || self.index_request.is_some()
-                                        || self.controls_locked(),
-                                )
-                                .on_click(cx.listener(|this, _, _, cx| this.refresh_overview(cx))),
-                            ),
+                            .child(self.overview_refresh_button(rotation, cx)),
                     )
                     .child(
                         self.summary_card(

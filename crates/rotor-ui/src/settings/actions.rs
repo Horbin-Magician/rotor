@@ -2,6 +2,7 @@ use super::action_change::{ActionChange, plan_action_change};
 use super::*;
 use crate::shortcut::recorded_key;
 use gpui_kit::component::IconName;
+use gpui_kit::component::button::ButtonCustomVariant;
 use rotor_runtime::QuickAction;
 use std::{
     sync::atomic::{AtomicU64, Ordering},
@@ -9,6 +10,91 @@ use std::{
 };
 
 static NEXT_ACTION: AtomicU64 = AtomicU64::new(1);
+
+const ADD_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>"#;
+const EDIT_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="black"><path d="m3 17 13-13 4 4L7 21H3zm14-14 2-2 4 4-2 2z"/></svg>"#;
+const DELETE_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M9 3h6M6 6l1 15h10l1-15"/></svg>"#;
+
+#[derive(IntoElement)]
+struct ActionIcon {
+    data: &'static [u8],
+    size: f32,
+}
+
+impl ActionIcon {
+    fn new(data: &'static [u8], size: f32) -> Self {
+        Self { data, size }
+    }
+}
+
+impl RenderOnce for ActionIcon {
+    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+        // Svg only paints with an explicit color. Resolve the inherited button
+        // color at render time so hover and disabled styles also apply.
+        svg()
+            .data(self.data)
+            .size(px(self.size))
+            .flex_shrink_0()
+            .text_color(window.text_style().color)
+    }
+}
+
+fn action_icon_button(button: Button, danger: bool, cx: &App) -> Button {
+    let colors = appearance::palette(cx);
+    button
+        .compact()
+        .w(px(32.))
+        .h(px(32.))
+        .rounded(px(16.))
+        .custom(
+            ButtonCustomVariant::new(cx)
+                .foreground(if danger {
+                    cx.theme().danger
+                } else {
+                    colors.secondary
+                })
+                .hover(colors.foreground.opacity(0.08))
+                .active(colors.foreground.opacity(0.12)),
+        )
+}
+
+fn shortcut_label(value: &str) -> String {
+    let parts = value.split('+').collect::<Vec<_>>();
+    let mut labels = Vec::new();
+    for (aliases, label) in [
+        (&["ctrl", "control"][..], "Ctrl"),
+        (&["alt", "option"][..], "Alt"),
+        (&["shift"][..], "Shift"),
+        (&["super", "meta", "cmd", "command", "win"][..], "Super"),
+    ] {
+        if parts
+            .iter()
+            .any(|part| aliases.iter().any(|alias| part.eq_ignore_ascii_case(alias)))
+        {
+            labels.push(label.to_owned());
+        }
+    }
+    for part in parts {
+        if [
+            "ctrl", "control", "alt", "option", "shift", "super", "meta", "cmd", "command", "win",
+        ]
+        .iter()
+        .any(|modifier| part.eq_ignore_ascii_case(modifier))
+        {
+            continue;
+        }
+        let key = part
+            .strip_prefix("Key")
+            .or_else(|| part.strip_prefix("Digit"))
+            .unwrap_or(part);
+        labels.push(if key.len() == 1 {
+            key.to_uppercase()
+        } else {
+            key.to_owned()
+        });
+    }
+    labels.join("+")
+}
 #[derive(Clone)]
 pub(super) enum Recording {
     Setting(&'static str),
@@ -32,19 +118,19 @@ impl ActionFields {
         let shortcut = cx.new(|cx| InputState::new(window, cx).default_value(action.shortcut));
         let command = cx.new(|cx| TextareaState::new(window, cx).default_value(action.command));
         let input_events = vec![
-            cx.subscribe(&name, |_, _, event, cx| {
+            cx.subscribe_in(&name, window, |this, _, event, window, cx| {
                 if matches!(event, gpui_kit::component::input::InputEvent::Change) {
-                    cx.notify();
+                    this.schedule_action_save(window, cx);
                 }
             }),
-            cx.subscribe(&shortcut, |_, _, event, cx| {
+            cx.subscribe_in(&shortcut, window, |this, _, event, window, cx| {
                 if matches!(event, gpui_kit::component::input::InputEvent::Change) {
-                    cx.notify();
+                    this.schedule_action_save(window, cx);
                 }
             }),
-            cx.subscribe(&command, |_, _, event, cx| {
+            cx.subscribe_in(&command, window, |this, _, event, window, cx| {
                 if matches!(event, gpui_kit::component::input::InputEvent::Change) {
-                    cx.notify();
+                    this.schedule_action_save(window, cx);
                 }
             }),
         ];
@@ -171,9 +257,7 @@ impl SettingsView {
         if let Some(key) = setting_key {
             self.observe_field(key, true, window, cx);
         } else {
-            self.message = self
-                .t("已录入，保存后生效", "Recorded; save to apply")
-                .into();
+            self.flush_actions(window, cx);
         }
         cx.notify();
     }
@@ -181,6 +265,17 @@ impl SettingsView {
         if self.pending_keys.iter().any(|key| key == "quick_actions")
             && let Ok(actions) = self.services.quick_actions()
         {
+            if self
+                .actions
+                .iter()
+                .map(|action| &action.id)
+                .eq(actions.iter().map(|action| &action.id))
+            {
+                for (field, saved) in self.actions.iter_mut().zip(actions) {
+                    field.enabled = saved.enabled;
+                }
+                return;
+            }
             self.actions = actions
                 .into_iter()
                 .map(|action| ActionFields::new(action, window, cx))
@@ -188,8 +283,48 @@ impl SettingsView {
             self.editing_action = None;
         }
     }
-    pub(super) fn save_actions(&mut self, cx: &mut Context<Self>) {
-        let actions = self.actions.iter().map(|action| action.value(cx)).collect();
+    fn schedule_action_save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.close_request.is_some() {
+            return;
+        }
+        self.action_save = Some(cx.spawn_in(window, async move |view, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(350))
+                .await;
+            let _ = view.update_in(cx, |this, window, cx| {
+                // Closing drains this draft after the in-flight receipt arrives.
+                if this.close_request.is_some() {
+                    return;
+                }
+                this.action_save = None;
+                if this.pending.is_some() || this.action_has_marked_text(window, cx) {
+                    this.schedule_action_save(window, cx);
+                } else {
+                    this.flush_actions(window, cx);
+                }
+            });
+        }));
+        cx.notify();
+    }
+    pub(super) fn flush_actions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending.is_some() || self.action_has_marked_text(window, cx) {
+            self.schedule_action_save(window, cx);
+            return;
+        }
+        self.action_save = None;
+        let actions = self
+            .actions
+            .iter()
+            .map(|action| action.value(cx))
+            .collect::<Vec<_>>();
+        let normalized = rotor_runtime::quick::normalize_actions(actions.clone());
+        if normalized
+            .as_ref()
+            .is_ok_and(|actions| self.services.quick_actions().as_ref() == Ok(actions))
+        {
+            self.manual_failed = false;
+            return;
+        }
         self.submit_actions(actions, cx);
     }
     fn submit_actions(&mut self, actions: Vec<QuickAction>, cx: &mut Context<Self>) {
@@ -201,7 +336,7 @@ impl SettingsView {
                 self.manual_failed = false;
                 self.pending = Some(id);
                 self.pending_keys = vec!["quick_actions".into()];
-                self.message = self.t("正在保存…", "Saving…").into();
+                self.message.clear();
             }
             Err(error) => {
                 self.manual_failed = true;
@@ -210,7 +345,7 @@ impl SettingsView {
         }
         cx.notify();
     }
-    fn change_action(&mut self, change: ActionChange, cx: &mut Context<Self>) {
+    fn change_action(&mut self, change: ActionChange, window: &mut Window, cx: &mut Context<Self>) {
         if self.controls_locked() {
             return;
         }
@@ -255,50 +390,18 @@ impl SettingsView {
             {
                 self.editing_action = None;
             }
-            self.message = self
-                .t(
-                    "更改已加入未保存的草稿，保存后生效",
-                    "Change added to the existing draft; save to apply",
-                )
-                .into();
+            self.flush_actions(window, cx);
             cx.notify();
         }
     }
-    fn cancel_action_edit(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn collapse_action_edit(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.controls_locked() || self.editing_action.as_deref() != Some(id) {
             return;
-        }
-        let saved = match self.services.quick_actions() {
-            Ok(saved) => saved,
-            Err(error) => {
-                self.show_message(error, cx);
-                return;
-            }
-        };
-        if let Some(index) = self.actions.iter().position(|action| action.id == id) {
-            if let Some(action) = saved.iter().find(|action| action.id == id).cloned() {
-                self.actions[index] = ActionFields::new(action, window, cx);
-            } else {
-                self.actions.remove(index);
-            }
         }
         self.editing_action = None;
         self.recording = None;
         self.services.set_shortcut_recording(false);
-        if self
-            .actions
-            .iter()
-            .map(|action| action.value(cx))
-            .collect::<Vec<_>>()
-            == saved
-        {
-            self.manual_failed = false;
-        }
-        if self.manual_failed || self.autosave.has_failures() {
-            self.saved_feedback();
-        } else {
-            self.message = self.t("已取消编辑", "Edit cancelled").into();
-        }
+        self.flush_actions(window, cx);
         self.focus.focus(window, cx);
         cx.notify();
     }
@@ -323,202 +426,266 @@ impl SettingsView {
             cx,
         ));
         self.editing_action = self.actions.last().map(|action| action.id.clone());
+        self.flush_actions(window, cx);
         cx.notify();
     }
     pub(super) fn action_editor(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let disabled = self.controls_locked();
         let saved = self.services.quick_actions().unwrap_or_default();
+        let header = self.action_header(disabled, cx);
+        let mut page = div().flex().flex_col().min_w_0().gap(px(6.)).child(header);
+        for (index, action) in self.actions.iter().enumerate() {
+            let card = self.action_card(index, action, &saved, disabled, cx);
+            page = page.child(card);
+        }
+        page
+    }
+
+    fn action_header(&self, disabled: bool, cx: &mut Context<Self>) -> Div {
+        let enabled = self.actions.iter().filter(|action| action.enabled).count();
+        let title = div()
+            .text_size(px(14.))
+            .font_weight(FontWeight::BOLD)
+            .child(self.t("快捷操作", "Quick actions"));
+        let count = appearance::caption(format!("{enabled}/{}", self.actions.len()), cx);
+        let colors = appearance::palette(cx);
+        let add_icon = div()
+            .id("add-action-icon")
+            .flex()
+            .items_center()
+            .when(!disabled, |icon| {
+                icon.group_hover("add-action-button", |style| style.text_color(colors.accent))
+            })
+            .child(ActionIcon::new(ADD_ICON, 18.));
+        let add = Button::new("add-action")
+            .group("add-action-button")
+            .custom(ButtonCustomVariant::new(cx).foreground(colors.secondary))
+            .compact()
+            .child(add_icon)
+            .accessibility_label(self.t("添加操作", "Add action"))
+            .tooltip(self.t("添加操作", "Add action"))
+            .disabled(disabled)
+            .on_click(cx.listener(|this, _, window, cx| this.add_action(window, cx)));
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .pb(px(4.))
+            .border_b_1()
+            .border_color(appearance::palette(cx).border)
+            .child(title)
+            .child(count)
+            .child(div().flex_1())
+            .child(add)
+    }
+    // Separate builder frames keep expanded editors within the Windows main stack.
+    fn action_card(
+        &self,
+        index: usize,
+        action: &ActionFields,
+        saved: &[QuickAction],
+        disabled: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let editing = self.editing_action.as_ref() == Some(&action.id);
+        let controls = self.action_controls(index, action, saved, disabled, cx);
+        let toggle_id = action.id.clone();
+        let description = self.action_description(action, cx);
+        let toggle = gpui_kit::component::switch::Switch::new(("toggle-action", index))
+            .checked(action.enabled)
+            .accessibility_label(self.t("启用操作", "Enable action"))
+            .disabled(disabled)
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.change_action(ActionChange::Toggle(toggle_id.clone()), window, cx);
+            }));
+        let row = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .min_h(px(38.))
+            .child(toggle)
+            .child(description)
+            .child(controls);
+        let mut card = appearance::card(cx)
+            .border_0()
+            .px(px(10.))
+            .py(px(8.))
+            .child(row);
+        if editing {
+            let fields = self.action_fields(index, action, cx);
+            card = card.child(fields);
+        }
+        card
+    }
+
+    fn action_description(&self, action: &ActionFields, cx: &App) -> Div {
+        let colors = appearance::palette(cx);
+        let shortcut = shortcut_label(&action.shortcut.read(cx).value());
+        let name = div()
+            .min_w_0()
+            .truncate()
+            .font_weight(FontWeight::BOLD)
+            .child(action.name.read(cx).value());
+        let mut title = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .min_w_0()
+            .child(name);
+        if !shortcut.is_empty() {
+            let badge = div()
+                .max_w_full()
+                .truncate()
+                .px(px(6.))
+                .py(px(2.))
+                .rounded_sm()
+                .text_size(px(12.))
+                .text_color(colors.accent)
+                .bg(colors.accent.opacity(0.12))
+                .child(shortcut);
+            title = title.child(badge);
+        }
+        let command = appearance::caption(action.command.read(cx).value(), cx).truncate();
         div()
             .flex()
             .flex_col()
-            .gap_3()
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        Button::new("add-action")
-                            .label(self.t("添加操作", "Add action"))
-                            .disabled(disabled)
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.add_action(window, cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new("default-actions")
-                            .label(self.t("载入默认", "Load defaults"))
-                            .disabled(disabled)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.actions = rotor_runtime::quick::default_actions()
-                                    .into_iter()
-                                    .map(|action| ActionFields::new(action, window, cx))
-                                    .collect();
-                                this.editing_action = None;
-                                this.message = this
-                                    .t("默认值已载入，保存后生效", "Defaults loaded; save to apply")
-                                    .into();
-                                cx.notify();
-                            })),
-                    ),
-            )
-            .children(self.actions.iter().enumerate().map(|(index, action)| {
-                let id = action.id.clone();
-                let record_id = id.clone();
-                let editing = self.editing_action.as_ref() == Some(&id);
-                let edit_id = id.clone();
-                let toggle_id = id.clone();
-                let delete_id = id.clone();
-                let normalized = rotor_runtime::quick::normalize_actions(vec![action.value(cx)])
-                    .ok()
-                    .and_then(|mut actions| actions.pop());
-                let runnable = normalized
-                    .as_ref()
-                    .is_some_and(|draft| draft.enabled && saved.iter().any(|saved| saved == draft));
-                let controls = div()
-                    .flex()
-                    .gap_1()
-                    .items_center()
-                    .child(
-                        Button::new(("toggle-action", index))
-                            .selected(action.enabled)
-                            .toggled(action.enabled)
-                            .compact()
-                            .label(if action.enabled {
-                                self.t("启用", "On")
-                            } else {
-                                self.t("停用", "Off")
-                            })
-                            .disabled(disabled)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.change_action(ActionChange::Toggle(toggle_id.clone()), cx);
-                            })),
-                    )
-                    .child(
-                        Button::new(("run-action", index))
-                            .icon(IconName::Play)
-                            .compact()
-                            .accessibility_label(self.t("运行已保存操作", "Run saved action"))
-                            .tooltip(self.t("运行已保存操作", "Run saved action"))
-                            .disabled(disabled || !runnable || self.pending_run.is_some())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                match this.services.run_quick_action(id.clone()) {
-                                    Ok(id) => this.pending_run = Some(id),
-                                    Err(error) => this.message = error,
-                                }
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        Button::new(("edit-action", index))
-                            .icon(if editing {
-                                IconName::Close
-                            } else {
-                                IconName::Settings2
-                            })
-                            .compact()
-                            .accessibility_label(if editing {
-                                self.t("取消编辑", "Cancel edit")
-                            } else {
-                                self.t("编辑操作", "Edit action")
-                            })
-                            .tooltip(if editing {
-                                self.t("取消编辑", "Cancel edit")
-                            } else {
-                                self.t("编辑操作", "Edit action")
-                            })
-                            .selected(editing)
-                            .disabled(disabled)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                if editing {
-                                    this.cancel_action_edit(&edit_id, window, cx);
-                                } else {
-                                    this.editing_action = Some(edit_id.clone());
-                                    cx.notify();
-                                }
-                            })),
-                    )
-                    .child(
-                        Button::new(("remove-action", index))
-                            .icon(IconName::Delete)
-                            .compact()
-                            .accessibility_label(self.t("删除操作", "Delete action"))
-                            .tooltip(self.t("删除操作", "Delete action"))
-                            .disabled(disabled)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.change_action(ActionChange::Delete(delete_id.clone()), cx);
-                            })),
-                    );
-                appearance::card(cx)
-                    .p_3()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .gap_1()
-                                    .child(
-                                        div()
-                                            .truncate()
-                                            .font_weight(FontWeight::BOLD)
-                                            .child(action.name.read(cx).value()),
-                                    )
-                                    .child(
-                                        appearance::caption(action.shortcut.read(cx).value(), cx)
-                                            .truncate(),
-                                    ),
-                            )
-                            .child(controls),
-                    )
-                    .when(!editing, |card| {
-                        card.child(
-                            appearance::caption(action.command.read(cx).value(), cx).truncate(),
-                        )
-                    })
-                    .when(editing, |card| {
-                        card.child(appearance::caption(self.t("名称", "Name"), cx))
-                            .child(
-                                Input::new(&action.name)
-                                    .text_size(px(13.))
-                                    .disabled(disabled),
-                            )
-                            .child(appearance::caption(self.t("快捷键", "Shortcut"), cx))
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .child(
-                                        Input::new(&action.shortcut)
-                                            .text_size(px(13.))
-                                            .disabled(disabled),
-                                    )
-                                    .child(
-                                        Button::new(("record-action", index))
-                                            .label(self.t("录制", "Record"))
-                                            .disabled(disabled)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.start_recording(
-                                                    Recording::Action(record_id.clone()),
-                                                    window,
-                                                    cx,
-                                                )
-                                            })),
-                                    ),
-                            )
-                            .child(appearance::caption(self.t("命令", "Command"), cx))
-                            .child(
-                                Textarea::new(&action.command)
-                                    .text_size(px(13.))
-                                    .h(px(72.))
-                                    .disabled(disabled),
-                            )
-                    })
-            }))
+            .flex_1()
+            .min_w_0()
+            .gap_1()
+            .child(title)
+            .child(command)
+    }
+
+    fn action_controls(
+        &self,
+        index: usize,
+        action: &ActionFields,
+        saved: &[QuickAction],
+        disabled: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let id = action.id.clone();
+        let editing = self.editing_action.as_ref() == Some(&id);
+        let edit_id = id.clone();
+        let delete_id = id.clone();
+        let normalized = rotor_runtime::quick::normalize_actions(vec![action.value(cx)])
+            .ok()
+            .and_then(|mut actions| actions.pop());
+        let runnable = normalized
+            .as_ref()
+            .is_some_and(|draft| draft.enabled && saved.iter().any(|saved| saved == draft));
+        let run = action_icon_button(Button::new(("run-action", index)), false, cx)
+            .icon(IconName::Play)
+            .accessibility_label(self.t("运行已保存操作", "Run saved action"))
+            .tooltip(self.t("运行已保存操作", "Run saved action"))
+            .disabled(disabled || !runnable || self.pending_run.is_some())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                match this.services.run_quick_action(id.clone()) {
+                    Ok(id) => this.pending_run = Some(id),
+                    Err(error) => this.message = error,
+                }
+                cx.notify();
+            }));
+        let edit = action_icon_button(Button::new(("edit-action", index)), false, cx)
+            .when(editing, |button| button.icon(IconName::Close))
+            .when(!editing, |button| {
+                button.child(ActionIcon::new(EDIT_ICON, 16.))
+            })
+            .accessibility_label(if editing {
+                self.t("收起编辑", "Collapse editor")
+            } else {
+                self.t("编辑操作", "Edit action")
+            })
+            .tooltip(if editing {
+                self.t("收起编辑", "Collapse editor")
+            } else {
+                self.t("编辑操作", "Edit action")
+            })
+            .disabled(disabled)
+            .on_click(cx.listener(move |this, _, window, cx| {
+                if editing {
+                    this.collapse_action_edit(&edit_id, window, cx);
+                } else {
+                    this.editing_action = Some(edit_id.clone());
+                    cx.notify();
+                }
+            }));
+        let delete = action_icon_button(Button::new(("remove-action", index)), true, cx)
+            .child(ActionIcon::new(DELETE_ICON, 16.))
+            .accessibility_label(self.t("删除操作", "Delete action"))
+            .tooltip(self.t("删除操作", "Delete action"))
+            .disabled(disabled)
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.change_action(ActionChange::Delete(delete_id.clone()), window, cx);
+            }));
+        div()
+            .flex()
+            .flex_shrink_0()
+            .gap_2()
+            .items_center()
+            .child(run)
+            .child(edit)
+            .child(delete)
+    }
+
+    fn action_fields(&self, index: usize, action: &ActionFields, cx: &mut Context<Self>) -> Div {
+        let name = appearance::control_row(
+            self.t("名称", "Name"),
+            Input::new(&action.name)
+                .text_size(px(13.))
+                .aria_label(self.t("名称", "Name"))
+                .disabled(self.controls_locked()),
+        );
+        let shortcut = self.action_shortcut(index, action, cx);
+        let command = appearance::control_row(
+            self.t("命令", "Command"),
+            Textarea::new(&action.command)
+                .text_size(px(13.))
+                .h(px(72.))
+                .disabled(self.controls_locked()),
+        );
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(name)
+            .child(shortcut)
+            .child(command)
+    }
+
+    fn action_shortcut(&self, index: usize, action: &ActionFields, cx: &mut Context<Self>) -> Div {
+        let disabled = self.controls_locked();
+        let record_id = action.id.clone();
+        let clear_shortcut = action.shortcut.clone();
+        let record = appearance::control_button(Button::new(("record-action", index)), cx)
+            .label(if matches!(&self.recording, Some(Recording::Action(target)) if target == &record_id) {
+                self.t("请按快捷键…", "Press a shortcut…").into()
+            } else { action.shortcut.read(cx).value() })
+            .accessibility_label(self.t("快捷键", "Shortcut"))
+            .tooltip(self.t("点击录制快捷键，Esc 取消", "Click to record a shortcut; Esc cancels"))
+            .disabled(disabled)
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.start_recording(Recording::Action(record_id.clone()), window, cx)
+            }));
+        let clear = appearance::quiet_button(Button::new(("clear-action-shortcut", index)), cx)
+            .icon(IconName::Close)
+            .accessibility_label(self.t("清除快捷键", "Clear shortcut"))
+            .tooltip(self.t("清除快捷键", "Clear shortcut"))
+            .disabled(disabled || action.shortcut.read(cx).value().is_empty())
+            .on_click(cx.listener(move |this, _, window, cx| {
+                clear_shortcut.update(cx, |input, cx| input.set_value("", window, cx));
+                this.schedule_action_save(window, cx);
+            }));
+        appearance::control_row(
+            self.t("快捷键", "Shortcut"),
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(div().flex_1().min_w_0().child(record))
+                .child(clear),
+        )
     }
 }
 
@@ -526,6 +693,90 @@ impl SettingsView {
 mod tests {
     use super::recorded_key;
     use gpui_kit::Keystroke;
+    #[test]
+    fn action_edits_autosave_without_replacing_the_editor() {
+        use super::*;
+        use gpui::AppContext;
+        use gpui_kit::component::Root;
+        use rotor_common::ConfigService;
+        use rotor_runtime::{ServiceOptions, Services};
+        use std::{
+            sync::Mutex,
+            time::{Duration, Instant},
+        };
+
+        let profile = tempfile::tempdir().unwrap();
+        let config = ConfigService::load_from(profile.path()).unwrap();
+        let (services, events) = Services::new(
+            Arc::new(Mutex::new(config)),
+            None,
+            ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        let services = Arc::new(services);
+        let mut app = gpui::TestAppContext::single();
+        app.update(gpui_kit::component::init);
+        let mut view = None;
+        let (_, cx) = app.add_window_view(|window, cx| {
+            let settings =
+                cx.new(|cx| SettingsView::new(services.settings(), services.clone(), window, cx));
+            view = Some(settings.clone());
+            Root::new(settings, window, cx)
+        });
+        let view = view.unwrap();
+        let receive_save = |cx: &mut gpui::VisualTestContext| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                assert!(Instant::now() < deadline, "settings receipt timed out");
+                if let Ok(event) = events.try_recv() {
+                    let saved = matches!(&event, RuntimeEvent::SettingsSaved { .. });
+                    cx.update(|window, cx| {
+                        view.update(cx, |view, cx| view.handle_event(event, window, cx))
+                    });
+                    if saved {
+                        break;
+                    }
+                } else {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+        };
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.add_action(window, cx);
+                assert!(view.pending.is_some());
+            })
+        });
+        receive_save(cx);
+        let (id, name) = view.read_with(cx, |view, _| {
+            let action = view.actions.last().unwrap();
+            assert_eq!(view.editing_action.as_ref(), Some(&action.id));
+            (action.id.clone(), action.name.clone())
+        });
+        cx.update(|window, cx| {
+            name.update(cx, |name, cx| {
+                name.set_value("Synthetic action", window, cx);
+                cx.emit(InputEvent::Change);
+            })
+        });
+        cx.run_until_parked();
+        cx.executor().advance_clock(Duration::from_millis(400));
+        cx.run_until_parked();
+        receive_save(cx);
+        assert!(
+            services
+                .quick_actions()
+                .unwrap()
+                .iter()
+                .any(|action| action.id == id && action.name == "Synthetic action")
+        );
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.editing_action.as_ref(), Some(&id));
+            assert_eq!(view.actions.last().unwrap().name, name);
+        });
+        services.shutdown();
+    }
+
     #[test]
     fn recording_distinguishes_local_keys_from_global_chords() {
         assert!(recorded_key(&Keystroke::parse("s").unwrap(), false).is_err());
