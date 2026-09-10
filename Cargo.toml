@@ -19,7 +19,7 @@ default-members = ["crates/rotor-desktop"]
 version = "3.0.0"
 
 [workspace.dependencies]
-gpui-kit = { version = "=0.6.0", default-features = false, features = ["component", "assets"] }
+gpui-kit = { version = "=0.6.1", default-features = false, features = ["component", "assets"] }
 gpui = { package = "gpui-pre", version = "=0.3.3" }
 gpui-platform = { package = "gpui-pre-platform", version = "=0.3.3" }
 rotor-common = { path = "crates/rotor-common" }

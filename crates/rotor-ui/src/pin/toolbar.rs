@@ -1,6 +1,7 @@
 use gpui_kit::{
+    assets::IconName,
     component::{
-        Sizable,
+        Icon, Sizable,
         button::{Button, ButtonCustomVariant, ButtonVariants},
     },
     prelude::*,
@@ -40,85 +41,19 @@ pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
                 .shadow(false),
         )
         .child(
-            canvas(
-                |_, _, _| (),
-                move |bounds, _, window, _| {
-                    let strokes: &[&[(f32, f32)]] = match glyph {
-                        Glyph::Back => &[&[(16., 2.), (6., 12.), (16., 22.)]],
-                        Glyph::Rectangle => {
-                            &[&[(3., 3.), (21., 3.), (21., 21.), (3., 21.), (3., 3.)]]
-                        }
-                        Glyph::Arrow => {
-                            &[&[(21., 3.), (3., 21.), (3., 10.)], &[(3., 21.), (14., 21.)]]
-                        }
-                        Glyph::Text => &[
-                            &[(5., 6.), (5., 3.), (19., 3.), (19., 6.)],
-                            &[(12., 3.), (12., 21.)],
-                            &[(9., 21.), (15., 21.)],
-                        ],
-                        Glyph::Undo => &[
-                            &[(3., 7.), (3., 15.), (11., 15.)],
-                            &[
-                                (3., 15.),
-                                (7., 9.),
-                                (12., 8.),
-                                (17., 9.),
-                                (21., 13.),
-                                (22., 16.),
-                            ],
-                        ],
-                        Glyph::Pen => &[
-                            &[
-                                (3., 21.),
-                                (3., 18.),
-                                (18., 3.),
-                                (21., 6.),
-                                (6., 21.),
-                                (3., 21.),
-                            ],
-                            &[(15., 6.), (18., 9.)],
-                        ],
-                        Glyph::Ocr => &[
-                            &[(2., 8.), (2., 2.), (8., 2.)],
-                            &[(16., 2.), (22., 2.), (22., 8.)],
-                            &[(22., 16.), (22., 22.), (16., 22.)],
-                            &[(8., 22.), (2., 22.), (2., 16.)],
-                            &[(7., 7.), (17., 7.)],
-                            &[(5., 12.), (19., 12.)],
-                            &[(7., 17.), (14., 17.)],
-                        ],
-                        Glyph::Minimize => &[&[(4., 12.), (20., 12.)]],
-                        Glyph::Save => &[
-                            &[(12., 2.), (12., 16.)],
-                            &[(7., 11.), (12., 16.), (17., 11.)],
-                            &[(3., 11.), (3., 21.), (21., 21.), (21., 11.)],
-                        ],
-                        Glyph::Close => &[&[(5., 5.), (19., 19.)], &[(19., 5.), (5., 19.)]],
-                        Glyph::Copy => &[
-                            &[(7., 2.), (21., 2.), (21., 19.), (7., 19.), (7., 2.)],
-                            &[(3., 6.), (3., 23.), (17., 23.)],
-                        ],
-                    };
-                    let mut path = PathBuilder::stroke(px(1.5));
-                    for stroke in strokes {
-                        for (index, &(x, y)) in stroke.iter().enumerate() {
-                            let position = bounds.origin
-                                + point(
-                                    bounds.size.width * (x / 24.),
-                                    bounds.size.height * (y / 24.),
-                                );
-                            if index == 0 {
-                                path.move_to(position);
-                            } else {
-                                path.line_to(position);
-                            }
-                        }
-                    }
-                    if let Ok(path) = path.build() {
-                        window.paint_path(path, window.text_style().color);
-                    }
-                },
-            )
+            Icon::new(match glyph {
+                Glyph::Back => IconName::ChevronLeft,
+                Glyph::Rectangle => IconName::Square,
+                Glyph::Arrow => IconName::ArrowDownLeft,
+                Glyph::Text => IconName::Type,
+                Glyph::Undo => IconName::Undo2,
+                Glyph::Pen => IconName::Pencil,
+                Glyph::Ocr => IconName::ScanText,
+                Glyph::Minimize => IconName::WindowMinimize,
+                Glyph::Save => IconName::Download,
+                Glyph::Close => IconName::Close,
+                Glyph::Copy => IconName::Copy,
+            })
             .size(px(17.)),
         )
 }

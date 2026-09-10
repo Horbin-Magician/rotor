@@ -641,7 +641,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let failed = Rc::new(Cell::new(false));
     let startup_failed = failed.clone();
     let application = gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(rotor_ui::UiAssets)
         .with_quit_mode(QuitMode::Explicit);
     application.on_reopen(|cx| {
         if cx.try_global::<ShellState>().is_some() {

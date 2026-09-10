@@ -1,7 +1,7 @@
 use super::action_change::{ActionChange, plan_action_change};
 use super::*;
 use crate::shortcut::recorded_key;
-use gpui_kit::component::IconName;
+use gpui_kit::assets::IconName;
 use gpui_kit::component::button::ButtonCustomVariant;
 use rotor_runtime::QuickAction;
 use std::{
@@ -10,34 +10,6 @@ use std::{
 };
 
 static NEXT_ACTION: AtomicU64 = AtomicU64::new(1);
-
-const ADD_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>"#;
-const EDIT_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="black"><path d="m3 17 13-13 4 4L7 21H3zm14-14 2-2 4 4-2 2z"/></svg>"#;
-const DELETE_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M9 3h6M6 6l1 15h10l1-15"/></svg>"#;
-
-#[derive(IntoElement)]
-struct ActionIcon {
-    data: &'static [u8],
-    size: f32,
-}
-
-impl ActionIcon {
-    fn new(data: &'static [u8], size: f32) -> Self {
-        Self { data, size }
-    }
-}
-
-impl RenderOnce for ActionIcon {
-    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
-        // Svg only paints with an explicit color. Resolve the inherited button
-        // color at render time so hover and disabled styles also apply.
-        svg()
-            .data(self.data)
-            .size(px(self.size))
-            .flex_shrink_0()
-            .text_color(window.text_style().color)
-    }
-}
 
 fn action_icon_button(button: Button, danger: bool, cx: &App) -> Button {
     let colors = appearance::palette(cx);
@@ -456,7 +428,7 @@ impl SettingsView {
             .when(!disabled, |icon| {
                 icon.group_hover("add-action-button", |style| style.text_color(colors.accent))
             })
-            .child(ActionIcon::new(ADD_ICON, 18.));
+            .child(Icon::new(IconName::CirclePlus).size(px(18.)));
         let add = Button::new("add-action")
             .group("add-action-button")
             .custom(ButtonCustomVariant::new(cx).foreground(colors.secondary))
@@ -590,7 +562,7 @@ impl SettingsView {
         let edit = action_icon_button(Button::new(("edit-action", index)), false, cx)
             .when(editing, |button| button.icon(IconName::Close))
             .when(!editing, |button| {
-                button.child(ActionIcon::new(EDIT_ICON, 16.))
+                button.child(Icon::new(IconName::Pencil).size(px(16.)))
             })
             .accessibility_label(if editing {
                 self.t("收起编辑", "Collapse editor")
@@ -612,7 +584,7 @@ impl SettingsView {
                 }
             }));
         let delete = action_icon_button(Button::new(("remove-action", index)), true, cx)
-            .child(ActionIcon::new(DELETE_ICON, 16.))
+            .child(Icon::new(IconName::Trash).size(px(16.)))
             .accessibility_label(self.t("删除操作", "Delete action"))
             .tooltip(self.t("删除操作", "Delete action"))
             .disabled(disabled)
