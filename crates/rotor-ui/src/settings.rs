@@ -642,38 +642,13 @@ impl Render for SettingsView {
             Section::Search => {
                 content = content
                     .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .pl(px(12.))
-                            .gap_2()
-                            .child(
-                                Button::new("rebuild-index")
-                                    .label(self.t("重建索引", "Rebuild index"))
-                                    .disabled(self.controls_locked())
-                                    .on_click(
-                                        cx.listener(|this, _, _, _| this.services.rebuild_search()),
-                                    ),
+                        appearance::group(self.t("排除目录", "Excluded directories"), cx).child(
+                            appearance::caption(
+                                self.t("每行一个名称或路径", "One name or path per line"),
+                                cx,
                             )
-                            .child(
-                                Button::new("release-index")
-                                    .label(self.t("释放索引", "Release index"))
-                                    .disabled(self.controls_locked())
-                                    .on_click(
-                                        cx.listener(|this, _, _, _| this.services.release_search()),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        appearance::group(self.t("排除目录", "Excluded directories"), cx)
-                            .mt(px(10.))
-                            .child(
-                                appearance::caption(
-                                    self.t("每行一个名称或路径", "One name or path per line"),
-                                    cx,
-                                )
-                                .pl(px(12.)),
-                            ),
+                            .pl(px(12.)),
+                        ),
                     )
                     .child(
                         div().pl(px(12.)).child(
