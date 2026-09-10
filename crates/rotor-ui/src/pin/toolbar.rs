@@ -20,7 +20,6 @@ pub(super) enum Glyph {
     Save,
     Close,
     Copy,
-    Check,
 }
 
 pub(super) fn panel(id: &'static str, width: Pixels, window: &Window) -> Stateful<Div> {
@@ -75,7 +74,6 @@ pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
                 Glyph::Save => IconName::Download,
                 Glyph::Close => IconName::Close,
                 Glyph::Copy => IconName::Copy,
-                Glyph::Check => IconName::Check,
             })
             .size(px(17.)),
         )

@@ -1,6 +1,6 @@
 use super::*;
 use crate::capture::PreparedFrame;
-use gpui_kit::component::input::{Textarea, TextareaState};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use rotor_canvas::{
     Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, StrokeStyle, ViewTransform,
 };
@@ -34,7 +34,9 @@ pub(super) struct CanvasState {
     tool: Tool,
     draft: Option<Annotation>,
     preview: Option<Annotation>,
-    pub(super) editor: Option<Entity<TextareaState>>,
+    pub(super) editor: Option<Entity<InputState>>,
+    editor_events: Option<Subscription>,
+    suppress_text_enter: bool,
     editor_origin: ImagePoint,
     frame: Option<PreparedFrame>,
     frame_key: Option<FrameKey>,
@@ -45,6 +47,7 @@ pub(super) struct CanvasState {
     task: Option<Task<()>>,
     rollback: Option<(u64, Rollback)>,
     text_pending: bool,
+    tool_after_text: Option<Tool>,
 }
 impl CanvasState {
     pub(super) fn content_revision(&self) -> u64 {
@@ -75,6 +78,8 @@ impl CanvasState {
             draft: None,
             preview: None,
             editor: None,
+            editor_events: None,
+            suppress_text_enter: false,
             editor_origin: ImagePoint { x: 0., y: 0. },
             frame: None,
             frame_key: None,
@@ -85,6 +90,7 @@ impl CanvasState {
             task: None,
             rollback: None,
             text_pending: false,
+            tool_after_text: None,
         }
     }
     pub(super) fn frame(&self) -> Option<&PreparedFrame> {
@@ -138,11 +144,15 @@ impl CanvasState {
                 if self.text_pending {
                     self.editor = None;
                     self.text_pending = false;
+                    if let Some(tool) = self.tool_after_text.take() {
+                        self.tool = tool;
+                    }
                 }
             }
             Err(error) => {
                 self.error = Some(error);
                 self.text_pending = false;
+                self.tool_after_text = None;
                 if let Some((revision, rollback)) = self.rollback.take()
                     && revision == self.document.revision()
                 {
@@ -269,7 +279,15 @@ impl PinView {
             };
             let _ = cx.update(|window, cx| {
                 view.update(cx, |this, cx| {
+                    let text_pending = this.canvas.text_pending;
                     if let Some(accepted) = this.canvas.accept_render(epoch, key, prepared) {
+                        if text_pending {
+                            if let Some(input) = this.canvas.editor.clone() {
+                                input.update(cx, |input, cx| input.focus(window, cx));
+                            } else {
+                                this.focus.focus(window, cx);
+                            }
+                        }
                         if let Some(retired) = accepted.retired {
                             retire_canvas_frame(retired, window, cx);
                         }
@@ -294,6 +312,22 @@ impl PinView {
         });
     }
     pub(super) fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(input) = self.canvas.editor.clone() {
+            if self.canvas.text_pending {
+                return;
+            }
+            if self.canvas.tool == tool {
+                input.update(cx, |input, cx| input.focus(window, cx));
+                return;
+            }
+            self.finish_text(window, cx);
+            if self.canvas.editor.is_some() {
+                if self.canvas.text_pending {
+                    self.canvas.tool_after_text = Some(tool);
+                }
+                return;
+            }
+        }
         self.finish_move(window, cx);
         self.cancel_crop(window, cx);
         self.crop_hover = Default::default();
@@ -301,6 +335,7 @@ impl PinView {
         self.canvas.draft = None;
         self.canvas.editor = None;
         self.canvas.text_pending = false;
+        self.canvas.tool_after_text = None;
         self.focus.focus(window, cx);
         window.release_pointer();
         self.release_native_pointer(window);
@@ -368,7 +403,11 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.ocr.active || self.busy() || self.canvas.editor.is_some() {
+        if self.ocr.active || self.busy() {
+            return false;
+        }
+        if self.canvas.editor.is_some() {
+            self.finish_text(window, cx);
             return false;
         }
         if self.canvas.tool == Tool::Move {
@@ -394,7 +433,21 @@ impl PinView {
         };
         self.canvas.error = None;
         if self.canvas.tool == Tool::Text {
-            let input = cx.new(|cx| TextareaState::new(window, cx));
+            let input = cx.new(|cx| InputState::new(window, cx));
+            self.canvas.suppress_text_enter = false;
+            self.canvas.editor_events =
+                Some(
+                    cx.subscribe_in(&input, window, |this, input, event, window, cx| {
+                        if matches!(event, InputEvent::PressEnter { .. })
+                            && this.canvas.editor.as_ref() == Some(input)
+                        {
+                            if !this.canvas.suppress_text_enter {
+                                this.finish_text(window, cx);
+                            }
+                            this.canvas.suppress_text_enter = false;
+                        }
+                    }),
+                );
             input.update(cx, |input, cx| input.focus(window, cx));
             self.canvas.editor = Some(input);
             self.canvas.text_pending = false;
@@ -507,6 +560,7 @@ impl PinView {
         let text = input.read(cx).value().to_string();
         if text.trim().is_empty() {
             self.canvas.editor = None;
+            self.focus.focus(window, cx);
             cx.notify();
             return;
         }
@@ -523,6 +577,17 @@ impl PinView {
             cx,
         );
     }
+    fn cancel_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A submitted edit belongs to the in-flight render until it succeeds or rolls back.
+        if self.canvas.text_pending {
+            return;
+        }
+        self.canvas.editor = None;
+        self.canvas.tool_after_text = None;
+        self.canvas.error = None;
+        self.focus.focus(window, cx);
+        cx.notify();
+    }
     pub(super) fn canvas_keys(
         &mut self,
         event: &KeyDownEvent,
@@ -538,14 +603,11 @@ impl PinView {
             let composing = input.update(cx, |input, cx| {
                 input.marked_text_range(window, cx).is_some()
             });
+            if event.keystroke.key == "enter" {
+                self.canvas.suppress_text_enter = composing;
+            }
             if event.keystroke.key == "escape" && !composing {
-                self.set_tool(Tool::Move, window, cx);
-                cx.stop_propagation();
-            } else if event.keystroke.key == "enter"
-                && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
-                && !composing
-            {
-                self.finish_text(window, cx);
+                self.cancel_text(window, cx);
                 cx.stop_propagation();
             }
             return true;
@@ -635,15 +697,6 @@ impl PinView {
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.undo_canvas(window, cx))),
             )
-            .when(self.canvas.editor.is_some(), |row| {
-                row.child(
-                    toolbar::button("canvas-text-done", toolbar::Glyph::Check, cx)
-                        .accessibility_label(self.t("完成文字标注", "Finish text annotation"))
-                        .tooltip(self.t("完成文字标注", "Finish text annotation"))
-                        .disabled(disabled)
-                        .on_click(cx.listener(|this, _, window, cx| this.finish_text(window, cx))),
-                )
-            })
     }
     pub(super) fn canvas_element(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let transform = self.transform(window);
@@ -796,24 +849,40 @@ impl PinView {
             let origin = transform
                 .to_view(self.canvas.editor_origin)
                 .unwrap_or(ImagePoint { x: 0., y: 0. });
+            let (left, top, width, height) =
+                text_editor_bounds(origin, transform.width, transform.height);
             layer = layer.child(
                 div()
+                    .id("canvas-text-editor")
                     .absolute()
-                    .left(px(origin.x as f32))
-                    .top(px(origin.y as f32))
-                    .w(px((transform.width - origin.x).max(40.) as f32))
+                    .left(px(left as f32))
+                    .top(px(top as f32))
+                    .w(px(width as f32))
                     .font_family(rotor_canvas::FONT_FAMILY)
                     .text_size(px(16.))
                     .occlude()
                     .child(
-                        Textarea::new(input)
-                            .h(px(80.))
+                        Input::new(input)
+                            .h(px(height as f32))
+                            .aria_label(self.t("标注文字", "Annotation text"))
                             .disabled(self.canvas.rendering),
                     ),
             );
         }
         layer.into_any_element()
     }
+}
+
+fn text_editor_bounds(origin: ImagePoint, width: f64, height: f64) -> (f64, f64, f64, f64) {
+    let editor_width = width.clamp(0., 320.);
+    let editor_height = height.clamp(0., 40.);
+    (
+        origin.x.clamp(0., (width - editor_width).max(0.)),
+        // Leave room for the annotation toolbar, including its wrapped second row.
+        origin.y.clamp(0., (height - editor_height - 64.).max(0.)),
+        editor_width,
+        editor_height,
+    )
 }
 
 fn retire_canvas_frame(retired: Arc<RenderImage>, window: &Window, cx: &mut App) {
@@ -957,6 +1026,53 @@ mod tests {
         state.requested = Some(key);
         (state, key)
     }
+    #[test]
+    fn text_editor_stays_inside_small_and_edge_viewports() {
+        for (width, height) in [(640., 480.), (120., 70.), (0., 0.)] {
+            for origin in [
+                ImagePoint { x: 0., y: 0. },
+                ImagePoint {
+                    x: width,
+                    y: height,
+                },
+            ] {
+                let (left, top, w, h) = super::text_editor_bounds(origin, width, height);
+                assert!(left >= 0. && top >= 0.);
+                assert!(left + w <= width && top + h <= height);
+            }
+        }
+    }
+
+    #[test]
+    fn text_tool_switch_waits_for_accepted_render() {
+        let (mut state, key) = state();
+        state.tool = super::Tool::Text;
+        state.text_pending = true;
+        state.tool_after_text = Some(super::Tool::Pen);
+        state.epoch = 2;
+        assert!(state.accept_render(1, key, Ok(prepared(4, 4))).is_none());
+        assert!(state.text_pending);
+        assert!(state.tool == super::Tool::Text);
+        state.accept_render(2, key, Ok(prepared(4, 4))).unwrap();
+        assert!(!state.text_pending);
+        assert!(state.tool == super::Tool::Pen);
+        assert!(state.tool_after_text.is_none());
+    }
+
+    #[test]
+    fn failed_text_render_cancels_deferred_tool_switch() {
+        let (mut state, key) = state();
+        state.tool = super::Tool::Text;
+        state.text_pending = true;
+        state.tool_after_text = Some(super::Tool::Pen);
+        state
+            .accept_render(0, key, Err("font unavailable".into()))
+            .unwrap();
+        assert!(!state.text_pending);
+        assert!(state.tool == super::Tool::Text);
+        assert!(state.tool_after_text.is_none());
+    }
+
     #[test]
     fn stale_render_cannot_replace_the_current_frame_or_error() {
         let (mut state, key) = state();
