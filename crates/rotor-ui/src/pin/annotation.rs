@@ -637,12 +637,9 @@ impl PinView {
             )
             .when(self.canvas.editor.is_some(), |row| {
                 row.child(
-                    Button::new("canvas-text-done")
-                        .icon(IconName::Check)
+                    toolbar::button("canvas-text-done", toolbar::Glyph::Check, cx)
                         .accessibility_label(self.t("完成文字标注", "Finish text annotation"))
                         .tooltip(self.t("完成文字标注", "Finish text annotation"))
-                        .ghost()
-                        .compact()
                         .disabled(disabled)
                         .on_click(cx.listener(|this, _, window, cx| this.finish_text(window, cx))),
                 )

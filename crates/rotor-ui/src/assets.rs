@@ -8,7 +8,7 @@ gpui_kit::assets::icon_assets!(
         Pencil,
         Trash,
         Square,
-        ArrowDownLeft,
+        MoveUpRight,
         Type,
         ScanText,
         Download

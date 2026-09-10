@@ -20,6 +20,28 @@ pub(super) enum Glyph {
     Save,
     Close,
     Copy,
+    Check,
+}
+
+pub(super) fn panel(id: &'static str, width: Pixels, window: &Window) -> Stateful<Div> {
+    div()
+        .id(id)
+        .absolute()
+        .bottom(px(0.))
+        .left((window.viewport_size().width - width) / 2.)
+        .w(width)
+        .flex()
+        .flex_col()
+        .max_w_full()
+        .max_h((window.viewport_size().height - px(16.)).max(px(0.)))
+        .overflow_y_scroll()
+        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+        .p(px(4.))
+        .gap(px(2.))
+        .rounded_t(px(10.))
+        .bg(rgba(0x101923ed))
+        .text_color(rgb(0xe4edf5))
+        .occlude()
 }
 
 pub(super) fn separator() -> Div {
@@ -44,7 +66,7 @@ pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
             Icon::new(match glyph {
                 Glyph::Back => IconName::ChevronLeft,
                 Glyph::Rectangle => IconName::Square,
-                Glyph::Arrow => IconName::ArrowDownLeft,
+                Glyph::Arrow => IconName::MoveUpRight,
                 Glyph::Text => IconName::Type,
                 Glyph::Undo => IconName::Undo2,
                 Glyph::Pen => IconName::Pencil,
@@ -53,6 +75,7 @@ pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
                 Glyph::Save => IconName::Download,
                 Glyph::Close => IconName::Close,
                 Glyph::Copy => IconName::Copy,
+                Glyph::Check => IconName::Check,
             })
             .size(px(17.)),
         )

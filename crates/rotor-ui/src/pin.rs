@@ -4,10 +4,7 @@ mod crop;
 mod ocr;
 mod toolbar;
 use gpui_kit::{
-    component::{
-        ActiveTheme, Disableable, IconName, Selectable,
-        button::{Button, ButtonVariants},
-    },
+    component::{ActiveTheme, Disableable, Selectable},
     prelude::*,
     *,
 };
@@ -623,113 +620,91 @@ impl Render for PinView {
             .map(|root| {
                 root.child(
                     toolbar::Slide::new(
-                        div()
-                            .id("pin-toolbar")
-                            .absolute()
-                            .bottom(px(0.))
-                            .left((window.viewport_size().width - toolbar_width) / 2.)
-                            .w(toolbar_width)
-                            .flex()
-                            .flex_col()
-                            .max_w_full()
-                            .max_h((window.viewport_size().height - px(16.)).max(px(0.)))
-                            .overflow_y_scroll()
-                            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-                            .p(px(4.))
-                            .gap(px(2.))
-                            .rounded_t(px(10.))
-                            .bg(rgba(0x101923ed))
-                            .text_color(rgb(0xe4edf5))
-                            .occlude()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_wrap()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap(px(2.))
-                                    .child(
-                                        toolbar::button("pin-annotate", toolbar::Glyph::Pen, cx)
-                                            .accessibility_label(self.t("标注", "Annotate"))
-                                            .tooltip(
-                                                self.t("画笔、形状与文字", "Pen, shapes and text"),
-                                            )
-                                            .selected(self.canvas.editing())
-                                            .disabled(export_disabled)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.clear_ocr(window);
-                                                this.set_tool(annotation::Tool::Pen, window, cx);
-                                            })),
-                                    )
-                                    .child(
-                                        toolbar::button("pin-ocr", toolbar::Glyph::Ocr, cx)
-                                            .accessibility_label("OCR")
-                                            .tooltip(self.t(
+                        toolbar::panel("pin-toolbar", toolbar_width, window).child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .justify_center()
+                                .gap(px(2.))
+                                .child(
+                                    toolbar::button("pin-annotate", toolbar::Glyph::Pen, cx)
+                                        .accessibility_label(self.t("标注", "Annotate"))
+                                        .tooltip(self.t("画笔、形状与文字", "Pen, shapes and text"))
+                                        .selected(self.canvas.editing())
+                                        .disabled(export_disabled)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.clear_ocr(window);
+                                            this.set_tool(annotation::Tool::Pen, window, cx);
+                                        })),
+                                )
+                                .child(
+                                    toolbar::button("pin-ocr", toolbar::Glyph::Ocr, cx)
+                                        .accessibility_label("OCR")
+                                        .tooltip(
+                                            self.t(
                                                 "识别图片中的文字",
                                                 "Recognize text in this image",
-                                            ))
-                                            .selected(self.ocr.active)
-                                            .disabled(!self.ocr.active && export_disabled)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.toggle_ocr(window, cx)
-                                            })),
-                                    )
-                                    .child(toolbar::separator())
-                                    .child(
-                                        toolbar::button(
-                                            "pin-minimize",
-                                            toolbar::Glyph::Minimize,
-                                            cx,
+                                            ),
                                         )
+                                        .selected(self.ocr.active)
+                                        .disabled(!self.ocr.active && export_disabled)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.toggle_ocr(window, cx)
+                                        })),
+                                )
+                                .child(toolbar::separator())
+                                .child(
+                                    toolbar::button("pin-minimize", toolbar::Glyph::Minimize, cx)
                                         .accessibility_label(self.t("最小化", "Minimize"))
                                         .tooltip(self.shortcut_hint(
                                             self.t("最小化", "Minimize"),
                                             "shortcut_pinwin_hide",
                                         ))
                                         .disabled(busy)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.minimize(window, cx)
+                                        })),
+                                )
+                                .child(
+                                    toolbar::button("pin-save", toolbar::Glyph::Save, cx)
+                                        .accessibility_label(self.t("保存", "Save"))
+                                        .tooltip(self.shortcut_hint(
+                                            self.t("保存", "Save"),
+                                            "shortcut_pinwin_save",
+                                        ))
+                                        .disabled(export_disabled)
                                         .on_click(
                                             cx.listener(|this, _, window, cx| {
-                                                this.minimize(window, cx)
+                                                this.save(window, cx)
                                             }),
                                         ),
-                                    )
-                                    .child(
-                                        toolbar::button("pin-save", toolbar::Glyph::Save, cx)
-                                            .accessibility_label(self.t("保存", "Save"))
-                                            .tooltip(self.shortcut_hint(
-                                                self.t("保存", "Save"),
-                                                "shortcut_pinwin_save",
-                                            ))
-                                            .disabled(export_disabled)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.save(window, cx)
-                                            })),
-                                    )
-                                    .child(
-                                        toolbar::button("pin-close", toolbar::Glyph::Close, cx)
-                                            .accessibility_label(self.t("关闭", "Close"))
-                                            .tooltip(self.shortcut_hint(
-                                                self.t("关闭", "Close"),
-                                                "shortcut_pinwin_close",
-                                            ))
-                                            .disabled(busy)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.close(window, cx)
-                                            })),
-                                    )
-                                    .child(
-                                        toolbar::button("pin-copy", toolbar::Glyph::Copy, cx)
-                                            .accessibility_label(self.t("复制", "Copy"))
-                                            .tooltip(self.shortcut_hint(
-                                                self.t("复制", "Copy"),
-                                                "shortcut_pinwin_copy",
-                                            ))
-                                            .disabled(export_disabled)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.export(PinExportTarget::Clipboard, window, cx)
-                                            })),
-                                    ),
-                            ),
+                                )
+                                .child(
+                                    toolbar::button("pin-close", toolbar::Glyph::Close, cx)
+                                        .accessibility_label(self.t("关闭", "Close"))
+                                        .tooltip(self.shortcut_hint(
+                                            self.t("关闭", "Close"),
+                                            "shortcut_pinwin_close",
+                                        ))
+                                        .disabled(busy)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.close(window, cx)
+                                        })),
+                                )
+                                .child(
+                                    toolbar::button("pin-copy", toolbar::Glyph::Copy, cx)
+                                        .accessibility_label(self.t("复制", "Copy"))
+                                        .tooltip(self.shortcut_hint(
+                                            self.t("复制", "Copy"),
+                                            "shortcut_pinwin_copy",
+                                        ))
+                                        .disabled(export_disabled)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.export(PinExportTarget::Clipboard, window, cx)
+                                        })),
+                                ),
+                        ),
                     )
                     .with_spring(
                         "pin-toolbar-slide",
@@ -745,19 +720,7 @@ impl Render for PinView {
             })
             .child(
                 toolbar::Slide::new(
-                    div()
-                        .id("pin-annotation-toolbar")
-                        .absolute()
-                        .bottom(px(0.))
-                        .left((window.viewport_size().width - annotation_width) / 2.)
-                        .w(annotation_width)
-                        .max_h((window.viewport_size().height - px(16.)).max(px(0.)))
-                        .overflow_y_scroll()
-                        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-                        .p(px(4.))
-                        .rounded_t(px(10.))
-                        .bg(rgba(0x282828f5))
-                        .occlude()
+                    toolbar::panel("pin-annotation-toolbar", annotation_width, window)
                         .child(self.canvas_tools(cx)),
                 )
                 .with_spring(
