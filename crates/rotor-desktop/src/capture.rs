@@ -59,83 +59,23 @@ fn close_masks(current: Option<&mut Window>, cx: &mut App) -> Result<(), String>
     if !roles.is_empty() {
         cx.global_mut::<ShellState>().capture.desktop_dirty = true;
     }
-    let mut current_failed = false;
     let mut failure = current.and_then(|window| {
-        hide(window).err().inspect(|_| {
-            current_failed = true;
-            window.remove_window();
-        })
+        let result = hide(window);
+        window.remove_window();
+        result.err()
     });
     for role in roles {
-        let WindowRole::Mask { session, monitor } = role else {
-            unreachable!()
-        };
         let entry = cx.global_mut::<ShellState>().windows.remove(&role).unwrap();
         if Some(entry.window.window_id()) == current_id {
-            if current_failed {
-                continue;
-            }
-        } else {
-            match entry.window.update(cx, |_, window, _| {
-                let result = hide(window);
-                if result.is_err() {
-                    window.remove_window();
-                }
-                result
-            }) {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
-                    failure = Some(error);
-                    continue;
-                }
-                Err(_) => continue,
-            }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = (session, monitor);
-            if Some(entry.window.window_id()) == current_id {
-                // The current handler's Window borrow is still active; close it
-                // after that event returns.
-                let handle = entry.window;
-                cx.defer(move |cx| {
-                    let _ = handle.update(cx, |_, window, _| window.remove_window());
-                });
-            } else {
-                let _ = entry
-                    .window
-                    .update(cx, |_, window, _| window.remove_window());
-            }
             continue;
         }
-        #[cfg(target_os = "windows")]
-        if let WindowView::Mask(view) = &entry.view {
-            let view = view.clone();
-            // Cancel/choose may be called from this view's event handler. Defer
-            // the reset until its current mutable borrow is released.
-            let handle = entry.window;
-            cx.defer(move |cx| {
-                let _ = handle.update(cx, |_, window, cx| {
-                    if let Ok(Some(retired)) = view.update(cx, |view, cx| view.suspend(session, cx))
-                    {
-                        // Replace the old scene before removing its atlas allocation.
-                        window.refresh();
-                        window.draw(cx).clear(cx);
-                        if let Err(error) = window.drop_image(retired) {
-                            log::warn!("Capture image release: {error}");
-                        }
-                    }
-                });
-            });
+        if let Ok(Err(error)) = entry.window.update(cx, |_, window, _| {
+            let result = hide(window);
+            window.remove_window();
+            result
+        }) {
+            failure = Some(error);
         }
-        #[cfg(target_os = "windows")]
-        cx.global_mut::<ShellState>().windows.insert(
-            WindowRole::Mask {
-                session: 0,
-                monitor,
-            },
-            entry,
-        );
     }
     failure.map_or(Ok(()), Err)
 }
@@ -146,7 +86,7 @@ fn mark(session: u64, stage: &str, cx: &App) {
     }
 }
 
-fn idle_window(
+fn create_mask_window(
     monitor: &rotor_runtime::MonitorConfig,
     cx: &mut App,
 ) -> Result<AnyWindowHandle, String> {
@@ -154,25 +94,6 @@ fn idle_window(
         session: 0,
         monitor: monitor.id,
     };
-    if let Some(entry) = cx.global::<ShellState>().windows.get(&role) {
-        let usable = match &entry.view {
-            WindowView::Mask(view) => view
-                .upgrade()
-                .is_some_and(|view| view.read(cx).monitor() == monitor),
-            _ => false,
-        };
-        if usable {
-            let handle = entry.window;
-            if fit_mask(handle, monitor, cx).is_ok() {
-                return Ok(handle);
-            }
-        }
-    }
-    if let Some(entry) = cx.global_mut::<ShellState>().windows.remove(&role) {
-        let _ = entry
-            .window
-            .update(cx, |_, window, _| window.remove_window());
-    }
     let display = cx
         .displays()
         .into_iter()
@@ -345,18 +266,6 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
     cx.global_mut::<ShellState>().monitors = monitors;
     let chinese =
         rotor_common::i18n::language_for_config(&cx.global::<ShellState>().config) == "zh-CN";
-    // Release cached windows for removed outputs. Changed geometry is recreated
-    // by idle_window; normal captures reuse their existing native renderer.
-    let obsolete: Vec<_> = cx.global::<ShellState>().windows.keys().copied().filter(|role| {
-        matches!(role, WindowRole::Mask { session: 0, monitor } if !frames.iter().any(|frame| frame.monitor.id == *monitor))
-    }).collect();
-    for role in obsolete {
-        if let Some(entry) = cx.global_mut::<ShellState>().windows.remove(&role) {
-            let _ = entry
-                .window
-                .update(cx, |_, window, _| window.remove_window());
-        }
-    }
     let (cursor_display, cursor) = crate::placement::cursor_display(cx);
     let focus_id = cursor_display
         .as_ref()
@@ -364,7 +273,7 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
         .or_else(|| frames.first().map(|frame| frame.monitor.id));
     for frame in frames {
         let monitor = frame.monitor.id;
-        let handle = idle_window(&frame.monitor, cx)?;
+        let handle = create_mask_window(&frame.monitor, cx)?;
         let entry = cx
             .global_mut::<ShellState>()
             .windows
@@ -372,9 +281,9 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                 session: 0,
                 monitor,
             })
-            .ok_or("Cached mask is unavailable")?;
+            .ok_or("New mask is unavailable")?;
         let WindowView::Mask(view) = &entry.view else {
-            return Err("Cached mask view is unavailable".into());
+            return Err("New mask view is unavailable".into());
         };
         let view = view.clone();
         cx.global_mut::<ShellState>()

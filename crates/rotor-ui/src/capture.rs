@@ -93,8 +93,7 @@ impl PreparedScreenshot {
 }
 
 impl PreparedCapture {
-    /// Tiny inert content for hidden windows; never retain a previous screenshot
-    /// while waiting for the next request.
+    /// Tiny inert content while a new hidden window is being initialized.
     pub fn placeholder(monitor: MonitorConfig) -> Arc<Self> {
         Arc::new(Self {
             monitor,
@@ -243,21 +242,6 @@ impl MaskView {
         self.detected.clear();
         self.copied = false;
         cx.notify();
-    }
-    pub fn suspend(&mut self, session: u64, cx: &mut Context<Self>) -> Option<Arc<RenderImage>> {
-        if self.session != session {
-            return None;
-        }
-        let retired = self.capture.image.render.clone();
-        self.active = false;
-        self.pointer_inside = false;
-        self.armed = false;
-        self.start = None;
-        self.click_selection = None;
-        self.detected.clear();
-        self.capture = PreparedCapture::placeholder(self.capture.monitor.clone());
-        cx.notify();
-        Some(retired)
     }
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);

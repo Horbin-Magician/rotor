@@ -21,7 +21,8 @@ struct CaptureJob {
 }
 
 /// A bounded, persistent worker per output. Native capture resources never cross
-/// thread boundaries. A stalled driver cannot create unbounded replacement threads.
+/// thread boundaries and are released after each job. A stalled driver cannot
+/// create unbounded replacement threads.
 #[derive(Default)]
 pub struct CapturePool {
     workers: HashMap<u32, mpsc::SyncSender<CaptureJob>>,
@@ -36,19 +37,9 @@ impl CapturePool {
                 continue;
             }
             let (sender, receiver) = mpsc::sync_channel::<CaptureJob>(1);
-            #[cfg(target_os = "windows")]
-            let warm_monitor = monitor.clone();
             thread::Builder::new()
                 .name(format!("rotor-capture-{}", monitor.id))
                 .spawn(move || {
-                    #[cfg(target_os = "windows")]
-                    let mut capture = rotor_platform::capture::DesktopCapture::default();
-                    #[cfg(target_os = "windows")]
-                    let mut previous_config = Some(warm_monitor.clone());
-                    #[cfg(target_os = "windows")]
-                    if let Err(error) = capture.prepare(warm_monitor.width, warm_monitor.height) {
-                        log::warn!("Capture buffer warmup: {error}");
-                    }
                     while let Ok(job) = receiver.recv() {
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             let expected = &job.monitor;
@@ -68,10 +59,8 @@ impl CapturePool {
                             }
                             #[cfg(target_os = "windows")]
                             let bytes = {
-                                if previous_config.as_ref() != Some(expected) {
-                                    capture = rotor_platform::capture::DesktopCapture::default();
-                                    previous_config = Some(expected.clone());
-                                }
+                                let mut capture =
+                                    rotor_platform::capture::DesktopCapture::default();
                                 capture.capture(
                                     expected.x,
                                     expected.y,
