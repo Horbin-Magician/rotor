@@ -6,7 +6,7 @@ mod document;
 mod renderer;
 pub use crop::{resize_crop, CropEdges};
 pub use document::{
-    arrow_head, Annotation, Color, Document, Scene, StrokeStyle, ViewTransform, FONT_FAMILY,
+    arrow_outline, Annotation, Color, Document, Scene, StrokeStyle, ViewTransform, FONT_FAMILY,
 };
 pub use renderer::Renderer;
 

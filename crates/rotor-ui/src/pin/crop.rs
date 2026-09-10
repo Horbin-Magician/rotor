@@ -534,16 +534,16 @@ mod tests {
                     pin.cancel_editing(window, cx);
                     assert!(!pin.canvas.editing());
                     assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
-                    let epoch = pin.canvas.frame_revision();
+                    let epoch = pin.canvas.content_revision();
                     for x in 1..=50 {
                         pin.move_crop(point(px(x as f32), px(100.)), window, cx);
                         pin.ensure_canvas(window, cx);
                     }
                     assert_eq!(calls.get(), 0);
                     assert_eq!(
-                        pin.canvas.frame_revision(),
+                        pin.canvas.content_revision(),
                         epoch,
-                        "dragging must not request image rendering"
+                        "dragging must not commit document changes"
                     );
                 });
                 window.simulate_next_frame(cx);

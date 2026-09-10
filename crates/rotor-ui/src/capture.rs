@@ -113,44 +113,6 @@ impl rotor_runtime::CapturePixels for PreparedCapture {
     }
 }
 
-/// Display-only composition; editable source pixels belong to PreparedImage.
-#[derive(Clone)]
-pub(crate) struct PreparedFrame {
-    pub render: Arc<RenderImage>,
-    pub dimensions: (u32, u32),
-}
-impl PreparedFrame {
-    pub fn new(image: Arc<RgbaImage>) -> Result<Self, String> {
-        let mut bgra = Arc::unwrap_or_clone(image);
-        let dimensions = bgra.dimensions();
-        if dimensions.0 == 0 || dimensions.1 == 0 {
-            return Err("Image is empty".into());
-        }
-        for pixel in bgra.pixels_mut() {
-            pixel.0.swap(0, 2);
-        }
-        Ok(Self {
-            render: Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])),
-            dimensions,
-        })
-    }
-    /// Temporary OCR input; never cached alongside display pixels.
-    pub fn rgba(&self) -> Arc<RgbaImage> {
-        let mut bytes = self
-            .render
-            .as_bytes(0)
-            .expect("display has one frame")
-            .to_vec();
-        for pixel in bytes.chunks_exact_mut(4) {
-            pixel.swap(0, 2);
-        }
-        Arc::new(
-            RgbaImage::from_raw(self.dimensions.0, self.dimensions.1, bytes)
-                .expect("validated frame"),
-        )
-    }
-}
-
 impl PreparedCapture {
     /// Tiny inert content while a new hidden window is being initialized.
     pub fn placeholder(monitor: MonitorConfig) -> Arc<Self> {
@@ -802,19 +764,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn display_frame_reuses_owned_pixels_and_leaves_shared_sources_intact() {
-        let source = Arc::new(RgbaImage::from_raw(1, 1, vec![12, 34, 56, 78]).unwrap());
-        let allocation = source.as_raw().as_ptr();
-        let frame = super::PreparedFrame::new(source).unwrap();
-        assert_eq!(frame.render.as_bytes(0).unwrap().as_ptr(), allocation);
-        assert_eq!(frame.render.as_bytes(0).unwrap(), &[56, 34, 12, 78]);
-        assert_eq!(frame.rgba().as_raw(), &[12, 34, 56, 78]);
-        let source = frame.rgba();
-        let shared = super::PreparedFrame::new(source.clone()).unwrap();
-        assert_eq!(source.as_raw(), &[12, 34, 56, 78]);
-        assert_eq!(shared.render.as_bytes(0).unwrap(), &[56, 34, 12, 78]);
-    }
     #[test]
     fn inspector_stays_on_screen_and_away_from_edge_pixels() {
         for (length, gap) in [

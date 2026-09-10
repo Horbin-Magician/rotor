@@ -89,23 +89,32 @@ impl Annotation {
     }
 }
 
-pub fn arrow_head(start: ImagePoint, end: ImagePoint, width: f64) -> [ImagePoint; 3] {
+/// One filled silhouette shared by the live overlay and exported pixels.
+/// The shaft ends at the head's shoulders, so no rounded stroke protrudes at the tip.
+pub fn arrow_outline(start: ImagePoint, end: ImagePoint, width: f64) -> Vec<ImagePoint> {
     let (dx, dy) = (end.x - start.x, end.y - start.y);
-    let length = dx.hypot(dy).max(f64::EPSILON);
+    let length = dx.hypot(dy);
+    if !length.is_finite() || length <= f64::EPSILON || !width.is_finite() || width <= 0. {
+        return Vec::new();
+    }
     let (ux, uy) = (dx / length, dy / length);
-    let head = width * 5.;
-    let (x, y) = (end.x - ux * head, end.y - uy * head);
-    [
-        end,
-        ImagePoint {
-            x: x - uy * head / 2.,
-            y: y + ux * head / 2.,
-        },
-        ImagePoint {
-            x: x + uy * head / 2.,
-            y: y - ux * head / 2.,
-        },
-    ]
+    let width = width.min(length / 3.);
+    let radius = width / 2.;
+    let head = (width * 4.5).min(length * 0.6);
+    let neck = length - head;
+    let wing = head * 0.45;
+    let point = |x: f64, y: f64| ImagePoint {
+        x: start.x + ux * x - uy * y,
+        y: start.y + uy * x + ux * y,
+    };
+    let mut outline = vec![end, point(neck, wing), point(neck, radius)];
+    // A small semicircle forms the tail; fill once to avoid seams and alpha overlap.
+    for step in 0..=24 {
+        let angle = std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * step as f64 / 24.;
+        outline.push(point(radius * angle.cos(), radius * angle.sin()));
+    }
+    outline.extend([point(neck, -radius), point(neck, -wing)]);
+    outline
 }
 
 #[derive(Clone, Debug)]
@@ -291,6 +300,30 @@ impl ViewTransform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn arrows_have_a_single_tip_and_proportional_short_heads() {
+        for length in [0.1, 3., 100.] {
+            for angle in [0_f64, 0.7, 1.57, 3.8] {
+                let (ux, uy) = (angle.cos(), angle.sin());
+                let start = ImagePoint { x: 100., y: 100. };
+                let end = ImagePoint {
+                    x: start.x + ux * length,
+                    y: start.y + uy * length,
+                };
+                let outline = arrow_outline(start, end, 4.);
+                assert_eq!(outline[0], end);
+                for point in &outline[1..] {
+                    let along = (point.x - start.x) * ux + (point.y - start.y) * uy;
+                    assert!(along < length, "only the sharp tip may reach the endpoint");
+                    let across = -(point.x - start.x) * uy + (point.y - start.y) * ux;
+                    assert!(across.abs() <= length * 0.27 + 1e-9);
+                }
+            }
+        }
+        let point = ImagePoint { x: 0., y: 0. };
+        assert!(arrow_outline(point, point, 4.).is_empty());
+    }
+
     fn full() -> ImageRect {
         ImageRect {
             x: 0,

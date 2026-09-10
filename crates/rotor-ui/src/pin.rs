@@ -301,16 +301,7 @@ impl PinView {
             return;
         }
         self.ensure_canvas(window, cx);
-        if !self.canvas.ready() && !self.canvas.rendering {
-            self.message = self
-                .canvas
-                .error
-                .clone()
-                .unwrap_or_else(|| self.t("图像尚未就绪", "Image is not ready").into());
-            cx.notify();
-            return;
-        }
-        if self.pending_create.is_some() || !self.canvas.ready() {
+        if self.pending_create.is_some() {
             self.queued_export = Some(intent);
             self.message = self.t("正在准备导出…", "Preparing export…").into();
             cx.notify();
@@ -325,7 +316,7 @@ impl PinView {
         if self.canvas.ready() {
             let intent = self.queued_export.take().unwrap();
             self.finish_export_request(intent, window, cx);
-        } else if !self.canvas.rendering {
+        } else {
             self.queued_export = None;
             self.message = self
                 .canvas

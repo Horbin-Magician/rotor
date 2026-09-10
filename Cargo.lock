@@ -7510,6 +7510,7 @@ dependencies = [
  "gpui-pre",
  "image",
  "log",
+ "lyon",
  "rotor-canvas",
  "rotor-common",
  "rotor-runtime",

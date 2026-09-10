@@ -25,6 +25,7 @@ impl Selection {
 pub(super) struct OcrState {
     pub(super) active: bool,
     pending: Option<OperationId>,
+    render_task: Option<Task<()>>,
     revision: u64,
     pub(super) signature: Option<(u64, ImageRect)>,
     size: Option<ImageSize>,
@@ -35,6 +36,10 @@ pub(super) struct OcrState {
     pub(super) error: Option<String>,
 }
 impl OcrState {
+    fn accepts_render(&self, revision: u64, signature: (u64, ImageRect)) -> bool {
+        self.active && self.revision == revision && self.signature == Some(signature)
+    }
+
     fn accepts(&self, id: OperationId, revision: u64, signature: (u64, ImageRect)) -> bool {
         self.active
             && self.pending == Some(id)
@@ -92,7 +97,10 @@ impl PinView {
             self.release_native_pointer(window);
             window.release_pointer();
         }
-        self.ocr = OcrState::default();
+        self.ocr = OcrState {
+            revision: self.ocr.revision.wrapping_add(1),
+            ..Default::default()
+        };
     }
     fn ocr_signature(&self) -> (u64, ImageRect) {
         let (x, y, width, height) = self.crop();
@@ -123,25 +131,38 @@ impl PinView {
         self.crop_hover = Default::default();
         self.cancel_editing(window, cx);
         self.clear_ocr(window);
-        let Some(frame) = self.canvas.frame() else {
-            return;
+        let scene = self.canvas.export_scene();
+        let output = ImageSize {
+            width: scene.crop.width,
+            height: scene.crop.height,
         };
-        let image = frame.rgba();
-        let revision = self.canvas.frame_revision();
+        let source = self.image.image.clone();
+        let services = self.services.clone();
+        let revision = self.ocr.revision;
+        let signature = self.ocr_signature();
         self.ocr.active = true;
-        self.ocr.revision = revision;
-        self.ocr.signature = Some(self.ocr_signature());
-        self.ocr.size = Some(ImageSize {
-            width: image.width(),
-            height: image.height(),
-        });
-        match self
-            .services
-            .recognize_text(self.id.unwrap_or(0), revision, image)
-        {
-            Ok(id) => self.ocr.pending = Some(id),
-            Err(error) => self.ocr.error = Some(error),
-        }
+        self.ocr.signature = Some(signature);
+        self.ocr.size = Some(output);
+        self.ocr.render_task = Some(cx.spawn_in(window, async move |view, cx| {
+            // OCR consumes the same document as export, including floating annotations.
+            let result = services.render_canvas(source, scene, output).await;
+            let _ = view.update(cx, |this, cx| {
+                if !this.ocr.accepts_render(revision, signature)
+                    || this.ocr_signature() != signature
+                {
+                    return;
+                }
+                this.ocr.render_task = None;
+                match result.and_then(|image| {
+                    this.services
+                        .recognize_text(this.id.unwrap_or(0), revision, image)
+                }) {
+                    Ok(id) => this.ocr.pending = Some(id),
+                    Err(error) => this.ocr.error = Some(error),
+                }
+                cx.notify();
+            });
+        }));
         self.focus.focus(window, cx);
         cx.notify();
     }
@@ -474,6 +495,19 @@ mod tests {
             ..Default::default()
         };
         assert!(state.accepts(OperationId(2), 7, (3, crop)));
+        assert!(state.accepts_render(7, (3, crop)));
+        assert!(!state.accepts_render(6, (3, crop)));
+        assert!(!state.accepts_render(7, (4, crop)));
+        assert!(!OcrState::default().accepts_render(7, (3, crop)));
+        let restarted = OcrState {
+            revision: 8,
+            ..state
+        };
+        assert!(!restarted.accepts_render(7, (3, crop)));
+        let state = OcrState {
+            revision: 7,
+            ..restarted
+        };
         assert!(!state.accepts(OperationId(1), 7, (3, crop)));
         assert!(!state.accepts(OperationId(2), 7, (4, crop)));
         assert!(!OcrState::default().accepts(OperationId(2), 7, (3, crop)));

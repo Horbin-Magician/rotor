@@ -9,6 +9,7 @@ base64 = "0.22.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 image.workspace = true
 log = "0.4"
+lyon = "1"
 global-hotkey = "=0.7.0"
 gpui-kit.workspace = true
 gpui.workspace = true

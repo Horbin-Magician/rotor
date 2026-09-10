@@ -1,5 +1,4 @@
 use super::*;
-use crate::capture::PreparedFrame;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use rotor_canvas::{
     Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, StrokeStyle, ViewTransform,
@@ -13,48 +12,29 @@ pub(super) enum Tool {
     Arrow,
     Text,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct FrameKey {
-    revision: u64,
-    crop: ImageRect,
-    output: ImageSize,
-}
-#[derive(Clone, Copy)]
-enum Rollback {
-    Undo,
-    Redo,
-}
-
-struct AcceptedRender {
-    retired: Option<Arc<RenderImage>>,
+// Retain shaped text across pointer moves and unrelated window refreshes.
+#[derive(Clone)]
+struct DisplayMark {
+    annotation: Annotation,
+    lines: Vec<ShapedLine>,
+    paths: Vec<(gpui::Path<Pixels>, Color)>,
 }
 
 pub(super) struct CanvasState {
     document: Document,
     tool: Tool,
     draft: Option<Annotation>,
-    preview: Option<Annotation>,
     pub(super) editor: Option<Entity<InputState>>,
     editor_events: Option<Subscription>,
     suppress_text_enter: bool,
     editor_origin: ImagePoint,
-    frame: Option<PreparedFrame>,
-    frame_key: Option<FrameKey>,
-    requested: Option<FrameKey>,
-    pub(super) rendering: bool,
     pub(super) error: Option<String>,
-    epoch: u64,
-    task: Option<Task<()>>,
-    rollback: Option<(u64, Rollback)>,
-    text_pending: bool,
-    tool_after_text: Option<Tool>,
+    display_key: Option<(u64, u64)>,
+    display: Arc<Vec<Arc<DisplayMark>>>,
 }
 impl CanvasState {
     pub(super) fn content_revision(&self) -> u64 {
         self.document.revision()
-    }
-    pub(super) fn frame_revision(&self) -> u64 {
-        self.epoch
     }
     pub(super) fn new(image: &PreparedImage, record: &ShotterConfig) -> Self {
         let (x, y, width, height) =
@@ -76,25 +56,14 @@ impl CanvasState {
             .expect("validated crop"),
             tool: Tool::Move,
             draft: None,
-            preview: None,
             editor: None,
             editor_events: None,
             suppress_text_enter: false,
             editor_origin: ImagePoint { x: 0., y: 0. },
-            frame: None,
-            frame_key: None,
-            requested: None,
-            rendering: false,
             error: None,
-            epoch: 0,
-            task: None,
-            rollback: None,
-            text_pending: false,
-            tool_after_text: None,
+            display_key: None,
+            display: Arc::new(Vec::new()),
         }
-    }
-    pub(super) fn frame(&self) -> Option<&PreparedFrame> {
-        self.frame.as_ref()
     }
     pub(super) fn export_scene(&self) -> rotor_canvas::Scene {
         self.document.scene().clone()
@@ -103,81 +72,10 @@ impl CanvasState {
         self.draft.is_none() && self.editor.is_none()
     }
     pub(super) fn ready(&self) -> bool {
-        !self.rendering
-            && self.draft.is_none()
-            && self.editor.is_none()
-            && self.frame_key.is_some()
-            && self.frame_key == self.requested
+        self.can_request_export()
     }
     pub(super) fn editing(&self) -> bool {
         self.tool != Tool::Move || self.editor.is_some() || self.draft.is_some()
-    }
-}
-impl CanvasState {
-    fn accept_render(
-        &mut self,
-        epoch: u64,
-        key: FrameKey,
-        prepared: Result<PreparedFrame, String>,
-    ) -> Option<AcceptedRender> {
-        let prepared = prepared.and_then(|frame| {
-            if frame.dimensions == (key.output.width, key.output.height) {
-                Ok(frame)
-            } else {
-                Err("Rendered frame dimensions differ from its viewport".into())
-            }
-        });
-        if self.epoch != epoch {
-            return None;
-        }
-        self.rendering = false;
-        let mut retired = None;
-        match prepared {
-            Ok(frame) => {
-                retired = self.frame.replace(frame).map(|old| old.render);
-                self.frame_key = Some(key);
-                self.preview = None;
-                self.rollback = None;
-                if self.editor.is_none() || self.text_pending {
-                    self.error = None;
-                }
-                if self.text_pending {
-                    self.editor = None;
-                    self.text_pending = false;
-                    if let Some(tool) = self.tool_after_text.take() {
-                        self.tool = tool;
-                    }
-                }
-            }
-            Err(error) => {
-                self.error = Some(error);
-                self.text_pending = false;
-                self.tool_after_text = None;
-                if let Some((revision, rollback)) = self.rollback.take()
-                    && revision == self.document.revision()
-                {
-                    match rollback {
-                        Rollback::Undo => {
-                            self.document.undo();
-                        }
-                        Rollback::Redo => {
-                            self.document.redo();
-                        }
-                    }
-                    self.preview = None;
-                    self.requested = None;
-                    if let Some(mut old) = self.frame_key
-                        && old.crop == key.crop
-                        && old.output == key.output
-                    {
-                        old.revision = self.document.revision();
-                        self.frame_key = Some(old);
-                        self.requested = Some(old);
-                    }
-                }
-            }
-        }
-        Some(AcceptedRender { retired })
     }
 }
 impl PinView {
@@ -200,7 +98,6 @@ impl PinView {
     ) {
         match self.canvas.document.set_crop(crop) {
             Ok(_) => {
-                self.canvas.rollback = None;
                 self.ensure_canvas_after_bounds(window, cx);
             }
             Err(error) => self.canvas.error = Some(error),
@@ -219,87 +116,15 @@ impl PinView {
             height: window.viewport_size().height.as_f32() as f64,
         }
     }
-    pub(super) fn ensure_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The retained frame is positioned and clipped by canvas_element.
-        // Resampling/uploading a new image here would compete with every drag frame.
-        if self.crop_drag.is_some() {
-            return;
-        }
-        let transform = self.transform(window);
-        let size = window.viewport_size();
-        let output = ImageSize {
-            width: (size.width.as_f32() * window.scale_factor())
-                .round()
-                .max(1.) as u32,
-            height: (size.height.as_f32() * window.scale_factor())
-                .round()
-                .max(1.) as u32,
-        };
-        let key = FrameKey {
-            revision: self.canvas.document.revision(),
-            crop: transform.crop,
-            output,
-        };
+    pub(super) fn ensure_canvas(&mut self, window: &mut Window, _: &mut Context<Self>) {
+        let signature = (self.canvas.document.revision(), self.transform(window).crop);
         if self
             .ocr
             .signature
-            .is_some_and(|signature| signature != (key.revision, key.crop))
+            .is_some_and(|previous| previous != signature)
         {
             self.clear_ocr(window);
         }
-        if self.canvas.requested == Some(key) {
-            return;
-        }
-        let debounce = self
-            .canvas
-            .requested
-            .is_some_and(|previous| previous.revision == key.revision);
-        self.canvas.epoch = self.canvas.epoch.wrapping_add(1);
-        let epoch = self.canvas.epoch;
-        self.canvas.requested = Some(key);
-        self.canvas.rendering = true;
-        let mut scene = self.canvas.document.scene().clone();
-        scene.crop = key.crop;
-        let source = self.image.image.clone();
-        let services = self.services.clone();
-        self.canvas.task = Some(cx.spawn_in(window, async move |view, cx| {
-            if debounce {
-                cx.background_executor()
-                    .timer(Duration::from_millis(40))
-                    .await;
-            }
-            let result = services.render_canvas(source, scene, output).await;
-            let prepared = match result {
-                Ok(image) => {
-                    cx.background_executor()
-                        .spawn(async move { PreparedFrame::new(image) })
-                        .await
-                }
-                Err(error) => Err(error),
-            };
-            let _ = cx.update(|window, cx| {
-                view.update(cx, |this, cx| {
-                    let text_pending = this.canvas.text_pending;
-                    if let Some(accepted) = this.canvas.accept_render(epoch, key, prepared) {
-                        if text_pending {
-                            if let Some(input) = this.canvas.editor.clone() {
-                                input.update(cx, |input, cx| input.focus(window, cx));
-                            } else {
-                                this.focus.focus(window, cx);
-                            }
-                        }
-                        if let Some(retired) = accepted.retired {
-                            retire_canvas_frame(retired, window, cx);
-                        }
-                        if this.canvas.error.is_some() && this.queued_export.take().is_some() {
-                            this.message = this.canvas.error.clone().unwrap();
-                        }
-                        this.resume_export(window, cx);
-                        cx.notify();
-                    }
-                })
-            });
-        }));
     }
     pub(super) fn ensure_canvas_after_bounds(
         &mut self,
@@ -313,18 +138,12 @@ impl PinView {
     }
     pub(super) fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(input) = self.canvas.editor.clone() {
-            if self.canvas.text_pending {
-                return;
-            }
             if self.canvas.tool == tool {
                 input.update(cx, |input, cx| input.focus(window, cx));
                 return;
             }
             self.finish_text(window, cx);
             if self.canvas.editor.is_some() {
-                if self.canvas.text_pending {
-                    self.canvas.tool_after_text = Some(tool);
-                }
                 return;
             }
         }
@@ -334,8 +153,6 @@ impl PinView {
         self.canvas.tool = tool;
         self.canvas.draft = None;
         self.canvas.editor = None;
-        self.canvas.text_pending = false;
-        self.canvas.tool_after_text = None;
         self.focus.focus(window, cx);
         window.release_pointer();
         self.release_native_pointer(window);
@@ -354,23 +171,19 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match self.canvas.document.add(annotation.clone()) {
+        match self.canvas.document.add(annotation) {
             Ok(()) => {
-                self.canvas.preview = Some(annotation);
                 self.canvas.error = None;
-                self.canvas.rollback = Some((self.canvas.document.revision(), Rollback::Undo));
                 self.ensure_canvas(window, cx);
             }
             Err(error) => {
                 self.canvas.error = Some(error);
-                self.canvas.text_pending = false;
             }
         }
         cx.notify();
     }
     fn undo_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy()
-            || self.canvas.rendering
             || self.canvas.editor.is_some()
             || self.canvas.draft.is_some()
             || self.crop_drag.is_some()
@@ -390,9 +203,6 @@ impl PinView {
                 return;
             }
             self.canvas.error = None;
-            self.canvas.preview = None;
-            self.canvas.rollback = (next_crop == before_crop)
-                .then_some((self.canvas.document.revision(), Rollback::Redo));
             self.ensure_canvas(window, cx);
             cx.notify();
         }
@@ -412,12 +222,9 @@ impl PinView {
         }
         if self.canvas.tool == Tool::Move {
             if self.crop_edges(point, window).any() {
-                return !self.canvas.rendering && self.begin_crop(point, window, cx);
+                return self.begin_crop(point, window, cx);
             }
             return self.begin_move(point, window, cx);
-        }
-        if self.canvas.rendering {
-            return false;
         }
         let transform = self.transform(window);
         let Some(origin) = transform.to_image(ImagePoint {
@@ -450,7 +257,6 @@ impl PinView {
                 );
             input.update(cx, |input, cx| input.focus(window, cx));
             self.canvas.editor = Some(input);
-            self.canvas.text_pending = false;
             self.canvas.editor_origin = origin;
             cx.notify();
             return false;
@@ -546,9 +352,6 @@ impl PinView {
         self.add_annotation(annotation, window, cx);
     }
     fn finish_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.canvas.rendering {
-            return;
-        }
         let Some(input) = self.canvas.editor.clone() else {
             return;
         };
@@ -560,12 +363,12 @@ impl PinView {
         let text = input.read(cx).value().to_string();
         if text.trim().is_empty() {
             self.canvas.editor = None;
+            self.canvas.editor_events = None;
             self.focus.focus(window, cx);
             cx.notify();
             return;
         }
         let transform = self.transform(window);
-        self.canvas.text_pending = true;
         self.add_annotation(
             Annotation::Text {
                 origin: self.canvas.editor_origin,
@@ -576,14 +379,15 @@ impl PinView {
             window,
             cx,
         );
+        if self.canvas.error.is_none() {
+            self.canvas.editor = None;
+            self.canvas.editor_events = None;
+            self.focus.focus(window, cx);
+        }
     }
     fn cancel_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // A submitted edit belongs to the in-flight render until it succeeds or rolls back.
-        if self.canvas.text_pending {
-            return;
-        }
         self.canvas.editor = None;
-        self.canvas.tool_after_text = None;
+        self.canvas.editor_events = None;
         self.canvas.error = None;
         self.focus.focus(window, cx);
         cx.notify();
@@ -625,7 +429,7 @@ impl PinView {
         false
     }
     pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let disabled = self.busy() || self.canvas.rendering || self.crop_drag.is_some();
+        let disabled = self.busy() || self.crop_drag.is_some();
         div()
             .flex()
             .flex_wrap()
@@ -698,83 +502,52 @@ impl PinView {
                     .on_click(cx.listener(|this, _, window, cx| this.undo_canvas(window, cx))),
             )
     }
-    pub(super) fn canvas_element(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn canvas_element(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let transform = self.transform(window);
         let scale_x = transform.width / transform.crop.width as f64;
         let scale_y = transform.height / transform.crop.height as f64;
         let mut layer = div().size_full().overflow_hidden();
-        if let Some((frame, key)) = self.canvas.frame.as_ref().zip(self.canvas.frame_key) {
-            let left = ((key.crop.x as f64 - transform.crop.x as f64) * scale_x)
-                .clamp(0., transform.width);
-            let top = ((key.crop.y as f64 - transform.crop.y as f64) * scale_y)
-                .clamp(0., transform.height);
-            let right = (((key.crop.x + key.crop.width) as f64 - transform.crop.x as f64)
-                * scale_x)
-                .clamp(0., transform.width);
-            let bottom = (((key.crop.y + key.crop.height) as f64 - transform.crop.y as f64)
-                * scale_y)
-                .clamp(0., transform.height);
-            let regions = if right <= left || bottom <= top {
-                vec![(0., 0., transform.width, transform.height)]
-            } else {
-                vec![
-                    (0., 0., transform.width, top),
-                    (0., bottom, transform.width, transform.height - bottom),
-                    (0., top, left, bottom - top),
-                    (right, top, transform.width - right, bottom - top),
-                ]
-            };
-            for (x, y, width, height) in regions {
-                if width <= 0. || height <= 0. {
-                    continue;
-                }
-                layer = layer.child(
-                    div()
-                        .absolute()
-                        .left(px(x as f32))
-                        .top(px(y as f32))
-                        .w(px(width as f32))
-                        .h(px(height as f32))
-                        .overflow_hidden()
-                        .child(
-                            img(self.image.render.clone())
-                                .absolute()
-                                .left(px((-(transform.crop.x as f64) * scale_x - x) as f32))
-                                .top(px((-(transform.crop.y as f64) * scale_y - y) as f32))
-                                .w(px((self.image.image.width() as f64 * scale_x) as f32))
-                                .h(px((self.image.image.height() as f64 * scale_y) as f32)),
-                        ),
-                );
-            }
-            layer = layer.child(
-                img(frame.render.clone())
-                    .absolute()
-                    .left(px(
-                        (key.crop.x as f64 - transform.crop.x as f64) as f32 * scale_x as f32
-                    ))
-                    .top(px(
-                        (key.crop.y as f64 - transform.crop.y as f64) as f32 * scale_y as f32
-                    ))
-                    .w(px((key.crop.width as f64 * scale_x) as f32))
-                    .h(px((key.crop.height as f64 * scale_y) as f32)),
+        layer = layer.child(
+            img(self.image.render.clone())
+                .absolute()
+                .left(px(-(transform.crop.x as f64 * scale_x) as f32))
+                .top(px(-(transform.crop.y as f64 * scale_y) as f32))
+                .w(px((self.image.image.width() as f64 * scale_x) as f32))
+                .h(px((self.image.image.height() as f64 * scale_y) as f32)),
+        );
+        let key = (self.canvas.document.revision(), scale_y.to_bits());
+        if self.canvas.display_key != Some(key) {
+            let reuse = self
+                .canvas
+                .display_key
+                .is_some_and(|previous| previous.1 == key.1);
+            self.canvas.display = Arc::new(
+                self.canvas
+                    .document
+                    .scene()
+                    .annotations
+                    .iter()
+                    .enumerate()
+                    .map(|(index, annotation)| {
+                        if let Some(mark) = self.canvas.display.get(index)
+                            && (reuse || !matches!(annotation, Annotation::Text { .. }))
+                            && mark.annotation == *annotation
+                        {
+                            return mark.clone();
+                        }
+                        Arc::new(DisplayMark::new(annotation.clone(), scale_y, window))
+                    })
+                    .collect(),
             );
-        } else {
-            layer = layer.child(
-                img(self.image.render.clone())
-                    .absolute()
-                    .left(px(-(transform.crop.x as f64 * scale_x) as f32))
-                    .top(px(-(transform.crop.y as f64 * scale_y) as f32))
-                    .w(px((self.image.image.width() as f64 * scale_x) as f32))
-                    .h(px((self.image.image.height() as f64 * scale_y) as f32)),
-            );
+            self.canvas.display_key = Some(key);
         }
+        let display = self.canvas.display.clone();
         let weak = cx.weak_entity();
-        let preview = self
-            .canvas
-            .draft
-            .as_ref()
-            .or(self.canvas.preview.as_ref())
-            .cloned();
+        let preview = self.canvas.draft.clone();
         let dragging =
             self.canvas.draft.is_some() || self.crop_drag.is_some() || self.move_drag.is_some();
         let cursor = match self.canvas.tool {
@@ -785,10 +558,13 @@ impl PinView {
         layer = layer.child(
             canvas(
                 |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
-                move |bounds, hitbox, window, _| {
+                move |bounds, hitbox, window, cx| {
                     window.set_cursor_style(cursor, &hitbox);
                     if dragging {
                         window.capture_pointer(hitbox.id);
+                    }
+                    for mark in display.iter() {
+                        mark.paint(transform, bounds.origin, window, cx);
                     }
                     if let Some(annotation) = &preview {
                         paint_preview(annotation, transform, bounds.origin, window);
@@ -864,8 +640,7 @@ impl PinView {
                     .child(
                         Input::new(input)
                             .h(px(height as f32))
-                            .aria_label(self.t("标注文字", "Annotation text"))
-                            .disabled(self.canvas.rendering),
+                            .aria_label(self.t("标注文字", "Annotation text")),
                     ),
             );
         }
@@ -885,17 +660,79 @@ fn text_editor_bounds(origin: ImagePoint, width: f64, height: f64) -> (f64, f64,
     )
 }
 
-fn retire_canvas_frame(retired: Arc<RenderImage>, window: &Window, cx: &mut App) {
-    // The old scene still refers to this atlas entry. Defer until the view's
-    // mutable borrow ends, then replace the scene before freeing its image.
-    // Explicit drawing also handles hidden pins without waiting for a frame.
-    window.defer(cx, move |window, cx| {
-        window.refresh();
-        window.draw(cx).clear(cx);
-        if let Err(error) = window.drop_image(retired) {
-            log::warn!("Pin image release: {error}");
+impl DisplayMark {
+    fn new(annotation: Annotation, scale: f64, window: &Window) -> Self {
+        let lines = if let Annotation::Text {
+            text,
+            font_size,
+            color,
+            ..
+        } = &annotation
+        {
+            text.lines()
+                .map(|text| {
+                    let text: SharedString = text.to_owned().into();
+                    window.text_system().shape_line(
+                        text.clone(),
+                        px((font_size * scale) as f32),
+                        &[TextRun {
+                            len: text.len(),
+                            font: font(rotor_canvas::FONT_FAMILY),
+                            color: rgba(u32::from_be_bytes(color.0)).into(),
+                            ..Default::default()
+                        }],
+                        None,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let paths = annotation_paths(&annotation);
+        Self {
+            annotation,
+            lines,
+            paths,
         }
-    });
+    }
+
+    fn paint(
+        &self,
+        transform: ViewTransform,
+        offset: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if let Annotation::Text {
+            origin, font_size, ..
+        } = &self.annotation
+        {
+            let scale = transform.height / transform.crop.height as f64;
+            if let Some(origin) = transform.to_view(*origin) {
+                for (index, line) in self.lines.iter().enumerate() {
+                    let position = offset
+                        + point(
+                            px(origin.x as f32),
+                            px((origin.y + index as f64 * font_size * scale * 1.25) as f32),
+                        );
+                    // Align the font's top edge with SVG text-before-edge; line spacing
+                    // is separate from GPUI line-box padding.
+                    if let Err(error) = line.paint(
+                        position,
+                        line.ascent + line.descent,
+                        gpui::TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    ) {
+                        log::error!("Cannot paint annotation text: {error}");
+                    }
+                }
+            }
+        } else {
+            paint_paths(&self.paths, transform, offset, window);
+        }
+    }
 }
 
 fn paint_preview(
@@ -904,11 +741,46 @@ fn paint_preview(
     origin: Point<Pixels>,
     window: &mut Window,
 ) {
-    let point = |point| {
-        transform
-            .to_view(point)
-            .map(|point| origin + gpui_kit::point(px(point.x as f32), px(point.y as f32)))
+    paint_paths(&annotation_paths(annotation), transform, origin, window);
+}
+
+fn paint_paths(
+    paths: &[(gpui::Path<Pixels>, Color)],
+    transform: ViewTransform,
+    origin: Point<Pixels>,
+    window: &mut Window,
+) {
+    // Paths are tessellated once in document coordinates. Crop and zoom only
+    // transform the retained vertices; they never resample the base image.
+    let point = |position: Point<Pixels>| {
+        origin
+            + gpui_kit::point(
+                px(
+                    ((position.x.as_f32() as f64 - transform.crop.x as f64) * transform.width
+                        / transform.crop.width as f64) as f32,
+                ),
+                px(
+                    ((position.y.as_f32() as f64 - transform.crop.y as f64) * transform.height
+                        / transform.crop.height as f64) as f32,
+                ),
+            )
     };
+    for (path, color) in paths {
+        let mut path = path.clone();
+        let end = point(path.bounds.bottom_right());
+        path.bounds.origin = point(path.bounds.origin);
+        path.bounds.size =
+            gpui_kit::size(end.x - path.bounds.origin.x, end.y - path.bounds.origin.y);
+        for vertex in &mut path.vertices {
+            vertex.xy_position = point(vertex.xy_position);
+        }
+        window.paint_path(path, rgba(u32::from_be_bytes(color.0)));
+    }
+}
+
+fn annotation_paths(annotation: &Annotation) -> Vec<(gpui::Path<Pixels>, Color)> {
+    let mut paths = Vec::new();
+    let point = |point: ImagePoint| Some(gpui_kit::point(px(point.x as f32), px(point.y as f32)));
     let (points, style, closed) = match annotation {
         Annotation::Pen { points, style } => (points.clone(), *style, false),
         Annotation::Rectangle { start, end, style } => (
@@ -929,27 +801,62 @@ fn paint_preview(
             true,
         ),
         Annotation::Arrow { start, end, style } => {
-            let head = rotor_canvas::arrow_head(*start, *end, style.width);
+            let outline = rotor_canvas::arrow_outline(*start, *end, style.width);
+            if outline.is_empty() {
+                return paths;
+            }
             let mut fill = PathBuilder::fill();
-            if let Some(tip) = point(head[0]) {
-                fill.move_to(tip);
-            }
-            if let Some(left) = point(head[1]) {
-                fill.line_to(left);
-            }
-            if let Some(right) = point(head[2]) {
-                fill.line_to(right);
+            for (index, position) in outline.into_iter().enumerate() {
+                let position = point(position).unwrap();
+                if index == 0 {
+                    fill.move_to(position);
+                } else {
+                    fill.line_to(position);
+                }
             }
             fill.close();
             if let Ok(path) = fill.build() {
-                window.paint_path(path, rgba(u32::from_be_bytes(style.color.0)));
+                paths.push((path, style.color));
             }
-            (vec![*start, *end], *style, false)
+            return paths;
         }
-        Annotation::Text { .. } => return,
+        Annotation::Text { .. } => return paths,
     };
-    let width = style.width * transform.width / transform.crop.width as f64;
-    let mut path = PathBuilder::stroke(px(width as f32));
+    let width = style.width;
+    if !closed && points.iter().all(|point| point == &points[0]) {
+        let center = point(points[0]).unwrap();
+        let radius = px(width as f32 / 2.);
+        let mut circle = PathBuilder::fill();
+        circle.move_to(center + gpui_kit::point(radius, px(0.)));
+        circle.arc_to(
+            gpui_kit::point(radius, radius),
+            px(0.),
+            false,
+            true,
+            center - gpui_kit::point(radius, px(0.)),
+        );
+        circle.arc_to(
+            gpui_kit::point(radius, radius),
+            px(0.),
+            false,
+            true,
+            center + gpui_kit::point(radius, px(0.)),
+        );
+        circle.close();
+        if let Ok(path) = circle.build() {
+            paths.push((path, style.color));
+        }
+        return paths;
+    }
+    let mut options = gpui::StrokeOptions::default().with_line_width(width as f32);
+    if !closed {
+        options = options.with_line_cap(lyon::path::LineCap::Round);
+    }
+    if matches!(annotation, Annotation::Pen { .. }) {
+        options = options.with_line_join(lyon::path::LineJoin::Round);
+    }
+    let mut path =
+        PathBuilder::stroke(px(width as f32)).with_style(gpui::PathStyle::Stroke(options));
     for (index, position) in points.into_iter().filter_map(point).enumerate() {
         if index == 0 {
             path.move_to(position);
@@ -961,8 +868,9 @@ fn paint_preview(
         path.close();
     }
     if let Ok(path) = path.build() {
-        window.paint_path(path, rgba(u32::from_be_bytes(style.color.0)));
+        paths.push((path, style.color));
     }
+    paths
 }
 
 fn is_canvas_undo(key: &Keystroke, editing: bool) -> bool {
@@ -975,8 +883,27 @@ fn is_canvas_undo(key: &Keystroke, editing: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{CanvasState, FrameKey, PreparedFrame, Rollback};
-    use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window};
+    use super::CanvasState;
+
+    #[test]
+    fn arrow_overlay_is_one_filled_shape_without_a_tip_cap() {
+        let paths = super::annotation_paths(&rotor_canvas::Annotation::Arrow {
+            start: rotor_canvas::ImagePoint { x: 10., y: 20. },
+            end: rotor_canvas::ImagePoint { x: 65., y: 20. },
+            style: rotor_canvas::StrokeStyle {
+                color: rotor_canvas::Color::RED,
+                width: 6.,
+            },
+        });
+        assert_eq!(paths.len(), 1);
+        assert!(
+            paths[0]
+                .0
+                .vertices
+                .iter()
+                .all(|vertex| vertex.xy_position.x.as_f32() <= 65.)
+        );
+    }
 
     #[test]
     fn undo_only_claims_the_plain_editing_chord() {
@@ -998,7 +925,7 @@ mod tests {
     use rotor_runtime::ShotterConfig;
     use std::sync::Arc;
 
-    fn state() -> (CanvasState, FrameKey) {
+    fn state() -> CanvasState {
         let image = crate::prepare_image(Arc::new(image::RgbaImage::from_pixel(
             4,
             4,
@@ -1015,16 +942,7 @@ mod tests {
             mask_label: "ssmask-1".into(),
             minimized: false,
         };
-        let mut state = CanvasState::new(&image, &record);
-        let key = FrameKey {
-            revision: 0,
-            crop: state.document.scene().crop,
-            output: state.document.scene().size,
-        };
-        state.frame = Some(PreparedFrame::new(image.image).unwrap());
-        state.frame_key = Some(key);
-        state.requested = Some(key);
-        (state, key)
+        CanvasState::new(&image, &record)
     }
     #[test]
     fn text_editor_stays_inside_small_and_edge_viewports() {
@@ -1044,56 +962,41 @@ mod tests {
     }
 
     #[test]
-    fn text_tool_switch_waits_for_accepted_render() {
-        let (mut state, key) = state();
-        state.tool = super::Tool::Text;
-        state.text_pending = true;
-        state.tool_after_text = Some(super::Tool::Pen);
-        state.epoch = 2;
-        assert!(state.accept_render(1, key, Ok(prepared(4, 4))).is_none());
-        assert!(state.text_pending);
-        assert!(state.tool == super::Tool::Text);
-        state.accept_render(2, key, Ok(prepared(4, 4))).unwrap();
-        assert!(!state.text_pending);
-        assert!(state.tool == super::Tool::Pen);
-        assert!(state.tool_after_text.is_none());
-    }
-
-    #[test]
-    fn failed_text_render_cancels_deferred_tool_switch() {
-        let (mut state, key) = state();
-        state.tool = super::Tool::Text;
-        state.text_pending = true;
-        state.tool_after_text = Some(super::Tool::Pen);
+    fn committed_marks_are_ready_and_export_snapshots_survive_undo() {
+        let mut state = state();
         state
-            .accept_render(0, key, Err("font unavailable".into()))
+            .document
+            .add(Annotation::Text {
+                origin: ImagePoint { x: 1., y: 1. },
+                text: "中文 text".into(),
+                font_size: 16.,
+                color: Color::RED,
+            })
             .unwrap();
-        assert!(!state.text_pending);
-        assert!(state.tool == super::Tool::Text);
-        assert!(state.tool_after_text.is_none());
+        assert!(state.ready());
+        let snapshot = state.export_scene();
+        assert_eq!(snapshot.annotations.len(), 1);
+        assert!(state.document.undo());
+        assert!(state.ready());
+        assert!(state.export_scene().annotations.is_empty());
+        assert_eq!(snapshot.annotations.len(), 1);
+        assert!(state.document.redo());
+        assert_eq!(state.export_scene().annotations, snapshot.annotations);
     }
 
     #[test]
-    fn stale_render_cannot_replace_the_current_frame_or_error() {
-        let (mut state, key) = state();
-        state.epoch = 2;
-        state.rendering = true;
-        assert!(
-            state
-                .accept_render(1, key, Err("late failure".into()))
-                .is_none()
-        );
-        assert!(state.error.is_none());
-        assert!(state.rendering);
-        assert_eq!(
-            state.frame.unwrap().rgba().get_pixel(0, 0).0,
-            [10, 20, 30, 128]
-        );
-    }
-
-    #[test]
-    fn export_uses_document_pixels_after_display_frame_is_released() {
-        let (mut state, _) = state();
+    fn export_composes_marks_at_crop_resolution_without_a_display_frame() {
+        let mut state = state();
+        state
+            .document
+            .add(Annotation::Pen {
+                points: vec![ImagePoint { x: 2., y: 2. }],
+                style: StrokeStyle {
+                    color: Color::RED,
+                    width: 2.,
+                },
+            })
+            .unwrap();
         state
             .document
             .set_crop(rotor_canvas::ImageRect {
@@ -1103,10 +1006,9 @@ mod tests {
                 height: 3,
             })
             .unwrap();
-        state.frame = None;
+        assert!(state.ready());
         let scene = state.export_scene();
-        let source =
-            image::RgbaImage::from_fn(4, 4, |x, y| image::Rgba([x as u8, y as u8, 80, 128]));
+        let source = image::RgbaImage::new(4, 4);
         let rendered = rotor_canvas::Renderer::without_fonts()
             .render(
                 &source,
@@ -1117,205 +1019,107 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(
-            rendered,
-            image::imageops::crop_imm(&source, 1, 1, 2, 3).to_image()
-        );
+        assert_eq!(rendered.dimensions(), (2, 3));
+        assert!(rendered.pixels().any(|pixel| pixel[0] > 0));
+        assert!(state.document.undo());
+        assert_eq!(state.export_scene().crop.width, 4);
+        assert_eq!(state.export_scene().annotations.len(), 1);
     }
-    #[test]
-    fn failed_edit_restores_exportable_pixels_and_keeps_redo() {
-        let (mut state, mut key) = state();
-        let original = state.frame.as_ref().unwrap().render.clone();
-        state
-            .document
-            .add(Annotation::Pen {
-                points: vec![ImagePoint { x: 1., y: 1. }],
-                style: StrokeStyle {
-                    color: Color::RED,
-                    width: 1.,
-                },
-            })
-            .unwrap();
-        key.revision = state.document.revision();
-        state.requested = Some(key);
-        state.epoch = 1;
-        state.rendering = true;
-        state.rollback = Some((key.revision, Rollback::Undo));
-        let accepted = state
-            .accept_render(1, key, Err("renderer unavailable".into()))
-            .unwrap();
-        assert!(accepted.retired.is_none());
-        assert!(Arc::ptr_eq(
-            &state.frame.as_ref().unwrap().render,
-            &original
-        ));
-        assert!(state.document.scene().annotations.is_empty());
-        assert!(state.document.can_redo());
-        assert!(state.ready());
-        assert!(state.error.is_some());
-    }
-    #[test]
-    fn failed_resize_does_not_undo_committed_annotations_or_export_stale_size() {
-        let (mut state, mut key) = state();
-        state
-            .document
-            .add(Annotation::Pen {
-                points: vec![ImagePoint { x: 1., y: 1. }],
-                style: StrokeStyle {
-                    color: Color::RED,
-                    width: 1.,
-                },
-            })
-            .unwrap();
-        key.revision = state.document.revision();
-        key.output.width = 8;
-        state.requested = Some(key);
-        state.epoch = 3;
-        state.accept_render(3, key, Err("resize failed".into()));
-        assert_eq!(state.document.scene().annotations.len(), 1);
-        assert!(!state.ready());
-    }
-
-    fn prepared(width: u32, height: u32) -> PreparedFrame {
-        PreparedFrame::new(Arc::new(image::RgbaImage::from_pixel(
-            width,
-            height,
-            image::Rgba([80, 90, 100, 255]),
-        )))
-        .unwrap()
-    }
-
-    #[test]
-    fn only_successful_current_render_retires_the_previous_frame() {
-        let (mut state, key) = state();
-        let original = state.frame.as_ref().unwrap().render.clone();
-        state.epoch = 2;
-        let stale = prepared(4, 4);
-        let stale_weak = Arc::downgrade(&stale.render);
-        assert!(state.accept_render(1, key, Ok(stale)).is_none());
-        assert!(stale_weak.upgrade().is_none());
-        assert!(Arc::ptr_eq(
-            &state.frame.as_ref().unwrap().render,
-            &original
-        ));
-
-        let invalid = state.accept_render(2, key, Ok(prepared(8, 8))).unwrap();
-        assert!(invalid.retired.is_none());
-        assert!(state.error.is_some());
-        assert!(Arc::ptr_eq(
-            &state.frame.as_ref().unwrap().render,
-            &original
-        ));
-
-        let next = prepared(4, 4);
-        let next_render = next.render.clone();
-        let accepted = state.accept_render(2, key, Ok(next)).unwrap();
-        assert!(Arc::ptr_eq(&accepted.retired.unwrap(), &original));
-        assert!(Arc::ptr_eq(
-            &state.frame.as_ref().unwrap().render,
-            &next_render
-        ));
-    }
-
-    // Mock GPUI window/atlas only: no native window or visual UI validation.
-    struct FrameView {
-        source: crate::PreparedImage,
-        state: CanvasState,
-        retiring: Option<Arc<gpui::RenderImage>>,
-    }
-
-    impl Render for FrameView {
-        fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            if let Some(retiring) = self.retiring.take() {
-                // The previous scene's tile must survive until rebuilding begins.
-                assert!(window.has_image_atlas_entry(&retiring));
-            }
-            gpui::div()
-                .size_full()
-                .child(
-                    gpui::img(self.source.render.clone())
-                        .w(gpui::px(4.))
-                        .h(gpui::px(4.)),
-                )
-                .child(
-                    gpui::img(self.state.frame.as_ref().unwrap().render.clone())
-                        .w(gpui::px(4.))
-                        .h(gpui::px(4.)),
-                )
-        }
-    }
-
+    // Mock GPUI exercises input/focus and retained display data, not native visual fidelity.
     #[gpui::test]
-    fn replacement_scene_releases_retired_atlas_entries(cx: &mut gpui::TestAppContext) {
-        let (state, mut key) = state();
-        let window = cx.add_window(|_, _| FrameView {
-            source: crate::prepare_image(prepared(4, 4).rgba()).unwrap(),
-            state,
-            retiring: None,
+    fn text_confirmation_and_tool_switch_do_not_wait_for_rendering(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        use gpui_kit::component::Root;
+        use std::sync::Mutex;
+        let profile = tempfile::tempdir().unwrap();
+        let (services, _events) = Services::new(
+            Arc::new(Mutex::new(
+                rotor_common::ConfigService::load_from(profile.path()).unwrap(),
+            )),
+            None,
+            rotor_runtime::ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        let services = Arc::new(services);
+        // Any accidental offscreen render would fail: editing must be independent.
+        services.shutdown();
+        cx.update(gpui_kit::component::init);
+        let mut pin = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let entity = cx.new(|cx| {
+                PinView::new(
+                    services,
+                    super::super::PinInit {
+                        image: crate::prepare_image(Arc::new(image::RgbaImage::new(400, 400)))
+                            .unwrap(),
+                        config: ShotterConfig {
+                            monitor_pos: (0, 0),
+                            monitor_size: (400, 400),
+                            rect: (0, 0, 400, 400),
+                            image_rect: None,
+                            offset: (0, 0),
+                            zoom_factor: 100,
+                            mask_label: "ssmask-test".into(),
+                            minimized: false,
+                        },
+                        id: None,
+                        pending: None,
+                        error: None,
+                        content_scale: 1.,
+                        position: Rc::new(|_| None),
+                        minimized: Rc::new(|_| None),
+                        bounds: Rc::new(|_, _| Ok(())),
+                        pointer: Rc::new(|_, _| Ok(())),
+                    },
+                    window,
+                    cx,
+                )
+            });
+            pin = Some(entity.clone());
+            Root::new(entity, window, cx)
         });
-        gpui::AnyWindowHandle::from(window)
-            .update(cx, |_, window, cx| window.draw(cx).clear(cx))
-            .unwrap();
-
-        // Revisions, crops, and output sizes all use the same retirement path.
-        for revision in 1..=24 {
-            key.revision = revision;
-            key.crop.x = (revision % 2) as u32;
-            key.crop.width = 4 - key.crop.x;
-            key.output.width = if revision % 3 == 0 { 8 } else { 4 };
-            let old = window
-                .update(cx, |view, window, cx| {
-                    let old = view.state.frame.as_ref().unwrap().render.clone();
-                    assert!(window.has_image_atlas_entry(&old));
-                    view.retiring = Some(old.clone());
-                    view.state.epoch = revision;
-                    let accepted = view
-                        .state
-                        .accept_render(revision, key, Ok(prepared(key.output.width, 4)))
-                        .unwrap();
-                    super::retire_canvas_frame(accepted.retired.unwrap(), window, cx);
-                    // Scheduling retirement must not invalidate the scene still in use.
-                    assert!(window.has_image_atlas_entry(&old));
-                    cx.notify();
-                    old
-                })
-                .unwrap();
-            cx.run_until_parked();
-            window
-                .update(cx, |view, window, _| {
-                    assert!(!window.has_image_atlas_entry(&old));
-                    assert!(window.has_image_atlas_entry(&view.source.render));
-                    assert!(
-                        window.has_image_atlas_entry(&view.state.frame.as_ref().unwrap().render)
-                    );
-                })
-                .unwrap();
-        }
-    }
-
-    #[gpui::test]
-    fn closing_before_retirement_releases_the_pending_image(cx: &mut gpui::TestAppContext) {
-        let (state, key) = state();
-        let old = Arc::downgrade(&state.frame.as_ref().unwrap().render);
-        let window = cx.add_window(|_, _| FrameView {
-            source: crate::prepare_image(prepared(4, 4).rgba()).unwrap(),
-            state,
-            retiring: None,
+        let pin = pin.unwrap();
+        cx.update(|window, cx| {
+            pin.update(cx, |pin, cx| {
+                pin.set_tool(Tool::Text, window, cx);
+                for text in ["中文 first", "second line"] {
+                    pin.begin_mark(point(px(20.), px(20.)), window, cx);
+                    let editor = pin.canvas.editor.clone().unwrap();
+                    editor.update(cx, |input, cx| input.set_value(text, window, cx));
+                    pin.finish_text(window, cx);
+                    assert!(pin.canvas.editor.is_none());
+                    assert!(pin.canvas.ready());
+                    assert!(pin.canvas.error.is_none());
+                    let previous = pin.canvas.display.first().cloned();
+                    pin.canvas_element(window, cx);
+                    if let Some(previous) = previous {
+                        assert!(Arc::ptr_eq(&previous, &pin.canvas.display[0]));
+                    }
+                }
+                let display = pin.canvas.display.clone();
+                pin.canvas_element(window, cx);
+                assert!(Arc::ptr_eq(&display, &pin.canvas.display));
+                assert_eq!(display.len(), 2);
+                assert_eq!(display[1].lines.len(), 1);
+                pin.undo_canvas(window, cx);
+                assert_eq!(pin.canvas.export_scene().annotations.len(), 1);
+                pin.begin_mark(point(px(30.), px(30.)), window, cx);
+                pin.canvas
+                    .editor
+                    .clone()
+                    .unwrap()
+                    .update(cx, |input, cx| input.set_value("switch", window, cx));
+                pin.set_tool(Tool::Pen, window, cx);
+                assert!(pin.canvas.tool == Tool::Pen);
+                assert!(pin.canvas.editor.is_none());
+                assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
+            });
+            window.draw(cx).clear(cx);
         });
-        gpui::AnyWindowHandle::from(window)
-            .update(cx, |_, window, cx| window.draw(cx).clear(cx))
-            .unwrap();
-        window
-            .update(cx, |view, window, cx| {
-                let accepted = view
-                    .state
-                    .accept_render(0, key, Ok(prepared(4, 4)))
-                    .unwrap();
-                super::retire_canvas_frame(accepted.retired.unwrap(), window, cx);
-                window.remove_window();
-            })
-            .unwrap();
         cx.run_until_parked();
-        assert!(old.upgrade().is_none());
+        pin.read_with(cx, |pin, _| {
+            assert!(pin.canvas.error.is_none());
+            assert!(pin.canvas.ready());
+        });
     }
 }

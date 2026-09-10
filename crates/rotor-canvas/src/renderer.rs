@@ -1,4 +1,4 @@
-use crate::{arrow_head, Annotation, Color, ImageRect, ImageSize, Scene, FONT_FAMILY};
+use crate::{arrow_outline, Annotation, Color, ImageRect, ImageSize, Scene, FONT_FAMILY};
 use image::{GenericImageView, Rgba, RgbaImage};
 use resvg::{
     tiny_skia::{ColorU8, FilterQuality, Pixmap, PixmapPaint, Transform},
@@ -208,8 +208,14 @@ fn svg(scene: &Scene) -> String {
             }
             Annotation::Arrow { start, end, style } => {
                 let (color, opacity) = paint(style.color);
-                let [tip, left, right] = arrow_head(*start, *end, style.width);
-                write!(svg, "<g opacity=\"{opacity:.8}\"><path d=\"M{:.4},{:.4} L{:.4},{:.4}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{:.4}\" stroke-linecap=\"round\"/><path d=\"M{:.4},{:.4} L{:.4},{:.4} L{:.4},{:.4} Z\" fill=\"{color}\"/></g>", start.x, start.y, end.x, end.y, style.width, tip.x, tip.y, left.x, left.y, right.x, right.y).unwrap();
+                let outline = arrow_outline(*start, *end, style.width);
+                if let Some(tip) = outline.first() {
+                    write!(svg, "<path d=\"M{:.4},{:.4}", tip.x, tip.y).unwrap();
+                    for point in &outline[1..] {
+                        write!(svg, " L{:.4},{:.4}", point.x, point.y).unwrap();
+                    }
+                    write!(svg, " Z\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\"/>").unwrap();
+                }
             }
             Annotation::Text {
                 origin,
@@ -244,6 +250,43 @@ mod tests {
             annotations: Vec::new(),
         }
     }
+    #[test]
+    fn arrow_tip_has_no_round_protrusion_or_double_opacity() {
+        let image = RgbaImage::new(80, 40);
+        let mut scene = crate::Document::new(
+            ImageSize {
+                width: 80,
+                height: 40,
+            },
+            ImageRect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 40,
+            },
+        )
+        .unwrap()
+        .scene()
+        .clone();
+        scene.annotations.push(Annotation::Arrow {
+            start: crate::ImagePoint { x: 10., y: 20. },
+            end: crate::ImagePoint { x: 65., y: 20. },
+            style: crate::StrokeStyle {
+                color: Color([255, 0, 0, 128]),
+                width: 6.,
+            },
+        });
+        let rendered = Renderer::without_fonts()
+            .render(&image, &scene, scene.size)
+            .unwrap();
+        assert!(rendered
+            .enumerate_pixels()
+            .filter(|(x, _, _)| *x >= 65)
+            .all(|(_, _, pixel)| pixel[3] == 0));
+        assert!(rendered.pixels().all(|pixel| pixel[3] <= 128));
+        assert_eq!(rendered.get_pixel(25, 20)[3], 128);
+    }
+
     #[test]
     fn unchanged_pixels_and_hidden_rgb_survive_unscaled_export() {
         let image = RgbaImage::from_fn(8, 8, |x, _| {
