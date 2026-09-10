@@ -32,6 +32,50 @@ pub fn enable_pin_taskbar(handle: raw_window_handle::WindowHandle<'_>) -> Result
     Ok(())
 }
 
+/// Enable minimization while keeping GPUI's titlebar-less pin panels undecorated.
+#[cfg(target_os = "macos")]
+pub fn enable_pin_minimization(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
+    use objc2_app_kit::{NSWindowButton, NSWindowStyleMask};
+    use raw_window_handle::RawWindowHandle;
+
+    let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
+        return Err("Expected an AppKit window".into());
+    };
+    // Called on the owning UI thread before the pin is first shown. GPUI
+    // ignores is_minimizable when titlebar is None; retain all other flags.
+    let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
+    let window = view.window().ok_or("View is not attached to a window")?;
+    window.setStyleMask(window.styleMask() | NSWindowStyleMask::Miniaturizable);
+    // AppKit can recreate the traffic lights when the style mask changes.
+    // Hide them afterwards; the pin toolbar owns its window controls.
+    for kind in [
+        NSWindowButton::NSWindowCloseButton,
+        NSWindowButton::NSWindowMiniaturizeButton,
+        NSWindowButton::NSWindowZoomButton,
+    ] {
+        if let Some(button) = window.standardWindowButton(kind) {
+            button.setHidden(true);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn window_minimized(handle: raw_window_handle::WindowHandle<'_>) -> Option<bool> {
+    use raw_window_handle::RawWindowHandle;
+
+    let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
+        return None;
+    };
+    // The borrowed handle refers to a live NSView on the owning UI thread.
+    let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
+    let window = view.window()?;
+    // Miniaturized windows are not visible. Only an unshown, non-miniaturized
+    // window should retain its saved state during initialization.
+    let minimized = window.isMiniaturized();
+    (minimized || window.isVisible()).then_some(minimized)
+}
+
 #[cfg(target_os = "windows")]
 pub fn window_minimized(handle: raw_window_handle::WindowHandle<'_>) -> Option<bool> {
     use raw_window_handle::RawWindowHandle;

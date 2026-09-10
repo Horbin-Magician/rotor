@@ -473,6 +473,13 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                 ..Default::default()
             },
             |window, cx| {
+                #[cfg(target_os = "macos")]
+                if let Err(error) = HasWindowHandle::window_handle(window)
+                    .map_err(|error| error.to_string())
+                    .and_then(rotor_platform::overlay::enable_pin_minimization)
+                {
+                    log::warn!("Could not enable pin minimization: {error}");
+                }
                 let view = cx.new(|cx| {
                     rotor_ui::PinView::new(
                         services,
@@ -484,13 +491,13 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             error,
                             position: reader,
                             minimized: Rc::new(|window| {
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(target_os = "windows", target_os = "macos"))]
                                 {
                                     rotor_platform::overlay::window_minimized(
                                         HasWindowHandle::window_handle(window).ok()?,
                                     )
                                 }
-                                #[cfg(not(target_os = "windows"))]
+                                #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                                 {
                                     let _ = window;
                                     None
