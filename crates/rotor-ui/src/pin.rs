@@ -688,20 +688,18 @@ impl Render for PinView {
                                             this.close(window, cx)
                                         })),
                                 )
-                                .when(!self.ocr.active, |tools| {
-                                    tools.child(
-                                        toolbar::button("pin-copy", toolbar::Glyph::Copy, cx)
-                                            .accessibility_label(self.t("复制", "Copy"))
-                                            .tooltip(self.shortcut_hint(
-                                                self.t("复制", "Copy"),
-                                                "shortcut_pinwin_copy",
-                                            ))
-                                            .disabled(export_disabled)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.export(PinExportTarget::Clipboard, window, cx);
-                                            })),
-                                    )
-                                }),
+                                .child(
+                                    toolbar::button("pin-copy", toolbar::Glyph::Copy, cx)
+                                        .accessibility_label(self.t("复制", "Copy"))
+                                        .tooltip(self.shortcut_hint(
+                                            self.t("复制", "Copy"),
+                                            "shortcut_pinwin_copy",
+                                        ))
+                                        .disabled(export_disabled)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.export(PinExportTarget::Clipboard, window, cx);
+                                        })),
+                                ),
                         ),
                     )
                     .with_spring(

@@ -447,9 +447,15 @@ impl PinView {
             },
         )
         .absolute()
+        .top(px(0.))
+        .left(px(0.))
         .size_full();
+        // This sibling follows the full-height image. Explicit insets keep the
+        // overlay and its hitbox at the image origin instead of its static position.
         div()
             .absolute()
+            .top(px(0.))
+            .left(px(0.))
             .size_full()
             .when_some(self.ocr.input.as_ref(), |root, input| {
                 // Keep the control in the focus/action tree without painting its text.
@@ -475,6 +481,120 @@ mod tests {
     };
     use rotor_canvas::ImageRect;
     use rotor_runtime::{OcrTextResult, OperationId};
+    #[gpui::test]
+    fn image_mouse_drag_selects_hidden_textbox(cx: &mut TestAppContext) {
+        use super::super::{PinInit, PinView};
+        use gpui_kit::{MouseButton, point, size};
+        use std::{
+            rc::Rc,
+            sync::{Arc, Mutex},
+        };
+        let profile = tempfile::tempdir().unwrap();
+        let (services, _events) = rotor_runtime::Services::new(
+            Arc::new(Mutex::new(
+                rotor_common::ConfigService::load_from(profile.path()).unwrap(),
+            )),
+            None,
+            rotor_runtime::ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        cx.update(gpui_kit::component::init);
+        let (pin, cx) = cx.add_window_view(|window, cx| {
+            window.resize(size(px(400.), px(400.)));
+            let mut pin = PinView::new(
+                Arc::new(services),
+                PinInit {
+                    image: crate::prepare_image(Arc::new(image::RgbaImage::new(400, 400))).unwrap(),
+                    config: rotor_runtime::ShotterConfig {
+                        monitor_pos: (0, 0),
+                        monitor_size: (400, 400),
+                        rect: (0, 0, 400, 400),
+                        image_rect: None,
+                        offset: (0, 0),
+                        zoom_factor: 100,
+                        mask_label: "synthetic".into(),
+                        minimized: false,
+                    },
+                    id: None,
+                    pending: None,
+                    error: None,
+                    content_scale: 1.,
+                    position: Rc::new(|_| Some((0, 0))),
+                    minimized: Rc::new(|_| None),
+                    bounds: Rc::new(|_, _| Ok(())),
+                    pointer: Rc::new(|_, _| Ok(())),
+                },
+                window,
+                cx,
+            );
+            pin.ocr.active = true;
+            pin.ocr.size = Some(rotor_canvas::ImageSize {
+                width: 400,
+                height: 400,
+            });
+            pin.ocr.rows = vec![OcrTextResult {
+                left: 40,
+                top: 40,
+                width: 200,
+                height: 30,
+                text: "hello world".into(),
+            }];
+            pin.ocr.lines = vec![window.text_system().shape_line(
+                "hello world".into(),
+                px(18.),
+                &[gpui_kit::TextRun {
+                    len: 11,
+                    font: gpui_kit::font(rotor_canvas::FONT_FAMILY),
+                    ..Default::default()
+                }],
+                None,
+            )];
+            let input = cx.new(|cx| TextareaState::new(window, cx).default_value("hello world"));
+            pin.ocr._input_observer = Some(cx.observe(&input, |_, _, cx| cx.notify()));
+            pin.ocr.input = Some(input);
+            pin
+        });
+        cx.simulate_resize(size(px(400.), px(400.)));
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_mouse_move(point(px(40.), px(50.)), None, Default::default());
+        cx.simulate_mouse_down(
+            point(px(40.), px(50.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        pin.read_with(cx, |pin, _| {
+            assert!(pin.ocr.dragging, "mouse down must reach OCR overlay")
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_mouse_move(
+            point(px(240.), px(50.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        cx.simulate_mouse_up(
+            point(px(240.), px(50.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        pin.read_with(cx, |pin, cx| {
+            assert!(!pin.ocr.dragging);
+            assert_eq!(
+                pin.ocr.input.as_ref().unwrap().read(cx).selected_range(),
+                0..11
+            );
+        });
+        cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+            "cmd-c"
+        } else {
+            "ctrl-c"
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard().and_then(|item| item.text()),
+                Some("hello world".into())
+            )
+        });
+    }
     #[gpui::test]
     fn hidden_readonly_textbox_handles_copy_and_select_all(cx: &mut TestAppContext) {
         struct Harness(Entity<TextareaState>);
