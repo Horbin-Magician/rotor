@@ -81,11 +81,14 @@ impl PinView {
     }
 
     pub(super) fn committed_crop_record(&self) -> ShotterConfig {
-        self.crop_drag
+        let mut record = self
+            .crop_drag
             .as_ref()
             .map(|drag| &drag.record)
             .unwrap_or(&self.record)
-            .clone()
+            .clone();
+        record.annotations = self.canvas.export_scene().annotations;
+        record
     }
     pub(super) fn crop_edges(&self, local: Point<Pixels>, window: &Window) -> CropEdges {
         let size = window.viewport_size();
@@ -474,6 +477,7 @@ mod tests {
                         image: crate::prepare_image(Arc::new(image::RgbaImage::new(400, 400)))
                             .unwrap(),
                         config: rotor_runtime::ShotterConfig {
+                            annotations: Vec::new(),
                             monitor_pos: (0, 0),
                             monitor_size: (400, 400),
                             rect: (0, 0, 400, 400),

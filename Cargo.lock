@@ -6950,6 +6950,7 @@ version = "3.0.0"
 dependencies = [
  "image",
  "resvg 0.45.1",
+ "serde",
 ]
 
 [[package]]
@@ -7050,6 +7051,7 @@ dependencies = [
  "log",
  "oar-ocr",
  "rayon",
+ "rotor-canvas",
  "rotor-common",
  "rotor-platform",
  "serde",

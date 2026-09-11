@@ -506,6 +506,7 @@ mod tests {
                 PinInit {
                     image: crate::prepare_image(Arc::new(image::RgbaImage::new(400, 400))).unwrap(),
                     config: rotor_runtime::ShotterConfig {
+                        annotations: Vec::new(),
                         monitor_pos: (0, 0),
                         monitor_size: (400, 400),
                         rect: (0, 0, 400, 400),

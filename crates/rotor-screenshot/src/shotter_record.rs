@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ShotterConfig {
+    #[serde(default)]
+    pub annotations: Vec<rotor_canvas::Annotation>,
     pub monitor_pos: (i32, i32),
     pub monitor_size: (u32, u32),
     pub rect: (u32, u32, u32, u32),

@@ -1304,6 +1304,7 @@ mod tests {
 
     fn pin_config() -> crate::ShotterConfig {
         crate::ShotterConfig {
+            annotations: Vec::new(),
             monitor_pos: (0, 0),
             monitor_size: (1920, 1080),
             rect: (0, 0, 2, 3),

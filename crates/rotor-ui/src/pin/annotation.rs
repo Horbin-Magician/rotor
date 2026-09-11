@@ -40,20 +40,26 @@ impl CanvasState {
         let (x, y, width, height) =
             rotor_runtime::pin_source_crop(record, image.image.width(), image.image.height())
                 .expect("validated pin source");
+        let mut document = Document::new(
+            ImageSize {
+                width: image.image.width(),
+                height: image.image.height(),
+            },
+            ImageRect {
+                x,
+                y,
+                width,
+                height,
+            },
+        )
+        .expect("validated crop");
+        for annotation in &record.annotations {
+            document
+                .add(annotation.clone())
+                .expect("validated annotation");
+        }
         Self {
-            document: Document::new(
-                ImageSize {
-                    width: image.image.width(),
-                    height: image.image.height(),
-                },
-                ImageRect {
-                    x,
-                    y,
-                    width,
-                    height,
-                },
-            )
-            .expect("validated crop"),
+            document,
             tool: Tool::Move,
             draft: None,
             editor: None,
@@ -175,6 +181,7 @@ impl PinView {
             Ok(()) => {
                 self.canvas.error = None;
                 self.ensure_canvas(window, cx);
+                self.persist_geometry(cx);
             }
             Err(error) => {
                 self.canvas.error = Some(error);
@@ -204,6 +211,7 @@ impl PinView {
             }
             self.canvas.error = None;
             self.ensure_canvas(window, cx);
+            self.persist_geometry(cx);
             cx.notify();
         }
     }
@@ -933,6 +941,7 @@ mod tests {
         )))
         .unwrap();
         let record = ShotterConfig {
+            annotations: Vec::new(),
             monitor_pos: (0, 0),
             monitor_size: (4, 4),
             rect: (0, 0, 4, 4),
@@ -1053,6 +1062,7 @@ mod tests {
                         image: crate::prepare_image(Arc::new(image::RgbaImage::new(400, 400)))
                             .unwrap(),
                         config: ShotterConfig {
+                            annotations: Vec::new(),
                             monitor_pos: (0, 0),
                             monitor_size: (400, 400),
                             rect: (0, 0, 400, 400),

@@ -234,7 +234,7 @@ impl PinView {
             return;
         }
         if let Some(id) = self.id {
-            match self.services.update_pin(id, self.record.clone()) {
+            match self.services.update_pin(id, self.committed_crop_record()) {
                 Ok(request) => {
                     self.pending_update = Some(request);
                     self.dirty = false;

@@ -9,19 +9,19 @@ pub const FONT_FAMILY: &str = "PingFang SC";
 pub const FONT_FAMILY: &str = "DejaVu Sans";
 const MAX_MARKS: usize = 4096;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Color(pub [u8; 4]);
 impl Color {
     pub const RED: Self = Self([255, 0, 0, 255]);
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct StrokeStyle {
     pub color: Color,
     pub width: f64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub enum Annotation {
     Pen {
         points: Vec<ImagePoint>,

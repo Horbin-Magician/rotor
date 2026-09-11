@@ -37,7 +37,18 @@ fn table<'a>(document: &'a mut toml::Value, path: &[&str]) -> Result<&'a mut tom
 }
 
 fn validate(config: &ShotterConfig, width: u32, height: u32) -> Result<(), String> {
-    source_crop(config, width, height).map(|_| ())
+    let (x, y, w, h) = source_crop(config, width, height)?;
+    rotor_canvas::Scene {
+        size: rotor_canvas::ImageSize { width, height },
+        crop: rotor_canvas::ImageRect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        annotations: config.annotations.clone(),
+    }
+    .validate()
 }
 
 /// image_rect is the PNG's origin/extent in the original monitor image, not a
@@ -311,6 +322,7 @@ mod tests {
     use super::*;
     fn config() -> ShotterConfig {
         ShotterConfig {
+            annotations: Vec::new(),
             monitor_pos: (-1920, 0),
             monitor_size: (2, 3),
             rect: (0, 0, 2, 3),
@@ -320,6 +332,59 @@ mod tests {
             mask_label: "ssmask-1".into(),
             minimized: false,
         }
+    }
+
+    #[test]
+    fn annotations_survive_shutdown_and_restore() {
+        use rotor_canvas::{
+            Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, StrokeStyle,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = PinStore::load_from(directory.path()).unwrap();
+        let id = store.create(&RgbaImage::new(2, 3), config()).unwrap();
+        let mut document = Document::new(
+            ImageSize {
+                width: 2,
+                height: 3,
+            },
+            ImageRect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 3,
+            },
+        )
+        .unwrap();
+        document
+            .add(Annotation::Arrow {
+                start: ImagePoint { x: 0., y: 0. },
+                end: ImagePoint { x: 1., y: 2. },
+                style: StrokeStyle {
+                    color: Color::RED,
+                    width: 1.,
+                },
+            })
+            .unwrap();
+        document
+            .add(Annotation::Text {
+                origin: ImagePoint { x: 0., y: 1. },
+                text: "标注".into(),
+                font_size: 12.,
+                color: Color::RED,
+            })
+            .unwrap();
+        let mut record = config();
+        record.annotations = document.scene().annotations.clone();
+        assert!(store
+            .update_existing_batch(vec![(id, record)])
+            .unwrap()
+            .is_empty());
+        drop(store);
+        let store = PinStore::load_from(directory.path()).unwrap();
+        let (pins, warnings) = store.load_pins_for_restore(true, &[]);
+        assert!(warnings.is_empty());
+        assert_eq!(pins[0].config.annotations, document.scene().annotations);
+        assert_eq!(*pins[0].image, RgbaImage::new(2, 3));
     }
 
     #[test]

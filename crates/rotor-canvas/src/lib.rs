@@ -10,13 +10,13 @@ pub use document::{
 };
 pub use renderer::Renderer;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImageSize {
     pub width: u32,
     pub height: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct ImagePoint {
     pub x: f64,
     pub y: f64,
@@ -35,7 +35,7 @@ impl ImagePoint {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImageRect {
     pub x: u32,
     pub y: u32,

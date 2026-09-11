@@ -512,6 +512,7 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
             #[cfg(not(target_os = "macos"))]
             let offset = (0, 0);
             let config = ShotterConfig {
+                annotations: Vec::new(),
                 monitor_pos: (frame.monitor.x, frame.monitor.y),
                 monitor_size: (frame.monitor.width, frame.monitor.height),
                 rect: (rect.x, rect.y, rect.width, rect.height),

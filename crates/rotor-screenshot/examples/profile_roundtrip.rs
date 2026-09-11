@@ -38,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let id = store.create(
         &image,
         ShotterConfig {
+            annotations: Vec::new(),
             monitor_pos: (-1920, 0),
             monitor_size: (1920, 1080),
             rect: (102, 201, 4, 6),
