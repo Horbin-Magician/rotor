@@ -79,6 +79,8 @@ commit, tag and push the current branch plus that tag to `origin`. Use `python`
 on Windows. `--dry-run` previews the operation; `--no-push` keeps it local.
 GitHub Actions creates a draft; publish it manually after review to trigger Gitee
 sync. The lower-level `xtask set-version` command still only edits version files.
+If the requested version already matches the workspace, the script tags and
+pushes the current commit without creating another version commit.
 
 ## Contributing and license
 

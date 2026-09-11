@@ -38,23 +38,28 @@ def bump(root, version, *, dry_run=False, no_push=False, remote="origin"):
         if run(root, "git", "ls-remote", "--tags", remote, f"refs/tags/{tag}"):
             raise ValueError(f"Tag {tag} already exists on {remote}")
     cargo = ("cargo", "run", "-p", "xtask", "--locked", "--")
+    # --locked also rejects a Cargo.lock that is out of sync with the workspace.
     previous = run(root, *cargo, "version")
-    if previous == version:
-        raise ValueError(f"Version is already {version}")
-    print(run(root, *cargo, "set-version", version, "--dry-run"))
+    if previous != version:
+        print(run(root, *cargo, "set-version", version, "--dry-run"))
+    else:
+        print(f"Workspace is already {version}; tag the current commit without a version commit.")
     push = ("git", "push", "--atomic", remote,
             f"HEAD:refs/heads/{branch}", f"refs/tags/{tag}:refs/tags/{tag}")
     if dry_run:
-        print(f"[dry-run] Update Cargo.toml and Cargo.lock, commit chore: release {tag}, tag {tag}")
+        if previous != version:
+            print(f"[dry-run] Update Cargo.toml and Cargo.lock, commit chore: release {tag}")
+        print(f"[dry-run] Tag current HEAD as {tag}")
         if not no_push:
             print("[dry-run] " + " ".join(push))
         return
-    print(run(root, *cargo, "set-version", version))
-    run(root, "git", "add", "--", "Cargo.toml", "Cargo.lock")
-    run(root, "git", "commit", "-m", f"chore: release {tag}")
+    if previous != version:
+        print(run(root, *cargo, "set-version", version))
+        run(root, "git", "add", "--", "Cargo.toml", "Cargo.lock")
+        run(root, "git", "commit", "-m", f"chore: release {tag}")
     run(root, "git", "tag", tag)
     if no_push:
-        print(f"Created local release commit and {tag}. No push requested.")
+        print(f"Created local release tag {tag}. No push requested.")
         return
     try:
         run(root, *push)
@@ -67,7 +72,7 @@ def bump(root, version, *, dry_run=False, no_push=False, remote="origin"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version", help="New workspace SemVer (without v)")
+    parser.add_argument("version", help="Release SemVer (without v); may match the current workspace version")
     parser.add_argument("--dry-run", action="store_true", help="Check and preview without changing files or refs")
     parser.add_argument("--no-push", action="store_true", help="Create only the local release commit and tag")
     parser.add_argument("--remote", default="origin", help="Configured remote to push (default: origin)")

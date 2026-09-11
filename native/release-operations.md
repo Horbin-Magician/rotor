@@ -20,11 +20,14 @@ single-platform release must select it consistently through build and validation
    previews without editing files or refs (Cargo may populate its build cache);
    `--no-push` creates only the local commit and tag, without contacting a remote.
    Commit release notes before invoking the script. Dirty worktrees, detached
-   HEAD, unchanged versions and existing tags are rejected. A failed push keeps
+   HEAD and existing tags are rejected. A failed push keeps
    the local release commit and tag and prints the exact push command to retry;
    do not rerun the bump or force-push over an existing release.
    The version tag must match Cargo.toml. For an already prepared version such
-   as the initial 3.0.0, create and push its matching tag directly.
+   as the initial 3.0.0, use the same script with `3.0.0`: it checks Cargo.lock
+   with `--locked`, skips version editing and the extra commit, then tags and
+   pushes the current commit. An inconsistent lockfile must be fixed and
+   committed first.
 2. Wait for `native-publish-draft`. Review version notes, inventories, receipts,
    signatures and `native-update.json`. Verify its platform set and fixed version
    URLs. Test downloaded installers on the intended platforms and record results.

@@ -82,6 +82,7 @@ python scripts/bump-version.py 3.0.1
 脚本修改 workspace 版本及 Cargo.lock，自动提交、打 tag，并将当前分支及该 tag
 推送到 origin。macOS 使用 `python3`；`--dry-run` 仅预览，`--no-push` 仅创建本地提交和 tag。
 GitHub Actions 收到 tag 后创建 Release 草稿，人工审核并发布后自动同步到 Gitee。
+若版本号已与 workspace 一致（如首次发布 `3.0.0`），脚本检查 Cargo.lock 一致性后，直接为当前提交打 tag 并推送，不再创建版本提交。
 底层 `xtask set-version` 仍只修改版本文件。详见[发布操作说明](../native/release-operations.md)。
 
 ## 贡献与许可证

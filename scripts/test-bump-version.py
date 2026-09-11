@@ -119,12 +119,47 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.bump()
 
-    def test_rejects_unchanged_version(self):
+    def prepare_current_version_notes(self):
         (self.root / "doc/releases/3.0.0.md").write_text("Current release\n")
         self.git("add", ".")
         self.git("commit", "-m", "test: add current release notes")
-        with self.assertRaisesRegex(ValueError, "already 3.0.0"):
-            self.bump(version="3.0.0")
+        return self.git("rev-parse", "HEAD")
+
+    def test_publishes_unchanged_version_without_extra_commit(self):
+        head = self.prepare_current_version_notes()
+        self.bump(version="3.0.0")
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.git("rev-parse", "v3.0.0"), head)
+        self.assertIn(f"{head}\trefs/tags/v3.0.0", self.git("ls-remote", "origin"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_unchanged_version_dry_run_preserves_refs(self):
+        head = self.prepare_current_version_notes()
+        self.bump(version="3.0.0", dry_run=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.git("tag", "--list"), "")
+        self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
+
+    def test_unchanged_version_no_push(self):
+        head = self.prepare_current_version_notes()
+        self.bump(version="3.0.0", no_push=True)
+        self.assertEqual(self.git("rev-parse", "v3.0.0"), head)
+        self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
+
+    def test_lock_validation_failure_creates_no_tag(self):
+        head = self.prepare_current_version_notes()
+
+        def fail_locked_version(root, *args):
+            if args[0] == "cargo":
+                self.assertIn("--locked", args)
+                raise subprocess.CalledProcessError(1, args)
+            return self.real_run(root, *args)
+
+        with patch.object(release, "run", side_effect=fail_locked_version), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.bump(self.root, "3.0.0")
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.git("tag", "--list"), "")
 
     def test_failed_version_update_creates_no_commit_or_tag(self):
         def fail_update(root, *args):
