@@ -654,7 +654,7 @@ impl Render for SettingsView {
                         div().pl(px(12.)).child(
                             Textarea::new(&self.excluded)
                                 .text_size(px(13.))
-                                .h(px(112.))
+                                .h(px(180.))
                                 .disabled(self.controls_locked()),
                         ),
                     );
