@@ -531,6 +531,9 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
     #[cfg(target_os = "windows")]
     let fitted = handle
         .update(cx, |_, window, _| {
+            rotor_platform::overlay::disable_window_animation(
+                HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+            )?;
             rotor_platform::overlay::enable_pin_taskbar(
                 HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
             )?;

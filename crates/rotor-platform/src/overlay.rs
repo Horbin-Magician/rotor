@@ -99,6 +99,29 @@ pub fn window_minimized(handle: raw_window_handle::WindowHandle<'_>) -> Option<b
     }
 }
 
+/// Disable DWM transitions before a pin is first shown, including minimize/restore.
+#[cfg(target_os = "windows")]
+pub fn disable_window_animation(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::{
+        Foundation::HWND,
+        Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED},
+    };
+    let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+        return Err("Expected a Windows window handle".into());
+    };
+    let disable: i32 = 1;
+    unsafe {
+        DwmSetWindowAttribute(
+            HWND(raw.hwnd.get() as *mut _),
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            std::ptr::from_ref(&disable).cast(),
+            std::mem::size_of_val(&disable) as u32,
+        )
+    }
+    .map_err(|error| error.to_string())
+}
+
 /// Keep capture overlays rectangular even when DWM rounds ordinary windows.
 #[cfg(target_os = "windows")]
 pub fn disable_window_rounding(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
