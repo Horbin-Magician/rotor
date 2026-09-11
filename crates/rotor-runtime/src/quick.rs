@@ -1,7 +1,7 @@
 use std::{collections::HashSet, error::Error, fmt, process::Command, str::FromStr};
 
 use global_hotkey::hotkey::HotKey as Shortcut;
-use rotor_common::{AppConfig, DEFAULT_QUICK_ACTIONS, DEFAULT_QUICK_ACTIONS_REVISION};
+use rotor_common::{DEFAULT_QUICK_ACTIONS, DEFAULT_QUICK_ACTIONS_REVISION};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -17,75 +17,6 @@ pub struct QuickAction {
 
 fn default_enabled() -> bool {
     true
-}
-
-pub struct Quick {
-    actions: Vec<QuickAction>,
-}
-
-impl Quick {
-    pub fn flag(&self) -> &str {
-        "quick"
-    }
-
-    pub fn new() -> Self {
-        Self {
-            actions: Vec::new(),
-        }
-    }
-
-    pub fn reload(&mut self) {
-        self.actions = load_actions_from_config();
-    }
-
-    pub fn actions(&self) -> Vec<QuickAction> {
-        self.actions.clone()
-    }
-
-    pub fn set_actions(&mut self, actions: Vec<QuickAction>) {
-        self.actions = actions;
-    }
-
-    pub fn get_shortcuts(&self) -> Vec<(String, Shortcut)> {
-        parse_shortcuts(&self.actions).unwrap_or_else(|error| {
-            log::warn!("Invalid quick action shortcuts: {error}");
-            Vec::new()
-        })
-    }
-
-    pub fn run_by_shortcut(&self, shortcut: &Shortcut) -> Result<bool, Box<dyn Error>> {
-        let Some(action) = self.find_by_shortcut(shortcut) else {
-            return Ok(false);
-        };
-
-        run_command(&action.command)?;
-        Ok(true)
-    }
-
-    pub fn run_action(&self, id: &str) -> Result<(), Box<dyn Error>> {
-        let Some(action) = self.actions.iter().find(|action| action.id == id) else {
-            return Err(format!("Quick action `{id}` not found").into());
-        };
-
-        run_command(&action.command)
-    }
-
-    fn find_by_shortcut(&self, shortcut: &Shortcut) -> Option<&QuickAction> {
-        self.actions
-            .iter()
-            .filter(|action| action.enabled)
-            .find(|action| {
-                Shortcut::from_str(&action.shortcut)
-                    .map(|action_shortcut| action_shortcut == *shortcut)
-                    .unwrap_or(false)
-            })
-    }
-}
-
-impl Default for Quick {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 pub fn normalize_actions(actions: Vec<QuickAction>) -> Result<Vec<QuickAction>, QuickActionError> {
@@ -202,55 +133,6 @@ impl fmt::Display for QuickActionError {
 
 impl Error for QuickActionError {}
 
-fn load_actions_from_config() -> Vec<QuickAction> {
-    let mut config = AppConfig::lock_global();
-    let actions = config.get("quick_actions").cloned();
-
-    let Some(actions) = actions else {
-        return Vec::new();
-    };
-
-    let mut should_save_actions = false;
-    let mut actions = match serde_json::from_str::<Vec<QuickAction>>(&actions) {
-        Ok(actions) => actions,
-        Err(error) => {
-            log::warn!("Invalid quick actions config: {error}");
-            should_save_actions = true;
-            default_actions()
-        }
-    };
-
-    let should_update_revision = config
-        .get_user("quick_actions_revision")
-        .map(String::as_str)
-        != Some(DEFAULT_QUICK_ACTIONS_REVISION);
-    if should_update_revision {
-        append_missing_default_actions(&mut actions);
-        should_save_actions = true;
-    }
-
-    if should_save_actions {
-        match serde_json::to_string(&actions) {
-            Ok(serialized) => {
-                if let Err(error) = config.set_many([
-                    ("quick_actions".to_string(), serialized),
-                    (
-                        "quick_actions_revision".to_string(),
-                        DEFAULT_QUICK_ACTIONS_REVISION.to_string(),
-                    ),
-                ]) {
-                    log::warn!("Failed to save migrated quick actions: {error}");
-                }
-            }
-            Err(error) => {
-                log::warn!("Failed to serialize migrated quick actions: {error}");
-            }
-        }
-    }
-
-    actions
-}
-
 pub fn default_actions() -> Vec<QuickAction> {
     serde_json::from_str::<Vec<QuickAction>>(DEFAULT_QUICK_ACTIONS).unwrap_or_else(|error| {
         log::warn!("Invalid default quick actions config: {error}");
@@ -284,14 +166,6 @@ pub fn migrate_actions(
         }
     }
     Ok(Some(actions))
-}
-
-fn append_missing_default_actions(actions: &mut Vec<QuickAction>) {
-    for default_action in default_actions() {
-        if actions.iter().all(|action| action.id != default_action.id) {
-            actions.push(default_action);
-        }
-    }
 }
 
 pub fn actions_from_config(config: &rotor_common::Config) -> Result<Vec<QuickAction>, String> {

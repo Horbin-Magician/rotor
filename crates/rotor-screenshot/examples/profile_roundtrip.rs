@@ -1,11 +1,26 @@
 //! Retained synthetic fixture: old record shape -> native write -> legacy reader.
 //! Does not capture the desktop or open any windows.
-use rotor_common::{file_path, profile_migration, ConfigService};
+use rotor_common::{profile_migration, ConfigService};
 use rotor_screenshot::{
     pin_store::{source_crop, PinStore},
-    shotter_record::ShotterRecord,
+    shotter_record::ShotterConfig,
 };
-use std::{fs, path::PathBuf};
+use serde::Deserialize;
+use std::{collections::HashMap, fs, path::PathBuf};
+
+// Keep the old reader shape independent of PinStore so this example verifies
+// that native writes remain readable by the legacy format.
+#[derive(Deserialize)]
+struct LegacyWorkspace {
+    #[serde(default)]
+    shotters: HashMap<String, ShotterConfig>,
+}
+
+#[derive(Deserialize)]
+struct LegacyRecord {
+    #[serde(default)]
+    workspaces: HashMap<String, LegacyWorkspace>,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let directory = PathBuf::from(
@@ -65,15 +80,19 @@ minimized = false
         document["workspaces"]["other"]["future_field"].as_str(),
         Some("keep me")
     );
-    file_path::initialize_data_directory(native.clone())?;
-    let legacy_reader = ShotterRecord::new();
+    let legacy_reader: LegacyRecord = toml::from_str(&native_text)?;
     let record = legacy_reader
-        .get_record(7)
+        .workspaces
+        .get("default")
+        .and_then(|workspace| workspace.shotters.get("7"))
         .ok_or("legacy reader lost pin")?;
     assert_eq!(record.zoom_factor, 200);
     assert_eq!(record.offset, (-1750, 60));
     assert_eq!(record.image_rect, Some((100, 200, 8, 8)));
-    assert_eq!(ShotterRecord::load_record_img(7)?.to_rgba8(), image);
+    assert_eq!(
+        image::open(native.join("shotter/default/7.png"))?.to_rgba8(),
+        image
+    );
     assert_eq!(
         fs::read_to_string(native.join("shotter/record.toml"))?,
         native_text

@@ -4,7 +4,7 @@ pub mod services;
 pub mod shortcuts;
 mod updates;
 pub use pins::{PinEvent, PinExportTarget, RestoredPins};
-pub use quick::{Quick, QuickAction};
+pub use quick::QuickAction;
 pub use rotor_screenshot::img_util::TextResult as OcrTextResult;
 pub use rotor_screenshot::img_util::{ocr_cache_loaded, CapturePixels, PixelFormat};
 pub use rotor_screenshot::monitor::BgraCapture;

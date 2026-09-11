@@ -15,7 +15,7 @@ pub mod ntfs_file_map;
 #[cfg(target_os = "windows")]
 pub mod ntfs_volume;
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub struct SearchResultItem {
     pub path: String,
     pub file_path: String,
@@ -23,19 +23,6 @@ pub struct SearchResultItem {
     pub rank: i8,
     pub icon_data: Option<String>, // Base64 encoded icon data
     pub alias: Option<String>,
-}
-
-impl Clone for SearchResultItem {
-    fn clone(&self) -> Self {
-        SearchResultItem {
-            path: self.path.clone(),
-            file_path: self.file_path.clone(),
-            file_name: self.file_name.clone(),
-            rank: self.rank,
-            icon_data: self.icon_data.clone(),
-            alias: self.alias.clone(),
-        }
-    }
 }
 
 impl SearchResultItem {
@@ -123,7 +110,7 @@ pub(super) fn read_i64(reader: &mut impl Read) -> io::Result<i64> {
     Ok(i64::from_be_bytes(bytes))
 }
 
-#[allow(dead_code)]
+#[cfg(target_os = "windows")]
 pub(super) fn read_i8(reader: &mut impl Read) -> io::Result<i8> {
     let mut bytes = [0u8; 1];
     reader.read_exact(&mut bytes)?;

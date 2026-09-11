@@ -387,9 +387,6 @@ impl Services {
             |id, result| RuntimeEvent::StartupChanged { id, result },
         )
     }
-    pub fn open_data_directory(&self) -> Result<OperationId, String> {
-        self.open_file(self.data_directory.to_string_lossy().into_owned(), false)
-    }
     pub fn open_url(&self, url: String) -> Result<OperationId, String> {
         self.spawn_job(
             move || rotor_platform::desktop::open_url(&url),
@@ -401,9 +398,6 @@ impl Services {
         self.development_shortcuts
             .store(development, Ordering::Release);
         self.coordinate_shortcuts.store(true, Ordering::Release);
-    }
-    pub fn uses_development_shortcuts(&self) -> bool {
-        self.development_shortcuts.load(Ordering::Acquire)
     }
     pub fn shortcut_recording_flag(&self) -> Arc<crate::shortcuts::ShortcutRecording> {
         self.shortcut_recording.clone()

@@ -9,30 +9,6 @@ use std::io::Cursor;
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 
-pub fn del_useless_files() -> Result<(), Box<dyn std::error::Error>> {
-    let Some(userdata_path) = get_userdata_path() else {
-        log::warn!("Unable to resolve user data path; skipping cleanup");
-        return Ok(());
-    };
-
-    if !userdata_path.exists() {
-        return Ok(());
-    }
-
-    for entry in fs::read_dir(userdata_path)? {
-        let entry = entry?;
-        let entry_path = entry.path();
-        if entry_path.is_file() {
-            if let Some(ext) = entry_path.extension() {
-                if ext == "fd" {
-                    fs::remove_file(&entry_path)?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 pub fn get_tmp_path() -> std::path::PathBuf {
     rotor_common::file_path::get_tmp_path()
 }

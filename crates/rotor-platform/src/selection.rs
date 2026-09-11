@@ -198,10 +198,6 @@ pub fn simulate_copy_if(_: impl Fn() -> bool) -> Result<(), Box<dyn Error + Send
     Err("Simulated copy is not supported on this platform".into())
 }
 
-pub fn simulate_copy() -> Result<(), Box<dyn Error + Send + Sync>> {
-    simulate_copy_if(|| false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::wait_until_released;

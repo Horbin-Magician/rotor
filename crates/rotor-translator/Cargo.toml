@@ -4,7 +4,6 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
-log = "0.4.27"
 reqwest = { version = "0.13", default-features = false, features = [
   "rustls-no-provider",
   "json",

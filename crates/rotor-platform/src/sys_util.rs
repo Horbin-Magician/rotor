@@ -1,14 +1,9 @@
 #[cfg(target_os = "windows")]
 mod win_imports {
     pub use is_root::is_root;
-    pub use std::env;
-    pub use std::error::Error;
     pub use std::ffi::{CStr, CString};
     pub use windows::Win32::Foundation;
     pub use windows::Win32::Foundation::HWND;
-    pub use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
-    };
     pub use windows::Win32::Storage::FileSystem;
     pub use windows::Win32::System::{ProcessStatus, Threading};
 }
@@ -29,16 +24,6 @@ pub struct PermissionStatus {
     pub name: String,
     pub granted: Option<bool>,
     pub detail: String,
-}
-
-#[cfg(target_os = "windows")]
-pub fn run_as_admin() -> Result<bool, Box<dyn Error>> {
-    if is_root() {
-        return Ok(false);
-    }
-    let file_path = env::current_exe()?.to_string_lossy().into_owned();
-    crate::file_util::open_file_as_admin(file_path)?;
-    Ok(true)
 }
 
 // Check whether the disk represented by a drive letter is in ntfs format
@@ -337,20 +322,6 @@ fn check_macos_screen_capture_permission() -> Option<bool> {
     }
 
     Some(unsafe { CGPreflightScreenCaptureAccess() })
-}
-
-#[cfg(target_os = "windows")]
-pub fn forbid_window_animation(handle: HWND) {
-    let disable: i32 = 1;
-    unsafe {
-        DwmSetWindowAttribute(
-            handle,
-            DWMWA_TRANSITIONS_FORCEDISABLED,
-            &disable as *const _ as *const _,
-            std::mem::size_of_val(&disable) as u32,
-        )
-        .unwrap_or_else(|e| log::error!("DwmSetWindowAttribute error: {:?}", e));
-    }
 }
 
 #[cfg(all(test, target_os = "windows"))]

@@ -7491,7 +7491,6 @@ dependencies = [
 name = "rotor-translator"
 version = "3.0.0"
 dependencies = [
- "log",
  "reqwest",
  "rotor-common",
  "rustls",

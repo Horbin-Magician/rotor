@@ -166,19 +166,6 @@ impl PinView {
     pub fn shutdown_record(&self) -> Option<(u32, ShotterConfig)> {
         self.id.map(|id| (id, self.committed_crop_record()))
     }
-    pub fn start_persistence(&mut self, cx: &mut Context<Self>) {
-        if self.id.is_some() || self.pending_create.is_some() {
-            return;
-        }
-        match self
-            .services
-            .create_pin(self.image.image.clone(), self.record.clone())
-        {
-            Ok(id) => self.pending_create = Some(id),
-            Err(error) => self.message = error,
-        }
-        cx.notify();
-    }
     pub fn source(&self) -> &PreparedImage {
         &self.image
     }
