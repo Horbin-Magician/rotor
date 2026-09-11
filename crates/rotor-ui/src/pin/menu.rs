@@ -242,6 +242,7 @@ mod tests {
                     minimized: Rc::new(|_| None),
                     bounds: Rc::new(|_, _| Ok(())),
                     pointer: Rc::new(|_, _| Ok(())),
+                    cursor: Rc::new(|_| Some((0., 0.))),
                 },
                 window,
                 cx,

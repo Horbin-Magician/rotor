@@ -27,7 +27,7 @@ struct CropUpdate {
 impl PinView {
     pub(super) fn begin_move(
         &mut self,
-        local: Point<Pixels>,
+        _local: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -37,7 +37,7 @@ impl PinView {
         let Some(bounds) = self.current_bounds(window) else {
             return false;
         };
-        let Some(pointer) = self.screen_pointer(local, window) else {
+        let Some(pointer) = self.screen_pointer(window) else {
             return false;
         };
         if !self.capture_native_pointer(window) {
@@ -50,12 +50,12 @@ impl PinView {
 
     pub(super) fn move_pin(
         &mut self,
-        local: Point<Pixels>,
+        _local: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(drag) = &self.move_drag else { return };
-        let Some(pointer) = self.screen_pointer(local, window) else {
+        let Some(pointer) = self.screen_pointer(window) else {
             return;
         };
         let mut bounds = drag.bounds;
@@ -157,13 +157,11 @@ impl PinView {
             height: (size.height.as_f32() * scale).round().max(1.) as u32,
         })
     }
-    fn screen_pointer(&self, local: Point<Pixels>, window: &Window) -> Option<ImagePoint> {
-        let (x, y) = (self.position)(window)?;
-        let scale = window.scale_factor() as f64;
-        Some(ImagePoint {
-            x: x as f64 + local.x.as_f32() as f64 * scale,
-            y: y as f64 + local.y.as_f32() as f64 * scale,
-        })
+    fn screen_pointer(&self, window: &Window) -> Option<ImagePoint> {
+        // GPUI on macOS replays the last local drag position while held. Never
+        // add it to a moving window origin: that creates a self-sustaining drag.
+        let (x, y) = (self.cursor)(window)?;
+        (x.is_finite() && y.is_finite()).then_some(ImagePoint { x, y })
     }
     pub(super) fn begin_crop(
         &mut self,
@@ -181,7 +179,7 @@ impl PinView {
         let Some(bounds) = self.current_bounds(window) else {
             return false;
         };
-        let Some(pointer) = self.screen_pointer(local, window) else {
+        let Some(pointer) = self.screen_pointer(window) else {
             return false;
         };
         if !self.capture_native_pointer(window) {
@@ -211,7 +209,7 @@ impl PinView {
     }
     pub(super) fn move_crop(
         &mut self,
-        local: Point<Pixels>,
+        _local: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -228,7 +226,7 @@ impl PinView {
                 .into();
             return;
         }
-        let Some(pointer) = self.screen_pointer(local, window) else {
+        let Some(pointer) = self.screen_pointer(window) else {
             return;
         };
         let delta = ImagePoint {
@@ -301,11 +299,12 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        let factor = self.record.zoom_factor as f64 / 100. / self.content_scale as f64;
-        let width =
-            ((crop.width as f64 * factor).round().max(1.) * window.scale_factor() as f64).round();
-        let height =
-            ((crop.height as f64 * factor).round().max(1.) * window.scale_factor() as f64).round();
+        // Quantize only in physical pixels, retaining sub-point crop sizes on
+        // HiDPI displays instead of snapping twice at different resolutions.
+        let factor = self.record.zoom_factor as f64 / 100. / self.content_scale as f64
+            * window.scale_factor() as f64;
+        let width = (crop.width as f64 * factor).round().max(1.);
+        let height = (crop.height as f64 * factor).round().max(1.);
         if width > 8192.
             || height > 8192.
             || x < i32::MIN as f64
@@ -465,11 +464,13 @@ mod tests {
             height: 400,
         }));
         let calls = Rc::new(Cell::new(0));
+        let cursor = Rc::new(Cell::new((0., 200.)));
         let mut pin = None;
         let handle = cx.add_window(|window, cx| {
             let read = native.clone();
             let write = native.clone();
             let calls = calls.clone();
+            let read_cursor = cursor.clone();
             pin = Some(cx.new(|cx| {
                 super::PinView::new(
                     Arc::new(services),
@@ -499,6 +500,7 @@ mod tests {
                             Ok(())
                         }),
                         pointer: Rc::new(|_, _| Ok(())),
+                        cursor: Rc::new(move |_| Some(read_cursor.get())),
                     },
                     window,
                     cx,
@@ -536,6 +538,7 @@ mod tests {
                     assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
                     let epoch = pin.canvas.content_revision();
                     for x in 1..=50 {
+                        cursor.set((x as f64 * 2., 200.));
                         pin.move_crop(point(px(x as f32), px(100.)), window, cx);
                         pin.ensure_canvas(window, cx);
                     }
@@ -551,6 +554,7 @@ mod tests {
                 assert_eq!((native.get().x, native.get().width), (100, 300));
                 pin.update(cx, |pin, cx| {
                     // Screen X is 120: the window has already moved to X=100.
+                    cursor.set((120., 200.));
                     pin.move_crop(point(px(10.), px(100.)), window, cx);
                     pin.finish_crop(window, cx);
                     assert_eq!(pin.record.rect, (120, 0, 280, 400));
@@ -563,10 +567,13 @@ mod tests {
 
                 pin.update(cx, |pin, cx| {
                     assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                    cursor.set((150., 200.));
                     pin.move_crop(point(px(15.), px(100.)), window, cx);
                     pin.cancel_crop(window, cx);
                     assert_eq!(pin.record.rect, (120, 0, 280, 400));
+                    cursor.set((120., 200.));
                     assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                    cursor.set((160., 200.));
                     pin.move_crop(point(px(20.), px(100.)), window, cx);
                 });
                 let before = calls.get();
@@ -579,6 +586,55 @@ mod tests {
                 assert_eq!((native.get().x, native.get().width), (160, 240));
                 pin.update(cx, |pin, cx| {
                     pin.cancel_crop(window, cx);
+                    cursor.set((120., 200.));
+                    // One physical pixel is half a logical point at this scale.
+                    // An odd crop width must not round back to an even width.
+                    assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                    cursor.set((121., 200.));
+                    pin.move_crop(point(px(0.5), px(100.)), window, cx);
+                    pin.finish_crop(window, cx);
+                    assert_eq!(pin.record.rect, (121, 0, 279, 400));
+                    assert_eq!((native.get().x, native.get().width), (121, 279));
+
+                    // Leave room above the crop so an upward drag can expand it.
+                    pin.apply_crop(
+                        rotor_canvas::ImageRect {
+                            x: 121,
+                            y: 100,
+                            width: 279,
+                            height: 300,
+                        },
+                        window,
+                        cx,
+                    )
+                    .unwrap();
+                    cursor.set((221., 100.));
+                    assert!(pin.begin_crop(point(px(50.), px(0.)), window, cx));
+                    cursor.set((221., 80.));
+                    pin.move_crop(point(px(50.), px(-10.)), window, cx);
+                });
+                window.simulate_next_frame(cx);
+                assert_eq!((native.get().y, native.get().height), (80, 320));
+                let stationary_calls = calls.get();
+                for _ in 0..8 {
+                    pin.update(cx, |pin, cx| {
+                        // macOS synthetic drag repeats the OLD local position.
+                        pin.move_crop(point(px(50.), px(-10.)), window, cx);
+                    });
+                    window.simulate_next_frame(cx);
+                    assert_eq!((native.get().y, native.get().height), (80, 320));
+                    assert_eq!(calls.get(), stationary_calls);
+                }
+                pin.update(cx, |pin, cx| {
+                    pin.finish_crop(window, cx);
+                    assert_eq!(pin.record.rect, (121, 80, 279, 320));
+                    assert!(pin.begin_move(point(px(50.), px(50.)), window, cx));
+                    cursor.set((221., 60.));
+                    for _ in 0..8 {
+                        pin.move_pin(point(px(50.), px(40.)), window, cx);
+                        assert_eq!(native.get().y, 60);
+                    }
+                    pin.finish_move(window, cx);
                 });
             })
             .unwrap();

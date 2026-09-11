@@ -463,6 +463,10 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(position, dimensions))),
                 display_id: Some(display.id()),
                 titlebar: None,
+                // macOS keeps a native titlebar hit region even when hidden.
+                // The pin owns edge cropping and movement; AppKit must not
+                // consume the same top-edge gesture as a native window drag.
+                app_owns_titlebar_drag: true,
                 kind: WindowKind::PopUp,
                 is_resizable: false,
                 show: false,
@@ -506,6 +510,11 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             content_scale,
                             bounds: bounds_setter,
                             pointer,
+                            cursor: Rc::new(|window| {
+                                rotor_platform::overlay::screen_cursor_position(
+                                    window.scale_factor(),
+                                )
+                            }),
                         },
                         window,
                         cx,

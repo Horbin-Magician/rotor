@@ -20,6 +20,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+/// Reads the live cursor in physical screen coordinates, independent of window position.
+pub type PinCursorReader = Rc<dyn Fn(&Window) -> Option<(f64, f64)>>;
 pub type PinPositionReader = Rc<dyn Fn(&Window) -> Option<(i32, i32)>>;
 pub type PinMinimizedReader = Rc<dyn Fn(&Window) -> Option<bool>>;
 #[derive(Clone, Copy, Debug)]
@@ -42,6 +44,7 @@ pub struct PinInit {
     pub content_scale: f32,
     pub bounds: PinBoundsSetter,
     pub pointer: PinPointerCapture,
+    pub cursor: PinCursorReader,
 }
 enum ExportIntent {
     Save,
@@ -78,6 +81,7 @@ pub struct PinView {
     content_scale: f32,
     bounds: PinBoundsSetter,
     pointer: PinPointerCapture,
+    cursor: PinCursorReader,
     pointer_owned: bool,
     move_drag: Option<crop::MoveDrag>,
     crop_drag: Option<crop::CropDrag>,
@@ -129,6 +133,7 @@ impl PinView {
             content_scale: init.content_scale,
             bounds: init.bounds,
             pointer: init.pointer,
+            cursor: init.cursor,
             pointer_owned: false,
             move_drag: None,
             crop_drag: None,

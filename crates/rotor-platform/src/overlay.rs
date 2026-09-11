@@ -1,3 +1,32 @@
+/// Current cursor in the same top-left, physical coordinate space as pin bounds.
+/// Read independently of window geometry: drag events can be replayed after a
+/// window has moved, making their window-relative coordinates stale.
+pub fn screen_cursor_position(scale: f32) -> Option<(f64, f64)> {
+    if !scale.is_finite() || scale <= 0. {
+        return None;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use core_graphics::{
+            event::CGEvent,
+            event_source::{CGEventSource, CGEventSourceStateID},
+        };
+        let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+        let cursor = CGEvent::new(source).ok()?.location();
+        // Quartz uses global logical points; retain fractional points on Retina.
+        Some((cursor.x * scale as f64, cursor.y * scale as f64))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let (x, y) = crate::sys_util::get_cursor_position().ok()?;
+        Some((x as f64, y as f64))
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        None
+    }
+}
+
 /// Give a hidden pin a taskbar entry while preserving its borderless, topmost style.
 #[cfg(target_os = "windows")]
 pub fn enable_pin_taskbar(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
@@ -481,11 +510,39 @@ pub fn set_client_bounds(
             .height;
         let width = width as f64 / scale as f64;
         let height = height as f64 / scale as f64;
+        // Until GPUI submits the matching drawable, AppKit otherwise stretches
+        // the previous Metal frame to the new bounds. Preserve its pixel scale
+        // and anchor it to the crop's stationary edges instead. NSView maps the
+        // placement to layer gravity using the view's coordinate orientation.
+        let (right, bottom) = resize_content_anchor(
+            (
+                client.origin.x * scale as f64,
+                (primary_height - client.origin.y - client.size.height) * scale as f64,
+            ),
+            (x, y),
+        );
+        use objc2_app_kit::NSViewLayerContentsPlacement as Placement;
+        let placement = match (right, bottom) {
+            (false, false) => Placement::TopLeft,
+            (true, false) => Placement::TopRight,
+            (false, true) => Placement::BottomLeft,
+            (true, true) => Placement::BottomRight,
+        };
+        // The handle borrows a live view on its owning UI thread.
+        unsafe {
+            view.setLayerContentsPlacement(placement);
+            if let Some(layer) = view.layer() {
+                layer.setContentsScale(window.backingScaleFactor());
+            }
+        }
         frame.origin.x += x as f64 / scale as f64 - client.origin.x;
         frame.origin.y += primary_height - y as f64 / scale as f64 - height - client.origin.y;
         frame.size.width += width - client.size.width;
         frame.size.height += height - client.size.height;
-        window.setFrame_display(frame, true);
+        // Do not synchronously display the old scene while PinView/Window are
+        // borrowed. The caller synchronizes GPUI bounds and invalidates its
+        // updated crop before the next frame is drawn.
+        window.setFrame_display(frame, false);
         Ok(())
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -719,4 +776,43 @@ pub fn fit_client_bounds(
         ));
     }
     Ok(())
+}
+
+// Positions are physical pixels, so the tolerance only absorbs conversion noise.
+#[cfg(any(target_os = "macos", test))]
+fn resize_content_anchor(previous: (f64, f64), next: (i32, i32)) -> (bool, bool) {
+    (
+        (previous.0 - next.0 as f64).abs() > 0.25,
+        (previous.1 - next.1 as f64).abs() > 0.25,
+    )
+}
+
+#[cfg(test)]
+mod resize_content_tests {
+    use super::resize_content_anchor;
+
+    #[test]
+    fn resizing_preserves_the_opposite_corner_in_physical_pixels() {
+        let origin = (-400., 200.);
+        // Right/bottom edges move without moving the client origin.
+        assert_eq!(resize_content_anchor(origin, (-400, 200)), (false, false));
+        for step in [-20, -1, 1, 20] {
+            assert_eq!(
+                resize_content_anchor(origin, (-400 + step, 200)),
+                (true, false)
+            );
+            assert_eq!(
+                resize_content_anchor(origin, (-400, 200 + step)),
+                (false, true)
+            );
+            assert_eq!(
+                resize_content_anchor(origin, (-400 + step, 200 + step)),
+                (true, true)
+            );
+        }
+        assert_eq!(
+            resize_content_anchor((-399.999999, 199.999999), (-400, 200)),
+            (false, false)
+        );
+    }
 }

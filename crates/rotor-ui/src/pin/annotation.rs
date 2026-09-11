@@ -109,8 +109,15 @@ impl PinView {
             Err(error) => self.canvas.error = Some(error),
         }
     }
-    fn transform(&self, window: &Window) -> ViewTransform {
+    fn canvas_scale(&self) -> f64 {
+        self.record.zoom_factor as f64 / 100. / self.content_scale as f64
+    }
+    fn transform(&self) -> ViewTransform {
         let (x, y, width, height) = self.crop();
+        // Cropping changes the clip, not the image magnification. Native bounds
+        // are rounded and may lag a frame; deriving scale from them stretches
+        // the entire image (and reshapes text) on every edge movement.
+        let scale = self.canvas_scale();
         ViewTransform {
             crop: ImageRect {
                 x,
@@ -118,12 +125,12 @@ impl PinView {
                 width,
                 height,
             },
-            width: window.viewport_size().width.as_f32() as f64,
-            height: window.viewport_size().height.as_f32() as f64,
+            width: width as f64 * scale,
+            height: height as f64 * scale,
         }
     }
     pub(super) fn ensure_canvas(&mut self, window: &mut Window, _: &mut Context<Self>) {
-        let signature = (self.canvas.document.revision(), self.transform(window).crop);
+        let signature = (self.canvas.document.revision(), self.transform().crop);
         if self
             .ocr
             .signature
@@ -234,7 +241,7 @@ impl PinView {
             }
             return self.begin_move(point, window, cx);
         }
-        let transform = self.transform(window);
+        let transform = self.transform();
         let Some(origin) = transform.to_image(ImagePoint {
             x: point.x.as_f32() as f64,
             y: point.y.as_f32() as f64,
@@ -311,7 +318,7 @@ impl PinView {
             }
             return;
         }
-        let transform = self.transform(window);
+        let transform = self.transform();
         let Some(mut point) = transform.to_image(ImagePoint {
             x: point.x.as_f32() as f64,
             y: point.y.as_f32() as f64,
@@ -376,7 +383,7 @@ impl PinView {
             cx.notify();
             return;
         }
-        let transform = self.transform(window);
+        let transform = self.transform();
         self.add_annotation(
             Annotation::Text {
                 origin: self.canvas.editor_origin,
@@ -515,9 +522,9 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let transform = self.transform(window);
-        let scale_x = transform.width / transform.crop.width as f64;
-        let scale_y = transform.height / transform.crop.height as f64;
+        let transform = self.transform();
+        let scale_x = self.canvas_scale();
+        let scale_y = scale_x;
         let mut layer = div().size_full().overflow_hidden();
         layer = layer.child(
             img(self.image.render.clone())
@@ -1080,6 +1087,7 @@ mod tests {
                         minimized: Rc::new(|_| None),
                         bounds: Rc::new(|_, _| Ok(())),
                         pointer: Rc::new(|_, _| Ok(())),
+                        cursor: Rc::new(|_| Some((0., 0.))),
                     },
                     window,
                     cx,
@@ -1109,6 +1117,26 @@ mod tests {
                 let display = pin.canvas.display.clone();
                 pin.canvas_element(window, cx);
                 assert!(Arc::ptr_eq(&display, &pin.canvas.display));
+                // A native viewport can still have the old size while the crop
+                // has advanced. Fractional zoom must not stretch the content or
+                // invalidate retained text shaping as crop dimensions change.
+                let record = pin.record.clone();
+                pin.record.zoom_factor = 67;
+                pin.content_scale = 2.;
+                pin.canvas_element(window, cx);
+                let fractional_display = pin.canvas.display.clone();
+                for inset in [1, 2, 3, 17, 99] {
+                    pin.record.rect = (inset, inset, 400 - inset, 400 - inset);
+                    let transform = pin.transform();
+                    let a = transform.to_view(ImagePoint { x: 150., y: 150. }).unwrap();
+                    let b = transform.to_view(ImagePoint { x: 250., y: 250. }).unwrap();
+                    assert!((b.x - a.x - 33.5).abs() < 1e-9);
+                    assert!((b.y - a.y - 33.5).abs() < 1e-9);
+                    pin.canvas_element(window, cx);
+                    assert!(Arc::ptr_eq(&fractional_display, &pin.canvas.display));
+                }
+                pin.record = record;
+                pin.content_scale = 1.;
                 assert_eq!(display.len(), 2);
                 assert_eq!(display[1].lines.len(), 1);
                 pin.undo_canvas(window, cx);
