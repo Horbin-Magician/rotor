@@ -127,7 +127,7 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
     config["data_directory"] = info.profile_directory.clone().into();
     if production {
         config["update_endpoints"] = config["production_update_endpoints"].clone();
-        config["update_channel"] = "gpui-preview-production".into();
+        config["update_channel"] = config["production_update_channel"].clone();
     }
     config
         .as_table_mut()
@@ -232,7 +232,7 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
     let prefix = if info.production {
         "Rotor"
     } else {
-        "Rotor-GPUI"
+        "Rotor-Dev"
     };
     fs::create_dir(output)?;
     let output = output.canonicalize()?;
@@ -273,11 +273,7 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
         }
     } else if cfg!(target_os = "macos") {
         let app_name = format!("{}.app", info.product_name);
-        let archive_name = if info.production {
-            "Rotor_aarch64.app.tar.gz".into()
-        } else {
-            format!("{prefix}_{version}_aarch64.app.tar.gz")
-        };
+        let archive_name = format!("{prefix}_{version}_aarch64.app.tar.gz");
         let status = Command::new("tar")
             .env("COPYFILE_DISABLE", "1")
             .arg("-czf")
@@ -321,7 +317,7 @@ fn main() -> Result<()> {
     match args.first().map(String::as_str) {
         Some("set-version") if args.len() == 2 || (args.len() == 3 && args[2] == "--dry-run") => versions::set(&args[1], args.len() == 3)?,
         Some("sign") if args.len() == 2 => release::sign(Path::new(&args[1]))?,
-        Some("release-manifest") if args.len() == 5 => release::manifest(Path::new(&args[1]), &args[2], Path::new(&args[3]), Path::new(&args[4]))?,
+        Some("release-manifest") if args.len() == 7 && args[5] == "--platforms" => release::manifest(Path::new(&args[1]), &args[2], Path::new(&args[3]), Path::new(&args[4]), &args[6])?,
         Some("inventory") if args.len() == 2 => write_manifest(Path::new(&args[1]), &version()?)?,
         Some("version") => println!("{}", version()?),
         Some("build") => {
@@ -333,7 +329,7 @@ fn main() -> Result<()> {
         Some("stage") if args.len() == 2 => stage(Path::new(&args[1]), false)?,
         Some("stage") if args.len() == 3 && args[1] == "--production" => stage(Path::new(&args[2]), true)?,
         Some("verify") if args.len() == 2 => verify_stage(Path::new(&args[1]))?,
-        _ => return Err("usage: cargo run -p xtask -- version | build [--production] [cargo options] | stage [--production] <new directory> | verify <directory> | package <stage directory> <new output directory> | inventory <directory> | set-version <semver> [--dry-run] | sign <artifact> | release-manifest <artifacts> <https base> <notes file> <new output>".into()),
+        _ => return Err("usage: cargo run -p xtask -- version | build [--production] [cargo options] | stage [--production] <new directory> | verify <directory> | package <stage directory> <new output directory> | inventory <directory> | set-version <semver> [--dry-run] | sign <artifact> | release-manifest <artifacts> <https base> <notes file> <new output> --platforms <windows|macos|both>".into()),
     }
     Ok(())
 }

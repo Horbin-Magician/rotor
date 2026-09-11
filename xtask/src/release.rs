@@ -81,6 +81,7 @@ fn build_manifest(
     version: &str,
     public_key: &str,
     production: bool,
+    selected: &str,
 ) -> Result<rotor_updater::Manifest> {
     semver::Version::parse(version)?;
     let mut base = url::Url::parse(base)?;
@@ -100,22 +101,18 @@ fn build_manifest(
         base.set_path(&format!("{}/", base.path()));
     }
     let mut platforms = HashMap::new();
-    for (suffix, aliases) in [
-        ("x64-setup.exe", ["windows-x86_64", "windows-x86_64-nsis"]),
-        (
-            "aarch64.app.tar.gz",
-            ["darwin-aarch64", "darwin-aarch64-app"],
-        ),
-    ] {
-        let name = if production {
-            if suffix == "aarch64.app.tar.gz" {
-                "Rotor_aarch64.app.tar.gz".into()
-            } else {
-                format!("Rotor_{version}_{suffix}")
-            }
-        } else {
-            format!("Rotor-GPUI_{version}_{suffix}")
-        };
+    let targets: &[(&str, &str)] = match selected {
+        "windows" => &[("windows-x86_64", "x64-setup.exe")],
+        "macos" => &[("darwin-aarch64", "aarch64.app.tar.gz")],
+        "both" => &[
+            ("windows-x86_64", "x64-setup.exe"),
+            ("darwin-aarch64", "aarch64.app.tar.gz"),
+        ],
+        _ => return Err("Select windows, macos or both".into()),
+    };
+    for (target, suffix) in targets {
+        let prefix = if production { "Rotor" } else { "Rotor-Dev" };
+        let name = format!("{prefix}_{version}_{suffix}");
         let artifact = directory.join(&name);
         let signature = fs::read_to_string(signature_path(&artifact))?;
         rotor_updater::verify_file(&artifact, &signature, public_key)?;
@@ -123,9 +120,7 @@ fn build_manifest(
             signature: signature.trim().into(),
             url: base.join(&name)?.to_string(),
         };
-        for alias in aliases {
-            platforms.insert(alias.into(), artifact.clone());
-        }
+        platforms.insert((*target).into(), artifact);
     }
     Ok(rotor_updater::Manifest {
         schema_version: 1,
@@ -135,7 +130,13 @@ fn build_manifest(
         platforms,
     })
 }
-pub fn manifest(directory: &Path, base: &str, notes: &Path, output: &Path) -> Result<()> {
+pub fn manifest(
+    directory: &Path,
+    base: &str,
+    notes: &Path,
+    output: &Path,
+    selected: &str,
+) -> Result<()> {
     let info = crate::builder::staged_info(directory)?;
     let manifest = build_manifest(
         directory,
@@ -144,6 +145,7 @@ pub fn manifest(directory: &Path, base: &str, notes: &Path, output: &Path) -> Re
         &version()?,
         rotor_updater::PUBLIC_KEY,
         info.production,
+        selected,
     )?;
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -151,7 +153,7 @@ pub fn manifest(directory: &Path, base: &str, notes: &Path, output: &Path) -> Re
         .open(output)?;
     file.write_all(&serde_json::to_vec_pretty(&manifest)?)?;
     file.sync_all()?;
-    println!("Verified two-platform manifest: {}", output.display());
+    println!("Verified selected-platform manifest: {}", output.display());
     Ok(())
 }
 
@@ -164,7 +166,7 @@ mod tests {
         let public = pair.pk.to_box().unwrap().to_string();
         let root = tempfile::tempdir().unwrap();
         for suffix in ["x64-setup.exe", "aarch64.app.tar.gz"] {
-            let path = root.path().join(format!("Rotor-GPUI_2.7.0_{suffix}"));
+            let path = root.path().join(format!("Rotor-Dev_3.0.0_{suffix}"));
             fs::write(&path, b"synthetic artifact").unwrap();
             let signature = minisign::sign(
                 Some(&pair.pk),
@@ -177,31 +179,56 @@ mod tests {
             fs::write(signature_path(&path), signature.to_string()).unwrap();
         }
         let notes = "line one\n\"quoted\" release";
-        let manifest = build_manifest(
+        let windows = build_manifest(
             root.path(),
-            "https://example.com/releases/gpui-latest",
+            "https://example.com/v3.0.0/",
             notes,
-            "2.7.0",
+            "3.0.0",
             &public,
             false,
+            "windows",
+        )
+        .unwrap();
+        assert_eq!(windows.platforms.len(), 1);
+        assert!(windows.platforms.contains_key("windows-x86_64"));
+        assert!(build_manifest(
+            root.path(),
+            "https://example.com/",
+            notes,
+            "3.0.0",
+            &public,
+            false,
+            "invalid"
+        )
+        .is_err());
+
+        let manifest = build_manifest(
+            root.path(),
+            "https://example.com/releases/v3.0.0",
+            notes,
+            "3.0.0",
+            &public,
+            false,
+            "both",
         )
         .unwrap();
         assert_eq!(manifest.notes, notes);
-        assert_eq!(manifest.platforms.len(), 4);
+        assert_eq!(manifest.platforms.len(), 2);
         assert!(manifest.platforms["windows-x86_64"]
             .url
-            .contains("/gpui-latest/Rotor-GPUI_2.7.0_"));
+            .contains("/v3.0.0/Rotor-Dev_3.0.0_"));
         assert!(build_manifest(
             root.path(),
             "http://example.com/",
             notes,
-            "2.7.0",
+            "3.0.0",
             &public,
-            false
+            false,
+            "both"
         )
         .is_err());
         fs::write(
-            root.path().join("Rotor-GPUI_2.7.0_aarch64.app.tar.gz"),
+            root.path().join("Rotor-Dev_3.0.0_aarch64.app.tar.gz"),
             b"tampered",
         )
         .unwrap();
@@ -209,11 +236,33 @@ mod tests {
             root.path(),
             "https://example.com/",
             notes,
-            "2.7.0",
+            "3.0.0",
             &public,
-            false
+            false,
+            "both"
         )
         .is_err());
+    }
+    #[test]
+    fn channel_metadata_matches_runtime_endpoints() {
+        let config: toml::Value = toml::from_str(include_str!("../../native/app.toml")).unwrap();
+        for (name, expected) in [
+            ("update_endpoints", rotor_updater::PREVIEW_ENDPOINTS),
+            (
+                "production_update_endpoints",
+                rotor_updater::STABLE_ENDPOINTS,
+            ),
+        ] {
+            let actual = config[name]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        }
+        assert_eq!(config["update_channel"].as_str(), Some("preview"));
+        assert_eq!(config["production_update_channel"].as_str(), Some("stable"));
     }
     #[test]
     fn encrypted_signing_keys_produce_native_signatures() {

@@ -17,9 +17,6 @@ on:
       sign_updates:
         type: boolean
         default: false
-      notes:
-        type: string
-        default: 'Native candidate; see validation records for acceptance status.'
     secrets:
       ROTOR_SIGNING_PRIVATE_KEY:
         required: false
@@ -28,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: 'Candidate platforms (macOS acceptance is currently deferred)'
+        description: 'Candidate platforms to build and verify'
         required: true
         type: choice
         default: windows
@@ -42,20 +39,15 @@ on:
         type: boolean
         default: true
       production_identity:
-        description: 'Use the legacy Rotor installation identity for acceptance testing'
+        description: 'Use the isolated native production identity'
         required: true
         type: boolean
         default: false
       sign_updates:
-        description: 'Sign candidate artifacts with the existing updater key'
+        description: 'Sign candidate artifacts with the native updater key'
         required: true
         type: boolean
         default: false
-      notes:
-        description: 'Preview release notes'
-        required: true
-        type: string
-        default: 'GPUI preview candidate; platform acceptance is pending.'
 permissions:
   contents: read
 env:
@@ -132,7 +124,7 @@ jobs:
           ROTOR_SIGNING_PRIVATE_KEY: ${{ secrets.ROTOR_SIGNING_PRIVATE_KEY }}
           ROTOR_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.ROTOR_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          if (!$env:ROTOR_SIGNING_PRIVATE_KEY) { throw 'Existing updater signing key is unavailable' }
+          if (!$env:ROTOR_SIGNING_PRIVATE_KEY) { throw 'Native updater signing key is unavailable' }
           $signer = if ($IsWindows) { './target/debug/xtask.exe' } else { './target/debug/xtask' }
           $artifacts = Get-ChildItem "$env:RUNNER_TEMP/native-package" -File | Where-Object { $_.Extension -in '.exe', '.dmg' -or $_.Name.EndsWith('.app.tar.gz') }
           foreach ($artifact in $artifacts) {
@@ -152,7 +144,7 @@ jobs:
           path: ${{ runner.temp }}/native-package
           if-no-files-found: error
   update-metadata:
-    if: inputs.sign_updates && inputs.platforms == 'both'
+    if: inputs.sign_updates
     needs: package
     runs-on: ubuntu-latest
     steps:
@@ -167,21 +159,32 @@ jobs:
         with:
           pattern: native-candidate-*
           path: collected
-      - name: Generate verified preview metadata
+      - name: Generate verified native metadata
         env:
-          RELEASE_NOTES: ${{ inputs.notes }}
+          SELECTED_PLATFORMS: ${{ inputs.platforms }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir merged
-          find collected -type f ! -name resources.json -exec cp -n '{}' merged/ \;
-          printf '%s\n' "$RELEASE_NOTES" > notes.txt
-          if [ "$PRODUCTION_IDENTITY" = true ]; then metadata=gpui-production-latest.json; else metadata=gpui-latest.json; fi
+          version=$(cargo run -q -p xtask --locked -- version)
+          mode=()
+          if [ "$PRODUCTION_IDENTITY" != true ]; then mode+=(--development); fi
+          python3 .github/scripts/prepare-native-draft.py --source collected --output merged \
+            --version "$version" --platforms "$SELECTED_PLATFORMS" "${mode[@]}"
+          # All receipts were compared before collecting; retain shared inputs for xtask.
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          first = sorted(Path('collected').iterdir())[0]
+          for name in ['native-build.json', 'source.sha256']:
+              shutil.copyfile(first / name, Path('merged') / name)
+          PY
+          tag="v$version"
+          if [ "$PRODUCTION_IDENTITY" != true ]; then tag="native-dev-v$version"; fi
           cargo run -p xtask --locked -- release-manifest merged \
-            "https://github.com/$GITHUB_REPOSITORY/releases/download/gpui-latest/" \
-            notes.txt "merged/$metadata"
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/" \
+            "doc/releases/$version.md" native-update.json --platforms "$SELECTED_PLATFORMS"
       - uses: actions/upload-artifact@v4
         with:
-          name: native-preview-signed
-          path: merged
+          name: native-update-signed
+          path: native-update.json
           if-no-files-found: error

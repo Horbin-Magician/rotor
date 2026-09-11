@@ -30,7 +30,7 @@ $packageRoot = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $identity = Get-Content -LiteralPath (Join-Path $packageRoot 'native-build.json') -Raw | ConvertFrom-Json
 if ($identity.production -or $identity.product_name -ne 'Rotor 3 Development' -or
     $identity.identifier -ne 'cc.fluctus.rotor3.dev') { throw 'Only development identity is allowed' }
-$installerName = "Rotor-GPUI_$($identity.version)_x64-setup.exe"
+$installerName = "Rotor-Dev_$($identity.version)_x64-setup.exe"
 $installer = Join-Path $packageRoot $installerName
 $inventory = Get-Content -LiteralPath (Join-Path $packageRoot 'resources.json') -Raw | ConvertFrom-Json -AsHashtable
 $expected = $inventory.files[$installerName]
@@ -45,7 +45,7 @@ if ($PreviousPackageDirectory) {
         [System.Management.Automation.SemanticVersion]$identity.version) {
         throw 'Previous package must have the same development identity and a strictly lower version'
     }
-    $previousName = "Rotor-GPUI_$($previousIdentity.version)_x64-setup.exe"
+    $previousName = "Rotor-Dev_$($previousIdentity.version)_x64-setup.exe"
     $previousInstaller = Join-Path $previousRoot $previousName
     $previousInventory = Get-Content -LiteralPath (Join-Path $previousRoot 'resources.json') -Raw | ConvertFrom-Json -AsHashtable
     $previousExpected = $previousInventory.files[$previousName]

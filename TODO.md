@@ -44,13 +44,13 @@
 
 ### 4. 完成原生发布与自动更新
 
-- [ ] 为 3.x 定义 stable / preview 通道，统一 native 配置、updater 常量、runtime 选择逻辑及镜像脚本，删除迁移期 gpui-preview-production 等命名。
-- [ ] 使用独立原生更新清单地址，不写入旧客户端的 latest.json；无需实施旧客户端推广或升级桥接。
-- [ ] 修改 release-manifest，按本次实际发布的平台生成清单；支持 Windows 单平台，缺失所选平台产物或签名必须失败。
+- [x] 为 3.x 定义 stable / preview 通道，统一 native 配置、updater 常量、runtime 选择逻辑及镜像脚本，删除迁移期 gpui-preview-production 等命名。
+- [x] 使用独立原生更新清单地址，不写入旧客户端的 latest.json；无需实施旧客户端推广或升级桥接。
+- [x] 修改 release-manifest，按本次实际发布的平台生成清单；支持 Windows 单平台，缺失所选平台产物或签名必须失败。
 - [ ] 将经过验证的清单纳入草稿附件，区分固定版本产物地址与稳定通道清单地址；补齐发布后通道推广、镜像同步和撤回步骤。
-- [ ] 发布正文从版本文档读取；删除工作流中的候选版占位文案。
-- [ ] native-checks 覆盖 publish.yml 变更及 master push，补充发布包和所选平台清单一致性检查。
-- [ ] 3.0.0 默认按 Windows x64、macOS双端首发准备。
+- [x] 发布正文从版本文档读取；删除工作流中的候选版占位文案。
+- [x] native-checks 覆盖 publish.yml 变更及 master push，补充发布包和所选平台清单一致性检查。
+- [x] 3.0.0 默认按 Windows x64、macOS双端首发准备。
 
 完成标准：从 v3.0.0 标签可生成具备安装包、签名、校验记录、发布说明和更新清单的可审阅草稿；全流程不依赖 2.x 产物或协议。
 

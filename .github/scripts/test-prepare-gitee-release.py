@@ -17,7 +17,7 @@ class ReleaseTests(unittest.TestCase):
             (root / "Rotor.exe").write_bytes(signed)
             (root / "Rotor.exe.sig").write_bytes(b"signature\n")
             manifest = {"notes": "line 1\n\"quoted\" $()", "platforms": {"windows-x86_64": {"signature": "same", "url": "https://github.com/owner/repo/releases/download/v2.7.0/Rotor.exe"}}}
-            for name in ("latest.json", "gpui-latest.json", "gpui-production-latest.json"):
+            for name in ("native-update.json", "native-stable.json", "native-preview.json"):
                 (root / name).write_text(json.dumps(manifest), encoding="utf-8")
             release = {"tag_name": "v2.7.0", "draft": False, "name": "quoted \"release\"", "body": "one\ntwo ' $()", "prerelease": True,
                        "assets": [{"name": path.name, "size": path.stat().st_size} for path in root.iterdir()]}
@@ -26,7 +26,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertTrue(result["prerelease"])
             self.assertEqual((root / "Rotor.exe").read_bytes(), signed)
             self.assertEqual((root / "Rotor.exe.sig").read_bytes(), b"signature\n")
-            for name in ("latest.json", "gpui-latest.json", "gpui-production-latest.json"):
+            for name in ("native-update.json", "native-stable.json", "native-preview.json"):
                 updated = json.loads((root / name).read_text(encoding="utf-8"))
                 self.assertEqual(updated["notes"], manifest["notes"])
                 self.assertEqual(updated["platforms"]["windows-x86_64"]["signature"], "same")

@@ -7,10 +7,10 @@ on:
         required: true
         type: string
       platforms:
-        description: 'Platforms to build; macOS validation is currently deferred'
+        description: 'Platforms to include in this native release'
         required: true
         type: choice
-        default: windows
+        default: both
         options: [windows, both, macos]
   push:
     tags: ['v*']
@@ -50,11 +50,10 @@ jobs:
     uses: ./.github/workflows/native-candidate.yml
     with:
       checkout_ref: ${{ needs.validate.outputs.tag }}
-      platforms: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || 'windows' }}
+      platforms: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || 'both' }}
       production_identity: true
       test_installation: false
       sign_updates: true
-      notes: 'Native Rotor candidate; consult migration records for validation and skipped tests.'
     secrets: inherit
   draft:
     needs: [validate, build-native]
@@ -65,6 +64,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      SELECTED_PLATFORMS: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || 'both' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,11 +73,18 @@ jobs:
         with:
           pattern: native-candidate-production-*
           path: collected
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-update-signed
+          path: update-metadata
       - name: Verify package inventories and collect draft attachments
         run: |
           python3 .github/scripts/test-prepare-native-draft.py
-          python3 .github/scripts/prepare-native-draft.py --source collected --output release-assets --version "$RELEASE_VERSION"
-          printf '%s\n' 'Native Rotor build. Review validation records before publishing. Update feeds are promoted separately.' > notes.txt
+          python3 .github/scripts/prepare-native-draft.py --source collected --output release-assets \
+            --version "$RELEASE_VERSION" --platforms "$SELECTED_PLATFORMS" \
+            --update-manifest update-metadata/native-update.json \
+            --asset-base "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
+          cp "doc/releases/$RELEASE_VERSION.md" notes.txt
       - name: Create an unpublished native release draft
         run: |
           set -euo pipefail

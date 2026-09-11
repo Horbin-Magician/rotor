@@ -19,14 +19,14 @@ class DraftTests(unittest.TestCase):
         self.source.mkdir()
         self.output = self.root / "attachments"
 
-    def package(self, name="windows", payload="Rotor_2.7.0_x64-setup.exe", production=True):
+    def package(self, name="windows", payload="Rotor_3.0.0_x64-setup.exe", production=True):
         directory = self.source / name
         directory.mkdir()
         (directory / payload).write_bytes(b"synthetic artifact; never executed")
         (directory / (payload + ".sig")).write_bytes(b"signature fixture; crypto checked by producer")
         (directory / "source.sha256").write_text("a" * 64)
         (directory / "native-build.json").write_text(json.dumps({
-            "production": production, "identifier": "cc.fluctus.rotor3", "version": "2.7.0"
+            "production": production, "identifier": "cc.fluctus.rotor3", "version": "3.0.0"
         }))
         self.inventory(directory)
         return directory
@@ -38,29 +38,51 @@ class DraftTests(unittest.TestCase):
                 continue
             data = path.read_bytes()
             files[path.name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-        (directory / "resources.json").write_text(json.dumps({"version": "2.7.0", "files": files}))
+        (directory / "resources.json").write_text(json.dumps({"version": "3.0.0", "files": files}))
 
     def rejected(self):
         with self.assertRaises(ValueError):
-            draft.collect(self.source, self.output, "2.7.0")
+            draft.collect(self.source, self.output, "3.0.0")
         self.assertFalse(self.output.exists())
 
     def test_both_platforms_keep_distinct_receipts(self):
         self.package()
-        self.package("macos", "Rotor_aarch64.app.tar.gz")
-        self.assertEqual(draft.collect(self.source, self.output, "2.7.0"), 2)
+        mac = self.package("macos", "Rotor_3.0.0_aarch64.app.tar.gz")
+        (mac / "Rotor_3.0.0_aarch64.dmg").write_bytes(b"dmg")
+        (mac / "Rotor_3.0.0_aarch64.dmg.sig").write_bytes(b"signature")
+        self.inventory(mac)
+        self.assertEqual(draft.collect(self.source, self.output, "3.0.0"), 3)
         self.assertTrue((self.output / "windows-resources.json").is_file())
         self.assertTrue((self.output / "macos-native-build.json").is_file())
 
+    def test_windows_only_and_manifest_must_match(self):
+        self.package()
+        update = self.root / "native-update.json"
+        base = "https://example.com/releases/download/v3.0.0"
+        entry = {"schema_version": 1, "version": "3.0.0", "platforms": {
+            "windows-x86_64": {"signature": "signature fixture; crypto checked by producer",
+                               "url": base + "/Rotor_3.0.0_x64-setup.exe"}}}
+        update.write_text(json.dumps(entry))
+        self.assertEqual(draft.collect(self.source, self.output, "3.0.0", "windows", True, update, base), 1)
+        self.assertTrue((self.output / "native-update.json").is_file())
+        entry["platforms"]["darwin-aarch64"] = entry["platforms"]["windows-x86_64"]
+        update.write_text(json.dumps(entry))
+        with self.assertRaises(ValueError):
+            draft.collect(self.source, self.root / "invalid", "3.0.0", "windows", True, update, base)
+
+    def test_missing_selected_platform_is_rejected(self):
+        self.package()
+        self.rejected()
+
     def test_tampering_rejects_before_copying_any_package(self):
         self.package("a-valid")
-        bad = self.package("z-bad", "Rotor_aarch64.app.tar.gz")
-        (bad / "Rotor_aarch64.app.tar.gz").write_bytes(b"modified")
+        bad = self.package("z-bad", "Rotor_3.0.0_aarch64.app.tar.gz")
+        (bad / "Rotor_3.0.0_aarch64.app.tar.gz").write_bytes(b"modified")
         self.rejected()
 
     def test_uninventoried_signature_and_missing_signature_are_rejected(self):
         directory = self.package()
-        signature = directory / "Rotor_2.7.0_x64-setup.exe.sig"
+        signature = directory / "Rotor_3.0.0_x64-setup.exe.sig"
         data = signature.read_bytes()
         signature.unlink()
         self.inventory(directory)

@@ -1,6 +1,8 @@
 name: native-checks
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
   pull_request:
     paths:
       - 'Cargo.toml'
@@ -13,6 +15,8 @@ on:
       - '.cargo/**'
       - '.gitattributes'
       - '.github/workflows/native-checks.yml'
+      - '.github/workflows/publish.yml'
+      - 'doc/releases/**'
       - '.github/workflows/sync-to-gitee.yml'
       - '.github/workflows/native-candidate.yml'
       - '.github/scripts/**'
@@ -39,6 +43,7 @@ jobs:
           components: rustfmt, clippy
       - uses: swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
+      - run: python .github/scripts/check-native-dependencies.py
       # Standalone builds must not borrow AppKit features from desktop dependencies.
       - run: cargo check -p rotor-platform --locked
       - run: cargo check --workspace --locked

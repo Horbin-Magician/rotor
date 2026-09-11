@@ -56,7 +56,7 @@ def prepare(release, tag, directory, github_repo, gitee_owner, gitee_repo):
         hashes[path.name] = digest
     # Prepare all changes before writing any metadata.
     changes = {}
-    for name in ("latest.json", "gpui-latest.json", "gpui-production-latest.json"):
+    for name in ("native-update.json", "native-stable.json", "native-preview.json"):
         if name in names:
             path = directory / name
             value = rewrite_manifest(json.loads(path.read_text(encoding="utf-8")), github_repo, gitee_owner, gitee_repo)
