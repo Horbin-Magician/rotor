@@ -231,6 +231,15 @@ impl Volume {
     }
 
     fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        let result = self.scan_index_with_cancel(cancel);
+        if result.is_err() {
+            self.rescan_required.store(true, Ordering::Release);
+            self.release_index_without_save();
+        }
+        result
+    }
+
+    fn scan_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let sys_time = SystemTime::now();
 
         self.excluded_dirs = ExcludedDirs::from_config();
