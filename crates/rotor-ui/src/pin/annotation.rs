@@ -1123,6 +1123,18 @@ mod tests {
                 assert!(pin.canvas.tool == Tool::Pen);
                 assert!(pin.canvas.editor.is_none());
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
+                pin.id = Some(42);
+                let (id, record) = pin.shutdown_record().unwrap();
+                assert_eq!(id, 42);
+                let restored = CanvasState::new(&pin.image, &record);
+                assert_eq!(
+                    restored.export_scene().annotations,
+                    pin.canvas.export_scene().annotations
+                );
+                assert_eq!(restored.export_scene().crop, pin.canvas.export_scene().crop);
+                pin.undo_canvas(window, cx);
+                let (_, record) = pin.shutdown_record().unwrap();
+                assert_eq!(record.annotations.len(), 1);
             });
             window.draw(cx).clear(cx);
         });
