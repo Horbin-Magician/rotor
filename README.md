@@ -73,7 +73,12 @@ cargo run -p xtask -- version
 cargo run -p xtask -- set-version 3.0.0 --dry-run
 ```
 
-Version changes do not commit, tag or push automatically.
+After committing `doc/releases/<version>.md` and completing release checks, run
+`python3 scripts/bump-version.py 3.0.1` to update the workspace version and lockfile,
+commit, tag and push the current branch plus that tag to `origin`. Use `python`
+on Windows. `--dry-run` previews the operation; `--no-push` keeps it local.
+GitHub Actions creates a draft; publish it manually after review to trigger Gitee
+sync. The lower-level `xtask set-version` command still only edits version files.
 
 ## Contributing and license
 

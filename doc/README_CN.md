@@ -73,7 +73,16 @@ cargo run -p xtask -- version
 cargo run -p xtask -- set-version 3.0.0 --dry-run
 ```
 
-版本工具不会自动提交、打标签或推送。
+提交 `doc/releases/<版本号>.md` 并完成发布检查后，一行命令发版：
+
+```powershell
+python scripts/bump-version.py 3.0.1
+```
+
+脚本修改 workspace 版本及 Cargo.lock，自动提交、打 tag，并将当前分支及该 tag
+推送到 origin。macOS 使用 `python3`；`--dry-run` 仅预览，`--no-push` 仅创建本地提交和 tag。
+GitHub Actions 收到 tag 后创建 Release 草稿，人工审核并发布后自动同步到 Gitee。
+底层 `xtask set-version` 仍只修改版本文件。详见[发布操作说明](../native/release-operations.md)。
 
 ## 贡献与许可证
 

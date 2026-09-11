@@ -93,7 +93,12 @@ version, identity or source/asset receipts, so rebuild after input changes.
 
 The root workspace version is authoritative. `xtask set-version <semver> --dry-run`
 previews a change; actual editing requires a clean worktree and updates Cargo.lock.
-It never commits, tags or pushes. `publish.yml` creates native release drafts;
+It never commits, tags or pushes. For the full release flow, commit the version's
+`doc/releases/<semver>.md` first, then run `python3 scripts/bump-version.py <semver>`
+(`python` on Windows). This updates versions, commits, tags and atomically pushes
+the current branch and that tag. Use `--dry-run` to preview or `--no-push` to keep
+the release local. Validate script changes with `python3 scripts/test-bump-version.py`.
+`publish.yml` creates native release drafts;
 update-feed promotion is separate. `native-candidate.yml` produces review
 artifacts without publishing a release and defaults to Windows. Keep native
 stable and preview feeds separate from `latest.json`. Signing uses only

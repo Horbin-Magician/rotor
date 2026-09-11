@@ -16,6 +16,9 @@ on:
     tags: ['v*']
 permissions:
   contents: read
+concurrency:
+  group: native-release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -38,6 +41,9 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           if tag != f'v{version}':
               raise SystemExit('Tag must match the root workspace version')
+          notes = Path('doc/releases') / f'{version}.md'
+          if not notes.is_file() or not notes.read_text(encoding='utf-8').strip():
+              raise SystemExit('Release notes must exist and be nonempty before building')
           commit = subprocess.check_output(['git', 'rev-parse', f'refs/tags/{tag}^{{commit}}'], text=True).strip()
           head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           if commit != head:

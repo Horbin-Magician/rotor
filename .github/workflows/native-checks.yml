@@ -11,6 +11,7 @@ on:
       - 'crates/**'
       - 'native/**'
       - 'xtask/**'
+      - 'scripts/**'
       - 'assets/**'
       - '.cargo/**'
       - '.gitattributes'
@@ -29,6 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 .github/scripts/test-prepare-gitee-release.py
       - run: python3 .github/scripts/test-prepare-native-draft.py
+      - run: python3 scripts/test-bump-version.py
   native:
     strategy:
       fail-fast: false
