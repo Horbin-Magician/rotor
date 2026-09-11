@@ -1,6 +1,6 @@
 # Rotor 3.0.0 更新计划
 
-状态：实施中。2026-09-11。
+状态：代码实施与 Windows 自动验证完成；完整人工验收、PR 与发布待完成。2026-09-11。
 
 ## 版本定位与范围
 
@@ -71,9 +71,9 @@
 - [x] cargo test --workspace --locked。
 - [x] cargo clippy --workspace --all-targets --locked -- -D warnings。
 - [x] 核心依赖约束、发布元数据 Python 测试及新依赖图检查。
-- [ ] OCR smoke、全新原生资料 roundtrip、开发与正式身份资源发现检查，均使用合成资料。
-- [ ] 通过 xtask build → stage → verify → package 创建新目录中的安装包。
-- [ ] 在隔离环境验证全新安装、启动、卸载，以及 3.x 原生更新失败恢复；无 2.x 验收任务。
+- [x] OCR smoke、全新原生资料 roundtrip、开发与正式身份资源发现检查，均使用合成资料。
+- [x] 通过 xtask build → stage → verify → package 创建新目录中的安装包。
+- [x] 在隔离环境验证全新安装、启动、卸载，以及 3.x 原生更新失败恢复；无 2.x 验收任务。
 - [ ] 人工验证多屏与缩放、截图及贴图、OCR、IME/快捷键、翻译取消、自启动和托盘生命周期。
 - [ ] 检查提交与主分支差异，完成 PR 验证后合并 master；对最终提交创建 v3.0.0 标签、审阅发布草稿，再公开发布和推广原生通道。
 
@@ -90,3 +90,9 @@
 7. docs: prepare the 3.0.0 release guide
 
 涉及不兼容变更的提交用 BREAKING CHANGE footer 说明不支持旧客户端升级与资料导入。实现中按实际差异调整拆分，不为提交数额外重构。
+
+## 本轮验收记录
+
+- 实现、自动检查及安装证据见 [验收状态](doc/validation-status.md)。
+- 已推送审核分支 `codex/native-3-release`；PR 创建被 GitHub 集成权限（403）阻塞，浏览器也未登录。未合并、打标签、公开发布或推广通道。
+- macOS 实机、完整人工交互及发布环境签名密钥配对仍须完成；不以 Windows 或可移植测试代替。
