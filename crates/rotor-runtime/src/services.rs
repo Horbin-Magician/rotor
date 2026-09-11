@@ -1,0 +1,1818 @@
+//! UI-independent use cases. Publishers wake a bounded receiver; the shell owns
+//! window lookup and generation checks, never a worker or an IPC string router.
+use crate::pins::{PinCommand, PinService};
+use async_channel::{Receiver, Sender};
+use image::{DynamicImage, RgbaImage};
+use rotor_common::{Config, ConfigService, ResourceLocator};
+use rotor_screenshot::{
+    img_util::{self, TextResult},
+    monitor::{self, MonitorConfig},
+};
+use rotor_searcher::{file_data::SearchIndexStatus, IndexState, QueryId, SearchBatch, Searcher};
+use rotor_translator::engine::{self, EngineConfig, TranslateResult, TranslateStreamEvent};
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, MutexGuard, Weak,
+    },
+    time::Duration,
+};
+use tokio::{
+    runtime::{Builder, Runtime},
+    sync::{oneshot, Semaphore},
+    task::JoinHandle,
+};
+
+mod capture_worker;
+use capture_worker::{CaptureRequest, CaptureWorker};
+
+const EVENT_CAPACITY: usize = 64;
+const SETTINGS_CAPACITY: usize = 16;
+const BACKGROUND_LIMIT: usize = 4;
+static NEXT_OPERATION: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct OperationId(pub u64);
+
+fn next_operation() -> OperationId {
+    OperationId(NEXT_OPERATION.fetch_add(1, Ordering::Relaxed))
+}
+
+pub struct CapturedMonitor {
+    pub monitor: MonitorConfig,
+    pub image: monitor::BgraCapture,
+}
+
+pub struct CaptureBundle {
+    pub monitors: Vec<CapturedMonitor>,
+    pub windows: Vec<rotor_platform::sys_util::WindowRect>,
+}
+
+pub enum RuntimeEvent {
+    Update(Arc<crate::UpdateSnapshot>),
+    Overview {
+        id: OperationId,
+        result: Result<Overview, String>,
+    },
+    StartupChanged {
+        id: OperationId,
+        result: Result<bool, String>,
+    },
+    SettingsCoordination(SettingsCoordination),
+    QuickFinished {
+        id: OperationId,
+        action_id: String,
+        result: Result<(), String>,
+    },
+    Pin(crate::PinEvent),
+    Search(SearchBatch),
+    IndexState(IndexState),
+    IndexStatus {
+        id: OperationId,
+        result: Result<SearchIndexStatus, String>,
+    },
+    SettingsSaved {
+        id: OperationId,
+        result: Result<Config, String>,
+    },
+    FileOpened {
+        id: OperationId,
+        result: Result<(), String>,
+    },
+    SelectionFinished {
+        id: OperationId,
+        result: Result<rotor_platform::clipboard::SelectedText, String>,
+    },
+    Translation {
+        id: OperationId,
+        event: TranslateStreamEvent,
+    },
+    TranslationFinished {
+        id: OperationId,
+        result: Result<TranslateResult, String>,
+    },
+    /// The capture topology is known; the shell can prepare hidden windows while
+    /// pixels are captured. This is not a ready frame or permission to show it.
+    CapturePreparing {
+        id: OperationId,
+        monitors: Vec<MonitorConfig>,
+    },
+    CaptureFinished {
+        id: OperationId,
+        result: Result<CaptureBundle, String>,
+    },
+    OcrFinished {
+        id: OperationId,
+        pin_id: u32,
+        revision: u64,
+        result: Result<Vec<TextResult>, String>,
+    },
+}
+
+pub struct Overview {
+    pub version: &'static str,
+    pub platform: &'static str,
+    pub architecture: &'static str,
+    pub data_directory: String,
+    pub resident_bytes: Result<u64, String>,
+    pub permissions: Vec<rotor_platform::sys_util::PermissionStatus>,
+    pub autostart: Result<bool, String>,
+    pub ocr_loaded: Option<bool>,
+}
+
+enum SettingsCommand {
+    Save {
+        id: OperationId,
+        changes: Vec<(String, String)>,
+    },
+    Coalesced(Arc<Mutex<Option<SettingsPatch>>>),
+    Flush(oneshot::Sender<()>),
+}
+
+struct SettingsPatch {
+    id: OperationId,
+    changes: Vec<(String, String)>,
+}
+
+type SettingsTail = Mutex<Option<Weak<Mutex<Option<SettingsPatch>>>>>;
+
+pub enum SettingsCoordination {
+    Prepare {
+        id: OperationId,
+        candidate: Config,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Finish {
+        id: OperationId,
+        committed: bool,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub struct ServiceOptions {
+    pub index_files: bool,
+}
+impl Default for ServiceOptions {
+    fn default() -> Self {
+        Self { index_files: true }
+    }
+}
+
+pub struct Services {
+    updates: crate::updates::UpdateService,
+    runtime: Option<Runtime>,
+    published_config: Arc<Mutex<Config>>,
+    resources: Option<ResourceLocator>,
+    events: Sender<RuntimeEvent>,
+    settings: Sender<SettingsCommand>,
+    settings_tail: SettingsTail,
+    settings_worker: Option<JoinHandle<()>>,
+    pins: PinService,
+    searcher: Option<Searcher>,
+    translation: Mutex<Option<JoinHandle<()>>>,
+    translation_id: Arc<AtomicU64>,
+    selection: Mutex<Option<Arc<AtomicBool>>>,
+    capture_id: Arc<AtomicU64>,
+    capture_worker: CaptureWorker,
+    background: Mutex<Vec<JoinHandle<()>>>,
+    slots: Arc<Semaphore>,
+    canvas_fonts: Arc<Mutex<Option<Arc<rotor_canvas::Renderer>>>>,
+    coordinate_shortcuts: Arc<AtomicBool>,
+    development_shortcuts: AtomicBool,
+    shortcut_recording: Arc<crate::shortcuts::ShortcutRecording>,
+    startup_warning: Option<String>,
+    data_directory: std::path::PathBuf,
+    startup_flags: Mutex<Vec<String>>,
+    stopped: Arc<AtomicBool>,
+}
+
+impl Services {
+    pub fn new(
+        config: Arc<Mutex<ConfigService>>,
+        resources: Option<ResourceLocator>,
+        options: ServiceOptions,
+    ) -> Result<(Self, Receiver<RuntimeEvent>), String> {
+        let startup_warning = crate::quick::actions_from_config(&lock(&config).get_all()).err();
+        let runtime = Builder::new_multi_thread()
+            .worker_threads(2)
+            .max_blocking_threads(BACKGROUND_LIMIT + 2)
+            .thread_name("rotor-worker")
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?;
+        let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
+        let capture_id = Arc::new(AtomicU64::new(0));
+        let capture_worker = CaptureWorker::new(events.clone(), capture_id.clone())?;
+        let (settings, settings_receiver) = async_channel::bounded(SETTINGS_CAPACITY);
+        let data_directory = lock(&config)
+            .data_directory()
+            .ok_or("configuration data directory unavailable")?
+            .to_path_buf();
+        let pins = PinService::new(&runtime, data_directory.clone(), events.clone());
+        let published_config = Arc::new(Mutex::new(lock(&config).get_all()));
+        let coordinate_shortcuts = Arc::new(AtomicBool::new(false));
+        let settings_worker = runtime.spawn(settings_loop(
+            config,
+            published_config.clone(),
+            settings_receiver,
+            events.clone(),
+            coordinate_shortcuts.clone(),
+        ));
+        let searcher = options.index_files.then(|| {
+            let results = events.clone();
+            let state_events = events.clone();
+            Searcher::new(
+                move |batch| {
+                    let _ = results.send_blocking(RuntimeEvent::Search(batch));
+                },
+                Some(Box::new(move |state| {
+                    let _ = state_events.send_blocking(RuntimeEvent::IndexState(state));
+                })),
+            )
+        });
+        Ok((
+            Self {
+                updates: crate::updates::UpdateService::new(
+                    runtime.handle().clone(),
+                    events.clone(),
+                    data_directory.join("updates"),
+                ),
+                runtime: Some(runtime),
+                published_config,
+                resources,
+                events,
+                settings,
+                settings_tail: Mutex::new(None),
+                settings_worker: Some(settings_worker),
+                pins,
+                searcher,
+                translation: Mutex::new(None),
+                translation_id: Arc::new(AtomicU64::new(0)),
+                selection: Mutex::new(None),
+                capture_id,
+                capture_worker,
+                background: Mutex::new(Vec::new()),
+                slots: Arc::new(Semaphore::new(BACKGROUND_LIMIT)),
+                canvas_fonts: Arc::new(Mutex::new(None)),
+                coordinate_shortcuts,
+                development_shortcuts: AtomicBool::new(true),
+                shortcut_recording: Arc::new(crate::shortcuts::ShortcutRecording::default()),
+                startup_warning,
+                data_directory,
+                startup_flags: Mutex::new(Vec::new()),
+                stopped: Arc::new(AtomicBool::new(false)),
+            },
+            receiver,
+        ))
+    }
+
+    pub fn update_snapshot(&self) -> Arc<crate::UpdateSnapshot> {
+        self.updates.snapshot()
+    }
+    pub fn check_updates(&self) -> Result<(), String> {
+        self.updates.check()
+    }
+    pub fn download_update(&self) -> Result<(), String> {
+        self.updates.download()
+    }
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    pub fn install_update(&self) -> Result<(), String> {
+        self.updates.install(
+            self.data_directory.clone(),
+            lock(&self.startup_flags).clone(),
+        )
+    }
+    pub fn cancel_update(&self) {
+        self.updates.cancel();
+    }
+
+    pub fn settings(&self) -> Config {
+        lock(&self.published_config).clone()
+    }
+    pub fn startup_warning(&self) -> Option<String> {
+        self.startup_warning.clone()
+    }
+    pub fn configure_startup_flags(&self, flags: Vec<String>) {
+        *lock(&self.startup_flags) = flags;
+    }
+    fn startup_parameters(&self) -> Result<(std::path::PathBuf, Vec<String>), String> {
+        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let mut args = vec![
+            "--background".into(),
+            "--data-dir".into(),
+            self.data_directory
+                .to_str()
+                .ok_or("Data directory is not Unicode")?
+                .into(),
+        ];
+        if let Some(resources) = &self.resources {
+            args.extend([
+                "--resource-dir".into(),
+                resources
+                    .root()
+                    .to_str()
+                    .ok_or("Resource directory is not Unicode")?
+                    .into(),
+            ]);
+        }
+        args.extend(lock(&self.startup_flags).iter().cloned());
+        Ok((executable, args))
+    }
+    pub fn request_overview(&self) -> Result<OperationId, String> {
+        let (executable, args) = self.startup_parameters()?;
+        let data_directory = self.data_directory.display().to_string();
+        self.spawn_job(
+            move || {
+                Ok(Overview {
+                    version: env!("CARGO_PKG_VERSION"),
+                    platform: std::env::consts::OS,
+                    architecture: std::env::consts::ARCH,
+                    data_directory,
+                    resident_bytes: rotor_platform::sys_util::get_memory_usage()
+                        .map(|memory| memory.resident_bytes)
+                        .map_err(|error| error.to_string()),
+                    permissions: rotor_platform::sys_util::get_permission_statuses(),
+                    autostart: rotor_platform::startup::enabled(&executable, &args),
+                    ocr_loaded: rotor_screenshot::img_util::ocr_cache_loaded(),
+                })
+            },
+            None,
+            |id, result| RuntimeEvent::Overview { id, result },
+        )
+    }
+    pub fn set_autostart(&self, enabled: bool) -> Result<OperationId, String> {
+        let (executable, args) = self.startup_parameters()?;
+        self.spawn_job(
+            move || {
+                rotor_platform::startup::set_enabled(enabled, &executable, &args)?;
+                rotor_platform::startup::enabled(&executable, &args)
+            },
+            None,
+            |id, result| RuntimeEvent::StartupChanged { id, result },
+        )
+    }
+    pub fn open_url(&self, url: String) -> Result<OperationId, String> {
+        self.spawn_job(
+            move || rotor_platform::desktop::open_url(&url),
+            None,
+            |id, result| RuntimeEvent::FileOpened { id, result },
+        )
+    }
+    pub fn coordinate_shortcuts(&self, development: bool) {
+        self.development_shortcuts
+            .store(development, Ordering::Release);
+        self.coordinate_shortcuts.store(true, Ordering::Release);
+    }
+    pub fn shortcut_recording_flag(&self) -> Arc<crate::shortcuts::ShortcutRecording> {
+        self.shortcut_recording.clone()
+    }
+    pub fn set_shortcut_recording(&self, recording: bool) {
+        self.shortcut_recording.set(recording);
+    }
+    pub fn is_shortcut_recording(&self) -> bool {
+        self.shortcut_recording.active()
+    }
+    pub fn quick_actions(&self) -> Result<Vec<crate::QuickAction>, String> {
+        crate::quick::actions_from_config(&self.settings())
+    }
+    pub fn save_quick_actions(
+        &self,
+        actions: Vec<crate::QuickAction>,
+    ) -> Result<OperationId, String> {
+        let actions =
+            crate::quick::normalize_actions(actions).map_err(|error| error.to_string())?;
+        self.save_settings(vec![(
+            "quick_actions".into(),
+            serde_json::to_string(&actions).map_err(|error| error.to_string())?,
+        )])
+    }
+    pub fn run_quick_action(&self, action_id: String) -> Result<OperationId, String> {
+        let action = self
+            .quick_actions()?
+            .into_iter()
+            .find(|action| action.id == action_id && action.enabled)
+            .ok_or("Quick action is missing or disabled")?;
+        self.spawn_job(
+            move || crate::quick::run_command(&action.command).map_err(|error| error.to_string()),
+            None,
+            move |id, result| RuntimeEvent::QuickFinished {
+                id,
+                action_id,
+                result,
+            },
+        )
+    }
+
+    pub async fn render_canvas(
+        &self,
+        image: Arc<RgbaImage>,
+        scene: rotor_canvas::Scene,
+        output: rotor_canvas::ImageSize,
+    ) -> Result<Arc<RgbaImage>, String> {
+        self.ensure_running()?;
+        let permit = self
+            .slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| "canvas rendering service is closed")?;
+        self.ensure_running()?;
+        let fonts = self.canvas_fonts.clone();
+        self.runtime()
+            .spawn_blocking(move || {
+                let _permit = permit;
+                if scene.has_text() {
+                    let renderer = {
+                        let mut loaded = lock(&fonts);
+                        if loaded.is_none() {
+                            *loaded = Some(Arc::new(rotor_canvas::Renderer::with_system_fonts()?));
+                        }
+                        loaded.as_ref().unwrap().clone()
+                    };
+                    renderer.render(&image, &scene, output).map(Arc::new)
+                } else {
+                    rotor_canvas::Renderer::without_fonts()
+                        .render(&image, &scene, output)
+                        .map(Arc::new)
+                }
+            })
+            .await
+            .map_err(|error| error.to_string())?
+    }
+
+    pub fn restore_pins(&self) -> Result<OperationId, String> {
+        self.restore_pins_matching(false, Vec::new())
+    }
+
+    pub fn restore_hidden_pins(&self, excluded_ids: Vec<u32>) -> Result<OperationId, String> {
+        self.restore_pins_matching(true, excluded_ids)
+    }
+
+    fn restore_pins_matching(
+        &self,
+        include_hidden: bool,
+        excluded_ids: Vec<u32>,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Restore {
+            id,
+            include_hidden,
+            excluded_ids,
+        })?;
+        Ok(id)
+    }
+    pub fn create_pin(
+        &self,
+        image: Arc<RgbaImage>,
+        config: crate::ShotterConfig,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Create { id, image, config })?;
+        Ok(id)
+    }
+    pub fn create_pin_from_capture(
+        &self,
+        image: Arc<RgbaImage>,
+        config: crate::ShotterConfig,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins
+            .submit(PinCommand::CreateFromCapture { id, image, config })?;
+        Ok(id)
+    }
+    pub fn update_pin(
+        &self,
+        pin_id: u32,
+        config: crate::ShotterConfig,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins
+            .submit(PinCommand::Update { id, pin_id, config })?;
+        Ok(id)
+    }
+    pub fn delete_pin(&self, pin_id: u32) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Delete { id, pin_id })?;
+        Ok(id)
+    }
+    pub fn export_pin(
+        &self,
+        pin_id: Option<u32>,
+        image: Arc<RgbaImage>,
+        config: crate::ShotterConfig,
+        target: crate::PinExportTarget,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::Export {
+            id,
+            pin_id,
+            image,
+            config,
+            target,
+        })?;
+        Ok(id)
+    }
+
+    pub fn export_pin_frame(
+        &self,
+        pin_id: Option<u32>,
+        image: Arc<RgbaImage>,
+        target: crate::PinExportTarget,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.pins.submit(PinCommand::ExportFrame {
+            id,
+            pin_id,
+            image,
+            target,
+        })?;
+        Ok(id)
+    }
+    pub async fn flush_pins(&self) -> Result<(), String> {
+        let (sender, receiver) = oneshot::channel();
+        self.pins
+            .sender
+            .send(PinCommand::Flush(sender))
+            .await
+            .map_err(|_| "pin persistence queue is closed")?;
+        receiver
+            .await
+            .map_err(|_| "pin persistence worker stopped".into())
+    }
+
+    /// Accepted patches execute serially, including when fields are edited fast.
+    pub fn save_settings(&self, changes: Vec<(String, String)>) -> Result<OperationId, String> {
+        let mut tail = lock(&self.settings_tail);
+        self.ensure_running()?;
+        let id = next_operation();
+        self.settings
+            .try_send(SettingsCommand::Save { id, changes })
+            .map_err(|_| "configuration queue is busy or closed".to_string())?;
+        // Later automatic edits must queue after this explicit transaction.
+        *tail = None;
+        Ok(id)
+    }
+
+    /// Merge only into the last unconsumed automatic batch. A returned ID may
+    /// be shared by multiple fields; its SettingsSaved snapshot covers them all.
+    pub fn save_settings_coalesced(
+        &self,
+        changes: Vec<(String, String)>,
+    ) -> Result<OperationId, String> {
+        let mut tail = lock(&self.settings_tail);
+        self.ensure_running()?;
+        if let Some(batch) = tail.as_ref().and_then(Weak::upgrade) {
+            if let Some(patch) = lock(&batch).as_mut() {
+                merge_settings_changes(&mut patch.changes, changes)?;
+                return Ok(patch.id);
+            }
+        }
+        let mut merged = Vec::new();
+        merge_settings_changes(&mut merged, changes)?;
+        let id = next_operation();
+        let batch = Arc::new(Mutex::new(Some(SettingsPatch {
+            id,
+            changes: merged,
+        })));
+        self.settings
+            .try_send(SettingsCommand::Coalesced(batch.clone()))
+            .map_err(|_| "configuration queue is busy or closed".to_string())?;
+        *tail = Some(Arc::downgrade(&batch));
+        Ok(id)
+    }
+
+    pub async fn flush_settings(&self) -> Result<(), String> {
+        *lock(&self.settings_tail) = None;
+        let (sender, receiver) = oneshot::channel();
+        self.settings
+            .send(SettingsCommand::Flush(sender))
+            .await
+            .map_err(|_| "configuration queue is closed".to_string())?;
+        receiver
+            .await
+            .map_err(|_| "configuration worker stopped".to_string())
+    }
+
+    pub fn search(&self, query: String) -> Result<QueryId, String> {
+        self.ensure_running()?;
+        self.searcher
+            .as_ref()
+            .ok_or("file indexing is disabled")?
+            .find(query)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn update_search(&self) {
+        if let Some(searcher) = &self.searcher {
+            searcher.update();
+        }
+    }
+    pub fn release_search(&self) {
+        if let Some(searcher) = &self.searcher {
+            searcher.release();
+        }
+    }
+    pub fn rebuild_search(&self) {
+        if let Some(searcher) = &self.searcher {
+            searcher.rebuild_index();
+        }
+    }
+
+    pub fn request_index_status(&self) -> Result<OperationId, String> {
+        let reader = self
+            .searcher
+            .as_ref()
+            .ok_or("file indexing is disabled")?
+            .index_status_reader();
+        self.spawn_job(
+            move || Ok(reader.index_status()),
+            None,
+            |id, result| RuntimeEvent::IndexStatus { id, result },
+        )
+    }
+
+    pub fn capture_selection(&self) -> Result<OperationId, String> {
+        let mut selection = lock(&self.selection);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = cancelled.clone();
+        let id = self.spawn_job(
+            move || {
+                rotor_platform::clipboard::capture_selected_text(|| {
+                    worker_cancelled.load(Ordering::Acquire)
+                })
+            },
+            None,
+            |id, result| RuntimeEvent::SelectionFinished { id, result },
+        )?;
+        if let Some(previous) = selection.replace(cancelled) {
+            previous.store(true, Ordering::Release);
+        }
+        Ok(id)
+    }
+
+    pub fn cancel_selection(&self) {
+        if let Some(cancelled) = lock(&self.selection).take() {
+            cancelled.store(true, Ordering::Release);
+        }
+    }
+
+    pub fn open_file(&self, path: String, as_admin: bool) -> Result<OperationId, String> {
+        self.spawn_job(
+            move || {
+                if as_admin {
+                    rotor_platform::file_util::open_file_as_admin(path)
+                } else {
+                    rotor_platform::file_util::open_file(path)
+                }
+                .map_err(|error| error.to_string())
+            },
+            None,
+            |id, result| RuntimeEvent::FileOpened { id, result },
+        )
+    }
+
+    pub fn translate(&self, text: String) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        if text.trim().is_empty() {
+            return Err("translation text is empty".into());
+        }
+        let config = EngineConfig::from_config(&self.settings());
+        let id = next_operation();
+        let mut previous = lock(&self.translation);
+        self.ensure_running()?;
+        self.translation_id.store(id.0, Ordering::Release);
+        if let Some(task) = previous.take() {
+            task.abort();
+        }
+        let current = self.translation_id.clone();
+        let events = self.events.clone();
+        *previous = Some(self.runtime().spawn(async move {
+            let progress_events = events.clone();
+            let progress_id = current.clone();
+            let result = engine::translate_with_config(&config, &text, move |event| {
+                if progress_id.load(Ordering::Acquire) == id.0 {
+                    // A bounded callback sink provides backpressure. The UI
+                    // drains it independently of window visibility.
+                    let _ = progress_events.send_blocking(RuntimeEvent::Translation { id, event });
+                }
+            })
+            .await
+            .map_err(|error| redact_error(error.to_string(), &config));
+            if current.load(Ordering::Acquire) == id.0 {
+                let _ = events
+                    .send(RuntimeEvent::TranslationFinished { id, result })
+                    .await;
+            }
+        }));
+        Ok(id)
+    }
+
+    pub fn cancel_translation(&self) {
+        let mut task = lock(&self.translation);
+        self.translation_id
+            .store(next_operation().0, Ordering::Release);
+        if let Some(task) = task.take() {
+            task.abort();
+        }
+    }
+
+    pub fn cancel_translation_request(&self, id: OperationId) {
+        let mut task = lock(&self.translation);
+        if self.translation_id.load(Ordering::Acquire) == id.0 {
+            self.translation_id
+                .store(next_operation().0, Ordering::Release);
+            if let Some(task) = task.take() {
+                task.abort();
+            }
+        }
+    }
+
+    pub fn capture(&self) -> Result<OperationId, String> {
+        self.capture_after_overlay_change(true, std::time::Instant::now())
+    }
+
+    pub fn capture_after_overlay_change(
+        &self,
+        settle: bool,
+        started: std::time::Instant,
+    ) -> Result<OperationId, String> {
+        self.ensure_running()?;
+        let id = next_operation();
+        self.capture_worker.submit(
+            CaptureRequest {
+                id,
+                settle,
+                submitted: started,
+            },
+            &self.capture_id,
+        )?;
+        Ok(id)
+    }
+
+    pub async fn detect_capture_rectangles<T: crate::CapturePixels>(
+        &self,
+        image: Arc<T>,
+    ) -> Result<Vec<rotor_canvas::ImageRect>, String> {
+        self.ensure_running()?;
+        let permit = self
+            .slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| "capture detection is stopped")?;
+        self.ensure_running()?;
+        self.runtime()
+            .spawn_blocking(move || {
+                let _permit = permit;
+                Ok(img_util::detect_pixels(image.as_ref())?
+                    .into_iter()
+                    .map(|(x, y, width, height)| rotor_canvas::ImageRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                    })
+                    .collect())
+            })
+            .await
+            .map_err(|error| error.to_string())?
+    }
+
+    pub fn cancel_capture(&self) {
+        self.capture_id.store(next_operation().0, Ordering::Release);
+    }
+
+    pub fn recognize_text(
+        &self,
+        pin_id: u32,
+        revision: u64,
+        image: Arc<RgbaImage>,
+    ) -> Result<OperationId, String> {
+        let root = self
+            .resources
+            .as_ref()
+            .ok_or("OCR resources are unavailable")?
+            .resolve(Path::new("model"))
+            .map_err(|error| error.to_string())?;
+        self.spawn_job(
+            move || {
+                img_util::img2text(
+                    &root,
+                    &DynamicImage::ImageRgba8(Arc::unwrap_or_clone(image)),
+                )
+                .map_err(|error| error.to_string())
+            },
+            None,
+            move |id, result| RuntimeEvent::OcrFinished {
+                id,
+                pin_id,
+                revision,
+                result,
+            },
+        )
+    }
+
+    fn spawn_job<T, F, E>(
+        &self,
+        work: F,
+        current: Option<Arc<AtomicU64>>,
+        event: E,
+    ) -> Result<OperationId, String>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, String> + Send + 'static,
+        E: FnOnce(OperationId, Result<T, String>) -> RuntimeEvent + Send + 'static,
+    {
+        self.ensure_running()?;
+        let permit = self
+            .slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| "background work queue is busy".to_string())?;
+        let id = next_operation();
+        if let Some(current) = &current {
+            current.store(id.0, Ordering::Release);
+        }
+        let events = self.events.clone();
+        let stopped = self.stopped.clone();
+        let task = self.runtime().spawn(async move {
+            let _permit = permit;
+            if stopped.load(Ordering::Acquire) {
+                return;
+            }
+            let result = tokio::task::spawn_blocking(work)
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|result| result);
+            if current
+                .as_ref()
+                .is_none_or(|current| current.load(Ordering::Acquire) == id.0)
+            {
+                let _ = events.send(event(id, result)).await;
+            }
+        });
+        let mut tasks = lock(&self.background);
+        tasks.retain(|task| !task.is_finished());
+        tasks.push(task);
+        Ok(id)
+    }
+
+    fn ensure_running(&self) -> Result<(), String> {
+        if self.stopped.load(Ordering::Acquire) {
+            Err("application services are stopped".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn runtime(&self) -> &Runtime {
+        self.runtime
+            .as_ref()
+            .expect("runtime exists until service drop")
+    }
+
+    pub fn shutdown(&self) {
+        self.shutdown_with_pin_updates(Vec::new());
+    }
+
+    pub fn shutdown_with_pin_updates(&self, updates: Vec<(u32, crate::ShotterConfig)>) {
+        let _tail = lock(&self.settings_tail);
+        if self.stopped.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        self.updates.shutdown();
+        *lock(&self.pins.final_updates) = updates;
+        self.cancel_translation();
+        self.slots.close();
+        self.cancel_selection();
+        self.cancel_capture();
+        self.capture_worker.stop();
+        if let Some(searcher) = &self.searcher {
+            searcher.shutdown();
+        }
+        self.settings.close();
+        self.pins.sender.close();
+        // Unblock callback publishers before waiting for accepted disk writes.
+        self.events.close();
+        for task in lock(&self.background).drain(..) {
+            task.abort();
+        }
+    }
+}
+
+impl Drop for Services {
+    fn drop(&mut self) {
+        self.shutdown();
+        if let Some(runtime) = self.runtime.take() {
+            if let Some(worker) = self.settings_worker.take() {
+                let flushed = runtime
+                    .block_on(async { tokio::time::timeout(Duration::from_secs(2), worker).await });
+                if !matches!(flushed, Ok(Ok(()))) {
+                    log::error!("Configuration worker did not finish during shutdown");
+                }
+            }
+            if let Some(worker) = self.pins.worker.take() {
+                let flushed = runtime
+                    .block_on(async { tokio::time::timeout(Duration::from_secs(2), worker).await });
+                if !matches!(flushed, Ok(Ok(()))) {
+                    log::error!("Pin persistence worker did not finish during shutdown");
+                }
+            }
+            runtime.shutdown_timeout(Duration::from_secs(2));
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+async fn settings_loop(
+    config: Arc<Mutex<ConfigService>>,
+    published: Arc<Mutex<Config>>,
+    receiver: Receiver<SettingsCommand>,
+    events: Sender<RuntimeEvent>,
+    coordinate_shortcuts: Arc<AtomicBool>,
+) {
+    while let Ok(command) = receiver.recv().await {
+        let command = match command {
+            SettingsCommand::Coalesced(batch) => {
+                let Some(patch) = lock(&batch).take() else {
+                    continue;
+                };
+                SettingsCommand::Save {
+                    id: patch.id,
+                    changes: patch.changes,
+                }
+            }
+            other => other,
+        };
+        match command {
+            SettingsCommand::Save { id, mut changes } => {
+                let normalized = normalize_shortcut_changes(&mut changes, &lock(&published));
+                if let Err(error) = normalized {
+                    let _ = events
+                        .send(RuntimeEvent::SettingsSaved {
+                            id,
+                            result: Err(error),
+                        })
+                        .await;
+                    continue;
+                }
+                let coordinated = coordinate_shortcuts.load(Ordering::Acquire)
+                    && changes.iter().any(|(key, _)| {
+                        (key.starts_with("shortcut_") && !key.starts_with("shortcut_pinwin_"))
+                            || key == "quick_actions"
+                    });
+                if let Some((_, json)) = changes.iter_mut().find(|(key, _)| key == "quick_actions")
+                {
+                    let normalized = serde_json::from_str::<Vec<crate::QuickAction>>(json)
+                        .map_err(|error| error.to_string())
+                        .and_then(|actions| {
+                            crate::quick::normalize_actions(actions)
+                                .map_err(|error| error.to_string())
+                        })
+                        .and_then(|actions| {
+                            serde_json::to_string(&actions).map_err(|error| error.to_string())
+                        });
+                    match normalized {
+                        Ok(value) => {
+                            *json = value;
+                        }
+                        Err(error) => {
+                            let _ = events
+                                .send(RuntimeEvent::SettingsSaved {
+                                    id,
+                                    result: Err(error),
+                                })
+                                .await;
+                            continue;
+                        }
+                    }
+                }
+                if coordinated {
+                    let mut candidate = lock(&published).clone();
+                    candidate.extend(changes.clone());
+                    let (reply, response) = oneshot::channel();
+                    let result = if events
+                        .send(RuntimeEvent::SettingsCoordination(
+                            SettingsCoordination::Prepare {
+                                id,
+                                candidate,
+                                reply,
+                            },
+                        ))
+                        .await
+                        .is_ok()
+                    {
+                        response
+                            .await
+                            .unwrap_or_else(|_| Err("Shortcut coordinator stopped".into()))
+                    } else {
+                        Err("Shortcut coordinator is unavailable".into())
+                    };
+                    if let Err(error) = result {
+                        let _ = events
+                            .send(RuntimeEvent::SettingsSaved {
+                                id,
+                                result: Err(error),
+                            })
+                            .await;
+                        continue;
+                    }
+                }
+                let config = config.clone();
+                let mut result = tokio::task::spawn_blocking(move || {
+                    let mut config = lock(&config);
+                    config
+                        .set_many(changes)
+                        .map_err(|error| error.to_string())?;
+                    Ok(config.get_all())
+                })
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|result| result);
+                if let Ok(snapshot) = &result {
+                    *lock(&published) = snapshot.clone();
+                }
+                if coordinated {
+                    let (reply, response) = oneshot::channel();
+                    let finished = if events
+                        .send(RuntimeEvent::SettingsCoordination(
+                            SettingsCoordination::Finish {
+                                id,
+                                committed: result.is_ok(),
+                                reply,
+                            },
+                        ))
+                        .await
+                        .is_ok()
+                    {
+                        response
+                            .await
+                            .unwrap_or_else(|_| Err("Shortcut coordinator stopped".into()))
+                    } else {
+                        Err("Shortcut coordinator is unavailable".into())
+                    };
+                    if let Err(error) = finished {
+                        result = Err(match result {
+                            Ok(_) => error,
+                            Err(original) => format!("{original}; {error}"),
+                        });
+                    }
+                }
+                let _ = events
+                    .send(RuntimeEvent::SettingsSaved { id, result })
+                    .await;
+            }
+            SettingsCommand::Flush(sender) => {
+                let _ = sender.send(());
+            }
+            SettingsCommand::Coalesced(_) => unreachable!("coalesced write was resolved above"),
+        }
+    }
+}
+
+fn normalize_shortcut_changes(
+    changes: &mut [(String, String)],
+    config: &Config,
+) -> Result<(), String> {
+    use std::str::FromStr;
+    let chinese = rotor_common::i18n::language_for_config(config) == "zh-CN";
+    for (key, value) in changes {
+        let (zh, en) = match key.as_str() {
+            "shortcut_search" => ("搜索快捷键", "Search shortcut"),
+            "shortcut_screenshot" => ("截图快捷键", "Screenshot shortcut"),
+            "shortcut_translate_select" => ("划词翻译快捷键", "Selection translation shortcut"),
+            "shortcut_translate_input" => ("输入翻译快捷键", "Input translation shortcut"),
+            "shortcut_pinwin_save" => ("贴图保存", "Save pinned image"),
+            "shortcut_pinwin_close" => ("贴图关闭", "Close pinned image"),
+            "shortcut_pinwin_copy" => ("贴图复制", "Copy pinned image"),
+            "shortcut_pinwin_hide" => ("贴图最小化", "Minimize pinned image"),
+            _ => continue,
+        };
+        let normalized = value.trim();
+        if !normalized.is_empty() && global_hotkey::hotkey::HotKey::from_str(normalized).is_err() {
+            return Err(if chinese {
+                format!("“{zh}”格式不正确，请重新录制或输入完整按键组合。")
+            } else {
+                format!("Invalid shortcut for “{en}”. Record it again or enter a complete key combination.")
+            });
+        }
+        *value = normalized.into();
+    }
+    Ok(())
+}
+
+fn merge_settings_changes(
+    current: &mut Vec<(String, String)>,
+    incoming: Vec<(String, String)>,
+) -> Result<(), String> {
+    // Bound the number of fields in one automatic batch without rejecting a
+    // replacement of an existing field. Validate before changing accepted data.
+    let keys = current
+        .iter()
+        .chain(&incoming)
+        .map(|(key, _)| key)
+        .collect::<std::collections::HashSet<_>>();
+    if keys.len() > 64 {
+        return Err("too many fields in automatic settings batch".into());
+    }
+    for (key, value) in incoming {
+        if let Some((_, previous)) = current.iter_mut().find(|(existing, _)| existing == &key) {
+            *previous = value;
+        } else {
+            current.push((key, value));
+        }
+    }
+    Ok(())
+}
+
+fn capture_monitors(
+    pool: &mut monitor::CapturePool,
+    request: CaptureRequest,
+    events: &Sender<RuntimeEvent>,
+) -> Result<CaptureBundle, String> {
+    let mark = |stage| {
+        log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage={} elapsed_us={}",
+        request.id.0, stage, request.submitted.elapsed().as_micros())
+    };
+    if request.settle {
+        rotor_platform::overlay::settle_desktop()?;
+    }
+    mark("desktop_settled");
+    capture_with_preparation(
+        request,
+        events,
+        || monitor::current_configs().map_err(|error| error.to_string()),
+        |before| {
+            let (images, windows) = pool.capture_with(&before, || {
+                let windows =
+                    rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
+                        log::warn!("Capture window rectangles: {error}");
+                        Vec::new()
+                    });
+                mark("window_rectangles");
+                windows
+            })?;
+            let monitors = before
+                .into_iter()
+                .zip(images)
+                .map(|(monitor, image)| CapturedMonitor { monitor, image })
+                .collect();
+            Ok(CaptureBundle { monitors, windows })
+        },
+    )
+}
+
+/// Publish preparation before starting the pixel read, without waiting for the
+/// shell. The same topology is passed to capture and checked again afterwards.
+fn capture_with_preparation(
+    request: CaptureRequest,
+    events: &Sender<RuntimeEvent>,
+    mut current_configs: impl FnMut() -> Result<Vec<MonitorConfig>, String>,
+    capture: impl FnOnce(Vec<MonitorConfig>) -> Result<CaptureBundle, String>,
+) -> Result<CaptureBundle, String> {
+    let mark = |stage| {
+        log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage={} elapsed_us={}",
+        request.id.0, stage, request.submitted.elapsed().as_micros())
+    };
+    let before = monitor::sorted_configs(current_configs()?);
+    mark("topology_before");
+    events
+        .send_blocking(RuntimeEvent::CapturePreparing {
+            id: request.id,
+            monitors: before.clone(),
+        })
+        .map_err(|_| "Screenshot event receiver is closed")?;
+    mark("capture_preparation_sent");
+    let bundle = capture(before.clone())?;
+    mark("pixels_captured");
+    let after = monitor::sorted_configs(current_configs()?);
+    if before != after {
+        return Err("display topology changed during capture; retry screenshot".into());
+    }
+    mark("capture_complete");
+    Ok(bundle)
+}
+
+fn redact_error(message: String, config: &EngineConfig) -> String {
+    config.redact_error(message)
+}
+
+#[cfg(test)]
+mod settings_queue_tests;
+#[cfg(test)]
+mod translation_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+
+    fn create(config: ConfigService) -> (Services, Receiver<RuntimeEvent>) {
+        Services::new(
+            Arc::new(Mutex::new(config)),
+            None,
+            ServiceOptions { index_files: false },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn hidden_pin_restore_is_explicit_preserves_ids_and_does_not_rewrite_records() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let mut config = pin_config();
+        config.minimized = true;
+        let created_id = services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), config)
+            .unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            id,
+            result: Ok(pin),
+        }) = receive()
+        else {
+            panic!("expected created pin");
+        };
+        assert_eq!(id, created_id);
+        let record_path = directory.path().join("pins/record.toml");
+        let record = std::fs::read(&record_path).unwrap();
+        for (request, expected_reveal, expected_count) in [
+            (services.restore_pins().unwrap(), false, 0),
+            (services.restore_hidden_pins(Vec::new()).unwrap(), true, 1),
+            (services.restore_hidden_pins(vec![pin.id]).unwrap(), true, 0),
+        ] {
+            let RuntimeEvent::Pin(crate::PinEvent::Restored {
+                id,
+                reveal,
+                result: Ok(restored),
+            }) = receive()
+            else {
+                panic!("expected restored pins");
+            };
+            assert_eq!(id, request);
+            assert_eq!(reveal, expected_reveal);
+            assert_eq!(restored.pins.len(), expected_count);
+            assert!(restored.warnings.is_empty());
+            assert_eq!(std::fs::read(&record_path).unwrap(), record);
+        }
+    }
+
+    #[test]
+    fn shutdown_drains_accepted_configuration_writes_in_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        services
+            .save_settings(vec![("theme".into(), "1".into())])
+            .unwrap();
+        services
+            .save_settings(vec![
+                ("theme".into(), "2".into()),
+                ("unknown".into(), "kept".into()),
+            ])
+            .unwrap();
+        services.shutdown();
+        assert!(services.save_settings(vec![]).is_err());
+        drop(services);
+        let config = ConfigService::load_from(directory.path()).unwrap();
+        assert_eq!(config.get_user("theme").map(String::as_str), Some("2"));
+        assert_eq!(config.get_user("unknown").map(String::as_str), Some("kept"));
+    }
+
+    fn pin_config() -> crate::ShotterConfig {
+        crate::ShotterConfig {
+            monitor_pos: (0, 0),
+            monitor_size: (1920, 1080),
+            rect: (0, 0, 2, 3),
+            image_rect: (0, 0, 2, 3),
+            offset: (0, 0),
+            zoom_factor: 100,
+            mask_label: "ssmask-1".into(),
+            minimized: false,
+        }
+    }
+
+    #[test]
+    fn shutdown_drains_accepted_pin_creation_without_an_event_consumer() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), pin_config())
+            .unwrap();
+        services.shutdown();
+        assert!(services.restore_pins().is_err());
+        drop(services);
+        let store = rotor_screenshot::pin_store::PinStore::load_from(directory.path()).unwrap();
+        let (pins, warnings) = store.load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+    }
+
+    #[test]
+    fn pin_update_and_delete_follow_submission_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let request = services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), pin_config())
+            .unwrap();
+        let created = services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        let RuntimeEvent::Pin(crate::PinEvent::Created { id, result }) = created else {
+            panic!("expected created pin");
+        };
+        assert_eq!(id, request);
+        let pin = result.unwrap();
+        let mut config = pin.config;
+        config.offset = (5, -8);
+        let updated = services.update_pin(pin.id, config).unwrap();
+        let deleted = services.delete_pin(pin.id).unwrap();
+        services.runtime().block_on(services.flush_pins()).unwrap();
+        assert!(
+            matches!(events.try_recv().unwrap(), RuntimeEvent::Pin(crate::PinEvent::Updated { id, result: Ok(_), .. }) if id == updated)
+        );
+        assert!(
+            matches!(events.try_recv().unwrap(), RuntimeEvent::Pin(crate::PinEvent::Deleted { id, result: Ok(()), .. }) if id == deleted)
+        );
+        assert!(
+            rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+                .unwrap()
+                .load_pins()
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn pin_export_failure_keeps_record_and_success_removes_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let image = Arc::new(RgbaImage::from_pixel(2, 3, image::Rgba([7, 8, 9, 128])));
+        services.create_pin(image.clone(), pin_config()).unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            result: Ok(pin), ..
+        }) = receive()
+        else {
+            panic!("expected created pin");
+        };
+        let invalid = directory.path().join("directory.png");
+        std::fs::create_dir(&invalid).unwrap();
+        let failed = services
+            .export_pin(
+                Some(pin.id),
+                image.clone(),
+                pin_config(),
+                crate::PinExportTarget::File(invalid),
+            )
+            .unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::Pin(crate::PinEvent::Exported { id, result: Err(_) }) if id == failed)
+        );
+        assert_eq!(
+            rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+                .unwrap()
+                .load_pins()
+                .0
+                .len(),
+            1
+        );
+        let output = directory.path().join("export.png");
+        let saved = services
+            .export_pin(
+                Some(pin.id),
+                image.clone(),
+                pin_config(),
+                crate::PinExportTarget::File(output.clone()),
+            )
+            .unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::Pin(crate::PinEvent::Exported { id, result: Ok(()) }) if id == saved)
+        );
+        assert_eq!(image::open(output).unwrap().into_rgba8(), *image);
+        assert!(
+            rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+                .unwrap()
+                .load_pins()
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn confirmed_capture_is_cropped_and_persisted_before_shutdown() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let image = Arc::new(RgbaImage::from_fn(4, 4, |x, y| {
+            image::Rgba([x as u8, y as u8, 42, 255])
+        }));
+        let mut config = pin_config();
+        config.monitor_size = (4, 4);
+        config.rect = (1, 1, 2, 2);
+        config.image_rect = (1, 1, 2, 2);
+        services
+            .create_pin_from_capture(image.clone(), config)
+            .unwrap();
+        services.shutdown();
+        drop(services);
+        let (pins, warnings) = rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+            .unwrap()
+            .load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+        assert_eq!(
+            *pins[0].image,
+            image::imageops::crop_imm(image.as_ref(), 1, 1, 2, 2).to_image()
+        );
+        assert_eq!(pins[0].config.image_rect, (1, 1, 2, 2));
+    }
+
+    #[test]
+    fn pre_cropped_capture_keeps_monitor_origin_and_request_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let image = Arc::new(RgbaImage::from_pixel(2, 2, image::Rgba([12, 34, 56, 78])));
+        let mut config = pin_config();
+        config.monitor_size = (3840, 2160);
+        config.rect = (1200, 900, 2, 2);
+        config.image_rect = config.rect;
+        let request = services.create_pin(image.clone(), config.clone()).unwrap();
+        let event = services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            id,
+            result: Ok(pin),
+        }) = event
+        else {
+            panic!("expected created pin");
+        };
+        assert_eq!(id, request);
+        assert!(Arc::ptr_eq(&pin.image, &image));
+        assert_eq!(pin.config.image_rect, config.image_rect);
+        services.shutdown();
+        let (pins, warnings) = rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+            .unwrap()
+            .load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins.len(), 1);
+        assert_eq!(*pins[0].image, *image);
+        assert_eq!(pins[0].config.image_rect, config.image_rect);
+    }
+
+    #[test]
+    fn exported_canvas_frame_keeps_its_viewport_size_and_pixels() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let source = Arc::new(RgbaImage::from_pixel(2, 3, image::Rgba([20, 40, 80, 128])));
+        services.create_pin(source.clone(), pin_config()).unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            result: Ok(pin), ..
+        }) = receive()
+        else {
+            panic!("expected created pin");
+        };
+        let scene = rotor_canvas::Document::new(
+            rotor_canvas::ImageSize {
+                width: 2,
+                height: 3,
+            },
+            rotor_canvas::ImageRect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 3,
+            },
+        )
+        .unwrap();
+        let frame = services
+            .runtime()
+            .block_on(services.render_canvas(
+                source,
+                scene.scene().clone(),
+                rotor_canvas::ImageSize {
+                    width: 4,
+                    height: 6,
+                },
+            ))
+            .unwrap();
+        let path = directory.path().join("scaled.png");
+        let id = services
+            .export_pin_frame(
+                Some(pin.id),
+                frame.clone(),
+                crate::PinExportTarget::File(path.clone()),
+            )
+            .unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::Pin(crate::PinEvent::Exported { id: returned, result: Ok(()) }) if returned == id)
+        );
+        let image = image::open(path).unwrap().into_rgba8();
+        assert_eq!(image.dimensions(), (4, 6));
+        assert_eq!(image, *frame);
+    }
+
+    #[test]
+    fn shutdown_wakes_canvas_requests_waiting_for_capacity() {
+        use std::{
+            future::Future,
+            task::{Context, Waker},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let _permits: Vec<_> = (0..BACKGROUND_LIMIT)
+            .map(|_| services.slots.clone().try_acquire_owned().unwrap())
+            .collect();
+        let scene = rotor_canvas::Document::new(
+            rotor_canvas::ImageSize {
+                width: 2,
+                height: 3,
+            },
+            rotor_canvas::ImageRect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 3,
+            },
+        )
+        .unwrap();
+        let mut request = Box::pin(services.render_canvas(
+            Arc::new(RgbaImage::new(2, 3)),
+            scene.scene().clone(),
+            scene.scene().size,
+        ));
+        assert!(request
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        services.shutdown();
+        assert!(services.runtime().block_on(request).is_err());
+    }
+
+    #[test]
+    fn final_pin_snapshot_bypasses_full_command_and_event_queues() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        services
+            .create_pin(Arc::new(RgbaImage::new(2, 3)), pin_config())
+            .unwrap();
+        let created = services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        let RuntimeEvent::Pin(crate::PinEvent::Created {
+            result: Ok(pin), ..
+        }) = created
+        else {
+            panic!("expected created pin");
+        };
+        let queued = EVENT_CAPACITY + services.pins.sender.capacity().unwrap() + 1;
+        services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                for _ in 0..queued {
+                    services
+                        .pins
+                        .sender
+                        .send(PinCommand::Restore {
+                            id: next_operation(),
+                            include_hidden: false,
+                            excluded_ids: Vec::new(),
+                        })
+                        .await
+                        .unwrap();
+                }
+            })
+            .await
+            .unwrap();
+        });
+        assert!(services.pins.sender.is_full());
+        assert!(events.is_full());
+        let mut latest = pin.config;
+        latest.offset = (123, -321);
+        services.shutdown_with_pin_updates(vec![(pin.id, latest)]);
+        drop(services);
+        let (pins, warnings) = rotor_screenshot::pin_store::PinStore::load_from(directory.path())
+            .unwrap()
+            .load_pins();
+        assert!(warnings.is_empty());
+        assert_eq!(pins[0].config.offset, (123, -321));
+    }
+
+    #[test]
+    fn failed_settings_write_requests_shortcut_rollback() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        let before = services.settings();
+        services.coordinate_shortcuts(true);
+        std::fs::create_dir(directory.path().join("config.toml")).unwrap();
+        let id = services
+            .save_settings(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
+            .unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Prepare {
+            id: staged,
+            candidate,
+            reply,
+        }) = receive()
+        else {
+            panic!("expected shortcut preparation");
+        };
+        assert_eq!(id, staged);
+        assert_eq!(candidate["shortcut_search"], "Ctrl+Shift+X");
+        reply.send(Ok(())).unwrap();
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Finish {
+            id: finished,
+            committed,
+            reply,
+        }) = receive()
+        else {
+            panic!("expected rollback");
+        };
+        assert_eq!(id, finished);
+        assert!(!committed);
+        reply.send(Ok(())).unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::SettingsSaved { id: result, result: Err(_) } if result == id)
+        );
+        assert_eq!(services.settings(), before);
+    }
+
+    #[test]
+    fn shortcut_prepare_rejection_does_not_touch_disk() {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+        services.coordinate_shortcuts(true);
+        services
+            .save_settings(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
+            .unwrap();
+        let receive = || {
+            services.runtime().block_on(async {
+                tokio::time::timeout(Duration::from_secs(3), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        };
+        let RuntimeEvent::SettingsCoordination(SettingsCoordination::Prepare { reply, .. }) =
+            receive()
+        else {
+            panic!("expected shortcut preparation");
+        };
+        reply.send(Err("already occupied".into())).unwrap();
+        assert!(
+            matches!(receive(), RuntimeEvent::SettingsSaved { result: Err(error), .. } if error == "already occupied")
+        );
+        assert!(!directory.path().join("config.toml").exists());
+    }
+
+    #[test]
+    fn capture_uses_its_own_worker_when_background_capacity_is_saturated() {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut services, _events) = create(ConfigService::load_from(directory.path()).unwrap());
+        // Exercise the real Services submission route using synthetic pixels.
+        services.capture_worker.stop();
+        services.capture_worker =
+            CaptureWorker::start(services.events.clone(), services.capture_id.clone(), |_| {
+                Ok(CaptureBundle {
+                    monitors: Vec::new(),
+                    windows: Vec::new(),
+                })
+            })
+            .unwrap();
+        let _permit = services
+            .slots
+            .clone()
+            .try_acquire_many_owned(BACKGROUND_LIMIT as u32)
+            .unwrap();
+        let id = services.capture().unwrap();
+        assert_eq!(services.capture_id.load(Ordering::Acquire), id.0);
+        services.shutdown();
+        let cancelled = services.capture_id.load(Ordering::Acquire);
+        assert!(services.capture().is_err());
+        assert_eq!(services.capture_id.load(Ordering::Acquire), cancelled);
+    }
+
+    #[test]
+    fn translation_uses_isolated_configuration_and_keeps_request_identity() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(Duration::from_millis(5))
+                    }
+                    Err(error) => panic!("test HTTP server: {error}"),
+                }
+            };
+            // Windows accepted sockets can inherit the listener's nonblocking
+            // mode. Use bounded blocking I/O for the HTTP fixture itself.
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let count = stream.read(&mut buffer).unwrap();
+                assert!(count > 0);
+                request.extend_from_slice(&buffer[..count]);
+            }
+            assert!(String::from_utf8_lossy(&request).contains("text=hello%20world"));
+            let body = "{\"translated\":\"你好\"}";
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        });
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = ConfigService::load_from(directory.path()).unwrap();
+        config
+            .set_many([
+                ("translator_engine".into(), "custom".into()),
+                (
+                    "translator_custom_url".into(),
+                    format!("http://{address}/?text={{text}}"),
+                ),
+            ])
+            .unwrap();
+        let (services, events) = create(config);
+        let id = services.translate("hello world".into()).unwrap();
+        let event = services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        match event {
+            RuntimeEvent::TranslationFinished {
+                id: returned,
+                result,
+            } => {
+                assert_eq!(returned, id);
+                assert_eq!(result.unwrap().translated, "你好");
+            }
+            _ => panic!("expected completed custom translation"),
+        }
+        server.join().unwrap();
+    }
+}

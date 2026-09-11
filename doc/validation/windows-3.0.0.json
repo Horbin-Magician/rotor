@@ -1,0 +1,127 @@
+{
+  "date": "2026-09-11",
+  "platform": "Windows x64",
+  "toolchain": "Rust 1.97.0 / MSVC",
+  "nsis": "3.11",
+  "implementation_revision": "aaf6a901bf174a756c8fc461dfaaa1a71e2531fd",
+  "development_package": {
+    "name": "Rotor-Dev_3.0.0_x64-setup.exe",
+    "bytes": 27064960,
+    "sha256": "b0d031bbf6590cb0817f895c024e3faf13f87664b7a064caa33ff382780ff18b",
+    "source_receipt": "4a43a0edfb3aad73cd2234c43028bef2793b33b90c2539376b2b3d2da2febe2a",
+    "identity": {
+      "version": "3.0.0",
+      "production": false,
+      "product_name": "Rotor 3 Development",
+      "identifier": "cc.fluctus.rotor3.dev",
+      "profile_directory": ".rotor3-dev",
+      "executable_name": "rotor-desktop"
+    }
+  },
+  "production_package": {
+    "name": "Rotor_3.0.0_x64-setup.exe",
+    "bytes": 27087352,
+    "sha256": "4c99fe9a7ff6fe6786f4f6e2d8679b934621acc30a2845dc79d04393d992ded0",
+    "source_receipt": "1ca036dc69f7e1728c93538dd22cfc6a29a4a6c928290c740f7a63d66980f588",
+    "identity": {
+      "version": "3.0.0",
+      "production": true,
+      "product_name": "Rotor 3",
+      "identifier": "cc.fluctus.rotor3",
+      "profile_directory": ".rotor3",
+      "executable_name": "rotor"
+    }
+  },
+  "automated_checks": {
+    "cargo_fmt": true,
+    "cargo_check_workspace_locked": true,
+    "cargo_test_workspace_locked": true,
+    "cargo_clippy_all_targets_deny_warnings": true,
+    "core_dependencies": true,
+    "windows_and_macos_dependency_graphs": true,
+    "release_metadata_python_tests": true,
+    "ocr_and_idle_release": true,
+    "native_profile_roundtrip": true,
+    "development_and_production_resource_discovery": true
+  },
+  "ignored_tests": [
+    "test file_data::volume::default_file_map::tests::measure_default_index_release_commit ... ignored, manual process commit measurement; run alone with --ignored --exact --nocapture",
+    "test file_data::volume::ntfs_file_map::release_tests::measure_ntfs_index_release_commit ... ignored, manual process commit measurement; run alone with --ignored --exact --nocapture"
+  ],
+  "isolated_development_installation": [
+    {
+      "case": "reject_nonempty_unrelated_directory",
+      "exit_code": 2
+    },
+    {
+      "case": "fresh_install",
+      "exit_code": 0
+    },
+    {
+      "case": "--build-info",
+      "exit_code": 0,
+      "output": "{\"version\":\"3.0.0\",\"production\":false,\"product_name\":\"Rotor 3 Development\",\"identifier\":\"cc.fluctus.rotor3.dev\",\"profile_directory\":\".rotor3-dev\",\"executable_name\":\"rotor-desktop\"}"
+    },
+    {
+      "case": "--check-resources",
+      "exit_code": 0,
+      "output": "Native resources verified at \\\\?\\<synthetic-test-root>\\安装 Rotor\\assets"
+    },
+    {
+      "case": "locked_installation_preserved",
+      "exit_code": 2
+    },
+    {
+      "case": "same_version_replacement",
+      "exit_code": 0
+    },
+    {
+      "case": "--build-info",
+      "exit_code": 0,
+      "output": "{\"version\":\"3.0.0\",\"production\":false,\"product_name\":\"Rotor 3 Development\",\"identifier\":\"cc.fluctus.rotor3.dev\",\"profile_directory\":\".rotor3-dev\",\"executable_name\":\"rotor-desktop\"}"
+    },
+    {
+      "case": "--check-resources",
+      "exit_code": 0,
+      "output": "Native resources verified at \\\\?\\<synthetic-test-root>\\安装 Rotor\\assets"
+    },
+    {
+      "case": "--build-info",
+      "exit_code": 0,
+      "output": "{\"version\":\"3.0.0\",\"production\":false,\"product_name\":\"Rotor 3 Development\",\"identifier\":\"cc.fluctus.rotor3.dev\",\"profile_directory\":\".rotor3-dev\",\"executable_name\":\"rotor-desktop\"}"
+    },
+    {
+      "case": "--check-resources",
+      "exit_code": 0,
+      "output": "Native resources verified at \\\\?\\<synthetic-test-root>\\安装 Rotor\\assets"
+    },
+    {
+      "case": "loader_failure_rollback",
+      "failed_installation": "<synthetic-test-root>\\nsxE34A.tmp",
+      "previous_binary_restored": true,
+      "background_restart": true
+    },
+    {
+      "case": "uninstall",
+      "exit_code": 0
+    },
+    {
+      "case": "startup_entry_cleanup",
+      "passed": true,
+      "login_restart": "skipped"
+    },
+    {
+      "case": "retained_data",
+      "profile_unchanged": true,
+      "user_file_retained": true,
+      "backup": "<synthetic-test-root>\\nstDABF.tmp"
+    }
+  ],
+  "not_executed": [
+    "macOS build/runtime/installation/notarization acceptance on this host",
+    "production installation and real UAC interaction",
+    "complete multi-display, IME, global hotkey, translation cancellation and login/tray matrix",
+    "hosted signing key pairing and signed release workflow",
+    "PR CI/review/merge, version tag, public release and channel promotion"
+  ]
+}

@@ -1,0 +1,190 @@
+name: native-candidate
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        type: string
+        default: ''
+      platforms:
+        type: string
+        default: windows
+      test_installation:
+        type: boolean
+        default: true
+      production_identity:
+        type: boolean
+        default: false
+      sign_updates:
+        type: boolean
+        default: false
+    secrets:
+      ROTOR_SIGNING_PRIVATE_KEY:
+        required: false
+      ROTOR_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Candidate platforms to build and verify'
+        required: true
+        type: choice
+        default: windows
+        options:
+          - windows
+          - both
+          - macos
+      test_installation:
+        description: 'Run silent Windows installation checks for development identity'
+        required: true
+        type: boolean
+        default: true
+      production_identity:
+        description: 'Use the isolated native production identity'
+        required: true
+        type: boolean
+        default: false
+      sign_updates:
+        description: 'Sign candidate artifacts with the native updater key'
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+env:
+  PRODUCTION_IDENTITY: ${{ inputs.production_identity }}
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.platforms == 'windows' && '["windows-latest"]' || inputs.platforms == 'macos' && '["macos-15"]' || '["windows-latest","macos-15"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.0'
+      - uses: swatinem/rust-cache@v2
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --version=3.11 --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
+      - run: cargo test -p xtask -p rotor-updater --locked
+      - run: cargo test -p rotor-common --features production --locked
+      - name: Build and stage selected identity
+        shell: pwsh
+        run: |
+          $modeArgs = @()
+          if ($env:PRODUCTION_IDENTITY -eq 'true') { $modeArgs += '--production' }
+          cargo run -p xtask --locked -- build @modeArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+          cargo run -p xtask --locked -- stage @modeArgs "$env:RUNNER_TEMP/native-stage"
+          if ($LASTEXITCODE -ne 0) { throw 'Native staging failed' }
+      - name: Verify installed resource discovery without UI
+        shell: pwsh
+        run: |
+          $production = $env:PRODUCTION_IDENTITY -eq 'true'
+          $binary = if ($production) { 'rotor' } else { 'rotor-desktop' }
+          if ($IsWindows) {
+            $exe = Join-Path "$env:RUNNER_TEMP/native-stage" "$binary.exe"
+            $process = Start-Process -FilePath $exe -ArgumentList '--check-resources' -WorkingDirectory $env:RUNNER_TEMP -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/resources.log" -RedirectStandardError "$env:RUNNER_TEMP/resources-error.log"
+            if ($process.ExitCode -ne 0) { throw 'Packaged resource check failed' }
+          } else {
+            $name = if ($production) { 'Rotor 3' } else { 'Rotor 3 Development' }
+            & "$env:RUNNER_TEMP/native-stage/$name.app/Contents/MacOS/$binary" --check-resources
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged resource check failed' }
+          }
+      - name: Build native packages
+        shell: pwsh
+        run: |
+          if ($IsWindows) { $env:NSIS_MAKENSIS = 'C:\Program Files (x86)\NSIS\makensis.exe' }
+          cargo run -p xtask --locked -- package "$env:RUNNER_TEMP/native-stage" "$env:RUNNER_TEMP/native-package"
+          if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed' }
+      - name: Verify silent Windows installation and removal
+        if: runner.os == 'Windows' && inputs.test_installation && !inputs.production_identity
+        shell: pwsh
+        run: |
+          ./.github/scripts/test-windows-install.ps1 -PackageDirectory "$env:RUNNER_TEMP/native-package" -TestDirectory "$env:GITHUB_WORKSPACE/target/windows-install-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT" -TestRecovery
+      - name: Retain Windows installation evidence
+        if: always() && runner.os == 'Windows' && inputs.test_installation && !inputs.production_identity
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-install-checks
+          path: |
+            ${{ github.workspace }}/target/windows-install-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+            ${{ github.workspace }}/target/windows-install-${{ github.run_id }}-${{ github.run_attempt }}/*.log
+          if-no-files-found: ignore
+      - name: Sign updater artifacts
+        if: inputs.sign_updates
+        shell: pwsh
+        env:
+          ROTOR_SIGNING_PRIVATE_KEY: ${{ secrets.ROTOR_SIGNING_PRIVATE_KEY }}
+          ROTOR_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.ROTOR_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (!$env:ROTOR_SIGNING_PRIVATE_KEY) { throw 'Native updater signing key is unavailable' }
+          $signer = if ($IsWindows) { './target/debug/xtask.exe' } else { './target/debug/xtask' }
+          $artifacts = Get-ChildItem "$env:RUNNER_TEMP/native-package" -File | Where-Object { $_.Extension -in '.exe', '.dmg' -or $_.Name.EndsWith('.app.tar.gz') }
+          foreach ($artifact in $artifacts) {
+            & $signer sign $artifact.FullName
+            if ($LASTEXITCODE -ne 0) { throw 'Updater signing failed' }
+          }
+      - name: Verify final package inventory
+        shell: pwsh
+        run: |
+          cargo run -p xtask --locked -- inventory "$env:RUNNER_TEMP/native-package"
+          if ($LASTEXITCODE -ne 0) { throw 'Inventory failed' }
+          cargo run -p xtask --locked -- verify "$env:RUNNER_TEMP/native-package"
+          if ($LASTEXITCODE -ne 0) { throw 'Final package verification failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-candidate-${{ inputs.production_identity && 'production' || 'development' }}-${{ matrix.os }}
+          path: ${{ runner.temp }}/native-package
+          if-no-files-found: error
+  update-metadata:
+    if: inputs.sign_updates
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.0'
+      - uses: swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-candidate-*
+          path: collected
+      - name: Generate verified native metadata
+        env:
+          SELECTED_PLATFORMS: ${{ inputs.platforms }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(cargo run -q -p xtask --locked -- version)
+          mode=()
+          if [ "$PRODUCTION_IDENTITY" != true ]; then mode+=(--development); fi
+          python3 .github/scripts/prepare-native-draft.py --source collected --output merged \
+            --version "$version" --platforms "$SELECTED_PLATFORMS" "${mode[@]}"
+          # All receipts were compared before collecting; retain shared inputs for xtask.
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          first = sorted(Path('collected').iterdir())[0]
+          for name in ['native-build.json', 'source.sha256']:
+              shutil.copyfile(first / name, Path('merged') / name)
+          PY
+          tag="v$version"
+          if [ "$PRODUCTION_IDENTITY" != true ]; then tag="native-dev-v$version"; fi
+          cargo run -p xtask --locked -- release-manifest merged \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/" \
+            "doc/releases/$version.md" native-update.json --platforms "$SELECTED_PLATFORMS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-update-signed
+          path: native-update.json
+          if-no-files-found: error

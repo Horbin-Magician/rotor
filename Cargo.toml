@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+exclude = ["native/gpui-platform"]
+members = [
+  "crates/rotor-common",
+  "crates/rotor-platform",
+  "crates/rotor-searcher",
+  "crates/rotor-screenshot",
+  "crates/rotor-runtime",
+  "crates/rotor-translator",
+  "crates/rotor-desktop",
+  "crates/rotor-ui",
+  "crates/rotor-canvas",
+  "crates/rotor-updater",
+  "xtask",
+]
+default-members = ["crates/rotor-desktop"]
+
+[workspace.package]
+version = "3.0.0"
+
+[workspace.dependencies]
+gpui-kit = { version = "=0.6.1", default-features = false, features = ["component", "assets"] }
+gpui = { package = "gpui-pre", version = "=0.3.3" }
+gpui-platform = { package = "gpui-pre-platform", version = "=0.3.3" }
+rotor-common = { path = "crates/rotor-common" }
+rotor-runtime = { path = "crates/rotor-runtime" }
+rotor-platform = { path = "crates/rotor-platform" }
+async-channel = "=2.5.0"
+futures = "0.3"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+rotor-ui = { path = "crates/rotor-ui" }
+rotor-canvas = { path = "crates/rotor-canvas" }
+rotor-updater = { path = "crates/rotor-updater" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[patch.crates-io]
+gpui-pre-platform = { path = "native/gpui-platform" }

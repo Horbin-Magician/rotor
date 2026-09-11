@@ -1,145 +1,82 @@
-<p align="center">
-  <a href="https://github.com/Horbin-Magician/rotor" target="_blank" rel="noopener noreferrer">
-    <img width="100" src="./public/assets/logo.png" alt="Rotor logo">
-  </a>
-</p>
+<p align="center"><img width="100" src="./assets/icons/icon.png" alt="Rotor logo"></p>
 
-<p align="center">
-  <strong>A fast, lightweight desktop toolbox for Windows and macOS.</strong>
-</p>
+# Rotor
 
-<p align="center">
-  <span>English</span>
-  <span> | </span>
-  <a href="./doc/README_CN.md">中文</a>
-</p>
+A native desktop toolbox built with Rust, GPUI and gpui-component.
 
-<div align="center">
-
-[![GitHub License](https://img.shields.io/github/license/Horbin-Magician/rotor?style=flat)](./LICENSE)
-[![GitHub Downloads](https://img.shields.io/github/downloads/Horbin-Magician/rotor/total?style=flat)](https://github.com/Horbin-Magician/rotor/releases)
-![Windows Support](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
-![macOS Support](https://img.shields.io/badge/macOS-000000?style=flat&logo=apple&logoColor=white)
-
-</div>
-
-## About Rotor
-
-Rotor keeps frequently used desktop tools one shortcut away while remaining fast and
-lightweight. It currently provides file search, screenshots and pinned images, local
-screenshot OCR, and configurable quick actions.
+[中文](doc/README_CN.md) · [Validation status](doc/validation-status.md) · [Packaging and recovery](native/README.md)
 
 ## Features
 
-### File search
+- Indexed file search with keyboard navigation, exclusions and Windows administrator launch.
+- Multi-display screenshots, pinned images, crop/zoom, pen/rectangle/arrow/text annotations, PNG and clipboard export.
+- Local Chinese/English OCR using bundled ONNX models; annotations use installed system fonts.
+- Input and selection translation with Google, DeepSeek and custom HTTP engines.
+- Configurable quick actions, shortcut recording, automatic settings saves, light/dark themes and English/Chinese interfaces.
+- Native tray, single-instance handling, startup integration and signed updater verification.
 
-- Open the search window with `Cmd+Shift+F` on macOS or `Ctrl+Shift+F` on Windows.
-- Search indexed files as you type and navigate the results with the keyboard.
-- Press `Enter` to open a result, or use the item actions to reveal it in its folder.
-- On Windows, supported results can also be opened as administrator.
-- Configure excluded directory names or paths from Settings.
+## Current platform status
 
-<p align="center">
-  <img src="./doc/search_demo.png" width="500" alt="Rotor file search">
-</p>
+Release drafts default to Windows x64 and macOS arm64 (macOS 15.0+).
+See [validation status](doc/validation-status.md) for executed checks, installation
+results and pending manual acceptance. A CI matrix entry is not platform acceptance.
 
-### Screenshots and pinned images
+Rotor 3 uses fresh profiles and installations, with no 2.x import or in-place
+upgrade. Existing user data remains untouched. Publishing and stable/preview
+promotion follow the [release operations](native/release-operations.md).
 
-- Start a capture with `Cmd+Shift+S` on macOS or `Ctrl+Shift+S` on Windows.
-- Select an area across connected displays and pin the result above other windows.
-- Annotate a pin with a pen, rectangle, arrow, or text.
-- Run local OCR on a pinned image and select the recognized text.
-- Zoom, save, copy, hide, restore, or close pinned images.
-
-Default pin shortcuts:
-
-| Action | Shortcut |
-| --- | --- |
-| Save | `S` |
-| Copy | `Enter` |
-| Hide | `H` |
-| Close | `Escape` |
-
-<p align="center">
-  <img src="./doc/screenshot_demo.png" width="558" alt="Rotor screenshot tool">
-</p>
-
-### Quick actions
-
-Create global shortcuts that run terminal commands. Actions can be added, edited,
-disabled, tested from Settings, and assigned their own shortcuts. Rotor includes
-starter actions for opening a terminal and the platform file manager.
-
-### Settings and diagnostics
-
-- Customizable global and pin-window shortcuts.
-- System, light, and dark themes with English and Chinese interfaces.
-- Configurable screenshot save behavior and search exclusions.
-- System overview for memory use, search index state, and relevant permissions.
-- Automatic update checks.
-
-## Installation
-
-Download the latest installer from [GitHub Releases](https://github.com/Horbin-Magician/rotor/releases/latest):
-
-- Windows: use the NSIS installer.
-- macOS: use the DMG image.
-
-macOS requires Screen Recording permission for screenshots. Windows installs per
-machine and may request administrator privileges.
+Current [native interface screenshots](doc/screenshots/README.md) show search,
+annotation, translation and settings using synthetic data.
 
 ## Development
 
-Rotor uses [Tauri 2](https://tauri.app/), Rust 2021, Vue 3, and TypeScript.
+Requirements: the Rust toolchain pinned in `rust-toolchain.toml`, MSVC C++ Build Tools and a Windows SDK on Windows. NSIS 3.11 is needed for Windows packaging. Node.js, Yarn, a browser runtime and frontend build commands are not required for native builds.
 
-### Prerequisites
-
-- The [Tauri development prerequisites](https://v2.tauri.app/start/prerequisites/)
-- Rust and Cargo
-- Node.js with Yarn `1.22.22`
-
-### Run locally
-
-```bash
-yarn install
-yarn tauri dev
+```powershell
+cargo run -p rotor-desktop -- --no-elevate --data-dir target/dev-profile
+cargo fmt --all -- --check
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-Run only the frontend development server:
+All application and shared crates live under `crates/`; models and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes.
 
-```bash
-yarn dev
+The default development identity uses `.rotor3-dev` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor3` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
+
+Development builds, including `cargo build --release`, fall back to this checkout's `assets/` when no deployed assets are found. This lookup is independent of the working directory. `--resource-dir` or `ROTOR_RESOURCE_DIR` explicitly overrides the resource root. Production builds require deployed assets (or an explicit override) and never fall back to the build checkout; use the staging commands below when distributing the app.
+
+| Action | Stored Windows shortcut | Effective development shortcut |
+|---|---|---|
+| File search | Ctrl+Shift+F | Ctrl+Alt+Shift+F |
+| Screenshot | Ctrl+Shift+S | Ctrl+Alt+Shift+S |
+| Selection translation | Ctrl+Shift+D | Ctrl+Alt+Shift+D |
+| Input translation | Ctrl+Shift+W | Ctrl+Alt+Shift+W |
+
+Development Settings uses Ctrl+Alt+Shift+G. Pin-local defaults are S to save, Enter to copy, H to hide and Escape to close; text editing has its own confirmation/cancellation behavior.
+
+## Build a native package
+
+```powershell
+cargo run -p xtask -- build
+cargo run -p xtask -- stage target/native-stage
+$env:NSIS_MAKENSIS = 'C:/Program Files (x86)/NSIS/makensis.exe'
+cargo run -p xtask -- package target/native-stage target/native-package
 ```
 
-### Checks and builds
+Use new stage/package directories. For production identity, pass `--production` to both build and stage. Follow [native/README.md](native/README.md) for signatures, native update recovery and silent installation checks.
 
-```bash
-# Frontend type check, lint, formatting check, and build
-yarn typecheck
-yarn lint
-yarn format:check
-yarn build
+The root Cargo workspace version is authoritative:
 
-# Rust workspace
-cd src-tauri
-cargo check --workspace
-cargo test --workspace
-
-# Platform application bundle
-cd ..
-yarn tauri build
+```powershell
+cargo run -p xtask -- version
+cargo run -p xtask -- set-version 3.0.0 --dry-run
 ```
 
-The main code is split between `src/` for the Vue frontend and `src-tauri/` for the
-Tauri application and Rust workspace crates.
+Version changes do not commit, tag or push automatically.
 
-## Contributing
+## Contributing and license
 
-Issues and pull requests are welcome. Keep changes focused, run the relevant frontend
-and Rust checks, and test platform-specific behavior on the affected operating system.
+Keep business crates free of GPUI, Tauri and WebView dependencies. Use isolated synthetic profiles for tests and preserve user data during failures and recovery.
 
-## License
-
-Rotor is available under the [MIT License](./LICENSE).
-
-Copyright (c) 2024-present Horbin
+[MIT License](LICENSE). Text annotations use installed system fonts.

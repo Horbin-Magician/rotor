@@ -1,0 +1,7 @@
+# Keep bare license files identical across native source-receipt builders.
+.gitattributes text eol=lf
+*LICENSE* text eol=lf
+
+# Model artifacts and their matching dictionary must retain their exact bytes.
+assets/model/*.onnx -text
+assets/model/*dict.txt -text
