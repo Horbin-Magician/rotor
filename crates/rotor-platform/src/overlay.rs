@@ -6,7 +6,7 @@ pub fn enable_pin_taskbar(handle: raw_window_handle::WindowHandle<'_>) -> Result
         Foundation::{GetLastError, SetLastError, HWND, WIN32_ERROR},
         UI::WindowsAndMessaging::{
             GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, GWL_STYLE, WS_EX_APPWINDOW,
-            WS_EX_TOOLWINDOW, WS_MINIMIZEBOX, WS_SYSMENU,
+            WS_EX_TOOLWINDOW, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
         },
     };
     let RawWindowHandle::Win32(raw) = handle.as_raw() else {
@@ -17,7 +17,11 @@ pub fn enable_pin_taskbar(handle: raw_window_handle::WindowHandle<'_>) -> Result
     unsafe {
         for (index, remove, add) in [
             (GWL_EXSTYLE, WS_EX_TOOLWINDOW.0, WS_EX_APPWINDOW.0),
-            (GWL_STYLE, 0, WS_MINIMIZEBOX.0 | WS_SYSMENU.0),
+            // GPUI 0.3.3 creates WindowKind::PopUp with style 0, which is
+            // WS_OVERLAPPED in Win32. Adding caption controls to that style
+            // imposes a system minimum width even on a titlebar-less pin.
+            // Use a native popup so narrow pins retain their physical width.
+            (GWL_STYLE, 0, WS_POPUP.0 | WS_MINIMIZEBOX.0 | WS_SYSMENU.0),
         ] {
             let style = GetWindowLongW(hwnd, index) as u32;
             SetLastError(WIN32_ERROR(0));
@@ -266,7 +270,7 @@ mod repaint_tests {
                 WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
                 w!("STATIC"),
                 w!("Rotor synthetic pin"),
-                WS_POPUP,
+                WINDOW_STYLE(0),
                 0,
                 0,
                 32,
@@ -289,11 +293,59 @@ mod repaint_tests {
                 assert_eq!(style & WS_EX_TOOLWINDOW.0, 0);
                 assert_ne!(style & WS_EX_APPWINDOW.0, 0);
                 assert_ne!(style & WS_EX_TOPMOST.0, 0);
+                assert_ne!(GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_POPUP.0, 0);
+                fit_client_bounds(handle, 80, 90, 40, 300).unwrap();
+                let mut client = windows::Win32::Foundation::RECT::default();
+                GetClientRect(hwnd, &mut client).unwrap();
+                assert_eq!((client.right, client.bottom), (40, 300));
                 assert_eq!(window_minimized(handle), None);
                 let _ = ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
                 assert_eq!(window_minimized(handle), Some(true));
                 let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 assert_eq!(window_minimized(handle), Some(false));
+            });
+            DestroyWindow(hwnd).unwrap();
+            result.unwrap();
+        }
+    }
+
+    #[test]
+    fn fits_hidden_client_bounds_with_native_borders() {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        unsafe {
+            let hwnd = CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!("Rotor synthetic bounds"),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                32,
+                32,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let result = std::panic::catch_unwind(|| {
+                let raw = raw_window_handle::Win32WindowHandle::new(
+                    std::num::NonZeroIsize::new(hwnd.0 as isize).unwrap(),
+                );
+                let handle = raw_window_handle::WindowHandle::borrow_raw(
+                    raw_window_handle::RawWindowHandle::Win32(raw),
+                );
+                for (x, y, width, height) in [(80, 90, 640, 480), (-100, -80, 800, 600)] {
+                    // Repeat to cover an already fitted window as well as a move/resize.
+                    for _ in 0..2 {
+                        fit_client_bounds(handle, x, y, width, height).unwrap();
+                        assert_eq!(client_origin(handle).unwrap(), (x, y));
+                        let mut client = windows::Win32::Foundation::RECT::default();
+                        GetClientRect(hwnd, &mut client).unwrap();
+                        assert_eq!((client.right, client.bottom), (width as i32, height as i32));
+                        assert!(!IsWindowVisible(hwnd).as_bool());
+                    }
+                }
             });
             DestroyWindow(hwnd).unwrap();
             result.unwrap();
@@ -567,7 +619,8 @@ pub fn fit_client_bounds(
         Foundation::{HWND, POINT, RECT},
         Graphics::Gdi::ClientToScreen,
         UI::WindowsAndMessaging::{
-            GetClientRect, GetWindowRect, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE,
+            GetClientRect, GetWindowRect, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOSIZE,
+            SWP_NOZORDER,
         },
     };
     let RawWindowHandle::Win32(raw) = handle.as_raw() else {
@@ -593,13 +646,31 @@ pub fn fit_client_bounds(
         }
         Ok((outer, client, origin))
     };
+    let checked =
+        |value: i64| i32::try_from(value).map_err(|_| "Window bounds overflow".to_string());
+    // Moving between displays can synchronously deliver WM_DPICHANGED. Let
+    // the window apply its new DPI and suggested bounds before measuring the
+    // non-client area used to fit the physical capture size.
+    let (outer, _, origin) = read()?;
+    if origin.x != x || origin.y != y {
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                None,
+                checked(outer.left as i64 + x as i64 - origin.x as i64)?,
+                checked(outer.top as i64 + y as i64 - origin.y as i64)?,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
     for _ in 0..2 {
         let (outer, client, origin) = read()?;
         if origin.x == x && origin.y == y && client.right == width && client.bottom == height {
             return Ok(());
         }
-        let checked =
-            |value: i64| i32::try_from(value).map_err(|_| "Window bounds overflow".to_string());
         unsafe {
             SetWindowPos(
                 hwnd,
@@ -619,7 +690,10 @@ pub fn fit_client_bounds(
     }
     let (_, client, origin) = read()?;
     if origin.x != x || origin.y != y || client.right != width || client.bottom != height {
-        return Err("Native client bounds differ from the captured pixels".into());
+        return Err(format!(
+            "Native client bounds differ from the captured pixels: expected ({x}, {y}) {width}x{height}, actual ({}, {}) {}x{}",
+            origin.x, origin.y, client.right, client.bottom,
+        ));
     }
     Ok(())
 }
