@@ -24,6 +24,8 @@ CI 矩阵中的平台配置不能作为该平台实际验收通过的依据。
 Rotor 3 使用全新的资料与安装命名空间，不提供 2.x 导入或覆盖升级，原有用户资料保持不变。
 公开发布、镜像同步及 stable/preview 推广见[发布操作说明](../native/release-operations.md)。
 
+使用合成资料拍摄的[原生界面截图](screenshots/README.md)展示了当前搜索、截图标注、翻译和设置界面。
+
 ## 开发
 
 Windows 需要 `rust-toolchain.toml` 指定的 Rust、MSVC C++ Build Tools 和 Windows SDK；打包需要 NSIS 3.11。原生构建不需要 Node.js、Yarn、浏览器运行时或前端构建命令。

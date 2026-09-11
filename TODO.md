@@ -16,7 +16,7 @@
 
 - [x] 修订 AGENTS.md：删除保留旧安装身份、旧快捷键契约、旧记录格式、旧更新密钥命名和旧客户端升级验收的要求。
 - [x] 统一 native/app.toml、native_app.rs、file_path.rs、desktop 启动参数、安装器及 macOS bundle 的身份定义，减少重复硬编码。
-- [ ] 明确安装目录、卸载项、单实例、自启动及更新通道名称，验证彼此一致。
+- [x] 明确安装目录、卸载项、单实例、自启动及更新通道名称，验证彼此一致。
 - [x] 保持 workspace 与锁文件中的应用包版本统一为 3.0.0。
 
 完成标准：3.0.0 全新启动、安装及卸载正常，不需要考虑旧版情况。
@@ -35,7 +35,7 @@
 ### 3. 清理依赖与更新签名实现
 
 - [x] 用 cargo tree 定位 tauri-winrt-notification 的完整引入链，替换通知后端、关闭不需要的上游 feature，或调整直接依赖，确保锁文件和目标平台依赖图均无 Tauri 包；不能只手改 Cargo.lock。
-- [ ] 搜索并清理有效源码、脚本及工作流里的框架残留、旧注释与无用依赖。
+- [x] 搜索并清理有效源码、脚本及工作流里的框架残留、旧注释与无用依赖。
 - [x] 将 TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD 改为 ROTOR_SIGNING_PRIVATE_KEY / ROTOR_SIGNING_PRIVATE_KEY_PASSWORD；移除旧名称回退，列出仓库 Secrets 的配套操作。
 - [x] 以原生签名格式为唯一生成与验证契约；移除旧客户端编码适配、旧签名模式回退及公钥必须与旧版一致的测试。保留现代签名校验、大小限制及篡改拒绝。
 - [x] 统一原生公钥来源；若更换密钥，在发布环境配置新私钥并验证配对，不将私钥写入仓库。
@@ -58,19 +58,19 @@
 
 - [x] 修复中英文 README 的 validation-status.md 失效链接，新增真实验收状态记录。
 - [x] 更新版本命令和签名示例为 3.0.0，移除旧版迁移、恢复及兼容指南；修正“内置字体”为系统字体。
-- [ ] 增加当前 GPUI 搜索、截图标注、翻译及设置界面的截图，移除预览阶段占位说明。
-- [ ] 补齐模型来源及许可资料；将项目与相关第三方许可纳入安装包和产物清单。
+- [x] 增加当前 GPUI 搜索、截图标注、翻译及设置界面的截图，移除预览阶段占位说明。
+- [x] 补齐模型来源及许可资料；将项目与相关第三方许可纳入安装包和产物清单。
 - [x] 清理 diff --check 报告的行尾空白。
 
 完成标准：文档链接有效，命令与实际工作流一致，许可资料随包分发，无未经实测的性能或平台支持承诺。
 
 ### 6. 验证、合并与发布
 
-- [ ] cargo fmt --all -- --check。
-- [ ] cargo check --workspace --locked。
-- [ ] cargo test --workspace --locked。
-- [ ] cargo clippy --workspace --all-targets --locked -- -D warnings。
-- [ ] 核心依赖约束、发布元数据 Python 测试及新依赖图检查。
+- [x] cargo fmt --all -- --check。
+- [x] cargo check --workspace --locked。
+- [x] cargo test --workspace --locked。
+- [x] cargo clippy --workspace --all-targets --locked -- -D warnings。
+- [x] 核心依赖约束、发布元数据 Python 测试及新依赖图检查。
 - [ ] OCR smoke、全新原生资料 roundtrip、开发与正式身份资源发现检查，均使用合成资料。
 - [ ] 通过 xtask build → stage → verify → package 创建新目录中的安装包。
 - [ ] 在隔离环境验证全新安装、启动、卸载，以及 3.x 原生更新失败恢复；无 2.x 验收任务。

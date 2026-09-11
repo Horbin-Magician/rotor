@@ -25,6 +25,9 @@ Rotor 3 uses fresh profiles and installations, with no 2.x import or in-place
 upgrade. Existing user data remains untouched. Publishing and stable/preview
 promotion follow the [release operations](native/release-operations.md).
 
+Current [native interface screenshots](doc/screenshots/README.md) show search,
+annotation, translation and settings using synthetic data.
+
 ## Development
 
 Requirements: the Rust toolchain pinned in `rust-toolchain.toml`, MSVC C++ Build Tools and a Windows SDK on Windows. NSIS 3.11 is needed for Windows packaging. Node.js, Yarn, a browser runtime and frontend build commands are not required for native builds.
