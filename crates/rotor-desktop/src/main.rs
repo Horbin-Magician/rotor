@@ -233,7 +233,7 @@ fn show_translator(cx: &mut App) -> Result<(), String> {
     }
     let services = cx.global::<ShellState>().services.clone();
     cx.open_window(
-        placement::utility_options(size(px(560.), px(420.)), true, cx),
+        placement::utility_options(size(px(392.), px(420.)), true, cx),
         |window, cx| {
             let appearance = window.observe_window_appearance(|window, cx| {
                 if !matches!(
