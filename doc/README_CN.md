@@ -10,16 +10,19 @@
 
 - 文件索引搜索、键盘导航、目录排除及 Windows 管理员打开。
 - 多屏截图、贴图、裁剪缩放、画笔/矩形/箭头/文字标注、PNG 与剪贴板导出。
-- 使用内置 ONNX 模型和字体的本地中英文 OCR。
+- 使用内置 ONNX 模型的本地中英文 OCR；文字标注使用系统字体。
 - 输入及划词翻译，支持 Google、DeepSeek 和自定义 HTTP 引擎。
 - 快捷操作、快捷键录制、设置自动保存、中英文及浅色/深色主题。
 - 原生托盘、单实例、自启动与更新签名校验。
 
 ## 当前平台状态
 
-默认原生 CI 已覆盖 Windows x64 和 macOS arm64（最低 macOS 15.0）。macOS 已进行本机编译检查，并补充 Retina 截图坐标回归测试。多屏交互、系统授权、签名公证及升级安装仍需实际验收，自动检查不代表这些交互已经通过。
+发布草稿默认准备 Windows x64 与 macOS arm64（最低 macOS 15.0）双平台。
+已执行的检查、安装结果及待完成的人工验收分别记录在[验收状态](validation-status.md)。
+CI 矩阵中的平台配置不能作为该平台实际验收通过的依据。
 
-代码迁移没有发布新版本或切换更新源。原生候选可在本地构建，或运行默认 Windows 的 `native-candidate` 工作流；发布工作流只准备带签名的草稿，公开发布和更新源切换仍是后续操作。
+Rotor 3 使用全新的资料与安装命名空间，不提供 2.x 导入或覆盖升级，原有用户资料保持不变。
+公开发布、镜像同步及 stable/preview 推广见[发布操作说明](../native/release-operations.md)。
 
 ## 开发
 
@@ -35,9 +38,9 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-应用及共享 crate 均位于 `crates/`，模型、字体与图标位于 `assets/`；`xtask/` 管理版本、暂存、打包与签名，`native/` 保存分发配方。
+应用及共享 crate 均位于 `crates/`，模型与图标位于 `assets/`；`xtask/` 管理版本、暂存、打包与签名，`native/` 保存分发配方。
 
-开发身份默认使用 `.rotor-gpui`，并在保存的全局快捷键上增加 Alt。正式身份使用 `.rotor`，通过 `production` feature 启用。可用 `--data-dir` 或 `ROTOR_DATA_DIR` 指定资料目录。
+开发身份默认使用 `.rotor3-dev`，并在保存的全局快捷键上增加 Alt。正式身份使用 `.rotor3`，通过 `production` feature 启用。可用 `--data-dir` 或 `ROTOR_DATA_DIR` 指定资料目录。
 
 | 操作 | 保存的 Windows 快捷键 | 开发模式实际快捷键 |
 |---|---|---|
@@ -59,13 +62,13 @@ $env:NSIS_MAKENSIS = 'C:/Program Files (x86)/NSIS/makensis.exe'
 cargo run -p xtask -- package target/native-stage target/native-package
 ```
 
-暂存和包目录必须是新目录。正式身份需同时给 build 和 stage 传入 `--production`。签名、资料备份、回退及静默安装检查见[分发说明](../native/README.md)。
+暂存和包目录必须是新目录。正式身份需同时给 build 和 stage 传入 `--production`。签名、原生更新恢复及静默安装检查见[分发说明](../native/README.md)。
 
 版本以根 Cargo workspace 为准：
 
 ```powershell
 cargo run -p xtask -- version
-cargo run -p xtask -- set-version 2.7.0-beta.1 --dry-run
+cargo run -p xtask -- set-version 3.0.0 --dry-run
 ```
 
 版本工具不会自动提交、打标签或推送。

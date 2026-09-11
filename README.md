@@ -10,16 +10,20 @@ A native desktop toolbox built with Rust, GPUI and gpui-component.
 
 - Indexed file search with keyboard navigation, exclusions and Windows administrator launch.
 - Multi-display screenshots, pinned images, crop/zoom, pen/rectangle/arrow/text annotations, PNG and clipboard export.
-- Local Chinese/English OCR using bundled ONNX models and annotation fonts.
+- Local Chinese/English OCR using bundled ONNX models; annotations use installed system fonts.
 - Input and selection translation with Google, DeepSeek and custom HTTP engines.
 - Configurable quick actions, shortcut recording, automatic settings saves, light/dark themes and English/Chinese interfaces.
 - Native tray, single-instance handling, startup integration and signed updater verification.
 
 ## Current platform status
 
-Windows x64 and macOS arm64 (macOS 15.0 or later) are included in the default native CI matrix. macOS has local compilation coverage and Retina capture geometry regression tests. Interactive multi-display capture, permissions, signing/notarization and upgrade installation still require platform acceptance; automated checks do not establish those results.
+Release drafts default to Windows x64 and macOS arm64 (macOS 15.0+).
+See [validation status](doc/validation-status.md) for executed checks, installation
+results and pending manual acceptance. A CI matrix entry is not platform acceptance.
 
-Published releases and update feeds have not been promoted by the source migration. Build native candidates locally or use the `native-candidate` workflow, which defaults to Windows. The release workflow prepares signed **drafts**; publishing and feed promotion remain separate actions.
+Rotor 3 uses fresh profiles and installations, with no 2.x import or in-place
+upgrade. Existing user data remains untouched. Publishing and stable/preview
+promotion follow the [release operations](native/release-operations.md).
 
 ## Development
 
@@ -33,9 +37,9 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-All application and shared crates live under `crates/`; models, fonts and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes.
+All application and shared crates live under `crates/`; models and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes.
 
-The default development identity uses `.rotor-gpui` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
+The default development identity uses `.rotor3-dev` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor3` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
 
 Development builds, including `cargo build --release`, fall back to this checkout's `assets/` when no deployed assets are found. This lookup is independent of the working directory. `--resource-dir` or `ROTOR_RESOURCE_DIR` explicitly overrides the resource root. Production builds require deployed assets (or an explicit override) and never fall back to the build checkout; use the staging commands below when distributing the app.
 
@@ -57,13 +61,13 @@ $env:NSIS_MAKENSIS = 'C:/Program Files (x86)/NSIS/makensis.exe'
 cargo run -p xtask -- package target/native-stage target/native-package
 ```
 
-Use new stage/package directories. For production identity, pass `--production` to both build and stage. Follow [native/README.md](native/README.md) for signatures, profile backups, rollback and silent installation checks.
+Use new stage/package directories. For production identity, pass `--production` to both build and stage. Follow [native/README.md](native/README.md) for signatures, native update recovery and silent installation checks.
 
 The root Cargo workspace version is authoritative:
 
 ```powershell
 cargo run -p xtask -- version
-cargo run -p xtask -- set-version 2.7.0-beta.1 --dry-run
+cargo run -p xtask -- set-version 3.0.0 --dry-run
 ```
 
 Version changes do not commit, tag or push automatically.

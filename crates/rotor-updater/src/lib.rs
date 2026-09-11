@@ -368,31 +368,38 @@ mod tests {
         let key =
             "untrusted comment: test key\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"
                 .to_string();
-        for signature in [
-            "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==",
-        ] {
+        {
+            let signature = "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==";
             let file = tempfile::NamedTempFile::new().unwrap();
             std::fs::write(file.path(), b"test").unwrap();
-            verify(b"test", &signature, &key).unwrap();
-            verify_file(file.path(), &signature, &key).unwrap();
+            verify(b"test", signature, &key).unwrap();
+            verify_file(file.path(), signature, &key).unwrap();
             #[cfg(target_os = "windows")]
             {
                 let directory = tempfile::tempdir().unwrap();
                 let installer = directory.path().join("fixture.exe");
                 std::fs::write(&installer, b"test").unwrap();
-                with_verified_installer(&installer, &signature, &key, |path| {
+                with_verified_installer(&installer, signature, &key, |path| {
                     assert!(std::fs::write(path, b"tampered").is_err());
-                    assert!(std::fs::rename(path, directory.path().join("replacement.exe")).is_err());
+                    assert!(
+                        std::fs::rename(path, directory.path().join("replacement.exe")).is_err()
+                    );
                     Ok(())
-                }).unwrap();
+                })
+                .unwrap();
                 std::fs::write(&installer, b"tampered").unwrap();
-                assert!(with_verified_installer(&installer, &signature, &key, |_| panic!("must not launch unverified bytes")).is_err());
+                assert!(
+                    with_verified_installer(&installer, signature, &key, |_| panic!(
+                        "must not launch unverified bytes"
+                    ))
+                    .is_err()
+                );
             }
 
             std::fs::write(file.path(), b"Test").unwrap();
-            assert!(verify_file(file.path(), &signature, &key).is_err());
-            assert!(verify(b"test", &signature, PUBLIC_KEY).is_err());
-            assert!(verify(b"tes", &signature, &key).is_err());
+            assert!(verify_file(file.path(), signature, &key).is_err());
+            assert!(verify(b"test", signature, PUBLIC_KEY).is_err());
+            assert!(verify(b"tes", signature, &key).is_err());
             assert!(verify(b"test", &signature[..signature.len() / 2], &key).is_err());
             let unsupported = signature.replacen("\nRUQ", "\nRWQ", 1);
             assert!(verify(b"test", &unsupported, &key).is_err());

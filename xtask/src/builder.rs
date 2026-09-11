@@ -31,6 +31,8 @@ fn source_digest() -> Result<String> {
             "-z",
             "--",
             "Cargo.toml",
+            "LICENSE",
+            "THIRD_PARTY_NOTICES.md",
             "Cargo.lock",
             "rust-toolchain.toml",
             "crates",

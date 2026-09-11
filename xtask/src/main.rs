@@ -1,5 +1,6 @@
 mod builder;
 mod installer;
+mod licenses;
 mod release;
 mod versions;
 use sha2::{Digest, Sha256};
@@ -198,6 +199,7 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
         }
     }
     copy_tree(&root().join("assets"), &resource_dir.join("assets"))?;
+    licenses::stage(&resource_dir.join("licenses"))?;
     fs::write(
         resource_dir.join("native-app.toml"),
         toml::to_string_pretty(&config)?,
