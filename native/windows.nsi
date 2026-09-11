@@ -60,6 +60,25 @@ Var InstallLogPath
   MessageBox ${FLAGS} "${MESSAGE}" /SD IDOK
 !macroend
 
+; Antivirus/indexing can briefly retain extracted files after their writers close.
+; Bound retries; a genuinely locked installation still fails without losing data.
+!macro RenameWithRetry SOURCE DESTINATION
+  StrCpy $R6 0
+  ${Do}
+    ClearErrors
+    Rename "${SOURCE}" "${DESTINATION}"
+    ${IfNot} ${Errors}
+      ${ExitDo}
+    ${EndIf}
+    IntOp $R6 $R6 + 1
+    ${If} $R6 >= 50
+      SetErrors
+      ${ExitDo}
+    ${EndIf}
+    Sleep 100
+  ${Loop}
+!macroend
+
 Function RestartRotor
   ${If} $PreviousDirectory != ""
   ${AndIf} ${FileExists} "$PreviousDirectory\${APP_EXE}"
@@ -243,7 +262,7 @@ Section "Rotor" SEC_MAIN
     ${EndIf}
     Delete "$PreviousDirectory"
     ClearErrors
-    Rename "$INSTDIR" "$PreviousDirectory"
+    !insertmacro RenameWithRetry "$INSTDIR" "$PreviousDirectory"
     ${If} ${Errors}
       !insertmacro ReportMessage MB_ICONSTOP "Close all Rotor instances before installing. The previous installation is unchanged."
       Abort
@@ -253,11 +272,11 @@ Section "Rotor" SEC_MAIN
     RMDir "$INSTDIR"
   ${EndIf}
   ClearErrors
-  Rename "$StagedDirectory" "$INSTDIR"
+  !insertmacro RenameWithRetry "$StagedDirectory" "$INSTDIR"
   ${If} ${Errors}
     ${If} $PreviousDirectory != ""
       ClearErrors
-      Rename "$PreviousDirectory" "$INSTDIR"
+      !insertmacro RenameWithRetry "$PreviousDirectory" "$INSTDIR"
       ${If} ${Errors}
         !insertmacro ReportMessage MB_ICONSTOP "Install failed. The previous installation remains at $PreviousDirectory."
         Abort

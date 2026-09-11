@@ -34,6 +34,15 @@ mod windows {
     }
 
     pub fn run() -> Result<(), String> {
+        // A corrupt executable can otherwise block CreateProcess in an OS error
+        // dialog, preventing the independent recovery launcher from rolling back.
+        // This process owns recovery and reports failures after rollback is tried.
+        unsafe {
+            use windows::Win32::System::Diagnostics::Debug::{
+                SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SEM_NOOPENFILEERRORBOX, SetErrorMode,
+            };
+            SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+        }
         let mut forwarded = Vec::new();
         let mut profile = None;
         let mut args = std::env::args_os().skip(1);
