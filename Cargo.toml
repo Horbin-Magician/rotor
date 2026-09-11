@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["native/gpui-platform"]
 members = [
   "crates/rotor-common",
   "crates/rotor-platform",
@@ -36,3 +37,6 @@ rotor-updater = { path = "crates/rotor-updater" }
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[patch.crates-io]
+gpui-pre-platform = { path = "native/gpui-platform" }

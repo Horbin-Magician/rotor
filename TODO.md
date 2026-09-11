@@ -34,7 +34,7 @@
 
 ### 3. 清理依赖与更新签名实现
 
-- [ ] 用 cargo tree 定位 tauri-winrt-notification 的完整引入链，替换通知后端、关闭不需要的上游 feature，或调整直接依赖，确保锁文件和目标平台依赖图均无 Tauri 包；不能只手改 Cargo.lock。
+- [x] 用 cargo tree 定位 tauri-winrt-notification 的完整引入链，替换通知后端、关闭不需要的上游 feature，或调整直接依赖，确保锁文件和目标平台依赖图均无 Tauri 包；不能只手改 Cargo.lock。
 - [ ] 搜索并清理有效源码、脚本及工作流里的框架残留、旧注释与无用依赖。
 - [ ] 将 TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD 改为 ROTOR_SIGNING_PRIVATE_KEY / ROTOR_SIGNING_PRIVATE_KEY_PASSWORD；移除旧名称回退，列出仓库 Secrets 的配套操作。
 - [ ] 以原生签名格式为唯一生成与验证契约；移除旧客户端编码适配、旧签名模式回退及公钥必须与旧版一致的测试。保留现代签名校验、大小限制及篡改拒绝。

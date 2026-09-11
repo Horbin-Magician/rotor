@@ -109,7 +109,7 @@ where
     F: Fn(TranslateStreamEvent) + Send + Sync,
 {
     // reqwest is built with `rustls-no-provider`, so install the ring
-    // provider process-wide (mirrors what tauri-plugin-updater does).
+    // provider process-wide before creating HTTP clients.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let to = resolve_target_lang(&engine_config.target_lang, text);
