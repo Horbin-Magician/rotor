@@ -28,8 +28,8 @@ while ($ancestor -and $ancestor.StartsWith($workspaceRoot, [StringComparison]::O
 }
 $packageRoot = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $identity = Get-Content -LiteralPath (Join-Path $packageRoot 'native-build.json') -Raw | ConvertFrom-Json
-if ($identity.production -or $identity.product_name -ne 'Rotor GPUI Development' -or
-    $identity.identifier -ne 'cc.fluctus.rotor.gpui-dev') { throw 'Only development identity is allowed' }
+if ($identity.production -or $identity.product_name -ne 'Rotor 3 Development' -or
+    $identity.identifier -ne 'cc.fluctus.rotor3.dev') { throw 'Only development identity is allowed' }
 $installerName = "Rotor-GPUI_$($identity.version)_x64-setup.exe"
 $installer = Join-Path $packageRoot $installerName
 $inventory = Get-Content -LiteralPath (Join-Path $packageRoot 'resources.json') -Raw | ConvertFrom-Json -AsHashtable
@@ -52,11 +52,11 @@ if ($PreviousPackageDirectory) {
     if (!$previousExpected -or (Get-FileHash -LiteralPath $previousInstaller).Hash -ne $previousExpected.sha256 -or
         (Get-Item -LiteralPath $previousInstaller).Length -ne $previousExpected.bytes) { throw 'Previous installer inventory mismatch' }
 }
-$productKey = 'HKLM:\Software\RotorGpuiDevelopment'
-$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RotorGpuiDevelopment'
-$shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Rotor GPUI Development.lnk'
+$productKey = 'HKLM:\Software\cc.fluctus.rotor3.dev'
+$uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\cc.fluctus.rotor3.dev'
+$shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Rotor 3 Development.lnk'
 $runKeyPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$runValue = if (Test-Path $runKeyPath) { (Get-Item -LiteralPath $runKeyPath).GetValue('Rotor GPUI Development', $null) }
+$runValue = if (Test-Path $runKeyPath) { (Get-Item -LiteralPath $runKeyPath).GetValue('Rotor 3 Development', $null) }
 if ((Test-Path $productKey) -or (Test-Path $uninstallKey) -or (Test-Path -LiteralPath $shortcut) -or
     $null -ne $runValue) {
     throw 'An existing development installation/startup entry must not be touched by this test'

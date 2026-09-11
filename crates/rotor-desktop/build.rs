@@ -1,3 +1,7 @@
+#[allow(dead_code)]
+#[path = "../rotor-common/src/native_identity.rs"]
+mod native_identity;
+
 use std::{env, fs, path::PathBuf};
 
 fn main() {
@@ -20,11 +24,8 @@ fn main() {
             .expect("Windows version component exceeds u16")
     });
     let production = env::var_os("CARGO_FEATURE_PRODUCTION").is_some();
-    let product = if production {
-        "Rotor"
-    } else {
-        "Rotor GPUI Development"
-    };
+    let identity = native_identity::for_production(production);
+    let product = identity.product_name;
     let original = if production {
         "rotor.exe"
     } else {

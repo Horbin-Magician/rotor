@@ -63,7 +63,7 @@ def collect(source: Path, destination: Path, version: str) -> int:
             output_names.add(output_name)
             attachments.append((artifact, output_name))
         info = json.loads((package / "native-build.json").read_text(encoding="utf-8"))
-        if info.get("production") is not True or info.get("identifier") != "cc.fluctus.rotor" or info.get("version") != version:
+        if info.get("production") is not True or info.get("identifier") != "cc.fluctus.rotor3" or info.get("version") != version:
             raise ValueError("Unexpected candidate identity or version")
         attachments.append((manifest_path, package.name + "-resources.json"))
     # Validate every package before producing any draft attachment directory.

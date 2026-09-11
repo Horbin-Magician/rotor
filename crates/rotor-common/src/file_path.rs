@@ -43,7 +43,7 @@ fn resolve_data_directory(
         Some(path) if path.as_os_str().is_empty() => None,
         Some(path) if path.is_absolute() => Some(path),
         Some(path) => cwd.map(|cwd| cwd.join(path)),
-        None => home.map(|home| home.join(".rotor")),
+        None => home.map(|home| home.join(crate::native_app::PROFILE_DIRECTORY)),
     }
 }
 
@@ -79,7 +79,7 @@ mod tests {
         );
         assert_eq!(
             resolve_data_directory(None, Some(base.clone()), None),
-            Some(base.join(".rotor"))
+            Some(base.join(crate::native_app::PROFILE_DIRECTORY))
         );
     }
 }

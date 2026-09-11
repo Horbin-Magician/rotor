@@ -244,11 +244,7 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
         uninstall.write_all(installer::uninstall_script(&directory, &executable)?.as_bytes())?;
         uninstall.flush()?;
         let parsed = semver::Version::parse(&version)?;
-        let registry = if info.production {
-            "Rotor"
-        } else {
-            "RotorGpuiDevelopment"
-        };
+        let registry = &info.identifier;
         let compiler = std::env::var_os("NSIS_MAKENSIS").unwrap_or_else(|| "makensis.exe".into());
         let status = Command::new(compiler)
             .arg(format!("/DSTAGE_DIR={}", directory.display()))

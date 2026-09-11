@@ -155,11 +155,7 @@ pub fn rollback_failed_install(profile: &std::path::Path, flags: &[String]) -> R
         .ok_or("Executable has no installation directory")?
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    let registry = if rotor_common::native_app::PRODUCTION {
-        "Rotor"
-    } else {
-        "RotorGpuiDevelopment"
-    };
+    let registry = rotor_common::native_app::IDENTIFIER;
     let key = RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey_with_flags(format!("Software\\{registry}"), KEY_READ | KEY_WOW64_64KEY)
         .map_err(|e| e.to_string())?;

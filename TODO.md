@@ -15,9 +15,9 @@
 ### 1. 更新项目约束与应用身份
 
 - [x] 修订 AGENTS.md：删除保留旧安装身份、旧快捷键契约、旧记录格式、旧更新密钥命名和旧客户端升级验收的要求。
-- [ ] 统一 native/app.toml、native_app.rs、file_path.rs、desktop 启动参数、安装器及 macOS bundle 的身份定义，减少重复硬编码。
+- [x] 统一 native/app.toml、native_app.rs、file_path.rs、desktop 启动参数、安装器及 macOS bundle 的身份定义，减少重复硬编码。
 - [ ] 明确安装目录、卸载项、单实例、自启动及更新通道名称，验证彼此一致。
-- [ ] 保持 workspace 与锁文件中的应用包版本统一为 3.0.0。
+- [x] 保持 workspace 与锁文件中的应用包版本统一为 3.0.0。
 
 完成标准：3.0.0 全新启动、安装及卸载正常，不需要考虑旧版情况。
 

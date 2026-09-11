@@ -1,24 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 pub const PRODUCTION: bool = cfg!(feature = "production");
-pub const PRODUCT_NAME: &str = if PRODUCTION {
-    "Rotor"
-} else {
-    "Rotor GPUI Development"
-};
-pub const IDENTIFIER: &str = if PRODUCTION {
-    "cc.fluctus.rotor"
-} else {
-    "cc.fluctus.rotor.gpui-dev"
-};
-pub const PROFILE_DIRECTORY: &str = if PRODUCTION { ".rotor" } else { ".rotor-gpui" };
-pub const EXECUTABLE_NAME: &str = if PRODUCTION { "rotor" } else { "rotor-desktop" };
+#[path = "native_identity.rs"]
+mod identity;
+pub use identity::{Identity, DEVELOPMENT, PRODUCTION_IDENTITY};
+pub const CURRENT: Identity = identity::for_production(PRODUCTION);
+pub const PRODUCT_NAME: &str = CURRENT.product_name;
+pub const IDENTIFIER: &str = CURRENT.identifier;
+pub const PROFILE_DIRECTORY: &str = CURRENT.profile_directory;
+pub const EXECUTABLE_NAME: &str = CURRENT.executable_name;
 pub const STARTUP_NAME: &str = PRODUCT_NAME;
-pub const LAUNCH_AGENT_LABEL: &str = if PRODUCTION {
-    "Rotor"
-} else {
-    "cc.fluctus.rotor.gpui-dev"
-};
+pub const LAUNCH_AGENT_LABEL: &str = IDENTIFIER;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct BuildInfo {
@@ -30,25 +22,17 @@ pub struct BuildInfo {
     pub executable_name: String,
 }
 pub fn build_info_for(production: bool) -> BuildInfo {
+    let identity = identity::for_production(production);
     BuildInfo {
         version: env!("CARGO_PKG_VERSION").into(),
         production,
-        product_name: if production {
-            "Rotor"
-        } else {
-            "Rotor GPUI Development"
-        }
-        .into(),
-        identifier: if production {
-            "cc.fluctus.rotor"
-        } else {
-            "cc.fluctus.rotor.gpui-dev"
-        }
-        .into(),
-        profile_directory: if production { ".rotor" } else { ".rotor-gpui" }.into(),
-        executable_name: if production { "rotor" } else { "rotor-desktop" }.into(),
+        product_name: identity.product_name.into(),
+        identifier: identity.identifier.into(),
+        profile_directory: identity.profile_directory.into(),
+        executable_name: identity.executable_name.into(),
     }
 }
+
 pub fn build_info() -> BuildInfo {
     build_info_for(PRODUCTION)
 }
@@ -65,18 +49,31 @@ mod tests {
         assert_eq!(info.product_name, super::PRODUCT_NAME);
         assert_eq!(info.profile_directory, super::PROFILE_DIRECTORY);
         assert_eq!(info.executable_name, super::EXECUTABLE_NAME);
-        if super::PRODUCTION {
-            // Frozen v2.6.0 installation/data contract, independent of old UI sources.
-            assert_eq!(info.identifier, "cc.fluctus.rotor");
-            assert_eq!(info.product_name, "Rotor");
-            assert_eq!(info.profile_directory, ".rotor");
-            assert_eq!(info.executable_name, "rotor");
-        } else {
-            let metadata: toml::Value =
-                toml::from_str(include_str!("../../../native/app.toml")).unwrap();
-            assert_eq!(info.identifier, metadata["identifier"].as_str().unwrap());
-            assert_eq!(info.profile_directory, ".rotor-gpui");
+        let metadata: toml::Value =
+            toml::from_str(include_str!("../../../native/app.toml")).unwrap();
+        for production in [false, true] {
+            let identity = super::build_info_for(production);
+            let prefix = if production { "production_" } else { "" };
+            for (key, value) in [
+                ("identifier", identity.identifier),
+                ("product_name", identity.product_name),
+                ("data_directory", identity.profile_directory),
+                ("executable_name", identity.executable_name),
+            ] {
+                assert_eq!(
+                    metadata[format!("{prefix}{key}")].as_str(),
+                    Some(value.as_str())
+                );
+            }
         }
+        assert_ne!(
+            super::DEVELOPMENT.identifier,
+            super::PRODUCTION_IDENTITY.identifier
+        );
+        assert_ne!(
+            super::DEVELOPMENT.profile_directory,
+            super::PRODUCTION_IDENTITY.profile_directory
+        );
         assert_eq!(
             serde_json::from_str::<super::BuildInfo>(&super::build_info_json()).unwrap(),
             info
