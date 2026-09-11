@@ -12,6 +12,30 @@ const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/chat/completions";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_ERROR_BYTES: usize = 64 * 1024;
+const MAX_ERROR_DETAIL_CHARS: usize = 1024;
+
+async fn read_bounded_body(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(format!("Translation response exceeds {limit} bytes").into());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if chunk.len() > limit.saturating_sub(body.len()) {
+            return Err(format!("Translation response exceeds {limit} bytes").into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranslateResult {
@@ -162,8 +186,11 @@ where
     let status = response.status();
 
     if !status.is_success() {
-        let body = response.text().await?;
-        let detail = parse_deepseek_error(&body)
+        let body = read_bounded_body(response, MAX_ERROR_BYTES).await;
+        let detail = body
+            .as_ref()
+            .ok()
+            .and_then(|body| parse_deepseek_error(&String::from_utf8_lossy(body)))
             .map(|message| format!(": {message}"))
             .unwrap_or_default();
         return Err(format!("DeepSeek translate request failed: {status}{detail}").into());
@@ -217,7 +244,7 @@ fn parse_deepseek_error(body: &str) -> Option<String> {
         .as_str()
         .map(str::trim)
         .filter(|message| !message.is_empty())
-        .map(str::to_string)
+        .map(|message| message.chars().take(MAX_ERROR_DETAIL_CHARS).collect())
 }
 
 fn resolve_target_lang(target_lang: &str, text: &str) -> String {
@@ -264,7 +291,8 @@ async fn translate_google(
         return Err(format!("Google translate request failed: {}", response.status()).into());
     }
 
-    let body: serde_json::Value = response.json().await?;
+    let body = read_bounded_body(response, MAX_RESPONSE_BYTES).await?;
+    let body: serde_json::Value = serde_json::from_slice(&body)?;
 
     let translated = body
         .get(0)
@@ -321,7 +349,8 @@ async fn translate_custom(
         return Err(format!("Custom translate request failed: {}", response.status()).into());
     }
 
-    let body = response.text().await?;
+    let bytes = read_bounded_body(response, MAX_RESPONSE_BYTES).await?;
+    let body = String::from_utf8_lossy(&bytes);
     let translated = parse_custom_response(&body)
         .filter(|translated| !translated.is_empty())
         .ok_or("Unexpected custom translate response format")?;
@@ -368,6 +397,71 @@ fn urlencoding_encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn fixture_response(raw: Vec<u8>) -> reqwest::Response {
+        use std::io::{Read, Write};
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(&raw);
+        });
+        reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap()
+            .get(format!("http://{address}"))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn bounded_body_checks_declared_and_chunked_sizes_and_utf8_boundaries() {
+        let response = fixture_response(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1000000000\r\nConnection: close\r\n\r\n".to_vec(),
+        )
+        .await;
+        assert!(read_bounded_body(response, 8)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds"));
+        let response = fixture_response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\n1234\r\n5\r\n56789\r\n0\r\n\r\n".to_vec()).await;
+        assert!(read_bounded_body(response, 8)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds"));
+        let mut raw =
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\n"
+                .to_vec();
+        raw.extend_from_slice(&"你好".as_bytes()[..2]);
+        raw.extend_from_slice(b"\r\n4\r\n");
+        raw.extend_from_slice(&"你好".as_bytes()[2..]);
+        raw.extend_from_slice(b"\r\n0\r\n\r\n");
+        let response = fixture_response(raw).await;
+        assert_eq!(
+            read_bounded_body(response, 6).await.unwrap(),
+            "你好".as_bytes()
+        );
+    }
+
+    #[test]
+    fn error_details_are_bounded_without_splitting_unicode() {
+        let body = serde_json::json!({"error": {"message": "错".repeat(10000)}}).to_string();
+        assert_eq!(
+            parse_deepseek_error(&body).unwrap().chars().count(),
+            MAX_ERROR_DETAIL_CHARS
+        );
+    }
 
     #[test]
     fn errors_redact_raw_and_url_encoded_credentials() {
