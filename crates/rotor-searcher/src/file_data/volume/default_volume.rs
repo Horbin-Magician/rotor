@@ -112,19 +112,35 @@ impl Volume {
     }
 
     fn process_path(&mut self, path: &std::path::Path, action: FileAction) {
+        self.last_query.clear();
+        self.last_search_num = 0;
+        // Removed directories no longer have metadata; remove descendants by indexed path.
+        if matches!(action, FileAction::Remove) {
+            self.file_map.remove_subtree(path);
+            return;
+        }
         if self.is_ignored_event_path(path, action) {
             return;
         }
-
-        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            if let Some(parent) = path.parent() {
-                let parent_path = parent.to_string_lossy().to_string();
-                let file_name = file_name.to_string();
-
-                match action {
-                    FileAction::Insert => self.file_map.insert(file_name, parent_path),
-                    FileAction::Remove => self.file_map.remove(file_name, parent_path),
+        // A directory arriving via rename/create may have no child notifications.
+        let excluded = self.excluded_dirs.clone();
+        for entry in WalkDir::new(path)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|entry| !is_ignored_walk_entry(entry, &excluded))
+        {
+            match entry {
+                Ok(entry) => {
+                    if let (Some(name), Some(parent)) =
+                        (entry.path().file_name(), entry.path().parent())
+                    {
+                        self.file_map.insert(
+                            name.to_string_lossy().into_owned(),
+                            parent.to_string_lossy().into_owned(),
+                        );
+                    }
                 }
+                Err(error) => log::warn!("{} Failed to scan event path: {error}", self.drive),
             }
         }
     }
@@ -513,4 +529,50 @@ fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
             .is_some_and(|segment| names.contains(&segment.as_str())),
         _ => false,
     })
+}
+
+#[cfg(test)]
+mod event_tests {
+    use super::*;
+
+    #[test]
+    fn directory_events_reconcile_descendants_and_exclusion_boundaries() {
+        // Avoid hidden tempfile parents, which are deliberately excluded by the watcher.
+        let temp = tempfile::Builder::new()
+            .prefix("rotor-events-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let a = root.join("A");
+        let b = root.join("B");
+        fs::create_dir_all(a.join("nested")).unwrap();
+        fs::write(a.join("nested/report.pdf"), b"test").unwrap();
+        let mut volume = Volume::new(root.to_string_lossy().into_owned());
+        volume.process_path(&a, FileAction::Insert);
+        assert_eq!(volume.file_map.len(), 3);
+        fs::rename(&a, &b).unwrap();
+        volume.handle_event(
+            Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+                .add_path(a)
+                .add_path(b.clone()),
+        );
+        let (items, _) = volume
+            .file_map
+            .search("report", 0, 1, &AtomicBool::new(false));
+        assert!(items.unwrap()[0].path.contains("B"));
+        let hidden = root.join(".excluded");
+        fs::rename(&b, &hidden).unwrap();
+        volume.handle_event(
+            Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+                .add_path(b.clone())
+                .add_path(hidden.clone()),
+        );
+        assert_eq!(volume.file_map.len(), 0);
+        fs::rename(&hidden, &b).unwrap();
+        volume.process_path(&b, FileAction::Insert);
+        assert_eq!(volume.file_map.len(), 3);
+        fs::remove_dir_all(&b).unwrap();
+        volume.process_path(&b, FileAction::Remove);
+        assert_eq!(volume.file_map.len(), 0);
+    }
 }

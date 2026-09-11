@@ -302,6 +302,24 @@ impl FileMap {
         self.main_set.replace(file);
     }
 
+    pub fn remove_subtree(&mut self, path: &Path) {
+        if let Some(root) = self.dir_tree.find_path(path) {
+            let mut descendants = vec![false; self.dir_tree.nodes.len()];
+            descendants[root as usize] = true;
+            for (id, node) in self.dir_tree.nodes.iter().enumerate().skip(1) {
+                descendants[id] |= descendants[node.parent_id as usize];
+            }
+            self.main_set
+                .retain(|file| !descendants[file.parent_id as usize]);
+        }
+        if let (Some(name), Some(parent)) = (path.file_name(), path.parent()) {
+            self.remove(
+                name.to_string_lossy().into_owned(),
+                parent.to_string_lossy().into_owned(),
+            );
+        }
+    }
+
     pub fn remove(&mut self, file_name: String, path: String) {
         let Some(parent_id) = self.dir_tree.find_path(Path::new(&path)) else {
             return;
