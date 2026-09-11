@@ -1,5 +1,9 @@
 # Rotor 3.0.0 validation status
 
+The archived results below used the former Rotor 3 / `rotor3` identity. They do
+not validate the current Rotor / `rotor` identity or `.rotor` profile path;
+installation and packaging checks must be rerun for the current identity.
+
 Windows validation completed on 2026-09-11 with Rust 1.97.0, MSVC and NSIS 3.11.
 See [machine-readable evidence](validation/windows-3.0.0.json) for artifact hashes,
 source receipts, identities, ignored tests and isolated installation results.

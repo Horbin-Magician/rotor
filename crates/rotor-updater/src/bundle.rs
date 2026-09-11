@@ -67,11 +67,11 @@ pub fn inspect(app: &Path) -> Result<BundleInfo> {
     let identifier = string("CFBundleIdentifier")?.to_string();
     if !matches!(
         identifier.as_str(),
-        "cc.fluctus.rotor3" | "cc.fluctus.rotor3.dev"
+        "cc.fluctus.rotor" | "cc.fluctus.rotor.dev"
     ) {
         return Err("Bundle is not Rotor".into());
     }
-    let executable_name = if identifier == "cc.fluctus.rotor3" {
+    let executable_name = if identifier == "cc.fluctus.rotor" {
         "rotor"
     } else {
         "rotor-desktop"
@@ -317,7 +317,7 @@ mod tests {
             fs::write(resource, b"synthetic resource fixture").unwrap();
         }
         let value = plist::Value::Dictionary(plist::Dictionary::from_iter([
-            ("CFBundleIdentifier", "cc.fluctus.rotor3.dev"),
+            ("CFBundleIdentifier", "cc.fluctus.rotor.dev"),
             ("CFBundleExecutable", "rotor-desktop"),
             ("CFBundleShortVersionString", version),
         ]));
@@ -415,13 +415,13 @@ mod tests {
     #[test]
     fn ordinary_bundle_archive_extracts_with_its_identity() {
         let source = tempfile::tempdir().unwrap();
-        let app = source.path().join("Rotor 3 Development.app");
+        let app = source.path().join("Rotor Development.app");
         fixture(&app, "2.7.0");
         let mut compressed = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         {
             let mut archive = tar::Builder::new(&mut compressed);
             archive
-                .append_dir_all("Rotor 3 Development.app", &app)
+                .append_dir_all("Rotor Development.app", &app)
                 .unwrap();
             archive.finish().unwrap();
         }
@@ -454,7 +454,7 @@ mod tests {
         let path = app.join("Contents/Info.plist");
         let mut value = plist::Value::from_file(&path).unwrap();
         let dictionary = value.as_dictionary_mut().unwrap();
-        dictionary.insert("CFBundleIdentifier".into(), "cc.fluctus.rotor3".into());
+        dictionary.insert("CFBundleIdentifier".into(), "cc.fluctus.rotor".into());
         dictionary.insert("CFBundleExecutable".into(), "rotor".into());
         value.to_file_xml(path).unwrap();
         fs::rename(

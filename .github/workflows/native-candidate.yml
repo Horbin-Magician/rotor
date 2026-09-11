@@ -93,7 +93,7 @@ jobs:
             $process = Start-Process -FilePath $exe -ArgumentList '--check-resources' -WorkingDirectory $env:RUNNER_TEMP -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/resources.log" -RedirectStandardError "$env:RUNNER_TEMP/resources-error.log"
             if ($process.ExitCode -ne 0) { throw 'Packaged resource check failed' }
           } else {
-            $name = if ($production) { 'Rotor 3' } else { 'Rotor 3 Development' }
+            $name = if ($production) { 'Rotor' } else { 'Rotor Development' }
             & "$env:RUNNER_TEMP/native-stage/$name.app/Contents/MacOS/$binary" --check-resources
             if ($LASTEXITCODE -ne 0) { throw 'Packaged resource check failed' }
           }

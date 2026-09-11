@@ -7,15 +7,15 @@ pub struct Identity {
     pub executable_name: &'static str,
 }
 pub const DEVELOPMENT: Identity = Identity {
-    product_name: "Rotor 3 Development",
-    identifier: "cc.fluctus.rotor3.dev",
-    profile_directory: ".rotor3-dev",
+    product_name: "Rotor Development",
+    identifier: "cc.fluctus.rotor.dev",
+    profile_directory: ".rotor-dev",
     executable_name: "rotor-desktop",
 };
 pub const PRODUCTION_IDENTITY: Identity = Identity {
-    product_name: "Rotor 3",
-    identifier: "cc.fluctus.rotor3",
-    profile_directory: ".rotor3",
+    product_name: "Rotor",
+    identifier: "cc.fluctus.rotor",
+    profile_directory: ".rotor",
     executable_name: "rotor",
 };
 pub const fn for_production(production: bool) -> Identity {

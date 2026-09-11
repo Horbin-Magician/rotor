@@ -21,9 +21,9 @@ Release drafts default to Windows x64 and macOS arm64 (macOS 15.0+).
 See [validation status](doc/validation-status.md) for executed checks, installation
 results and pending manual acceptance. A CI matrix entry is not platform acceptance.
 
-Rotor 3 uses fresh profiles and installations, with no 2.x import or in-place
-upgrade. Existing user data remains untouched. Publishing and stable/preview
-promotion follow the [release operations](native/release-operations.md).
+Rotor keeps its version-independent name and `.rotor` production profile path,
+with no 2.x import or in-place upgrade. Publishing and stable/preview promotion
+follow the [release operations](native/release-operations.md).
 
 Current [native interface screenshots](doc/screenshots/README.md) show search,
 annotation, translation and settings using synthetic data.
@@ -42,7 +42,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 All application and shared crates live under `crates/`; models and icons are under `assets/`. `xtask/` owns versioning, staging, packaging and signature verification; `native/` contains distribution recipes.
 
-The default development identity uses `.rotor3-dev` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor3` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
+The default development identity uses `.rotor-dev` and adds Alt to stored global shortcuts, keeping its namespace separate from the production `.rotor` profile. `--data-dir` or `ROTOR_DATA_DIR` selects an explicit profile. Production identity is enabled with the `production` feature.
 
 Development builds, including `cargo build --release`, fall back to this checkout's `assets/` when no deployed assets are found. This lookup is independent of the working directory. `--resource-dir` or `ROTOR_RESOURCE_DIR` explicitly overrides the resource root. Production builds require deployed assets (or an explicit override) and never fall back to the build checkout; use the staging commands below when distributing the app.
 

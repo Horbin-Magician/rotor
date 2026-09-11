@@ -21,7 +21,7 @@
 已执行的检查、安装结果及待完成的人工验收分别记录在[验收状态](validation-status.md)。
 CI 矩阵中的平台配置不能作为该平台实际验收通过的依据。
 
-Rotor 3 使用全新的资料与安装命名空间，不提供 2.x 导入或覆盖升级，原有用户资料保持不变。
+Rotor 保持统一的产品名称和不含版本号的 `rotor` 标识，正式资料目录仍为 `.rotor`，不提供 2.x 导入或覆盖升级。
 公开发布、镜像同步及 stable/preview 推广见[发布操作说明](../native/release-operations.md)。
 
 使用合成资料拍摄的[原生界面截图](screenshots/README.md)展示了当前搜索、截图标注、翻译和设置界面。
@@ -42,7 +42,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 应用及共享 crate 均位于 `crates/`，模型与图标位于 `assets/`；`xtask/` 管理版本、暂存、打包与签名，`native/` 保存分发配方。
 
-开发身份默认使用 `.rotor3-dev`，并在保存的全局快捷键上增加 Alt。正式身份使用 `.rotor3`，通过 `production` feature 启用。可用 `--data-dir` 或 `ROTOR_DATA_DIR` 指定资料目录。
+开发身份默认使用 `.rotor-dev`，并在保存的全局快捷键上增加 Alt。正式身份使用 `.rotor`，通过 `production` feature 启用。可用 `--data-dir` 或 `ROTOR_DATA_DIR` 指定资料目录。
 
 | 操作 | 保存的 Windows 快捷键 | 开发模式实际快捷键 |
 |---|---|---|

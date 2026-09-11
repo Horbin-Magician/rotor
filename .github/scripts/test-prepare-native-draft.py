@@ -26,7 +26,7 @@ class DraftTests(unittest.TestCase):
         (directory / (payload + ".sig")).write_bytes(b"signature fixture; crypto checked by producer")
         (directory / "source.sha256").write_text("a" * 64)
         (directory / "native-build.json").write_text(json.dumps({
-            "production": production, "identifier": "cc.fluctus.rotor3", "version": "3.0.0"
+            "production": production, "identifier": "cc.fluctus.rotor", "version": "3.0.0"
         }))
         self.inventory(directory)
         return directory

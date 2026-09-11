@@ -1,18 +1,19 @@
-# Rotor 3 native distribution
+# Rotor native distribution
 
-Rotor 3 is a fresh Rust + GPUI application. It does not import, detect, upgrade
-or remove 2.x profiles or installations. [Validation status](../doc/validation-status.md)
+Rotor is a Rust + GPUI application with version-independent names and a `.rotor`
+production profile directory. It does not provide 2.x detection, import or
+in-place upgrade, or remove existing profiles. [Validation status](../doc/validation-status.md)
 records automated checks, installation results and manual acceptance separately.
 
 ## Application identities
 
 | Property | Development | Production |
 |---|---|---|
-| Product / Windows install directory | Rotor 3 Development | Rotor 3 |
-| Bundle ID / Windows registry key | cc.fluctus.rotor3.dev | cc.fluctus.rotor3 |
-| Profile directory in the user home | .rotor3-dev | .rotor3 |
+| Product / Windows install directory | Rotor Development | Rotor |
+| Bundle ID / Windows registry key | cc.fluctus.rotor.dev | cc.fluctus.rotor |
+| Profile directory in the user home | .rotor-dev | .rotor |
 | Executable | rotor-desktop | rotor |
-| macOS bundle | Rotor 3 Development.app | Rotor 3.app |
+| macOS bundle | Rotor Development.app | Rotor.app |
 | Update channel | preview | stable |
 
 Windows uninstall keys use the registry identifier. Windows startup entries use

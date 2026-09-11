@@ -19,7 +19,7 @@ while ($ancestor -and $ancestor.StartsWith($workspace, [StringComparison]::Ordin
 }
 $binary = (Resolve-Path -LiteralPath $Executable).Path
 $identity = Get-Content -LiteralPath (Join-Path (Split-Path $binary) 'native-build.json') -Raw | ConvertFrom-Json
-if ($identity.production -or $identity.identifier -ne 'cc.fluctus.rotor3.dev') {
+if ($identity.production -or $identity.identifier -ne 'cc.fluctus.rotor.dev') {
     throw 'Only a staged or installed development identity may be sampled'
 }
 New-Item -ItemType Directory -Path $testRoot | Out-Null

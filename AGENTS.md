@@ -20,8 +20,11 @@ file focused on durable working instructions, not historical test-pass claims.
   generation checks. Preserve cancellation and stale-result rejection.
 - Rotor 3.x is a fresh native application. Do not add 2.x detection, profile
   import, protocol compatibility, in-place upgrades or rollback to 2.x.
-- Use independent native profile and installation namespaces. Never read, migrate
-  or delete existing user profiles. Preserve native 3.x update failure recovery.
+- Keep the product named Rotor and use version-independent rotor identifiers and
+  the production profile directory `.rotor`; never introduce Rotor3 or `.rotor3`.
+  Keep development identity separate with `.rotor-dev` and the `.dev` identifier.
+  Do not migrate or delete existing user profiles. Preserve native 3.x update
+  failure recovery.
 - Preserve unknown config/record fields, accepted write ordering and request identities.
 - Use isolated synthetic profiles for tests; avoid real credentials and user data.
 - Do not edit generated/dependency output under target unless explicitly required.
