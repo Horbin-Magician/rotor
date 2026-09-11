@@ -119,7 +119,7 @@ impl Volume {
         // Query, Return statistics about the journal on the current volume
         let mut cd: u32 = 0;
         unsafe {
-            IO::DeviceIoControl(
+            if let Err(error) = IO::DeviceIoControl(
                 h_vol,
                 Ioctl::FSCTL_QUERY_USN_JOURNAL,
                 None,
@@ -128,8 +128,10 @@ impl Volume {
                 std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>() as u32,
                 Some(&mut cd),
                 None,
-            )
-            .unwrap_or_else(|e| log::error!("{} Volume::build_index, error: {:?}", self.drive, e));
+            ) {
+                Self::close_drive(h_vol);
+                return Err(io::Error::other(error.to_string()));
+            }
         };
 
         self.file_map.start_usn = self.ujd.NextUsn;
@@ -149,18 +151,26 @@ impl Volume {
         let mut excluded_indexes = HashSet::new();
 
         unsafe {
-            while IO::DeviceIoControl(
-                h_vol,
-                Ioctl::FSCTL_ENUM_USN_DATA,
-                Some(&med as *const _ as *const c_void),
-                std::mem::size_of::<Ioctl::MFT_ENUM_DATA_V0>() as u32,
-                Some(data.as_mut_ptr() as *mut c_void),
-                std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32,
-                Some(&mut cb as *mut u32),
-                None,
-            )
-            .is_ok()
-            {
+            loop {
+                if let Err(error) = IO::DeviceIoControl(
+                    h_vol,
+                    Ioctl::FSCTL_ENUM_USN_DATA,
+                    Some(&med as *const _ as *const c_void),
+                    std::mem::size_of::<Ioctl::MFT_ENUM_DATA_V0>() as u32,
+                    Some(data.as_mut_ptr() as *mut c_void),
+                    std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32,
+                    Some(&mut cb as *mut u32),
+                    None,
+                ) {
+                    if error.code()
+                        == windows::core::HRESULT::from_win32(Foundation::ERROR_HANDLE_EOF.0)
+                    {
+                        break;
+                    }
+                    Self::close_drive(h_vol);
+                    self.release_index();
+                    return Err(io::Error::other(error.to_string()));
+                }
                 let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
                 let data_end = data.as_ptr() as usize + cb as usize;
 
@@ -301,20 +311,38 @@ impl Volume {
     }
 
     // update index, add new file, remove deleted file
-    pub fn update_index(&mut self) {
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::update_index", self.drive);
+    pub fn update_index(&mut self) -> io::Result<()> {
+        let result = self.update_index_inner();
+        if result.is_err() {
+            self.release_index();
+        }
+        result.map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", self.drive)))
+    }
 
-        if self.file_map.is_empty() {
-            if let Err(e) = self.serialization_read() {
-                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
-                if let Err(error) = self.build_index() {
-                    log::error!("{} Rebuild index failed: {error}", self.drive);
-                    return;
-                }
-            }
-        };
+    fn update_index_inner(&mut self) -> io::Result<()> {
+        if self.file_map.is_empty() && self.serialization_read().is_err() {
+            self.build_index()?;
+            self.serialization_read()
+                .map_err(|error| io::Error::other(error.to_string()))?;
+        }
 
+        let h_vol = Self::open_drive(&self.drive);
+        let mut journal_bytes = 0;
+        if let Err(error) = unsafe {
+            IO::DeviceIoControl(
+                h_vol,
+                Ioctl::FSCTL_QUERY_USN_JOURNAL,
+                None,
+                0,
+                Some(&mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0 as *mut c_void),
+                std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>() as u32,
+                Some(&mut journal_bytes),
+                None,
+            )
+        } {
+            Self::close_drive(h_vol);
+            return Err(io::Error::other(error.to_string()));
+        }
         let mut data = [0i64; 0x10000];
         let mut cb: u32 = 0;
         let mut rujd: Ioctl::READ_USN_JOURNAL_DATA_V0 = Ioctl::READ_USN_JOURNAL_DATA_V0 {
@@ -329,21 +357,21 @@ impl Volume {
             UsnJournalID: self.ujd.UsnJournalID,
         };
 
-        let h_vol = Self::open_drive(&self.drive);
-
         unsafe {
-            while IO::DeviceIoControl(
-                h_vol,
-                Ioctl::FSCTL_READ_USN_JOURNAL,
-                Some(&rujd as *const _ as *const c_void),
-                std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>() as u32,
-                Some(data.as_mut_ptr() as *mut c_void),
-                std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32,
-                Some(&mut cb as *mut u32),
-                None,
-            )
-            .is_ok()
-            {
+            loop {
+                if let Err(error) = IO::DeviceIoControl(
+                    h_vol,
+                    Ioctl::FSCTL_READ_USN_JOURNAL,
+                    Some(&rujd as *const _ as *const c_void),
+                    std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>() as u32,
+                    Some(data.as_mut_ptr() as *mut c_void),
+                    std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32,
+                    Some(&mut cb as *mut u32),
+                    None,
+                ) {
+                    Self::close_drive(h_vol);
+                    return Err(io::Error::other(error.to_string()));
+                }
                 if cb == 8 {
                     break;
                 };
@@ -388,6 +416,7 @@ impl Volume {
         }
         self.file_map.start_usn = rujd.StartUsn;
         Self::close_drive(h_vol);
+        Ok(())
     }
 
     // serializate file_map to reduce memory usage

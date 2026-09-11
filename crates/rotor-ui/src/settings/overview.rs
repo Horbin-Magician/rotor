@@ -20,6 +20,10 @@ impl SettingsView {
             IndexState::Building => self.t("构建中", "Building"),
             IndexState::Released => self.t("已释放", "Released"),
             IndexState::Loading => self.t("加载中", "Loading"),
+            IndexState::Partial => self.t(
+                "部分可用（部分卷失败）",
+                "Partially available (some volumes failed)",
+            ),
             IndexState::Ready => self.t("就绪", "Ready"),
             IndexState::Error => self.t("失败", "Error"),
         };

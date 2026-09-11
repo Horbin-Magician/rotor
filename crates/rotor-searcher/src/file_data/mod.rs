@@ -68,6 +68,7 @@ pub enum FileState {
     Released,
     Loading,
     Ready,
+    Partial,
     Error,
 }
 
@@ -82,12 +83,33 @@ impl FileState {
             FileState::Released => "released",
             FileState::Loading => "loading",
             FileState::Ready => "ready",
+            FileState::Partial => "partial",
             FileState::Error => "error",
         }
     }
 }
 
+fn refresh_state(results: impl IntoIterator<Item = std::io::Result<()>>) -> FileState {
+    let mut succeeded = 0;
+    let mut failed = 0;
+    for result in results {
+        match result {
+            Ok(()) => succeeded += 1,
+            Err(error) => {
+                failed += 1;
+                log::error!("Index refresh failed: {error}");
+            }
+        }
+    }
+    match (succeeded, failed) {
+        (0, _) => FileState::Error,
+        (_, 0) => FileState::Ready,
+        _ => FileState::Partial,
+    }
+}
+
 struct VolumePack {
+    available: bool,
     volume: Arc<Mutex<Volume>>,
     find_sender: mpsc::Sender<VolumeFindTask>,
 }
@@ -110,6 +132,7 @@ impl VolumePack {
             }
         });
         Self {
+            available: true,
             volume,
             find_sender,
         }
@@ -135,7 +158,15 @@ impl SearchTask {
         let (result_sender, result_receiver) = mpsc::channel::<Option<Vec<SearchResultItem>>>();
         let mut pending = 0;
 
-        for VolumePack { find_sender, .. } in volume_packs {
+        for VolumePack {
+            find_sender,
+            available,
+            ..
+        } in volume_packs
+        {
+            if !available {
+                continue;
+            }
             let task = VolumeFindTask {
                 filename: filename.clone(),
                 batch,
@@ -245,19 +276,15 @@ impl FileData {
                     }
                     Ok(SearcherMessage::Update) => {
                         file_data.set_state(FileState::Loading);
-                        let ok = file_data.update_index();
-                        file_data.set_state(if ok {
-                            FileState::Ready
-                        } else {
-                            FileState::Error
-                        });
+                        let state = file_data.update_index();
+                        file_data.set_state(state);
                     }
                     Ok(SearcherMessage::Find(filename)) => match file_data.state() {
                         FileState::Released => {
                             wait_deals.push_back(SearcherMessage::Update);
                             wait_deals.push_back(SearcherMessage::Find(filename));
                         }
-                        FileState::Ready => {
+                        FileState::Ready | FileState::Partial => {
                             let rtn = file_data.find(filename, &msg_reciever);
                             if let Some(rtn) = rtn {
                                 wait_deals.push_back(rtn);
@@ -266,7 +293,7 @@ impl FileData {
                         _ => {}
                     },
                     Ok(SearcherMessage::Release) => {
-                        if let FileState::Ready = file_data.state() {
+                        if matches!(file_data.state(), FileState::Ready | FileState::Partial) {
                             let ok = file_data.release_index();
                             file_data.set_state(if ok {
                                 FileState::Released
@@ -521,7 +548,7 @@ impl FileData {
         }
     }
 
-    pub fn update_index(&mut self) -> bool {
+    pub fn update_index(&mut self) -> FileState {
         self.update_valid_vols();
         self.sync_volume_packs();
 
@@ -534,19 +561,33 @@ impl FileData {
                     volume
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .update_index();
+                        .update_index()
                 })
             })
             .collect::<Vec<_>>();
 
-        let mut ok = true;
-        for handle in handles {
-            if let Err(e) = handle.join() {
-                log::error!("Update index failed: {:?}", e);
-                ok = false;
-            }
-        }
-        ok && !self.volume_packs.is_empty()
+        refresh_state(
+            self.volume_packs
+                .iter_mut()
+                .zip(handles)
+                .map(|(pack, handle)| {
+                    let result = match handle.join() {
+                        Ok(result) => result,
+                        Err(error) => {
+                            let volume = pack
+                                .volume
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            Err(std::io::Error::other(format!(
+                                "{}: volume worker panicked: {error:?}",
+                                volume.drive
+                            )))
+                        }
+                    };
+                    pack.available = result.is_ok();
+                    result
+                }),
+        )
     }
 
     pub fn release_index(&mut self) -> bool {
@@ -629,6 +670,20 @@ impl FileData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_distinguishes_partial_all_failed_and_ready() {
+        assert_eq!(refresh_state([]), FileState::Error);
+        assert_eq!(
+            refresh_state([Err(std::io::Error::other("A: denied"))]),
+            FileState::Error
+        );
+        assert_eq!(
+            refresh_state([Ok(()), Err(std::io::Error::other("B: unreadable"))]),
+            FileState::Partial
+        );
+        assert_eq!(refresh_state([Ok(()), Ok(())]), FileState::Ready);
+    }
 
     #[test]
     fn volume_sync_adds_removes_and_reuses_workers() {

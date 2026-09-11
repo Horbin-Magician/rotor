@@ -146,7 +146,10 @@ impl Volume {
                         );
                     }
                 }
-                Err(error) => log::warn!("{} Failed to scan event path: {error}", self.drive),
+                Err(error) => {
+                    self.rescan_required.store(true, Ordering::Release);
+                    log::warn!("{} Failed to scan event path: {error}", self.drive);
+                }
             }
         }
     }
@@ -264,10 +267,10 @@ impl Volume {
 
         let walker = walkdir
             .into_iter()
-            .filter_entry(move |e| !is_ignored_walk_entry(e, &excluded_dirs))
-            .filter_map(|e| e.ok()); // skit no permission
+            .filter_entry(move |e| !is_ignored_walk_entry(e, &excluded_dirs));
 
         for entry in walker {
+            let entry = entry.map_err(|error| io::Error::other(error.to_string()))?;
             if cancel
                 .map(|cancel| cancel.load(Ordering::Relaxed))
                 .unwrap_or(false)
@@ -410,35 +413,38 @@ impl Volume {
     }
 
     // update index, add new file, remove deleted file
-    pub fn update_index(&mut self) {
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::update_index", self.drive);
+    pub fn update_index(&mut self) -> io::Result<()> {
+        let result = self.update_index_inner();
+        if result.is_err() {
+            self.rescan_required.store(true, Ordering::Release);
+            self.release_index_without_save();
+        }
+        result.map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", self.drive)))
+    }
 
-        if self.file_map.is_empty() {
-            if let Err(e) = self.serialization_read() {
-                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
-                if let Err(e) = self.build_index() {
-                    log::error!("{} Volume::build_index, error: {:?}", self.drive, e);
-                    return;
-                }
-            }
-        };
-
+    fn update_index_inner(&mut self) -> io::Result<()> {
+        if self.file_map.is_empty() && self.serialization_read().is_err() {
+            self.build_index()?;
+            self.serialization_read()
+                .map_err(|error| io::Error::other(error.to_string()))?;
+        }
+        self.start_watching()
+            .map_err(|error| io::Error::other(error.to_string()))?;
         self.handle_file_events();
         if self.rescan_required.load(Ordering::Acquire) {
             if let Err(error) = self.build_index() {
                 self.rescan_required.store(true, Ordering::Release);
-                log::error!("{} Event recovery scan failed: {error}", self.drive);
-                return;
+                return Err(error);
             }
-            if let Err(error) = self.serialization_read() {
-                self.rescan_required.store(true, Ordering::Release);
-                log::error!("{} Event recovery load failed: {error}", self.drive);
+            self.serialization_read()
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            if self.rescan_required.load(Ordering::Acquire) {
+                return Err(io::Error::other(
+                    "Filesystem changed too quickly during recovery scan; retry refresh",
+                ));
             }
         }
-
-        #[cfg(debug_assertions)]
-        log::info!("{} End Volume::update_index", self.drive);
+        Ok(())
     }
 
     // serializate file_map to reduce memory usage
@@ -447,10 +453,6 @@ impl Volume {
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_write", self.drive);
-
-        if self.file_map.is_empty() {
-            return Ok(());
-        }
 
         let index_dir = file_util::get_tmp_path();
         fs::create_dir_all(index_dir)?;
@@ -592,6 +594,21 @@ fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
 #[cfg(test)]
 mod event_tests {
     use super::*;
+
+    #[test]
+    fn missing_volume_refresh_returns_identity_and_stays_failed() {
+        let temp = tempfile::Builder::new()
+            .prefix("rotor-missing-")
+            .tempdir()
+            .unwrap();
+        let drive = temp.path().join("missing").to_string_lossy().into_owned();
+        let mut volume = Volume::new(drive.clone());
+        for _ in 0..2 {
+            let error = volume.update_index().unwrap_err();
+            assert!(error.to_string().contains(&drive));
+            assert!(volume.file_map.is_empty());
+        }
+    }
 
     #[test]
     fn watcher_queue_is_bounded_and_overflow_requests_rescan() {

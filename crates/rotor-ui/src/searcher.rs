@@ -452,6 +452,18 @@ impl Render for SearchView {
         ) && !index_error;
         div()
             .id("searcher")
+            .when(self.index_state == IndexState::Partial, |view| {
+                view.child(
+                    div()
+                        .px(px(8.))
+                        .text_color(rgb(0xd99000))
+                        .child(if chinese {
+                            "部分卷索引失败，搜索结果可能不完整"
+                        } else {
+                            "Some volumes failed to load; search results may be incomplete"
+                        }),
+                )
+            })
             .flex()
             .flex_col()
             .size_full()
