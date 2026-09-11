@@ -134,22 +134,8 @@ Function .onInit
     ClearErrors
     ${GetOptions} $R0 "/PARENT=" $ParentPid
     ${If} ${Errors}
-      ; Tauri 2.6 updater supplies /UPDATE /ARGS, without our /PARENT switch.
-      System::Call 'kernel32::OpenMutexW(i 0x100001, i 0, w "${LEGACY_MUTEX}") p.r1'
-      ${If} $1 != 0
-        System::Call 'kernel32::WaitForSingleObject(p r1, i 30000) i.r2'
-        ${If} $2 == 0
-        ${OrIf} $2 == 128
-          System::Call 'kernel32::ReleaseMutex(p r1)'
-        ${EndIf}
-        System::Call 'kernel32::CloseHandle(p r1)'
-        ${If} $2 != 0
-        ${AndIf} $2 != 128
-          !insertmacro ReportMessage MB_ICONSTOP "Rotor has not exited. Close it and retry the update."
-          Abort
-        ${EndIf}
-      ${EndIf}
-      Return
+      !insertmacro ReportMessage MB_ICONSTOP "Native updates require /PARENT=<process id>."
+      Abort
     ${EndIf}
     ${If} $ParentPid <= 0
       !insertmacro ReportMessage MB_ICONSTOP "Invalid update parent process."

@@ -7,7 +7,6 @@ pub mod cursor;
 pub mod desktop;
 #[cfg(target_os = "windows")]
 pub mod installer;
-pub mod legacy_instance;
 pub mod overlay;
 pub mod selection;
 pub mod single_instance;

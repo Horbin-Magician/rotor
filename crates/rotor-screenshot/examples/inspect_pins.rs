@@ -1,4 +1,4 @@
-//! Read-only validation before a native/legacy profile acceptance run.
+//! Read-only validation before a native profile acceptance run.
 use rotor_screenshot::pin_store::{source_crop, PinStore};
 use std::{error::Error, path::PathBuf};
 

@@ -542,15 +542,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         Instance::Primary(guard) => guard,
         Instance::ActivatedExisting => return Ok(()),
     };
-    let legacy_guard = if rotor_common::native_app::PRODUCTION {
-        let activate = commands.clone();
-        Some(rotor_platform::legacy_instance::LegacyLease::acquire(
-            rotor_common::native_app::IDENTIFIER,
-            move || activate.request(Command::ShowSettings),
-        )?)
-    } else {
-        None
-    };
     let _logging = match logging::initialize(&directory) {
         Ok(guard) => Some(guard),
         Err(error) => {
@@ -558,11 +549,6 @@ fn run() -> Result<(), Box<dyn Error>> {
             None
         }
     };
-    if rotor_common::native_app::PRODUCTION
-        && let Some(backup) = rotor_common::profile_migration::prepare_native_profile(&directory)?
-    {
-        log::info!("Legacy profile backup retained at {}", backup.display());
-    }
     let _validated_config = ConfigService::load_from(&directory)?;
     let resources = match option("--resource-dir")? {
         Some(path) => ResourceLocator::from_root(std::path::Path::new(&path)),
@@ -596,7 +582,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         match rotor_platform::desktop::launch_elevated(&std::env::current_exe()?, &forwarded) {
             Ok(()) => {
-                drop(legacy_guard);
                 drop(instance);
                 return Ok(());
             }
@@ -604,7 +589,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
     let _instance = instance;
-    let _legacy_guard = legacy_guard;
     let (services, events) = Services::new(
         AppConfig::shared_global(),
         resources,
@@ -625,11 +609,6 @@ fn run() -> Result<(), Box<dyn Error>> {
             .cloned()
             .collect(),
     );
-    if rotor_common::native_app::PRODUCTION
-        && let Err(error) = services.migrate_existing_startup()
-    {
-        log::warn!("Startup migration: {error}");
-    }
     let config = services.settings();
     let app_services = services.clone();
     let enable_hotkeys = !args.iter().any(|arg| arg == "--no-hotkeys");
@@ -713,7 +692,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     log::warn!("Application policy: {error}");
                 }
                 if role == Some(WindowRole::Search) {
-                    // Restore the legacy hide/release contract. Resolve by the
+                    // Hide windows and release index memory. Resolve by the
                     // closing window ID above: an obsolete window must not
                     // release the index after a replacement has been opened.
                     cx.global::<ShellState>().services.release_search();

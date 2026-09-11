@@ -262,7 +262,6 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
             .arg(format!("/DPRODUCT_NAME={}", info.product_name))
             .arg(format!("/DAPP_EXE={executable}"))
             .arg(format!("/DREGISTRY_KEY={registry}"))
-            .arg(format!("/DLEGACY_MUTEX={}-sim", info.identifier))
             .arg(format!(
                 "/DUNINSTALL_INCLUDE={}",
                 uninstall.path().display()
@@ -320,14 +319,6 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("import-profile") if args.len() == 5 => {
-            let receipt = rotor_common::profile_migration::import(Path::new(&args[1]), Path::new(&args[2]), Path::new(&args[3]), &args[4])?;
-            println!("Imported {} files. Original and backup retained; indexes will rebuild.", receipt.files.len());
-        }
-        Some("verify-profile") if args.len() == 2 => {
-            let receipt = rotor_common::profile_migration::verify(Path::new(&args[1]))?;
-            println!("Verified {} profile files from {}", receipt.files.len(), receipt.source_version);
-        }
         Some("set-version") if args.len() == 2 || (args.len() == 3 && args[2] == "--dry-run") => versions::set(&args[1], args.len() == 3)?,
         Some("sign") if args.len() == 2 => release::sign(Path::new(&args[1]))?,
         Some("release-manifest") if args.len() == 5 => release::manifest(Path::new(&args[1]), &args[2], Path::new(&args[3]), Path::new(&args[4]))?,
@@ -342,7 +333,7 @@ fn main() -> Result<()> {
         Some("stage") if args.len() == 2 => stage(Path::new(&args[1]), false)?,
         Some("stage") if args.len() == 3 && args[1] == "--production" => stage(Path::new(&args[2]), true)?,
         Some("verify") if args.len() == 2 => verify_stage(Path::new(&args[1]))?,
-        _ => return Err("usage: cargo run -p xtask -- version | build [--production] [cargo options] | stage [--production] <new directory> | verify <directory> | package <stage directory> <new output directory> | import-profile <source> <new destination> <new backup> <source version> | verify-profile <directory> | inventory <directory> | set-version <semver> [--dry-run] | sign <artifact> | release-manifest <artifacts> <https base> <notes file> <new output>".into()),
+        _ => return Err("usage: cargo run -p xtask -- version | build [--production] [cargo options] | stage [--production] <new directory> | verify <directory> | package <stage directory> <new output directory> | inventory <directory> | set-version <semver> [--dry-run] | sign <artifact> | release-manifest <artifacts> <https base> <notes file> <new output>".into()),
     }
     Ok(())
 }

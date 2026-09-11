@@ -1,26 +1,8 @@
-//! Retained synthetic fixture: old record shape -> native write -> legacy reader.
+//! Synthetic native configuration and pin persistence roundtrip.
 //! Does not capture the desktop or open any windows.
-use rotor_common::{profile_migration, ConfigService};
-use rotor_screenshot::{
-    pin_store::{source_crop, PinStore},
-    shotter_record::ShotterConfig,
-};
-use serde::Deserialize;
-use std::{collections::HashMap, fs, path::PathBuf};
-
-// Keep the old reader shape independent of PinStore so this example verifies
-// that native writes remain readable by the legacy format.
-#[derive(Deserialize)]
-struct LegacyWorkspace {
-    #[serde(default)]
-    shotters: HashMap<String, ShotterConfig>,
-}
-
-#[derive(Deserialize)]
-struct LegacyRecord {
-    #[serde(default)]
-    workspaces: HashMap<String, LegacyWorkspace>,
-}
+use rotor_common::ConfigService;
+use rotor_screenshot::pin_store::{source_crop, PinStore};
+use std::{fs, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let directory = PathBuf::from(
@@ -30,11 +12,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     fs::create_dir(&directory)?;
     let directory = directory.canonicalize()?;
-    let source = directory.join("legacy");
-    fs::create_dir_all(source.join("shotter/default"))?;
-    fs::write(source.join("config.toml"), "theme = '1'\nfuture_key = 'keep me'\nquick_actions = '[]'\nquick_actions_revision = '2'\ncurrent_workspace = '0'\n")?;
+    let native = directory.join("native");
+    fs::create_dir_all(native.join("shotter/default"))?;
+    fs::write(native.join("config.toml"), "theme = '1'\nfuture_key = 'keep me'\nquick_actions = '[]'\nquick_actions_revision = '2'\ncurrent_workspace = '0'\n")?;
     fs::write(
-        source.join("shotter/record.toml"),
+        native.join("shotter/record.toml"),
         r#"
 future_top = "keep me"
 [workspaces.other]
@@ -47,17 +29,14 @@ rect = [102, 201, 4, 6]
 image_rect = [100, 200, 8, 8]
 offset = [-1800, 40]
 zoom_factor = 100
-mask_label = "ssmask-legacy"
+mask_label = "ssmask-1"
 minimized = false
 "#,
     )?;
     let image = image::RgbaImage::from_fn(8, 8, |x, y| {
         image::Rgba([x as u8 * 20, y as u8 * 20, 90, 255])
     });
-    image.save(source.join("shotter/default/7.png"))?;
-    let native = directory.join("native");
-    let backup = directory.join("legacy-backup");
-    profile_migration::import(&source, &native, &backup, "2.6.0 fixture")?;
+    image.save(native.join("shotter/default/7.png"))?;
     let mut settings = ConfigService::load_from(&native)?;
     settings.set("theme".into(), "2".into())?;
     assert_eq!(
@@ -80,15 +59,6 @@ minimized = false
         document["workspaces"]["other"]["future_field"].as_str(),
         Some("keep me")
     );
-    let legacy_reader: LegacyRecord = toml::from_str(&native_text)?;
-    let record = legacy_reader
-        .workspaces
-        .get("default")
-        .and_then(|workspace| workspace.shotters.get("7"))
-        .ok_or("legacy reader lost pin")?;
-    assert_eq!(record.zoom_factor, 200);
-    assert_eq!(record.offset, (-1750, 60));
-    assert_eq!(record.image_rect, Some((100, 200, 8, 8)));
     assert_eq!(
         image::open(native.join("shotter/default/7.png"))?.to_rgba8(),
         image
@@ -97,21 +67,13 @@ minimized = false
         fs::read_to_string(native.join("shotter/record.toml"))?,
         native_text
     );
-    profile_migration::verify(&backup)?;
-    assert_eq!(
-        fs::read(source.join("config.toml"))?,
-        fs::read(backup.join("config.toml"))?
-    );
-    let second = directory.join("next-native");
-    profile_migration::import(
-        &native,
-        &second,
-        &directory.join("native-backup"),
-        "native fixture",
-    )?;
-    let (pins, warnings) = PinStore::load_from(&second)?.load_pins();
+    let (pins, warnings) = PinStore::load_from(&native)?.load_pins();
     assert!(warnings.is_empty());
     assert_eq!(pins[0].config.zoom_factor, 200);
-    println!("Legacy shape -> native write -> legacy reader and second import passed. Fixtures and backups retained at {}", directory.display());
+    assert_eq!(pins[0].config.offset, (-1750, 60));
+    println!(
+        "Native config and pin roundtrip passed at {}",
+        directory.display()
+    );
     Ok(())
 }

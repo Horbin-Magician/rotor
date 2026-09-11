@@ -23,10 +23,10 @@
 
 ### 2. 删除旧客户端兼容代码
 
-- [ ] 删除 rotor-platform/src/legacy_instance.rs、模块导出和 desktop 中对应 lease 生命周期。
-- [ ] 删除首次启动旧资料检测、自动备份迁移及其调用；清理 profile_migration 中专用于旧资料的实现与 xtask 命令。通用备份功能若仍有原生用途则单独保留。
-- [ ] 删除 native/windows.nsi 的旧 `/UPDATE /ARGS` 握手、旧互斥体等待和 xtask 的 LEGACY_MUTEX 参数；保留原生 `/PARENT` 等实际使用的交接。
-- [ ] 删除 startup 中针对旧启动项的转换，以及仅为旧安装、可执行文件和 bundle 身份保留的分支。
+- [x] 删除 rotor-platform/src/legacy_instance.rs、模块导出和 desktop 中对应 lease 生命周期。
+- [x] 删除首次启动旧资料检测、自动备份迁移及其调用；清理 profile_migration 中专用于旧资料的实现与 xtask 命令。通用备份功能若仍有原生用途则单独保留。
+- [x] 删除 native/windows.nsi 的旧 `/UPDATE /ARGS` 握手、旧互斥体等待和 xtask 的 LEGACY_MUTEX 参数；保留原生 `/PARENT` 等实际使用的交接。
+- [x] 删除 startup 中针对旧启动项的转换，以及仅为旧安装、可执行文件和 bundle 身份保留的分支。
 - [ ] 清理截图记录、搜索状态与配置序列化中仅为旧版提供的字段别名、格式转换和兼容类型；先梳理当前 GPUI 调用者，保留实际业务所需的字段和未知字段处理能力。
 - [ ] 删除旧资料读取器、旧格式 roundtrip、旧更新清单和公钥夹具；以全新原生配置与贴图持久化测试替代。
 

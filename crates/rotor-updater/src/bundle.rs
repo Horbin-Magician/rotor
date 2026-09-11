@@ -447,7 +447,7 @@ mod tests {
     }
 
     #[test]
-    fn production_bundle_keeps_the_legacy_executable_name() {
+    fn production_bundle_uses_the_native_executable_name() {
         let root = tempfile::tempdir().unwrap();
         let app = root.path().join("Rotor.app");
         fixture(&app, "2.7.0");
