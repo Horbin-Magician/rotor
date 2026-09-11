@@ -312,6 +312,8 @@ impl Volume {
 
     // update index, add new file, remove deleted file
     pub fn update_index(&mut self) -> io::Result<()> {
+        self.last_query.clear();
+        self.last_search_num = 0;
         let result = self.update_index_inner();
         if result.is_err() {
             self.release_index();

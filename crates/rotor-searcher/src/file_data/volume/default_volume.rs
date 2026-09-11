@@ -414,6 +414,8 @@ impl Volume {
 
     // update index, add new file, remove deleted file
     pub fn update_index(&mut self) -> io::Result<()> {
+        self.last_query.clear();
+        self.last_search_num = 0;
         let result = self.update_index_inner();
         if result.is_err() {
             self.rescan_required.store(true, Ordering::Release);
@@ -668,7 +670,9 @@ mod event_tests {
             .file_map
             .search("report", 0, 1, &AtomicBool::new(false));
         assert!(items.unwrap()[0].path.contains("B"));
-        let hidden = root.join(".excluded");
+        volume.excluded_dirs =
+            crate::file_data::excluded_dirs::parse_excluded_dirs("excluded", None);
+        let hidden = root.join("excluded");
         fs::rename(&b, &hidden).unwrap();
         volume.handle_event(
             Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))

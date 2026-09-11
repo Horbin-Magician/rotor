@@ -51,7 +51,7 @@ impl ExcludedDirs {
     }
 }
 
-fn parse_excluded_dirs(value: &str, home: Option<&Path>) -> ExcludedDirs {
+pub(super) fn parse_excluded_dirs(value: &str, home: Option<&Path>) -> ExcludedDirs {
     let mut names = HashSet::new();
     let mut paths = Vec::new();
 

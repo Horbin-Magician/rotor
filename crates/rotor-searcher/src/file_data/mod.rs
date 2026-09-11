@@ -480,6 +480,7 @@ impl FileData {
     }
 
     pub fn init_volumes(&mut self) {
+        self.reset_search_results();
         self.volume_packs.clear();
         self.update_valid_vols();
 
@@ -505,26 +506,33 @@ impl FileData {
         self.finish_index_builds(handles);
     }
 
-    fn finish_index_builds(&self, handles: Vec<thread::JoinHandle<std::io::Result<()>>>) {
-        let mut ok = !handles.is_empty();
-        for handle in handles {
-            match handle.join() {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
-                    log::error!("Init volume failed: {error}");
-                    ok = false;
-                }
-                Err(error) => {
-                    log::error!("Init volume worker panicked: {error:?}");
-                    ok = false;
-                }
+    fn finish_index_builds(&mut self, handles: Vec<thread::JoinHandle<std::io::Result<()>>>) {
+        let state = refresh_state(handles.into_iter().enumerate().map(|(index, handle)| {
+            let result = match handle.join() {
+                Ok(result) => result,
+                Err(error) => Err(std::io::Error::other(format!(
+                    "Volume build worker panicked: {error:?}"
+                ))),
+            };
+            if let Some(pack) = self.volume_packs.get_mut(index) {
+                pack.available = result.is_ok();
             }
-        }
-        self.set_state(if ok {
+            result
+        }));
+        self.set_state(if state == FileState::Ready {
             FileState::Released
         } else {
-            FileState::Error
+            state
         });
+    }
+
+    fn reset_search_results(&mut self) {
+        self.finding_name.clear();
+        self.finding_result = SearchResult {
+            items: Vec::new(),
+            query: String::new(),
+        };
+        self.show_num = 0;
     }
 
     fn sync_volume_packs(&mut self) {
@@ -551,6 +559,11 @@ impl FileData {
     pub fn update_index(&mut self) -> FileState {
         self.update_valid_vols();
         self.sync_volume_packs();
+        self.refresh_volume_packs()
+    }
+
+    fn refresh_volume_packs(&mut self) -> FileState {
+        self.reset_search_results();
 
         let handles = self
             .volume_packs
@@ -593,14 +606,7 @@ impl FileData {
     pub fn release_index(&mut self) -> bool {
         self.update_valid_vols();
 
-        self.finding_name = String::new();
-        // Drop strings and the result vector's allocation, not just its length.
-        // A broad completed query can otherwise outlive the released index.
-        self.finding_result = SearchResult {
-            items: Vec::new(),
-            query: String::new(),
-        };
-        self.show_num = 0;
+        self.reset_search_results();
         let handles = self
             .volume_packs
             .iter()
@@ -705,10 +711,10 @@ mod tests {
     }
 
     #[test]
-    fn failed_volume_build_reports_error_and_successful_retry_reports_released() {
+    fn failed_volume_build_reports_partial_and_successful_retry_reports_released() {
         let observed = Arc::new(Mutex::new(Vec::new()));
         let callback_states = observed.clone();
-        let data = FileData::new(
+        let mut data = FileData::new(
             |_| {},
             Some(Box::new(move |state| {
                 callback_states.lock().unwrap().push(state)
@@ -730,14 +736,14 @@ mod tests {
                 Ok(())
             }),
         ]);
-        assert_eq!(data.state(), FileState::Error);
+        assert_eq!(data.state(), FileState::Partial);
         assert!(
             completed.load(Ordering::Acquire),
             "all volume workers must finish before publishing state"
         );
         assert_eq!(
             *observed.lock().unwrap(),
-            vec![FileState::Building, FileState::Error]
+            vec![FileState::Building, FileState::Partial]
         );
 
         data.set_state(FileState::Building);
@@ -747,7 +753,7 @@ mod tests {
             *observed.lock().unwrap(),
             vec![
                 FileState::Building,
-                FileState::Error,
+                FileState::Partial,
                 FileState::Building,
                 FileState::Released
             ]
@@ -756,7 +762,7 @@ mod tests {
 
     #[test]
     fn missing_or_panicked_volume_builds_never_report_released() {
-        let data = FileData::new(|_| {}, None, Arc::new(Mutex::new(FileState::Building)));
+        let mut data = FileData::new(|_| {}, None, Arc::new(Mutex::new(FileState::Building)));
         data.finish_index_builds(Vec::new());
         assert_eq!(data.state(), FileState::Error);
         data.set_state(FileState::Building);
@@ -765,45 +771,51 @@ mod tests {
     }
 
     #[test]
-    fn releasing_index_drops_cached_results_and_restarts_query_paging() {
-        let batches = Arc::new(Mutex::new(Vec::new()));
-        let observed = batches.clone();
-        let mut data = FileData::new(
-            move |batch| observed.lock().unwrap().push(batch),
-            None,
-            Arc::new(Mutex::new(FileState::Ready)),
-        );
-        data.finding_name = "same-query".into();
-        data.finding_result.query = "same-query".into();
-        data.finding_result.items = Vec::with_capacity(128);
-        data.finding_result.items.push(SearchResultItem {
-            path: "fixture".repeat(1024),
-            file_path: "fixture/file".into(),
-            file_name: "file".into(),
-            rank: 0,
-            icon_data: None,
-            alias: None,
-        });
-        data.show_num = 80;
-        // No volume workers are attached: even a failed/missing-volume release
-        // must relinquish result ownership and old paging state.
-        let _ = data.release_index();
-        assert!(data.finding_result.items.is_empty());
-        assert_eq!(data.finding_result.items.capacity(), 0);
-        assert!(data.finding_result.query.is_empty());
-        assert_eq!(data.show_num, 0);
-        let (_sender, receiver) = mpsc::channel();
-        data.find(
-            SearchRequest {
-                id: QueryId(20),
-                query: "same-query".into(),
-            },
-            &receiver,
-        );
-        let batches = batches.lock().unwrap();
-        assert_eq!(batches.len(), 1);
-        assert!(!batches[0].append);
-        assert!(batches[0].items.is_empty());
+    fn refresh_and_release_drop_cached_results_and_restart_query_paging() {
+        for refresh in [false, true] {
+            let batches = Arc::new(Mutex::new(Vec::new()));
+            let observed = batches.clone();
+            let mut data = FileData::new(
+                move |batch| observed.lock().unwrap().push(batch),
+                None,
+                Arc::new(Mutex::new(FileState::Ready)),
+            );
+            data.finding_name = "same-query".into();
+            data.finding_result.query = "same-query".into();
+            data.finding_result.items = Vec::with_capacity(128);
+            data.finding_result.items.push(SearchResultItem {
+                path: "fixture".repeat(1024),
+                file_path: "fixture/file".into(),
+                file_name: "file".into(),
+                rank: 0,
+                icon_data: None,
+                alias: None,
+            });
+            data.show_num = 80;
+            // No volume workers are attached: even a failed/missing-volume release
+            // must relinquish result ownership and old paging state.
+            if refresh {
+                assert_eq!(data.refresh_volume_packs(), FileState::Error);
+            } else {
+                let _ = data.release_index();
+            }
+            assert!(data.finding_result.items.is_empty());
+            assert_eq!(data.finding_result.items.capacity(), 0);
+            assert!(data.finding_result.query.is_empty());
+            assert_eq!(data.show_num, 0);
+            let (_sender, receiver) = mpsc::channel();
+            data.find(
+                SearchRequest {
+                    id: QueryId(20),
+                    query: "same-query".into(),
+                },
+                &receiver,
+            );
+            let batches = batches.lock().unwrap();
+            assert_eq!(batches.len(), 1);
+            assert!(!batches[0].append);
+            assert!(batches[0].items.is_empty());
+        }
     }
 
     #[test]
