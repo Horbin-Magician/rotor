@@ -8,6 +8,7 @@ pub struct SearchResults {
     pub items: Vec<SearchResultItem>,
     pub selected: usize,
     pub loading: bool,
+    pub replacing: bool,
     pub exhausted: bool,
     active: Option<(QueryId, String)>,
 }
@@ -19,10 +20,14 @@ impl SearchResults {
 
     pub fn begin(&mut self, id: QueryId, query: String, append: bool) {
         if !append {
-            self.reset();
+            // Keep the previous rows visible until the replacement arrives so
+            // typing does not repeatedly collapse and expand the launcher.
+            self.selected = 0;
+            self.exhausted = false;
         }
         self.active = Some((id, query));
         self.loading = true;
+        self.replacing = !append;
     }
 
     pub fn accept(&mut self, batch: &SearchBatch) -> bool {
@@ -38,6 +43,7 @@ impl SearchResults {
             self.selected = 0;
         }
         self.loading = false;
+        self.replacing = false;
         self.exhausted = batch.items.is_empty();
         let mut paths: HashSet<_> = self
             .items
@@ -84,7 +90,7 @@ mod tests {
         assert!(results.items.is_empty());
     }
     #[test]
-    fn pages_are_deduplicated_bounded_and_cleared_on_new_query() {
+    fn pages_are_bounded_and_remain_visible_until_the_new_query_arrives() {
         let mut results = SearchResults::default();
         results.begin(QueryId(1), "a".into(), false);
         results.accept(&SearchBatch {
@@ -104,8 +110,15 @@ mod tests {
         assert_eq!(results.items.last().unwrap().file_path, "99");
         results.selected = 99;
         results.begin(QueryId(3), "b".into(), false);
-        assert!(results.items.is_empty());
+        assert_eq!(results.items.len(), MAX_RESULTS);
         assert_eq!(results.selected, 0);
+        assert!(results.replacing);
+        assert!(!results.accept(&SearchBatch {
+            id: QueryId(2),
+            query: "a".into(),
+            items: vec![item("late-page")],
+            append: true,
+        }));
         results.accept(&SearchBatch {
             id: QueryId(3),
             query: "b".into(),
@@ -113,5 +126,7 @@ mod tests {
             append: false,
         });
         assert!(results.exhausted);
+        assert!(!results.replacing);
+        assert!(results.items.is_empty());
     }
 }

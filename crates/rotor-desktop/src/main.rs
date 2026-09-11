@@ -275,32 +275,29 @@ fn show_search(cx: &mut App) -> Result<(), String> {
         return Ok(());
     }
     let services = cx.global::<ShellState>().services.clone();
-    cx.open_window(
-        placement::utility_options(size(px(500.), px(112.)), false, cx),
-        |window, cx| {
-            let appearance = window.observe_window_appearance(|window, cx| {
-                if !matches!(
-                    cx.global::<ShellState>()
-                        .config
-                        .get("theme")
-                        .map(String::as_str),
-                    Some("1" | "2")
-                ) {
-                    Theme::sync_system_appearance(Some(window), cx);
-                }
-            });
-            let view = cx.new(|cx| rotor_ui::SearchView::new(services, window, cx));
-            cx.global_mut::<ShellState>().windows.insert(
-                WindowRole::Search,
-                WindowSlot {
-                    window: window.window_handle(),
-                    view: WindowView::Search(view.downgrade()),
-                    _appearance: Some(appearance),
-                },
-            );
-            cx.new(|cx| Root::new(view, window, cx))
-        },
-    )
+    cx.open_window(placement::search_options(cx), |window, cx| {
+        let appearance = window.observe_window_appearance(|window, cx| {
+            if !matches!(
+                cx.global::<ShellState>()
+                    .config
+                    .get("theme")
+                    .map(String::as_str),
+                Some("1" | "2")
+            ) {
+                Theme::sync_system_appearance(Some(window), cx);
+            }
+        });
+        let view = cx.new(|cx| rotor_ui::SearchView::new(services, window, cx));
+        cx.global_mut::<ShellState>().windows.insert(
+            WindowRole::Search,
+            WindowSlot {
+                window: window.window_handle(),
+                view: WindowView::Search(view.downgrade()),
+                _appearance: Some(appearance),
+            },
+        );
+        cx.new(|cx| Root::new(view, window, cx))
+    })
     .map_err(|error| error.to_string())?;
     Ok(())
 }
