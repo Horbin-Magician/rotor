@@ -1,3 +1,4 @@
+#[cfg(test)]
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
@@ -14,6 +15,9 @@ use super::default_file_map::FileMap;
 use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
 use rotor_platform::file_util;
 
+const EVENT_CAPACITY: usize = 1024;
+const MAX_EVENT_PATHS: usize = 128;
+
 #[derive(Debug, Clone, Copy)]
 enum FileAction {
     Insert,
@@ -27,6 +31,7 @@ pub struct Volume {
     last_search_num: usize,
     watcher: Option<RecommendedWatcher>,
     event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
+    rescan_required: Arc<AtomicBool>,
     saved_item_count: usize,
     excluded_dirs: ExcludedDirs,
 }
@@ -40,6 +45,7 @@ impl Volume {
             last_search_num: 0,
             watcher: None,
             event_receiver: None,
+            rescan_required: Arc::new(AtomicBool::new(false)),
             saved_item_count: 0,
             excluded_dirs: ExcludedDirs::from_config(),
         }
@@ -60,12 +66,12 @@ impl Volume {
             return Err(format!("Root path {} does not exist", root_path).into());
         }
 
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(EVENT_CAPACITY);
+        let rescan = self.rescan_required.clone();
+        let excluded = self.excluded_dirs.clone();
         let config = Config::default().with_poll_interval(std::time::Duration::from_secs(2));
         let mut watcher = notify::recommended_watcher(move |res| {
-            if let Err(e) = tx.send(res) {
-                log::error!("Failed to send file event: {:?}", e);
-            }
+            enqueue_event(&tx, &rescan, &excluded, res);
         })?;
 
         watcher.configure(config)?;
@@ -145,6 +151,7 @@ impl Volume {
         }
     }
 
+    #[cfg(test)]
     fn handle_event(&mut self, event: Event) {
         use EventKind::*;
         use ModifyKind::Name;
@@ -197,14 +204,18 @@ impl Volume {
             return;
         };
 
-        while let Ok(event_result) = receiver.try_recv() {
+        let mut paths = std::collections::HashSet::new();
+        for event_result in receiver.try_iter().take(EVENT_CAPACITY) {
             match event_result {
-                Ok(event) => {
-                    self.handle_event(event);
-                }
-                Err(e) => {
-                    log::error!("{} File watcher error: {:?}", self.drive, e);
-                }
+                Ok(event) => paths.extend(event.paths),
+                Err(_) => self.rescan_required.store(true, Ordering::Release),
+            }
+        }
+        // Reconcile final filesystem state once per path, regardless of event ordering.
+        for path in paths {
+            self.process_path(&path, FileAction::Remove);
+            if path.exists() {
+                self.process_path(&path, FileAction::Insert);
             }
         }
 
@@ -221,6 +232,7 @@ impl Volume {
 
         self.excluded_dirs = ExcludedDirs::from_config();
         self.stop_watching();
+        self.rescan_required.store(false, Ordering::Release);
         self.release_index_without_save();
 
         // Build the root path based on the drive letter
@@ -242,6 +254,9 @@ impl Volume {
                 format!("Root path {root_path} does not exist"),
             ));
         }
+
+        self.start_watching()
+            .map_err(|error| io::Error::other(error.to_string()))?;
 
         // Walk the directory tree using walkdir
         let walkdir = WalkDir::new(&root_path).follow_links(false); // don't follow symbolic links to avoid infinite loops
@@ -410,6 +425,17 @@ impl Volume {
         };
 
         self.handle_file_events();
+        if self.rescan_required.load(Ordering::Acquire) {
+            if let Err(error) = self.build_index() {
+                self.rescan_required.store(true, Ordering::Release);
+                log::error!("{} Event recovery scan failed: {error}", self.drive);
+                return;
+            }
+            if let Err(error) = self.serialization_read() {
+                self.rescan_required.store(true, Ordering::Release);
+                log::error!("{} Event recovery load failed: {error}", self.drive);
+            }
+        }
 
         #[cfg(debug_assertions)]
         log::info!("{} End Volume::update_index", self.drive);
@@ -487,6 +513,38 @@ impl Volume {
     }
 }
 
+fn enqueue_event(
+    sender: &mpsc::SyncSender<notify::Result<Event>>,
+    rescan: &AtomicBool,
+    excluded: &ExcludedDirs,
+    result: notify::Result<Event>,
+) {
+    let Ok(mut event) = result else {
+        rescan.store(true, Ordering::Release);
+        return;
+    };
+    if event.need_rescan() || event.paths.len() > MAX_EVENT_PATHS {
+        rescan.store(true, Ordering::Release);
+        return;
+    }
+    if !matches!(
+        event.kind,
+        EventKind::Create(_)
+            | EventKind::Remove(_)
+            | EventKind::Modify(notify::event::ModifyKind::Name(_))
+    ) {
+        return;
+    }
+    event.paths.retain(|path| {
+        !has_hidden_component(path)
+            && !excluded.is_excluded_path(path)
+            && !has_named_component(path, &["cache", "caches"])
+    });
+    if !event.paths.is_empty() && sender.try_send(Ok(event)).is_err() {
+        rescan.store(true, Ordering::Release);
+    }
+}
+
 fn is_ignored_walk_entry(entry: &DirEntry, excluded_dirs: &ExcludedDirs) -> bool {
     let Some(file_name) = entry.file_name().to_str().map(|name| name.to_lowercase()) else {
         return false;
@@ -534,6 +592,39 @@ fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
 #[cfg(test)]
 mod event_tests {
     use super::*;
+
+    #[test]
+    fn watcher_queue_is_bounded_and_overflow_requests_rescan() {
+        let (tx, rx) = mpsc::sync_channel(2);
+        let rescan = AtomicBool::new(false);
+        let excluded = ExcludedDirs::default();
+        for _ in 0..100 {
+            enqueue_event(
+                &tx,
+                &rescan,
+                &excluded,
+                Ok(
+                    Event::new(EventKind::Create(notify::event::CreateKind::File))
+                        .add_path("/tmp/.hidden/file".into()),
+                ),
+            );
+        }
+        assert_eq!(rx.try_iter().count(), 0);
+        assert!(!rescan.load(Ordering::Acquire));
+        for _ in 0..100 {
+            enqueue_event(
+                &tx,
+                &rescan,
+                &excluded,
+                Ok(
+                    Event::new(EventKind::Create(notify::event::CreateKind::File))
+                        .add_path("/tmp/visible".into()),
+                ),
+            );
+        }
+        assert!(rescan.load(Ordering::Acquire));
+        assert_eq!(rx.try_iter().count(), 2);
+    }
 
     #[test]
     fn directory_events_reconcile_descendants_and_exclusion_boundaries() {
