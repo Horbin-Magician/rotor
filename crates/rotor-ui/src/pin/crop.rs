@@ -331,11 +331,7 @@ impl PinView {
             sync_native_bounds(window, cx);
             return Err(error);
         }
-        let (origin_x, origin_y) = self
-            .record
-            .image_rect
-            .map(|rect| (rect.0, rect.1))
-            .unwrap_or((0, 0));
+        let (origin_x, origin_y, _, _) = self.record.image_rect;
         self.record.rect = (
             origin_x.checked_add(crop.x).ok_or("Crop X overflow")?,
             origin_y.checked_add(crop.y).ok_or("Crop Y overflow")?,
@@ -481,7 +477,7 @@ mod tests {
                             monitor_pos: (0, 0),
                             monitor_size: (400, 400),
                             rect: (0, 0, 400, 400),
-                            image_rect: None,
+                            image_rect: (0, 0, 400, 400),
                             offset: (0, 0),
                             zoom_factor: 100,
                             mask_label: "ssmask-1".into(),

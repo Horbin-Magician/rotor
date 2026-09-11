@@ -1,7 +1,7 @@
 use std::{collections::HashSet, error::Error, fmt, process::Command, str::FromStr};
 
 use global_hotkey::hotkey::HotKey as Shortcut;
-use rotor_common::{DEFAULT_QUICK_ACTIONS, DEFAULT_QUICK_ACTIONS_REVISION};
+use rotor_common::DEFAULT_QUICK_ACTIONS;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -140,34 +140,6 @@ pub fn default_actions() -> Vec<QuickAction> {
     })
 }
 
-pub fn migrate_actions(
-    json: &str,
-    revision: Option<&str>,
-) -> Result<Option<Vec<QuickAction>>, String> {
-    if revision == Some(DEFAULT_QUICK_ACTIONS_REVISION) {
-        return Ok(None);
-    }
-    let mut actions = normalize_actions(
-        serde_json::from_str(json).map_err(|error| format!("Invalid quick actions: {error}"))?,
-    )
-    .map_err(|error| error.to_string())?;
-    let used: HashSet<_> = parse_shortcuts(&actions)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .map(|(_, key)| key.id())
-        .collect();
-    for default in default_actions() {
-        if actions.iter().any(|action| action.id == default.id) {
-            continue;
-        }
-        let key = Shortcut::from_str(&default.shortcut).map_err(|error| error.to_string())?;
-        if !used.contains(&key.id()) {
-            actions.push(default);
-        }
-    }
-    Ok(Some(actions))
-}
-
 pub fn actions_from_config(config: &rotor_common::Config) -> Result<Vec<QuickAction>, String> {
     let actions = config
         .get("quick_actions")
@@ -215,32 +187,6 @@ mod tests {
             shortcut: shortcut.into(),
             enabled,
         }
-    }
-
-    #[test]
-    fn revision_migration_keeps_custom_commands_and_occupied_default_shortcuts() {
-        let default = default_actions().remove(0);
-        let custom = QuickAction {
-            id: "custom".into(),
-            name: "Mine".into(),
-            shortcut: default.shortcut,
-            command: "custom command".into(),
-            enabled: true,
-        };
-        let json = serde_json::to_string(&vec![custom]).unwrap();
-        let migrated = migrate_actions(&json, Some("1")).unwrap().unwrap();
-        assert_eq!(
-            migrated
-                .iter()
-                .find(|action| action.id == "custom")
-                .unwrap()
-                .command,
-            "custom command"
-        );
-        assert!(!migrated.iter().any(|action| action.id == default.id));
-        assert!(migrate_actions(&json, Some(DEFAULT_QUICK_ACTIONS_REVISION))
-            .unwrap()
-            .is_none());
     }
 
     #[test]

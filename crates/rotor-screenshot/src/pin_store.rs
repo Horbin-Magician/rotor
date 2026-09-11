@@ -1,4 +1,4 @@
-//! Native pin persistence with the legacy record shape. PNG completion precedes
+//! Native pin persistence. PNG completion precedes
 //! metadata publication; failed metadata writes never change the in-memory map.
 use crate::shotter_record::ShotterConfig;
 use image::{ImageEncoder, RgbaImage};
@@ -41,16 +41,13 @@ fn validate(config: &ShotterConfig, width: u32, height: u32) -> Result<(), Strin
 }
 
 /// image_rect is the PNG's origin/extent in the original monitor image, not a
-/// crop inside the PNG. Older records without it contain the full monitor PNG.
+/// crop inside the PNG. Every native record supplies this geometry.
 pub fn source_crop(
     config: &ShotterConfig,
     width: u32,
     height: u32,
 ) -> Result<(u32, u32, u32, u32), String> {
-    let (origin_x, origin_y, source_width, source_height) =
-        config
-            .image_rect
-            .unwrap_or((0, 0, config.monitor_size.0, config.monitor_size.1));
+    let (origin_x, origin_y, source_width, source_height) = config.image_rect;
     if (source_width, source_height) != (width, height)
         || width == 0
         || height == 0
@@ -104,7 +101,7 @@ impl PinStore {
         if !data_directory.is_absolute() {
             return Err("Pin data directory must be absolute".into());
         }
-        let root = data_directory.join("shotter");
+        let root = data_directory.join("pins");
         let mut document = match fs::read_to_string(root.join("record.toml")) {
             Ok(text) => {
                 toml::from_str(&text).map_err(|error| format!("Invalid pin metadata: {error}"))?
@@ -114,7 +111,7 @@ impl PinStore {
             }
             Err(error) => return Err(error.to_string()),
         };
-        let records = table(&mut document, &["workspaces", "default", "shotters"])?;
+        let records = table(&mut document, &["pins"])?;
         let next_id = records
             .keys()
             .filter_map(|key| key.parse::<u32>().ok())
@@ -130,7 +127,7 @@ impl PinStore {
     }
 
     fn image_path(&self, id: u32) -> PathBuf {
-        self.root.join("default").join(format!("{id}.png"))
+        self.root.join("images").join(format!("{id}.png"))
     }
 
     fn commit(&mut self, candidate: toml::Value) -> Result<(), String> {
@@ -157,9 +154,7 @@ impl PinStore {
     ) -> (Vec<StoredPin>, Vec<String>) {
         let mut pins = Vec::new();
         let mut warnings = Vec::new();
-        let records = self.document["workspaces"]["default"]["shotters"]
-            .as_table()
-            .expect("validated at load");
+        let records = self.document["pins"].as_table().expect("validated at load");
         for (key, value) in records {
             let load = || -> Result<Option<StoredPin>, String> {
                 let id = key.parse::<u32>().map_err(|error| error.to_string())?;
@@ -203,7 +198,7 @@ impl PinStore {
                 image::ExtendedColorType::Rgba8,
             )
             .map_err(|error| error.to_string())?;
-        fs::create_dir_all(self.root.join("default")).map_err(|error| error.to_string())?;
+        fs::create_dir_all(self.root.join("images")).map_err(|error| error.to_string())?;
         let (id, path, mut file) = loop {
             let id = self.next_id;
             self.next_id = self
@@ -231,7 +226,7 @@ impl PinStore {
         drop(file);
         let result = write.and_then(|_| {
             let mut candidate = self.document.clone();
-            table(&mut candidate, &["workspaces", "default", "shotters"])?.insert(
+            table(&mut candidate, &["pins"])?.insert(
                 id.to_string(),
                 toml::Value::try_from(config).map_err(|error| error.to_string())?,
             );
@@ -251,21 +246,18 @@ impl PinStore {
             image::image_dimensions(self.image_path(id)).map_err(|error| error.to_string())?;
         validate(&config, width, height)?;
         let mut candidate = self.document.clone();
-        let record = table(&mut candidate, &["workspaces", "default", "shotters"])?
+        let record = table(&mut candidate, &["pins"])?
             .get_mut(&id.to_string())
             .and_then(toml::Value::as_table_mut)
             .ok_or("Pin record does not exist")?;
         let known = toml::Value::try_from(config).map_err(|error| error.to_string())?;
-        // None is omitted by serde; remove the old known optional value before
-        // merging so clearing a crop cannot retain a previous image_rect.
-        record.remove("image_rect");
         record.extend(known.as_table().ok_or("Invalid pin configuration")?.clone());
         self.commit(candidate)
     }
 
     pub fn delete(&mut self, id: u32) -> Result<(), String> {
         let mut candidate = self.document.clone();
-        table(&mut candidate, &["workspaces", "default", "shotters"])?.remove(&id.to_string());
+        table(&mut candidate, &["pins"])?.remove(&id.to_string());
         self.commit(candidate)?;
         if let Err(error) = fs::remove_file(self.image_path(id)) {
             if error.kind() != std::io::ErrorKind::NotFound {
@@ -283,7 +275,7 @@ impl PinStore {
         let mut warnings = Vec::new();
         let mut changed = false;
         for (id, config) in updates {
-            let Some(record) = table(&mut candidate, &["workspaces", "default", "shotters"])?
+            let Some(record) = table(&mut candidate, &["pins"])?
                 .get_mut(&id.to_string())
                 .and_then(toml::Value::as_table_mut)
             else {
@@ -301,7 +293,6 @@ impl PinStore {
             };
             match prepare() {
                 Ok(known) => {
-                    record.remove("image_rect");
                     record.extend(known);
                     changed = true;
                 }
@@ -323,7 +314,7 @@ mod tests {
             monitor_pos: (-1920, 0),
             monitor_size: (2, 3),
             rect: (0, 0, 2, 3),
-            image_rect: None,
+            image_rect: (0, 0, 2, 3),
             offset: (0, 0),
             zoom_factor: 100,
             mask_label: "ssmask-1".into(),
@@ -373,7 +364,7 @@ mod tests {
     #[test]
     fn pins_round_trip_and_unknown_workspaces_survive() {
         let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().join("shotter");
+        let root = directory.path().join("pins");
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join("record.toml"),
@@ -383,10 +374,10 @@ mod tests {
         let mut store = PinStore::load_from(directory.path()).unwrap();
         let image = RgbaImage::from_pixel(2, 3, image::Rgba([1, 2, 3, 128]));
         let mut initial = config();
-        initial.image_rect = Some((0, 0, 2, 3));
+        initial.image_rect = (0, 0, 2, 3);
         let id = store.create(&image, initial).unwrap();
         let mut extended = store.document.clone();
-        table(&mut extended, &["workspaces", "default", "shotters"])
+        table(&mut extended, &["pins"])
             .unwrap()
             .get_mut(&id.to_string())
             .unwrap()
@@ -403,10 +394,9 @@ mod tests {
         assert_eq!(pins.len(), 1);
         assert_eq!(*pins[0].image, image);
         assert_eq!(pins[0].config.offset, (21, -45));
-        assert_eq!(pins[0].config.image_rect, None);
+        assert_eq!(pins[0].config.image_rect, (0, 0, 2, 3));
         assert_eq!(
-            restored.document["workspaces"]["default"]["shotters"][id.to_string()]["future_pin"]
-                .as_str(),
+            restored.document["pins"][id.to_string()]["future_pin"].as_str(),
             Some("keep")
         );
         assert_eq!(restored.document["future_key"].as_str(), Some("keep"));
@@ -425,12 +415,12 @@ mod tests {
         fs::create_dir_all(store.root.join("record.toml")).unwrap();
         assert!(store.create(&RgbaImage::new(2, 3), config()).is_err());
         assert!(store.load_pins().0.is_empty());
-        assert_eq!(fs::read_dir(store.root.join("default")).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(store.root.join("images")).unwrap().count(), 0);
     }
     #[test]
     fn corrupt_metadata_is_not_overwritten() {
         let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().join("shotter");
+        let root = directory.path().join("pins");
         fs::create_dir_all(&root).unwrap();
         let path = root.join("record.toml");
         fs::write(&path, "broken = [").unwrap();
@@ -439,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn cropped_legacy_png_uses_image_rect_as_source_origin() {
+    fn cropped_png_uses_image_rect_as_source_origin() {
         let directory = tempfile::tempdir().unwrap();
         let mut store = PinStore::load_from(directory.path()).unwrap();
         let image = RgbaImage::from_fn(4, 3, |x, y| {
@@ -448,7 +438,7 @@ mod tests {
         let mut record = config();
         record.monitor_size = (1920, 1080);
         record.rect = (100, 200, 4, 3);
-        record.image_rect = Some((100, 200, 4, 3));
+        record.image_rect = (100, 200, 4, 3);
         let id = store.create(&image, record.clone()).unwrap();
         let (pins, warnings) = PinStore::load_from(directory.path()).unwrap().load_pins();
         assert!(warnings.is_empty());
@@ -459,15 +449,16 @@ mod tests {
             crop_image(&image, &record).unwrap(),
             image::imageops::crop_imm(&image, 1, 1, 2, 2).to_image()
         );
-        record.image_rect = None;
+        record.image_rect = (0, 0, 1920, 1080);
         assert!(store.update(id, record).is_err());
     }
 
     #[test]
-    fn old_full_monitor_png_crops_from_monitor_origin() {
+    fn full_monitor_png_uses_explicit_source_origin() {
         let image = RgbaImage::new(4, 3);
         let mut record = config();
         record.monitor_size = (4, 3);
+        record.image_rect = (0, 0, 4, 3);
         record.rect = (1, 1, 2, 2);
         assert_eq!(source_crop(&record, 4, 3).unwrap(), (1, 1, 2, 2));
         assert_eq!(crop_image(&image, &record).unwrap().dimensions(), (2, 2));

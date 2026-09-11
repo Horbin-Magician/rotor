@@ -15,7 +15,7 @@ pub mod ntfs_file_map;
 #[cfg(target_os = "windows")]
 pub mod ntfs_volume;
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone)]
 pub struct SearchResultItem {
     pub path: String,
     pub file_path: String,
@@ -32,8 +32,8 @@ impl SearchResultItem {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
+
 pub struct VolumeIndexStatus {
     pub name: String,
     pub indexed: bool,

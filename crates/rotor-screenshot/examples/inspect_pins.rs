@@ -14,8 +14,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::env::current_dir()?.join(directory)
     };
     // Refuse a missing record instead of reporting a nonexistent profile as valid.
-    if !directory.join("shotter/record.toml").is_file() {
-        return Err("profile has no shotter/record.toml".into());
+    if !directory.join("pins/record.toml").is_file() {
+        return Err("profile has no pins/record.toml".into());
     }
     let store = PinStore::load_from(&directory).map_err(std::io::Error::other)?;
     let (pins, warnings) = store.load_pins();

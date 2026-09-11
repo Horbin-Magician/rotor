@@ -515,7 +515,7 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
                 monitor_pos: (frame.monitor.x, frame.monitor.y),
                 monitor_size: (frame.monitor.width, frame.monitor.height),
                 rect: (rect.x, rect.y, rect.width, rect.height),
-                image_rect: Some((rect.x, rect.y, rect.width, rect.height)),
+                image_rect: (rect.x, rect.y, rect.width, rect.height),
                 offset,
                 zoom_factor: 100,
                 mask_label: format!("ssmask-{monitor}"),

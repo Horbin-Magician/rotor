@@ -227,7 +227,7 @@ mod tests {
                         monitor_pos: (0, 0),
                         monitor_size: (400, 400),
                         rect: (0, 0, 400, 400),
-                        image_rect: None,
+                        image_rect: (0, 0, 400, 400),
                         offset: (0, 0),
                         zoom_factor: 100,
                         mask_label: "synthetic".into(),

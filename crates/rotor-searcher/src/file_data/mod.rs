@@ -29,8 +29,8 @@ pub enum SearcherMessage {
     Status(mpsc::Sender<SearchIndexStatus>),
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
+
 pub struct SearchIndexStatus {
     pub state: FileState,
     pub volume_count: usize,
@@ -58,11 +58,11 @@ impl SearchIndexStatus {
 const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
 const SEARCH_CANCEL_DRAIN_TIMEOUT: Duration = Duration::from_millis(200);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+
 pub enum FileState {
     Unavailable,
-    #[serde(rename = "unbuilt")]
+
     Unbuild,
     Building,
     Released,

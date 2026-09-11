@@ -17,7 +17,6 @@ pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub const DEFAULT_QUICK_ACTIONS: &str = r#"[{"id":"terminal","name":"Terminal","shortcut":"Ctrl+Shift+T","command":"x-terminal-emulator","enabled":true},{"id":"files","name":"Files","shortcut":"Ctrl+Shift+E","command":"xdg-open ~","enabled":true}]"#;
 
-pub const DEFAULT_QUICK_ACTIONS_REVISION: &str = "2";
 pub const DEFAULT_TRANSLATOR_DEEPSEEK_MODEL: &str = "deepseek-v4-flash";
 
 #[cfg(target_os = "macos")]
@@ -55,7 +54,6 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("if_auto_change_save_path".into(), "true".into()),
         ("if_ask_save_path".into(), "true".into()),
         ("zoom_delta".into(), "2".into()),
-        ("current_workspace".into(), "0".into()),
         ("shortcut_search".into(), DEFAULT_SEARCH_SHORTCUT.into()),
         (
             "shortcut_screenshot".into(),
@@ -83,10 +81,6 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
         ("translator_custom_key".into(), "".into()),
         ("translator_target_lang".into(), "auto".into()),
         ("quick_actions".into(), DEFAULT_QUICK_ACTIONS.into()),
-        (
-            "quick_actions_revision".into(),
-            DEFAULT_QUICK_ACTIONS_REVISION.into(),
-        ),
         (
             "search_excluded_dirs".into(),
             DEFAULT_SEARCH_EXCLUDED_DIRS.into(),

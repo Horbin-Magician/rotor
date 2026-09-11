@@ -130,18 +130,6 @@ impl Drop for Searcher {
 mod tests {
     use super::*;
 
-    #[test]
-    fn typed_index_state_preserves_legacy_json_names() {
-        assert_eq!(
-            serde_json::to_value(IndexState::Unbuild).unwrap(),
-            "unbuilt"
-        );
-        assert_eq!(
-            serde_json::to_value(SearchIndexStatus::empty()).unwrap()["state"],
-            "unavailable"
-        );
-    }
-
     fn service() -> (Searcher, mpsc::Receiver<SearcherMessage>) {
         let (sender, receiver) = mpsc::channel();
         (

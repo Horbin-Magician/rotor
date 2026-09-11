@@ -194,37 +194,7 @@ impl Services {
         resources: Option<ResourceLocator>,
         options: ServiceOptions,
     ) -> Result<(Self, Receiver<RuntimeEvent>), String> {
-        let startup_warning = {
-            let mut config = lock(&config);
-            if let Some(json) = config.get_user("quick_actions").cloned() {
-                let migration = crate::quick::migrate_actions(
-                    &json,
-                    config
-                        .get_user("quick_actions_revision")
-                        .map(String::as_str),
-                )
-                .and_then(|actions| {
-                    if let Some(actions) = actions {
-                        let json =
-                            serde_json::to_string(&actions).map_err(|error| error.to_string())?;
-                        config
-                            .set_many([
-                                ("quick_actions".into(), json),
-                                (
-                                    "quick_actions_revision".into(),
-                                    rotor_common::DEFAULT_QUICK_ACTIONS_REVISION.into(),
-                                ),
-                            ])
-                            .map_err(|error| error.to_string())
-                    } else {
-                        Ok(())
-                    }
-                });
-                migration.err()
-            } else {
-                None
-            }
-        };
+        let startup_warning = crate::quick::actions_from_config(&lock(&config).get_all()).err();
         let runtime = Builder::new_multi_thread()
             .worker_threads(2)
             .max_blocking_threads(BACKGROUND_LIMIT + 2)
@@ -1019,10 +989,6 @@ async fn settings_loop(
                     match normalized {
                         Ok(value) => {
                             *json = value;
-                            changes.push((
-                                "quick_actions_revision".into(),
-                                rotor_common::DEFAULT_QUICK_ACTIONS_REVISION.into(),
-                            ));
                         }
                         Err(error) => {
                             let _ = events
@@ -1292,7 +1258,7 @@ mod tests {
             panic!("expected created pin");
         };
         assert_eq!(id, created_id);
-        let record_path = directory.path().join("shotter/record.toml");
+        let record_path = directory.path().join("pins/record.toml");
         let record = std::fs::read(&record_path).unwrap();
         for (request, expected_reveal, expected_count) in [
             (services.restore_pins().unwrap(), false, 0),
@@ -1341,7 +1307,7 @@ mod tests {
             monitor_pos: (0, 0),
             monitor_size: (1920, 1080),
             rect: (0, 0, 2, 3),
-            image_rect: Some((0, 0, 2, 3)),
+            image_rect: (0, 0, 2, 3),
             offset: (0, 0),
             zoom_factor: 100,
             mask_label: "ssmask-1".into(),
@@ -1476,7 +1442,7 @@ mod tests {
         let mut config = pin_config();
         config.monitor_size = (4, 4);
         config.rect = (1, 1, 2, 2);
-        config.image_rect = Some((1, 1, 2, 2));
+        config.image_rect = (1, 1, 2, 2);
         services
             .create_pin_from_capture(image.clone(), config)
             .unwrap();
@@ -1491,7 +1457,7 @@ mod tests {
             *pins[0].image,
             image::imageops::crop_imm(image.as_ref(), 1, 1, 2, 2).to_image()
         );
-        assert_eq!(pins[0].config.image_rect, Some((1, 1, 2, 2)));
+        assert_eq!(pins[0].config.image_rect, (1, 1, 2, 2));
     }
 
     #[test]
@@ -1502,7 +1468,7 @@ mod tests {
         let mut config = pin_config();
         config.monitor_size = (3840, 2160);
         config.rect = (1200, 900, 2, 2);
-        config.image_rect = Some(config.rect);
+        config.image_rect = config.rect;
         let request = services.create_pin(image.clone(), config.clone()).unwrap();
         let event = services.runtime().block_on(async {
             tokio::time::timeout(Duration::from_secs(3), events.recv())

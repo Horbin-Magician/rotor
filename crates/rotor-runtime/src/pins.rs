@@ -244,9 +244,7 @@ fn execute(store: &mut Result<PinStore, String>, command: PinCommand) -> PinEven
         PinCommand::CreateFromCapture { id, image, config } => PinEvent::Created {
             id,
             result: (|| {
-                let (x, y, width, height) = config
-                    .image_rect
-                    .ok_or("Capture selection has no source rectangle")?;
+                let (x, y, width, height) = config.image_rect;
                 if width == 0
                     || height == 0
                     || x.checked_add(width)
