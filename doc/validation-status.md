@@ -5,6 +5,11 @@ See [machine-readable evidence](validation/windows-3.0.0.json) for artifact hash
 source receipts, identities, ignored tests and isolated installation results.
 No version tag, public release or channel promotion has been performed by this task.
 
+The signing key was subsequently rotated on 2026-09-11. The new encrypted key
+passed a local `xtask sign` roundtrip against the updated public key and updater/
+release-tool tests. The installers recorded below predate that rotation and must
+be rebuilt before signing or publication. Hosted secret configuration is still pending.
+
 ## Passed automated checks
 
 - Workspace `cargo fmt --all -- --check`, `cargo check --workspace --locked`,
