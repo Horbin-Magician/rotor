@@ -92,6 +92,30 @@ struct VolumePack {
     find_sender: mpsc::Sender<VolumeFindTask>,
 }
 
+impl VolumePack {
+    fn new(drive: String) -> Self {
+        let (find_sender, find_receiver) = mpsc::channel::<VolumeFindTask>();
+        let volume = Arc::new(Mutex::new(Volume::new(drive)));
+        let worker_volume = volume.clone();
+        thread::spawn(move || {
+            while let Ok(task) = find_receiver.recv() {
+                if task.cancel.load(Ordering::Relaxed) {
+                    let _ = task.result_sender.send(None);
+                    continue;
+                }
+                worker_volume
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .find(task.filename, task.batch, task.cancel, task.result_sender);
+            }
+        });
+        Self {
+            volume,
+            find_sender,
+        }
+    }
+}
+
 struct VolumeFindTask {
     filename: String,
     batch: u8,
@@ -304,13 +328,6 @@ impl FileData {
                 bit_mask >>= 1;
             }
 
-            self.volume_packs.retain(|volume_pack| {
-                if let Ok(volume) = volume_pack.volume.lock() {
-                    return self.vols.contains(&volume.drive.to_string());
-                }
-                false
-            });
-
             self.vols.len() as u8
         }
         #[cfg(target_os = "macos")]
@@ -443,28 +460,9 @@ impl FileData {
             .vols
             .iter()
             .map(|c| {
-                let (find_sender, find_receiver) = mpsc::channel::<VolumeFindTask>();
-
-                let volume = Arc::new(Mutex::new(Volume::new(c.clone())));
-                self.volume_packs.push(VolumePack {
-                    volume: volume.clone(),
-                    find_sender,
-                });
-
-                let worker_volume = volume.clone();
-                thread::spawn(move || {
-                    while let Ok(task) = find_receiver.recv() {
-                        if task.cancel.load(Ordering::Relaxed) {
-                            let _ = task.result_sender.send(None);
-                            continue;
-                        }
-
-                        worker_volume
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .find(task.filename, task.batch, task.cancel, task.result_sender);
-                    }
-                });
+                let pack = VolumePack::new(c.clone());
+                let volume = pack.volume.clone();
+                self.volume_packs.push(pack);
 
                 thread::spawn(move || {
                     let mut volume = volume
@@ -502,8 +500,30 @@ impl FileData {
         });
     }
 
+    fn sync_volume_packs(&mut self) {
+        self.volume_packs.retain(|pack| {
+            let volume = pack
+                .volume
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            self.vols.contains(&volume.drive)
+        });
+        for drive in &self.vols {
+            if !self.volume_packs.iter().any(|pack| {
+                pack.volume
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .drive
+                    == *drive
+            }) {
+                self.volume_packs.push(VolumePack::new(drive.clone()));
+            }
+        }
+    }
+
     pub fn update_index(&mut self) -> bool {
         self.update_valid_vols();
+        self.sync_volume_packs();
 
         let handles = self
             .volume_packs
@@ -609,6 +629,25 @@ impl FileData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn volume_sync_adds_removes_and_reuses_workers() {
+        let mut data = FileData::new(|_| {}, None, Arc::new(Mutex::new(FileState::Unbuild)));
+        data.vols = vec!["A".into()];
+        data.sync_volume_packs();
+        let first = data.volume_packs[0].volume.clone();
+        data.vols.push("B".into());
+        data.sync_volume_packs();
+        assert_eq!(data.volume_packs.len(), 2);
+        assert!(Arc::ptr_eq(&first, &data.volume_packs[0].volume));
+        let second = data.volume_packs[1].volume.clone();
+        data.vols = vec!["B".into()];
+        data.sync_volume_packs();
+        assert_eq!(data.volume_packs.len(), 1);
+        assert!(Arc::ptr_eq(&second, &data.volume_packs[0].volume));
+        data.sync_volume_packs();
+        assert_eq!(data.volume_packs.len(), 1);
+    }
 
     #[test]
     fn failed_volume_build_reports_error_and_successful_retry_reports_released() {
