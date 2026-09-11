@@ -1,5 +1,4 @@
 use crate::{version, Result};
-use base64::prelude::*;
 use std::{
     collections::HashMap,
     fs,
@@ -9,21 +8,15 @@ use std::{
 
 fn sign_with_key(
     path: &Path,
-    encoded_secret: &str,
+    secret_text: &str,
     password: &str,
-    encoded_public: &str,
+    public_text: &str,
 ) -> Result<String> {
-    let secret = BASE64_STANDARD
-        .decode(encoded_secret.trim())
-        .map_err(|_| "Signing key is not valid base64")?;
-    let secret = std::str::from_utf8(&secret).map_err(|_| "Signing key is not UTF-8")?;
-    let secret = minisign::SecretKeyBox::from_string(secret)
+    let secret = minisign::SecretKeyBox::from_string(secret_text.trim())
         .map_err(|_| "Invalid signing key format")?
         .into_secret_key(Some(password.into()))
         .map_err(|_| "Cannot unlock signing key")?;
-    let public = BASE64_STANDARD.decode(encoded_public.trim())?;
-    let public =
-        minisign::PublicKeyBox::from_string(std::str::from_utf8(&public)?)?.into_public_key()?;
+    let public = minisign::PublicKeyBox::from_string(public_text.trim())?.into_public_key()?;
     let name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -42,9 +35,9 @@ fn sign_with_key(
         Some(&comment),
         Some("signature from Rotor update key"),
     )
-    .map_err(|_| "Signing failed; check the existing update key pair")?;
-    let encoded = BASE64_STANDARD.encode(signature.to_string());
-    rotor_updater::verify_file(path, &encoded, encoded_public)?;
+    .map_err(|_| "Signing failed; check the native update key pair")?;
+    let encoded = signature.to_string();
+    rotor_updater::verify_file(path, &encoded, public_text)?;
     Ok(encoded)
 }
 fn signature_path(path: &Path) -> PathBuf {
@@ -63,14 +56,14 @@ pub fn sign(path: &Path) -> Result<()> {
         println!("Existing signature verified: {}", output.display());
         return Ok(());
     }
-    let secret = std::env::var("TAURI_SIGNING_PRIVATE_KEY")
-        .map_err(|_| "Set TAURI_SIGNING_PRIVATE_KEY to the existing base64 key or key file path")?;
+    let secret = std::env::var("ROTOR_SIGNING_PRIVATE_KEY")
+        .map_err(|_| "Set ROTOR_SIGNING_PRIVATE_KEY to the minisign key text or key file path")?;
     let secret = if Path::new(&secret).is_file() {
         fs::read_to_string(&secret)?
     } else {
         secret
     };
-    let password = std::env::var("TAURI_SIGNING_PRIVATE_KEY_PASSWORD").unwrap_or_default();
+    let password = std::env::var("ROTOR_SIGNING_PRIVATE_KEY_PASSWORD").unwrap_or_default();
     let signature = sign_with_key(path, &secret, &password, rotor_updater::PUBLIC_KEY)?;
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -135,6 +128,7 @@ fn build_manifest(
         }
     }
     Ok(rotor_updater::Manifest {
+        schema_version: 1,
         version: version.into(),
         notes: notes.into(),
         pub_date: None,
@@ -167,7 +161,7 @@ mod tests {
     #[test]
     fn manifest_requires_both_signed_platforms_and_preserves_notes() {
         let pair = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
-        let public = BASE64_STANDARD.encode(pair.pk.to_box().unwrap().to_string());
+        let public = pair.pk.to_box().unwrap().to_string();
         let root = tempfile::tempdir().unwrap();
         for suffix in ["x64-setup.exe", "aarch64.app.tar.gz"] {
             let path = root.path().join(format!("Rotor-GPUI_2.7.0_{suffix}"));
@@ -180,11 +174,7 @@ mod tests {
                 None,
             )
             .unwrap();
-            fs::write(
-                signature_path(&path),
-                BASE64_STANDARD.encode(signature.to_string()),
-            )
-            .unwrap();
+            fs::write(signature_path(&path), signature.to_string()).unwrap();
         }
         let notes = "line one\n\"quoted\" release";
         let manifest = build_manifest(
@@ -226,11 +216,11 @@ mod tests {
         .is_err());
     }
     #[test]
-    fn encrypted_signing_keys_produce_legacy_compatible_signatures() {
+    fn encrypted_signing_keys_produce_native_signatures() {
         let pair =
             minisign::KeyPair::generate_encrypted_keypair(Some("fixture password".into())).unwrap();
-        let public = BASE64_STANDARD.encode(pair.pk.to_box().unwrap().to_string());
-        let secret = BASE64_STANDARD.encode(pair.sk.to_box(None).unwrap().to_string());
+        let public = pair.pk.to_box().unwrap().to_string();
+        let secret = pair.sk.to_box(None).unwrap().to_string();
         let file = tempfile::NamedTempFile::new().unwrap();
         fs::write(file.path(), b"fixture artifact").unwrap();
         let signature = sign_with_key(file.path(), &secret, "fixture password", &public).unwrap();

@@ -5,7 +5,6 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::{handoff_error, launch_handoff, run_helper};
 
-use base64::prelude::*;
 use futures_util::StreamExt;
 use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
@@ -36,6 +35,7 @@ pub struct Artifact {
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Manifest {
+    pub schema_version: u32,
     pub version: String,
     #[serde(default)]
     pub notes: String,
@@ -61,8 +61,10 @@ pub fn select_release(
     current: &str,
     target: &str,
 ) -> Result<Option<Release>, String> {
-    let version = semver::Version::parse(manifest.version.trim_start_matches('v'))
-        .map_err(|error| error.to_string())?;
+    if manifest.schema_version != 1 {
+        return Err("Unsupported native update manifest".into());
+    }
+    let version = semver::Version::parse(&manifest.version).map_err(|error| error.to_string())?;
     let current = semver::Version::parse(current).map_err(|error| error.to_string())?;
     if version <= current {
         return Ok(None);
@@ -137,58 +139,49 @@ pub async fn check(
 }
 
 pub fn verify(bytes: &[u8], signature: &str, public_key: &str) -> Result<(), String> {
+    if bytes.len() as u64 > MAX_DOWNLOAD {
+        return Err("Update is too large".into());
+    }
     let (key, signature) = decode_signature(signature, public_key)?;
-    key.verify(bytes, &signature, true)
+    key.verify(bytes, &signature, false)
         .map_err(|error| error.to_string())
 }
 
 fn decode_signature(signature: &str, public_key: &str) -> Result<(PublicKey, Signature), String> {
-    let key = BASE64_STANDARD
-        .decode(public_key.trim())
-        .map_err(|error| error.to_string())?;
-    let key = std::str::from_utf8(&key).map_err(|error| error.to_string())?;
-    let key = PublicKey::decode(key).map_err(|error| error.to_string())?;
-    let signature = BASE64_STANDARD
-        .decode(signature.trim())
-        .map_err(|error| error.to_string())?;
-    let signature = std::str::from_utf8(&signature).map_err(|error| error.to_string())?;
-    let signature = Signature::decode(signature).map_err(|error| error.to_string())?;
+    let key = PublicKey::decode(public_key.trim()).map_err(|error| error.to_string())?;
+    let signature = Signature::decode(signature.trim()).map_err(|error| error.to_string())?;
+
     Ok((key, signature))
 }
 
 pub fn verify_file(path: &Path, signature: &str, public_key: &str) -> Result<(), String> {
     use std::io::Read;
     let (key, signature) = decode_signature(signature, public_key)?;
-    match key.verify_stream(&signature) {
-        Ok(mut verifier) => {
-            let mut file = std::fs::File::open(path).map_err(|error| error.to_string())?;
-            let mut buffer = [0_u8; 64 * 1024];
-            loop {
-                let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
-                if count == 0 {
-                    break;
-                }
-                verifier.update(&buffer[..count]);
-            }
-            verifier.finalize().map_err(|error| error.to_string())
-        }
-        Err(minisign_verify::Error::UnsupportedLegacyMode) => {
-            if std::fs::metadata(path)
-                .map_err(|error| error.to_string())?
-                .len()
-                > 128 * 1024 * 1024
-            {
-                return Err("Legacy signature artifact exceeds verification memory limit".into());
-            }
-            key.verify(
-                &std::fs::read(path).map_err(|error| error.to_string())?,
-                &signature,
-                true,
-            )
-            .map_err(|error| error.to_string())
-        }
-        Err(error) => Err(error.to_string()),
+    if std::fs::metadata(path)
+        .map_err(|error| error.to_string())?
+        .len()
+        > MAX_DOWNLOAD
+    {
+        return Err("Update is too large".into());
     }
+    let mut verifier = key
+        .verify_stream(&signature)
+        .map_err(|error| error.to_string())?;
+    let mut file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut read = 0_u64;
+    loop {
+        let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if count == 0 {
+            break;
+        }
+        read += count as u64;
+        if read > MAX_DOWNLOAD {
+            return Err("Update is too large".into());
+        }
+        verifier.update(&buffer[..count]);
+    }
+    verifier.finalize().map_err(|error| error.to_string())
 }
 
 /// Hold the verified installer against modification/replacement until launch.
@@ -351,23 +344,10 @@ pub fn target() -> &'static str {
 mod tests {
     use super::*;
     #[test]
-    fn legacy_metadata_shape_is_understood_without_downgrading() {
-        let manifest: Manifest =
-            serde_json::from_str(include_str!("../tests/fixtures/legacy-manifest.json")).unwrap();
-        assert!(select_release(manifest.clone(), "2.6.0", "windows-x86_64")
-            .unwrap()
-            .is_none());
-        assert!(select_release(manifest, "2.5.0", "darwin-aarch64")
-            .unwrap()
-            .unwrap()
-            .artifact
-            .url
-            .ends_with(".app.tar.gz"));
-    }
-    #[test]
     fn missing_platform_insecure_urls_and_bad_signatures_fail_closed() {
         let manifest = Manifest {
-            version: "2.7.0".into(),
+            schema_version: 1,
+            version: "3.1.0".into(),
             notes: String::new(),
             pub_date: None,
             platforms: HashMap::from([(
@@ -378,21 +358,19 @@ mod tests {
                 },
             )]),
         };
-        assert!(select_release(manifest.clone(), "2.6.0", "darwin-aarch64").is_err());
-        assert!(select_release(manifest, "2.6.0", "windows-x86_64").is_err());
+        assert!(select_release(manifest.clone(), "3.0.0", "darwin-aarch64").is_err());
+        assert!(select_release(manifest, "3.0.0", "windows-x86_64").is_err());
         assert!(verify(b"tampered", "bad", PUBLIC_KEY).is_err());
     }
     // Public test vectors from minisign-verify 0.2.5 (MIT), not production keys.
     #[test]
-    fn signed_stream_and_legacy_vectors_reject_tampering() {
-        let key = BASE64_STANDARD.encode(
-            "untrusted comment: test key\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
-        );
+    fn signed_stream_rejects_tampering() {
+        let key =
+            "untrusted comment: test key\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"
+                .to_string();
         for signature in [
             "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==",
-            "untrusted comment: signature from minisign secret key\nRWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=\ntrusted comment: timestamp:1555779966\tfile:test\nQtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfNQUaOAA==",
         ] {
-            let signature = BASE64_STANDARD.encode(signature);
             let file = tempfile::NamedTempFile::new().unwrap();
             std::fs::write(file.path(), b"test").unwrap();
             verify(b"test", &signature, &key).unwrap();
@@ -414,6 +392,11 @@ mod tests {
             std::fs::write(file.path(), b"Test").unwrap();
             assert!(verify_file(file.path(), &signature, &key).is_err());
             assert!(verify(b"test", &signature, PUBLIC_KEY).is_err());
+            assert!(verify(b"tes", &signature, &key).is_err());
+            assert!(verify(b"test", &signature[..signature.len() / 2], &key).is_err());
+            let unsupported = signature.replacen("\nRUQ", "\nRWQ", 1);
+            assert!(verify(b"test", &unsupported, &key).is_err());
+            assert!(verify_file(file.path(), &unsupported, &key).is_err());
         }
     }
 
@@ -435,32 +418,26 @@ mod tests {
                 .await
                 .is_err()
         );
-        release.version = "2.7.0".into();
+        release.version = "3.1.0".into();
         let cancelled = CancellationToken::new();
         cancelled.cancel();
         assert!(download(&release, &staging, &cancelled, |_| {})
             .await
             .is_err());
         assert!(!staging.exists());
-        assert!(check(&[], "2.6.0", "windows-x86_64").await.is_err());
-    }
-
-    #[test]
-    fn native_and_legacy_public_keys_are_identical() {
-        let config: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/legacy-update-key.json")).unwrap();
-        assert_eq!(PUBLIC_KEY.trim(), config["pubkey"].as_str().unwrap());
+        assert!(check(&[], "3.0.0", "windows-x86_64").await.is_err());
     }
 
     #[tokio::test]
     async fn transport_failures_preserve_previous_download_and_retry_cleanly() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         use std::io::{Read, Write};
-        let key = BASE64_STANDARD.encode(
-            "untrusted comment: test key\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
-        );
-        let signature = BASE64_STANDARD.encode("untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==");
+        let key =
+            "untrusted comment: test key\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"
+                .to_string();
+        let signature = "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1556193335\tfile:test\ny/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+bHwhEBg==".to_string();
         let directory = tempfile::tempdir().unwrap();
-        let destination = directory.path().join("Rotor-2.7.0.exe");
+        let destination = directory.path().join("Rotor-3.1.0.exe");
         std::fs::write(&destination, b"previous verified artifact").unwrap();
         let client = reqwest::Client::builder()
             .no_proxy()
@@ -515,7 +492,7 @@ mod tests {
                 }
             });
             let release = Release {
-                version: "2.7.0".into(),
+                version: "3.1.0".into(),
                 notes: String::new(),
                 target: "windows-x86_64".into(),
                 artifact: Artifact {

@@ -21,9 +21,9 @@ on:
         type: string
         default: 'Native candidate; see validation records for acceptance status.'
     secrets:
-      TAURI_SIGNING_PRIVATE_KEY:
+      ROTOR_SIGNING_PRIVATE_KEY:
         required: false
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+      ROTOR_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
   workflow_dispatch:
     inputs:
@@ -129,10 +129,10 @@ jobs:
         if: inputs.sign_updates
         shell: pwsh
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          ROTOR_SIGNING_PRIVATE_KEY: ${{ secrets.ROTOR_SIGNING_PRIVATE_KEY }}
+          ROTOR_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.ROTOR_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Existing updater signing key is unavailable' }
+          if (!$env:ROTOR_SIGNING_PRIVATE_KEY) { throw 'Existing updater signing key is unavailable' }
           $signer = if ($IsWindows) { './target/debug/xtask.exe' } else { './target/debug/xtask' }
           $artifacts = Get-ChildItem "$env:RUNNER_TEMP/native-package" -File | Where-Object { $_.Extension -in '.exe', '.dmg' -or $_.Name.EndsWith('.app.tar.gz') }
           foreach ($artifact in $artifacts) {

@@ -5,7 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-base64 = "0.22.1"
 minisign-verify = "=0.2.5"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "stream"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

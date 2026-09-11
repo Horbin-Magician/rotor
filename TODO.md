@@ -28,7 +28,7 @@
 - [x] 删除 native/windows.nsi 的旧 `/UPDATE /ARGS` 握手、旧互斥体等待和 xtask 的 LEGACY_MUTEX 参数；保留原生 `/PARENT` 等实际使用的交接。
 - [x] 删除 startup 中针对旧启动项的转换，以及仅为旧安装、可执行文件和 bundle 身份保留的分支。
 - [x] 清理截图记录、搜索状态与配置序列化中仅为旧版提供的字段别名、格式转换和兼容类型；先梳理当前 GPUI 调用者，保留实际业务所需的字段和未知字段处理能力。
-- [ ] 删除旧资料读取器、旧格式 roundtrip、旧更新清单和公钥夹具；以全新原生配置与贴图持久化测试替代。
+- [x] 删除旧资料读取器、旧格式 roundtrip、旧更新清单和公钥夹具；以全新原生配置与贴图持久化测试替代。
 
 完成标准：运行时与打包工具不再包含旧客户端检测、迁移或兼容入口，原生截图、OCR、翻译、搜索和设置行为不回退。
 
@@ -36,9 +36,9 @@
 
 - [x] 用 cargo tree 定位 tauri-winrt-notification 的完整引入链，替换通知后端、关闭不需要的上游 feature，或调整直接依赖，确保锁文件和目标平台依赖图均无 Tauri 包；不能只手改 Cargo.lock。
 - [ ] 搜索并清理有效源码、脚本及工作流里的框架残留、旧注释与无用依赖。
-- [ ] 将 TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD 改为 ROTOR_SIGNING_PRIVATE_KEY / ROTOR_SIGNING_PRIVATE_KEY_PASSWORD；移除旧名称回退，列出仓库 Secrets 的配套操作。
-- [ ] 以原生签名格式为唯一生成与验证契约；移除旧客户端编码适配、旧签名模式回退及公钥必须与旧版一致的测试。保留现代签名校验、大小限制及篡改拒绝。
-- [ ] 统一原生公钥来源；若更换密钥，在发布环境配置新私钥并验证配对，不将私钥写入仓库。
+- [x] 将 TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD 改为 ROTOR_SIGNING_PRIVATE_KEY / ROTOR_SIGNING_PRIVATE_KEY_PASSWORD；移除旧名称回退，列出仓库 Secrets 的配套操作。
+- [x] 以原生签名格式为唯一生成与验证契约；移除旧客户端编码适配、旧签名模式回退及公钥必须与旧版一致的测试。保留现代签名校验、大小限制及篡改拒绝。
+- [x] 统一原生公钥来源；若更换密钥，在发布环境配置新私钥并验证配对，不将私钥写入仓库。
 
 完成标准：Cargo.lock 与依赖图无 Tauri 依赖；代码和 CI 不读取旧 Secret 名称；签名、错误密钥、篡改与截断产物测试通过。
 
