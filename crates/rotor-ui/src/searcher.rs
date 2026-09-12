@@ -438,28 +438,13 @@ impl Render for SearchView {
         let weak = cx.weak_entity();
         let count = self.results.items.len();
         let dark = cx.theme().is_dark();
-        let index_error = matches!(
-            self.index_state,
-            IndexState::Error | IndexState::Unavailable
-        ) || !self.message.is_empty();
+        let action_error = !self.message.is_empty();
         let indexing = matches!(
             self.index_state,
             IndexState::Unbuild | IndexState::Building | IndexState::Loading | IndexState::Released
-        ) && !index_error;
+        ) && !action_error;
         div()
             .id("searcher")
-            .when(self.index_state == IndexState::Partial, |view| {
-                view.child(
-                    div()
-                        .px(px(8.))
-                        .text_color(rgb(0xd99000))
-                        .child(if chinese {
-                            "部分卷索引失败，搜索结果可能不完整"
-                        } else {
-                            "Some volumes failed to load; search results may be incomplete"
-                        }),
-                )
-            })
             .flex()
             .flex_col()
             .size_full()
@@ -561,7 +546,7 @@ impl Render for SearchView {
                                     .h_full()
                                     .w_full()
                                     .rounded_full()
-                                    .bg(rgb(if index_error { 0xff4d4f } else { 0x54a4db }))
+                                    .bg(rgb(if action_error { 0xff4d4f } else { 0x54a4db }))
                                     .map(|line| {
                                         if !indexing {
                                             return line.into_any_element();

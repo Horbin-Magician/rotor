@@ -278,7 +278,6 @@ impl Volume {
             .filter_entry(move |e| !is_ignored_walk_entry(e, &excluded_dirs));
 
         for entry in walker {
-            let entry = entry.map_err(|error| io::Error::other(error.to_string()))?;
             if cancel
                 .map(|cancel| cancel.load(Ordering::Relaxed))
                 .unwrap_or(false)
@@ -290,6 +289,17 @@ impl Volume {
                     "Index build cancelled",
                 ));
             }
+
+            let entry = match entry {
+                Ok(entry) => entry,
+                // A protected or vanished child must not discard the entire index.
+                // Root traversal failures still make this volume unavailable.
+                Err(error) if error.depth() > 0 => {
+                    log::warn!("{} Skipping inaccessible index path: {error}", self.drive);
+                    continue;
+                }
+                Err(error) => return Err(io::Error::other(error.to_string())),
+            };
 
             let path = entry.path();
 
@@ -604,6 +614,47 @@ fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
 #[cfg(test)]
 mod event_tests {
     use super::*;
+
+    #[test]
+    fn unreadable_child_preserves_searchable_siblings_but_root_failure_is_fatal() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::Builder::new()
+            .prefix("rotor-permissions-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let blocked = root.join("a-blocked");
+        fs::create_dir(&blocked).unwrap();
+        fs::write(blocked.join("private.txt"), b"test").unwrap();
+        fs::write(root.join("z-searchable.txt"), b"test").unwrap();
+        let permissions = fs::metadata(&blocked).unwrap().permissions();
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let mut volume = Volume::new(root.to_string_lossy().into_owned());
+        let result = volume.build_index();
+        fs::set_permissions(&blocked, permissions).unwrap();
+        assert!(denied, "test requires an unprivileged user");
+        result.unwrap();
+        volume.serialization_read().unwrap();
+        let (items, _) = volume
+            .file_map
+            .search("z-searchable", 0, 1, &AtomicBool::new(false));
+        assert_eq!(items.unwrap().len(), 1);
+        let (items, _) = volume
+            .file_map
+            .search("private.txt", 0, 1, &AtomicBool::new(false));
+        assert!(items.is_none_or(|items| items.is_empty()));
+        volume.stop_watching();
+        fs::remove_file(volume.index_file_path()).unwrap();
+
+        let permissions = fs::metadata(&root).unwrap().permissions();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).unwrap();
+        let result = volume.build_index();
+        fs::set_permissions(&root, permissions).unwrap();
+        assert!(result.is_err());
+        assert!(volume.file_map.is_empty());
+    }
 
     #[test]
     fn missing_volume_refresh_returns_identity_and_stays_failed() {
