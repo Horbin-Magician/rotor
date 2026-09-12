@@ -10,6 +10,9 @@ Rotor is MIT licensed; the project license is distributed as `licenses/Rotor-LIC
 - GPUI platform adapter: derived from gpui-pre-platform 0.3.3, Apache-2.0.
   See `native/gpui-platform/README.md`; original license is retained as
   `licenses/GPUI-Platform-LICENSE`.
+- GPUI macOS backend: derived from gpui-pre-macos 0.3.3, Apache-2.0.
+  See `native/gpui-macos/README.md`; original license is retained as
+  `licenses/GPUI-macOS-LICENSE`.
 - ONNX Runtime 1.24.2: Microsoft, MIT. Original license and third-party notices
   are distributed under `licenses/runtimes/`. Sources are pinned to
   https://github.com/microsoft/onnxruntime/tree/v1.24.2.

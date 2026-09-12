@@ -19,6 +19,7 @@ pub fn stage(destination: &Path) -> Result<()> {
             "native/gpui-platform/LICENSE-APACHE",
             "GPUI-Platform-LICENSE",
         ),
+        ("native/gpui-macos/LICENSE-APACHE", "GPUI-macOS-LICENSE"),
     ] {
         fs::copy(root().join(source), destination.join(name))?;
     }
