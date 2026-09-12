@@ -21,13 +21,13 @@ pub struct SearchResultItem {
     pub file_path: String,
     pub file_name: String,
     pub rank: i8,
-    pub icon_data: Option<String>, // Base64 encoded icon data
+    pub icon: Option<std::sync::Arc<image::RgbaImage>>,
     pub alias: Option<String>,
 }
 
 impl SearchResultItem {
-    pub fn attach_icon_data(mut self) -> Self {
-        self.icon_data = rotor_platform::file_util::get_file_icon_data(&self.file_path);
+    pub fn attach_icon(mut self) -> Self {
+        self.icon = rotor_platform::file_util::file_icon(&self.file_path).map(std::sync::Arc::new);
         self
     }
 }

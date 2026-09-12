@@ -46,9 +46,6 @@ impl CapturePixels for RgbaImage {
         )
     }
 }
-pub fn detect_rect(original_img: &RgbaImage) -> Vec<(u32, u32, u32, u32)> {
-    detect_pixels(original_img).unwrap_or_default()
-}
 pub fn detect_pixels(image: &impl CapturePixels) -> Result<Vec<(u32, u32, u32, u32)>, String> {
     let (bytes, original_width, original_height, format) = image.pixels();
     let expected = (original_width as usize)
@@ -858,7 +855,7 @@ mod tests {
             assert_eq!(expected.get_pixel(0, 0).0, [22]);
         }
         assert_eq!(
-            detect_rect(&rgba),
+            detect_pixels(&rgba).unwrap(),
             detect_pixels(&Pixels(bgra, 123, 107, PixelFormat::Bgra)).unwrap()
         );
     }

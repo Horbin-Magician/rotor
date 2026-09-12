@@ -133,13 +133,6 @@ impl fmt::Display for QuickActionError {
 
 impl Error for QuickActionError {}
 
-pub fn default_actions() -> Vec<QuickAction> {
-    serde_json::from_str::<Vec<QuickAction>>(DEFAULT_QUICK_ACTIONS).unwrap_or_else(|error| {
-        log::warn!("Invalid default quick actions config: {error}");
-        Vec::new()
-    })
-}
-
 pub fn actions_from_config(config: &rotor_common::Config) -> Result<Vec<QuickAction>, String> {
     let actions = config
         .get("quick_actions")

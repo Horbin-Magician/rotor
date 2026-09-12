@@ -6,7 +6,7 @@ use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::search_match::{make_filter, match_indexed_name, prepare_search_name, SearchAlias};
+use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
 use super::{read_string, read_u16, read_u32, read_u8, SearchResultItem};
 use rotor_platform::file_util;
 
@@ -346,8 +346,7 @@ impl FileMap {
         let mut result = Vec::new();
         let mut find_num = 0;
         let mut search_num: usize = 0;
-        let query_lower = query.to_lowercase();
-        let query_filter = make_filter(&query_lower);
+        let mut query = SearchQuery::new(query);
 
         let file_map_iter = self.iter().rev().skip(last_search_num);
         for file in file_map_iter {
@@ -356,13 +355,11 @@ impl FileMap {
             }
             search_num += 1;
 
-            if let Some(file_alias) = match_indexed_name(
+            if let Some(file_alias) = query.match_name(
                 &file.file_name,
                 file.aliases.as_deref(),
                 file.search_aliases.as_deref(),
                 file.filter,
-                &query_lower,
-                query_filter,
             ) {
                 let Some((path, file_path)) = self.result_paths(file.parent_id, &file.file_name)
                 else {
@@ -374,7 +371,7 @@ impl FileMap {
                     file_path,
                     file_name: file.file_name.clone(),
                     rank: file.rank,
-                    icon_data: None,
+                    icon: None,
                     alias: file_alias,
                 });
 

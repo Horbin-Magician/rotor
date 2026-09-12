@@ -1,3 +1,4 @@
+use super::settings_worker::normalize_shortcut_changes;
 use super::*;
 
 fn setup() -> (

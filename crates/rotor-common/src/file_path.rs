@@ -18,10 +18,6 @@ pub fn initialize_data_directory(path: PathBuf) -> io::Result<()> {
     })
 }
 
-pub fn get_tmp_path() -> PathBuf {
-    env::temp_dir()
-}
-
 pub fn get_userdata_path() -> Option<PathBuf> {
     DATA_DIRECTORY
         .get_or_init(|| {

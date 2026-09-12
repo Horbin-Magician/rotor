@@ -1,21 +1,11 @@
-use base64::prelude::*;
 use file_icon_provider::get_file_icon;
-use image::{DynamicImage, ImageFormat, RgbaImage};
+use image::RgbaImage;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std::io::Cursor;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::Path;
-
-pub fn get_tmp_path() -> std::path::PathBuf {
-    rotor_common::file_path::get_tmp_path()
-}
-
-pub fn get_userdata_path() -> Option<std::path::PathBuf> {
-    rotor_common::file_path::get_userdata_path()
-}
 
 pub fn get_app_trans_names(app_path: &Path) -> Result<HashMap<String, String>, Box<dyn Error>> {
     let contents_path = app_path.join("Contents");
@@ -125,36 +115,12 @@ pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
     }
 }
 
-// Get file icon as base64 encoded PNG data
-pub fn get_file_icon_data(file_path: &str) -> Option<String> {
+/// Native RGBA pixels; callers can share them without PNG/Base64 round trips.
+pub fn file_icon(file_path: &str) -> Option<RgbaImage> {
     let path = Path::new(file_path);
     if !path.exists() {
         return None;
     }
-
-    // Get icon with 64x64 size
-    match get_file_icon(path, 64) {
-        Ok(icon) => {
-            // Convert Icon to Image
-            match RgbaImage::from_raw(icon.width, icon.height, icon.pixels) {
-                Some(img) => {
-                    let dynamic_img = DynamicImage::ImageRgba8(img);
-
-                    // Convert to PNG bytes
-                    let mut png_bytes = Vec::new();
-                    let mut cursor = Cursor::new(&mut png_bytes);
-
-                    match dynamic_img.write_to(&mut cursor, ImageFormat::Png) {
-                        Ok(()) => {
-                            // Encode as base64
-                            Some(BASE64_STANDARD.encode(&png_bytes))
-                        }
-                        Err(_) => None,
-                    }
-                }
-                None => None,
-            }
-        }
-        Err(_) => None,
-    }
+    let icon = get_file_icon(path, 64).ok()?;
+    RgbaImage::from_raw(icon.width, icon.height, icon.pixels)
 }

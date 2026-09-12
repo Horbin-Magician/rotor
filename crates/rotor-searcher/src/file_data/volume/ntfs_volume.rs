@@ -16,7 +16,6 @@ use windows::Win32::System::{Ioctl, IO};
 use super::super::excluded_dirs::ExcludedDirs;
 use super::ntfs_file_map::FileMap;
 use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
-use rotor_platform::file_util;
 
 pub struct Volume {
     pub drive: String,
@@ -480,7 +479,7 @@ impl Volume {
     }
 
     fn index_file_path(&self) -> std::path::PathBuf {
-        file_util::get_tmp_path().join(format!("{}.fd", index_file_stem(&self.drive)))
+        std::env::temp_dir().join(format!("{}.fd", index_file_stem(&self.drive)))
     }
 
     fn is_excluded_record(&self, file_name: &str, parent_index: u64) -> bool {

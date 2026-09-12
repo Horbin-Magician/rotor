@@ -9,10 +9,9 @@ arboard = "=3.6.1"
 getrandom = "0.4"
 serde_json = "1"
 url = "2.5"
-base64 = "0.22.1"
 encoding_rs = "0.8.35"
 file_icon_provider = "0.4.0"
-image = "0.25.6"
+image.workspace = true
 log = "0.4.27"
 rotor-common = { path = "../rotor-common" }
 serde = { version = "1", features = ["derive"] }

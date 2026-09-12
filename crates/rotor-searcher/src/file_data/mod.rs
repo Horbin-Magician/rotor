@@ -214,15 +214,10 @@ impl SearchTask {
     }
 }
 
-pub struct SearchResult {
-    pub items: Vec<SearchResultItem>,
-    pub query: String,
-}
-
 pub struct FileData {
     vols: Vec<String>,
     finding_name: String,
-    finding_result: SearchResult,
+    finding_result: Vec<SearchResultItem>,
     volume_packs: Vec<VolumePack>,
     state: SharedFileState,
     show_num: usize,
@@ -244,10 +239,7 @@ impl FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
             finding_name: String::new(),
-            finding_result: SearchResult {
-                items: Vec::new(),
-                query: String::new(),
-            },
+            finding_result: Vec::new(),
             state,
             show_num: 20,
             batch: 20,
@@ -382,7 +374,7 @@ impl FileData {
         self.show_num += update_result.len();
         let update_result = update_result
             .into_iter()
-            .map(SearchResultItem::attach_icon_data)
+            .map(SearchResultItem::attach_icon)
             .collect();
         (self.find_result_callback)(SearchBatch {
             id,
@@ -408,8 +400,8 @@ impl FileData {
         if self.finding_name == filename {
             need_num = self.show_num + self.batch as usize;
             if_increase = true;
-            if self.finding_result.items.len() >= need_num {
-                let return_result = self.finding_result.items[self.show_num..need_num].to_vec();
+            if self.finding_result.len() >= need_num {
+                let return_result = self.finding_result[self.show_num..need_num].to_vec();
                 self.find_result(id, filename, return_result, if_increase);
                 return reply;
             }
@@ -417,8 +409,7 @@ impl FileData {
             self.finding_name = filename.clone();
             need_num = self.batch as usize;
             self.show_num = 0;
-            self.finding_result.items.clear();
-            self.finding_result.query = filename.clone();
+            self.finding_result.clear();
         }
 
         if filename.is_empty() {
@@ -438,7 +429,7 @@ impl FileData {
                     searcher_msg => {
                         task.cancel();
                         task.drain_cancelled();
-                        self.finding_result.items.clear();
+                        self.finding_result.clear();
                         reply = Some(searcher_msg);
                         break;
                     }
@@ -453,7 +444,7 @@ impl FileData {
                 Ok(op_result) => {
                     task.pending -= 1;
                     if let Some(mut result) = op_result {
-                        self.finding_result.items.append(&mut result);
+                        self.finding_result.append(&mut result);
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -465,11 +456,10 @@ impl FileData {
 
         if reply.is_none() {
             self.finding_result
-                .items
                 .sort_by_key(|item| std::cmp::Reverse(item.rank)); // sort by rank desc
-            let return_result = if self.finding_result.items.len() > self.show_num {
-                let max = std::cmp::min(self.finding_result.items.len(), need_num);
-                self.finding_result.items[self.show_num..max].to_vec()
+            let return_result = if self.finding_result.len() > self.show_num {
+                let max = std::cmp::min(self.finding_result.len(), need_num);
+                self.finding_result[self.show_num..max].to_vec()
             } else {
                 vec![]
             };
@@ -528,10 +518,7 @@ impl FileData {
 
     fn reset_search_results(&mut self) {
         self.finding_name.clear();
-        self.finding_result = SearchResult {
-            items: Vec::new(),
-            query: String::new(),
-        };
+        self.finding_result = Vec::new();
         self.show_num = 0;
     }
 
@@ -781,14 +768,13 @@ mod tests {
                 Arc::new(Mutex::new(FileState::Ready)),
             );
             data.finding_name = "same-query".into();
-            data.finding_result.query = "same-query".into();
-            data.finding_result.items = Vec::with_capacity(128);
-            data.finding_result.items.push(SearchResultItem {
+            data.finding_result = Vec::with_capacity(128);
+            data.finding_result.push(SearchResultItem {
                 path: "fixture".repeat(1024),
                 file_path: "fixture/file".into(),
                 file_name: "file".into(),
                 rank: 0,
-                icon_data: None,
+                icon: None,
                 alias: None,
             });
             data.show_num = 80;
@@ -799,9 +785,9 @@ mod tests {
             } else {
                 let _ = data.release_index();
             }
-            assert!(data.finding_result.items.is_empty());
-            assert_eq!(data.finding_result.items.capacity(), 0);
-            assert!(data.finding_result.query.is_empty());
+            assert!(data.finding_result.is_empty());
+            assert_eq!(data.finding_result.capacity(), 0);
+            assert!(data.finding_name.is_empty());
             assert_eq!(data.show_num, 0);
             let (_sender, receiver) = mpsc::channel();
             data.find(

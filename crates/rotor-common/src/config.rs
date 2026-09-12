@@ -146,10 +146,6 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn global() -> &'static Mutex<AppConfig> {
-        &INSTANCE
-    }
-
     pub fn shared_global() -> Arc<Mutex<AppConfig>> {
         Arc::clone(&INSTANCE)
     }
@@ -177,10 +173,7 @@ impl AppConfig {
     }
 
     pub fn get(&self, k: &str) -> Option<&String> {
-        if self.config.contains_key(k) {
-            return self.config.get(k);
-        }
-        DEFAULT_CONFIG.get(k)
+        self.config.get(k).or_else(|| DEFAULT_CONFIG.get(k))
     }
 
     pub fn get_user(&self, k: &str) -> Option<&String> {

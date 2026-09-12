@@ -72,10 +72,37 @@ mod tests {
             file_path: path.into(),
             file_name: path.into(),
             rank: 0,
-            icon_data: None,
+            icon: None,
             alias: None,
         }
     }
+    #[test]
+    fn accepted_results_share_icon_pixels_and_reject_stale_icons() {
+        let pixels = std::sync::Arc::new(image::RgbaImage::from_pixel(
+            2,
+            2,
+            image::Rgba([20, 80, 160, 128]),
+        ));
+        let mut row = item("fixture");
+        row.icon = Some(pixels.clone());
+        let mut results = SearchResults::default();
+        results.begin(QueryId(2), "fixture".into(), false);
+        let mut batch = SearchBatch {
+            id: QueryId(1),
+            query: "fixture".into(),
+            items: vec![row],
+            append: false,
+        };
+        assert!(!results.accept(&batch));
+        assert!(results.items.is_empty());
+        batch.id = QueryId(2);
+        assert!(results.accept(&batch));
+        assert!(std::sync::Arc::ptr_eq(
+            results.items[0].icon.as_ref().unwrap(),
+            &pixels
+        ));
+    }
+
     #[test]
     fn late_identical_query_cannot_replace_newer_results() {
         let mut results = SearchResults::default();

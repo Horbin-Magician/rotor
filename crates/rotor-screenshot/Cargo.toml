@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 rotor-canvas = { path = "../rotor-canvas" }
-image = "0.25.6"
+image.workspace = true
 log = "0.4.27"
 oar-ocr = "0.7.1"
 rayon = "1.10"

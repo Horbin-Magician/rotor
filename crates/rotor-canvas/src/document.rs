@@ -186,9 +186,6 @@ impl Document {
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
-    pub fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
-    }
     fn changed(&mut self) {
         self.revision = self.revision.wrapping_add(1);
     }

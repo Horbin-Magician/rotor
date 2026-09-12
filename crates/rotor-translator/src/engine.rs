@@ -1,7 +1,6 @@
 use std::error::Error;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 mod stream;
 #[cfg(test)]
 use stream::consume_deepseek_stream_line;
@@ -36,8 +35,7 @@ async fn read_bounded_body(
     Ok(body)
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct TranslateResult {
     pub text: String,
     pub translated: String,
@@ -45,8 +43,7 @@ pub struct TranslateResult {
     pub to: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "event", rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub enum TranslateStreamEvent {
     Started {
         text: String,
@@ -79,11 +76,6 @@ impl EngineConfig {
         }
         message
     }
-    pub fn from_app_config() -> EngineConfig {
-        let config = rotor_common::AppConfig::lock_global();
-        Self::from_config(&config.get_all())
-    }
-
     pub fn from_config(config: &rotor_common::Config) -> EngineConfig {
         EngineConfig {
             engine: config
@@ -112,16 +104,6 @@ impl EngineConfig {
                 .unwrap_or_else(|| "auto".into()),
         }
     }
-}
-
-pub async fn translate<F>(
-    text: &str,
-    on_event: F,
-) -> Result<TranslateResult, Box<dyn Error + Send + Sync>>
-where
-    F: Fn(TranslateStreamEvent) + Send + Sync,
-{
-    translate_with_config(&EngineConfig::from_app_config(), text, on_event).await
 }
 
 pub async fn translate_with_config<F>(

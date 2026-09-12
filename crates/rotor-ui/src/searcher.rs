@@ -1,5 +1,4 @@
 use super::search_results::{MAX_RESULTS, SearchResults};
-use base64::prelude::*;
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon,
@@ -20,7 +19,7 @@ pub struct SearchView {
     services: Arc<Services>,
     input: Entity<InputState>,
     results: SearchResults,
-    icons: HashMap<String, Arc<Image>>,
+    icons: HashMap<String, Arc<RenderImage>>,
     scroll: UniformListScrollHandle,
     opening: Option<OperationId>,
     index_request: Option<OperationId>,
@@ -185,17 +184,14 @@ impl SearchView {
                         .iter()
                         .any(|item| &item.file_path == path)
                 });
-                for item in &self.results.items {
-                    if !self.icons.contains_key(&item.file_path)
-                        && let Some(bytes) = item
-                            .icon_data
-                            .as_ref()
-                            .and_then(|value| BASE64_STANDARD.decode(value).ok())
+                for item in &mut self.results.items {
+                    // The render cache owns the converted pixels. Release the
+                    // source after this event instead of retaining both copies.
+                    if let Some(icon) = item.icon.take()
+                        && !self.icons.contains_key(&item.file_path)
+                        && let Ok(prepared) = crate::capture::prepare_image(icon)
                     {
-                        self.icons.insert(
-                            item.file_path.clone(),
-                            Arc::new(Image::from_bytes(ImageFormat::Png, bytes)),
-                        );
+                        self.icons.insert(item.file_path.clone(), prepared.render);
                     }
                 }
                 self.resize(window, cx);

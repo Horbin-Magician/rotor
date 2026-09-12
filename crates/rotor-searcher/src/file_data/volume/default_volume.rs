@@ -13,7 +13,6 @@ use walkdir::{DirEntry, WalkDir};
 use super::super::excluded_dirs::ExcludedDirs;
 use super::default_file_map::FileMap;
 use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
-use rotor_platform::file_util;
 
 const EVENT_CAPACITY: usize = 1024;
 const MAX_EVENT_PATHS: usize = 128;
@@ -465,7 +464,7 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_write", self.drive);
 
-        let index_dir = file_util::get_tmp_path();
+        let index_dir = std::env::temp_dir();
         fs::create_dir_all(index_dir)?;
         self.file_map
             .save(&self.index_file_path().to_string_lossy())?;
@@ -503,7 +502,7 @@ impl Volume {
     }
 
     fn index_file_path(&self) -> std::path::PathBuf {
-        file_util::get_tmp_path().join(format!("{}.fd", index_file_stem(&self.drive)))
+        std::env::temp_dir().join(format!("{}.fd", index_file_stem(&self.drive)))
     }
 
     fn is_ignored_event_path(&self, path: &std::path::Path, action: FileAction) -> bool {

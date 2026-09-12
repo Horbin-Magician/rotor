@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::excluded_dirs::ExcludedDirs;
-use super::search_match::{make_filter, match_indexed_name, prepare_search_name, SearchAlias};
+use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
 use super::{
     read_i64, read_i8, read_string, read_u16, read_u32, read_u64, read_u64_or_eof, SearchResultItem,
 };
@@ -89,8 +89,7 @@ impl FileMap {
         let mut result = Vec::new();
         let mut find_num = 0;
         let mut search_num: usize = 0;
-        let query_lower = query.to_lowercase();
-        let query_filter = make_filter(&query_lower);
+        let mut query = SearchQuery::new(query);
 
         let file_map_iter = self.iter().rev().skip(last_search_num);
         for (_, file) in file_map_iter {
@@ -98,15 +97,14 @@ impl FileMap {
                 return (None, 0);
             }
             search_num += 1;
-            if match_indexed_name(
-                &file.file_name,
-                None,
-                file.search_aliases.as_deref(),
-                file.filter,
-                &query_lower,
-                query_filter,
-            )
-            .is_some()
+            if query
+                .match_name(
+                    &file.file_name,
+                    None,
+                    file.search_aliases.as_deref(),
+                    file.filter,
+                )
+                .is_some()
             {
                 if let Some(path) = self.get_path(&file.parent_index) {
                     let full_path = format!("{}{}", path, file.file_name);
@@ -118,7 +116,7 @@ impl FileMap {
                         file_path: full_path,
                         file_name: file.file_name.clone(),
                         rank: file.rank,
-                        icon_data: None,
+                        icon: None,
                         alias: None,
                     });
                     find_num += 1;
