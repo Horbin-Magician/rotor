@@ -263,6 +263,12 @@ fn show_translator(cx: &mut App) -> Result<(), String> {
 }
 
 fn show_search(cx: &mut App) -> Result<(), String> {
+    // macOS PopUp windows are nonactivating NSPanels. Making the panel key
+    // alone can leave the input method attached to the previously active app.
+    // Activate Rotor before both opening and reusing the text-entry window.
+    #[cfg(target_os = "macos")]
+    cx.activate(true);
+
     if let Some(handle) = cx
         .global::<ShellState>()
         .windows
@@ -276,6 +282,13 @@ fn show_search(cx: &mut App) -> Result<(), String> {
     }
     let services = cx.global::<ShellState>().services.clone();
     cx.open_window(placement::search_options(cx), |window, cx| {
+        #[cfg(target_os = "macos")]
+        if let Err(error) = raw_window_handle::HasWindowHandle::window_handle(window)
+            .map_err(|error| error.to_string())
+            .and_then(rotor_platform::overlay::configure_text_entry_panel)
+        {
+            log::warn!("Failed to configure search panel level: {error}");
+        }
         let appearance = window.observe_window_appearance(|window, cx| {
             if !matches!(
                 cx.global::<ShellState>()

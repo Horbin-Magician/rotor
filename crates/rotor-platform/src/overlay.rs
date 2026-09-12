@@ -27,6 +27,26 @@ pub fn screen_cursor_position(scale: f32) -> Option<(f64, f64)> {
     }
 }
 
+/// Keep a text-entry panel above ordinary windows without covering IME candidates.
+#[cfg(target_os = "macos")]
+pub fn configure_text_entry_panel(
+    handle: raw_window_handle::WindowHandle<'_>,
+) -> Result<(), String> {
+    use objc2_app_kit::NSFloatingWindowLevel;
+    use raw_window_handle::RawWindowHandle;
+
+    let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
+        return Err("Expected an AppKit window".into());
+    };
+    // The borrowed handle refers to a live NSView on the owning UI thread.
+    let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
+    let window = view.window().ok_or("View is not attached to a window")?;
+    // GPUI gives PopUp panels level 101, which can cover input-method windows.
+    // Retain the panel's style and all-Spaces/fullscreen collection behavior.
+    window.setLevel(NSFloatingWindowLevel);
+    Ok(())
+}
+
 /// Give a hidden pin a taskbar entry while preserving its borderless, topmost style.
 #[cfg(target_os = "windows")]
 pub fn enable_pin_taskbar(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {

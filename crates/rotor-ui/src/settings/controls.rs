@@ -41,6 +41,11 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Div {
         let current = self.config.get(key).map(String::as_str).unwrap_or("0");
+        let current = if key == "translator_engine" && matches!(current, "deepseek" | "custom") {
+            "ai"
+        } else {
+            current
+        };
         let selected = options
             .iter()
             .find(|option| option.0 == current)
@@ -62,7 +67,15 @@ impl SettingsView {
                         .items_center()
                         .justify_between()
                         .w_full()
-                        .child(self.t(selected.1, selected.2))
+                        .child(
+                            if key == "translator_engine"
+                                && self.config.get(key).is_some_and(|value| value == "custom")
+                            {
+                                self.t("自定义（旧配置）", "Custom (legacy configuration)")
+                            } else {
+                                self.t(selected.1, selected.2)
+                            },
+                        )
                         .child(Icon::new(IconName::ChevronDown).size(px(14.))),
                 )
                 .disabled(self.controls_locked())

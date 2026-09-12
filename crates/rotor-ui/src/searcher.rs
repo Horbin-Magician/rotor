@@ -1,3 +1,4 @@
+mod chat;
 use super::search_results::{MAX_RESULTS, SearchResults};
 use gpui_kit::{
     component::{
@@ -12,10 +13,21 @@ use gpui_kit::{
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, Services};
 use std::{collections::HashMap, ops::Range, sync::Arc, time::Duration};
 
+actions!(rotor_search, [ToggleAi]);
+struct SearchKeybindings;
+impl Global for SearchKeybindings {}
+
 const SEARCH_HEADER_HEIGHT: f32 = 50.;
 const SEARCH_ROW_HEIGHT: f32 = 60.;
 
 pub struct SearchView {
+    ai_mode: bool,
+    conversation: Vec<rotor_runtime::ChatMessage>,
+    chat_request: Option<OperationId>,
+    chat_error: String,
+    chat_draft: Option<String>,
+    pending_enter: bool,
+    chat_scroll: ScrollHandle,
     services: Arc<Services>,
     input: Entity<InputState>,
     results: SearchResults,
@@ -31,11 +43,16 @@ pub struct SearchView {
     hover_generation: usize,
     pointer: Option<Point<Pixels>>,
     blur_task: Option<Task<()>>,
+    resize_pending: bool,
     _input_events: Subscription,
     _activation: Subscription,
 }
 impl SearchView {
     pub fn new(services: Arc<Services>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        if !cx.has_global::<SearchKeybindings>() {
+            cx.bind_keys([KeyBinding::new("tab", ToggleAi, Some("RotorSearch"))]);
+            cx.set_global(SearchKeybindings);
+        }
         window.set_window_title(search_title(&services.settings()));
         services.update_search();
         let initial = services.search(String::new());
@@ -52,7 +69,7 @@ impl SearchView {
                 InputEvent::Change => this.search(false, window, cx),
                 InputEvent::PressEnter { .. } => {
                     if !this.suppress_enter {
-                        this.open(false, false, window, cx);
+                        this.submit(window, cx);
                     }
                     this.suppress_enter = false;
                 }
@@ -78,6 +95,13 @@ impl SearchView {
         });
         input.update(cx, |input, cx| input.focus(window, cx));
         Self {
+            ai_mode: false,
+            conversation: Vec::new(),
+            chat_request: None,
+            chat_error: String::new(),
+            chat_draft: None,
+            pending_enter: false,
+            chat_scroll: ScrollHandle::new(),
             services,
             input,
             results: SearchResults::default(),
@@ -93,11 +117,18 @@ impl SearchView {
             hover_generation: 0,
             pointer: None,
             blur_task: None,
+            resize_pending: false,
             _input_events: input_events,
             _activation: activation,
         }
     }
     fn search(&mut self, append: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ai_mode {
+            return;
+        }
+        if !append {
+            self.pending_enter = false;
+        }
         if append
             && (self.results.loading
                 || self.results.exhausted
@@ -158,6 +189,10 @@ impl SearchView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.handle_chat_event(event, cx) {
+            self.resize(window, cx);
+            return;
+        }
         match event {
             RuntimeEvent::IndexState(state) => {
                 self.index_state = *state;
@@ -195,6 +230,10 @@ impl SearchView {
                     }
                 }
                 self.resize(window, cx);
+                if self.pending_enter {
+                    self.pending_enter = false;
+                    self.submit(window, cx);
+                }
             }
             RuntimeEvent::FileOpened { id, result } if self.opening == Some(*id) => {
                 self.opening = None;
@@ -206,14 +245,53 @@ impl SearchView {
             RuntimeEvent::SettingsSaved {
                 result: Ok(config), ..
             } => {
-                window.set_window_title(search_title(config));
+                window.set_window_title(if self.ai_mode {
+                    "Rotor · AI"
+                } else {
+                    search_title(config)
+                });
             }
             _ => return,
         }
         cx.notify();
     }
-    fn resize(&self, window: &mut Window, cx: &App) {
-        let desired = px(search_height(self.results.items.len()));
+    fn resize(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.resize_pending = true;
+        cx.notify();
+    }
+
+    fn schedule_resize_after_render(&mut self, window: &Window, cx: &Context<Self>) {
+        if !std::mem::take(&mut self.resize_pending) {
+            return;
+        }
+        // Paint the new mode before resizing the native surface; otherwise the
+        // compositor can stretch the previous chat frame during the transition.
+        // Register during render: GPUI runs next-frame callbacks BEFORE drawing
+        // that next frame. Registering in the input handler would be too early.
+        let view = cx.weak_entity();
+        window.on_next_frame(move |window, cx| {
+            let _ = view.update(cx, |view, cx| {
+                // A newer mode/search change must be painted first as well.
+                if !view.resize_pending {
+                    view.apply_resize(window, cx);
+                }
+            });
+        });
+    }
+
+    fn apply_resize(&self, window: &mut Window, cx: &App) {
+        let desired = px(if self.ai_mode {
+            if self.conversation.is_empty()
+                && self.chat_draft.is_none()
+                && self.chat_error.is_empty()
+            {
+                SEARCH_HEADER_HEIGHT
+            } else {
+                search_height(7)
+            }
+        } else {
+            search_height(self.results.items.len())
+        });
         let available = window
             .display(cx)
             .map(|display| {
@@ -221,7 +299,11 @@ impl SearchView {
                     .max(px(SEARCH_HEADER_HEIGHT))
             })
             .unwrap_or(desired);
-        window.resize(size(window.viewport_size().width, desired.min(available)));
+        let current = window.viewport_size();
+        let target = size(current.width, desired.min(available));
+        if target != current {
+            window.resize(target);
+        }
     }
 
     fn rows(
@@ -433,18 +515,30 @@ impl SearchView {
     }
 }
 impl Render for SearchView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.schedule_resize_after_render(window, cx);
         let chinese = rotor_common::i18n::language_for_config(&self.services.settings()) == "zh-CN";
         let weak = cx.weak_entity();
         let count = self.results.items.len();
         let dark = cx.theme().is_dark();
-        let action_error = !self.message.is_empty();
-        let indexing = matches!(
-            self.index_state,
-            IndexState::Unbuild | IndexState::Building | IndexState::Loading | IndexState::Released
-        ) && !action_error;
+        let action_error = if self.ai_mode {
+            !self.chat_error.is_empty()
+        } else {
+            !self.message.is_empty()
+        };
+        let indexing = !self.ai_mode
+            && matches!(
+                self.index_state,
+                IndexState::Unbuild
+                    | IndexState::Building
+                    | IndexState::Loading
+                    | IndexState::Released
+            )
+            && !action_error;
         div()
             .id("searcher")
+            .key_context("RotorSearch")
+            .on_action(cx.listener(Self::on_toggle_ai))
             .flex()
             .flex_col()
             .size_full()
@@ -468,11 +562,11 @@ impl Render for SearchView {
                         window.remove_window();
                         cx.stop_propagation();
                     }
-                    "up" => {
+                    "up" if !this.ai_mode => {
                         this.results.selected = this.results.selected.saturating_sub(1);
                         cx.stop_propagation();
                     }
-                    "down" => {
+                    "down" if !this.ai_mode => {
                         this.results.selected = (this.results.selected + 1)
                             .min(this.results.items.len().saturating_sub(1));
                         cx.stop_propagation();
@@ -493,10 +587,22 @@ impl Render for SearchView {
                     .items_center()
                     .gap(px(8.))
                     .child(
-                        Icon::default()
-                            .path("search/search.svg")
+                        div()
                             .size(px(24.))
-                            .text_color(rgb(if dark { 0xcccccc } else { 0x666666 })),
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Icon::default()
+                                    .path(if self.ai_mode {
+                                        "search/ai.svg"
+                                    } else {
+                                        "search/search.svg"
+                                    })
+                                    .size(px(if self.ai_mode { 20. } else { 24. }))
+                                    .text_color(rgb(if dark { 0xcccccc } else { 0x666666 })),
+                            ),
                     )
                     .child(
                         Input::new(&self.input)
@@ -508,10 +614,11 @@ impl Render for SearchView {
                             .min_w_0()
                             .p_0()
                             .text_size(px(16.))
-                            .aria_label(if chinese {
-                                "搜索文件"
-                            } else {
-                                "Search files"
+                            .aria_label(match (self.ai_mode, chinese) {
+                                (true, true) => "向 AI 提问",
+                                (true, false) => "Ask AI",
+                                (false, true) => "搜索文件",
+                                (false, false) => "Search files",
                             }),
                     )
                     .when(self.input.read(cx).value().is_empty(), |header| {
@@ -525,10 +632,11 @@ impl Render for SearchView {
                                 .items_center()
                                 .text_size(px(16.))
                                 .text_color(rgb(if dark { 0x666666 } else { 0x999999 }))
-                                .child(if chinese {
-                                    "输入你想要搜索的内容..."
-                                } else {
-                                    "Enter what you want to search..."
+                                .child(match (self.ai_mode, chinese) {
+                                    (true, true) => "输入问题，回车发送…",
+                                    (true, false) => "Ask anything, press Enter…",
+                                    (false, true) => "搜索文件，Tab 切换 AI…",
+                                    (false, false) => "Search files · Tab for AI…",
                                 }),
                         )
                     })
@@ -566,23 +674,27 @@ impl Render for SearchView {
                             ),
                     ),
             )
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .min_h_0()
-                    .child(
-                        uniform_list("results", count, move |range, window, cx| {
-                            weak.update(cx, |this, cx| this.rows(range, window, cx))
-                                .unwrap_or_default()
-                        })
-                        .track_scroll(&self.scroll)
-                        .size_full(),
-                    )
-                    .when(count > 0, |list| {
-                        list.child(Scrollbar::vertical(&self.scroll))
-                    }),
-            )
+            .when(self.ai_mode, |view| view.child(self.render_chat(cx)))
+            .when(!self.ai_mode, |view| {
+                view.child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .child(
+                            uniform_list("results", count, move |range, window, cx| {
+                                weak.update(cx, |this, cx| this.rows(range, window, cx))
+                                    .unwrap_or_default()
+                            })
+                            .track_scroll(&self.scroll)
+                            .size_full(),
+                        )
+                        .when(count > 0, |list| {
+                            list.child(Scrollbar::vertical(&self.scroll))
+                        }),
+                )
+            })
+            .into_any_element()
     }
 }
 

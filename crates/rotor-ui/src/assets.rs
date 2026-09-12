@@ -21,6 +21,7 @@ pub struct UiAssets;
 impl AssetSource for UiAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         let search_icon: Option<&'static [u8]> = match path {
+            "search/ai.svg" => Some(include_bytes!("search_icons/ai.svg")),
             "search/search.svg" => Some(include_bytes!("search_icons/search.svg")),
             "search/admin.svg" => Some(include_bytes!("search_icons/admin.svg")),
             "search/folder.svg" => Some(include_bytes!("search_icons/folder.svg")),
@@ -39,10 +40,15 @@ impl AssetSource for UiAssets {
         let mut paths = Assets.list(path)?;
         paths.extend(ExtraIcons.list(path)?);
         paths.extend(
-            ["search/search.svg", "search/admin.svg", "search/folder.svg"]
-                .into_iter()
-                .filter(|icon| icon.starts_with(path))
-                .map(SharedString::from),
+            [
+                "search/search.svg",
+                "search/ai.svg",
+                "search/admin.svg",
+                "search/folder.svg",
+            ]
+            .into_iter()
+            .filter(|icon| icon.starts_with(path))
+            .map(SharedString::from),
         );
         paths.sort();
         paths.dedup();

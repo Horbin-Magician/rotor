@@ -11,7 +11,7 @@ A native desktop toolbox built with Rust, GPUI and gpui-component.
 - Indexed file search with keyboard navigation, exclusions and Windows administrator launch.
 - Multi-display screenshots, pinned images, crop/zoom, pen/rectangle/arrow/text annotations, PNG and clipboard export.
 - Local Chinese/English OCR using bundled ONNX models; annotations use installed system fonts.
-- Input and selection translation with Google, DeepSeek and custom HTTP engines.
+- Input and selection translation with Google or AI translation, using global DeepSeek, OpenAI, Claude and custom provider settings.
 - Configurable quick actions, shortcut recording, automatic settings saves, light/dark themes and English/Chinese interfaces.
 - Native tray, single-instance handling, startup integration and signed updater verification.
 

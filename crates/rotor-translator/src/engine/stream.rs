@@ -6,13 +6,21 @@ const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_TRANSLATION_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Default)]
-pub(super) struct DeepSeekStream {
+pub(super) struct AiStream {
     pending: Vec<u8>,
     translated: String,
     done: bool,
+    anthropic: bool,
 }
 
-impl DeepSeekStream {
+impl AiStream {
+    pub(super) fn new(anthropic: bool) -> Self {
+        Self {
+            anthropic,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn push<F>(&mut self, chunk: &[u8], on_event: &F) -> Result<bool>
     where
         F: Fn(TranslateStreamEvent) + Send + Sync,
@@ -24,12 +32,16 @@ impl DeepSeekStream {
                 break;
             }
             if part.len() > MAX_LINE_BYTES.saturating_sub(self.pending.len()) {
-                return Err("DeepSeek stream event exceeds the 1 MiB limit".into());
+                return Err("AI stream event exceeds the 1 MiB limit".into());
             }
             self.pending.extend_from_slice(part);
             if part.last() == Some(&b'\n') {
-                self.done =
-                    consume_deepseek_stream_line(&self.pending, &mut self.translated, on_event)?;
+                self.done = consume_stream_line(
+                    &self.pending,
+                    &mut self.translated,
+                    on_event,
+                    self.anthropic,
+                )?;
                 self.pending.clear();
             }
         }
@@ -41,26 +53,43 @@ impl DeepSeekStream {
         F: Fn(TranslateStreamEvent) + Send + Sync,
     {
         if !self.done && !self.pending.is_empty() {
-            self.done =
-                consume_deepseek_stream_line(&self.pending, &mut self.translated, on_event)?;
+            self.done = consume_stream_line(
+                &self.pending,
+                &mut self.translated,
+                on_event,
+                self.anthropic,
+            )?;
         }
         if !self.done {
             return Err(
-                "DeepSeek translation stream ended before [DONE]; translation is incomplete".into(),
+                "AI translation stream ended before completion; translation is incomplete".into(),
             );
         }
         let translated = self.translated.trim().to_owned();
         if translated.is_empty() {
-            return Err("Unexpected DeepSeek response format".into());
+            return Err("Unexpected AI response format".into());
         }
         Ok(translated)
     }
 }
 
-pub(super) fn consume_deepseek_stream_line<F>(
+#[cfg(test)]
+pub(super) fn consume_openai_stream_line<F>(
     line: &[u8],
     translated: &mut String,
     on_event: &F,
+) -> Result<bool>
+where
+    F: Fn(TranslateStreamEvent) + Send + Sync,
+{
+    consume_stream_line(line, translated, on_event, false)
+}
+
+fn consume_stream_line<F>(
+    line: &[u8],
+    translated: &mut String,
+    on_event: &F,
+    anthropic: bool,
 ) -> Result<bool>
 where
     F: Fn(TranslateStreamEvent) + Send + Sync,
@@ -72,7 +101,7 @@ where
     if data.is_empty() {
         return Ok(false);
     }
-    if data == "[DONE]" {
+    if !anthropic && data == "[DONE]" {
         return Ok(true);
     }
     let payload: serde_json::Value = serde_json::from_str(data)?;
@@ -80,23 +109,44 @@ where
         .pointer("/error/message")
         .and_then(|value| value.as_str())
     {
-        return Err(format!("DeepSeek translate stream failed: {message}").into());
+        return Err(format!("AI translation stream failed: {message}").into());
+    }
+    if anthropic {
+        if payload["type"] == "message_stop" {
+            return Ok(true);
+        }
+        if let Some(reason) = payload
+            .pointer("/delta/stop_reason")
+            .and_then(|value| value.as_str())
+        {
+            if reason != "end_turn" {
+                return Err(format!("AI translation did not complete: {reason}").into());
+            }
+        }
     }
     if let Some(reason) = payload
         .pointer("/choices/0/finish_reason")
         .and_then(|value| value.as_str())
     {
         if reason != "stop" {
-            return Err(format!("DeepSeek translation did not complete: {reason}").into());
+            return Err(format!("AI translation did not complete: {reason}").into());
         }
     }
-    if let Some(content) = payload
-        .pointer("/choices/0/delta/content")
+    let content = if anthropic {
+        if payload["type"] == "content_block_delta" && payload["delta"]["type"] == "text_delta" {
+            payload.pointer("/delta/text")
+        } else {
+            None
+        }
+    } else {
+        payload.pointer("/choices/0/delta/content")
+    };
+    if let Some(content) = content
         .and_then(|value| value.as_str())
         .filter(|text| !text.is_empty())
     {
         if content.len() > MAX_TRANSLATION_BYTES.saturating_sub(translated.len()) {
-            return Err("DeepSeek translation exceeds the 16 MiB limit".into());
+            return Err("AI translation exceeds the 16 MiB limit".into());
         }
         translated.push_str(content);
         on_event(TranslateStreamEvent::Delta {
@@ -119,7 +169,7 @@ mod tests {
         for split in 0..=wire.len() {
             let events = Mutex::new(Vec::new());
             let sink = |event| events.lock().unwrap().push(event);
-            let mut stream = DeepSeekStream::default();
+            let mut stream = AiStream::default();
             stream.push(&wire.as_bytes()[..split], &sink).unwrap();
             stream.push(&wire.as_bytes()[split..], &sink).unwrap();
             assert_eq!(stream.finish(&sink).unwrap(), "你好🦀");
@@ -132,7 +182,7 @@ mod tests {
     #[test]
     fn early_eof_never_publishes_a_successful_partial_translation() {
         for tail in ["", "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n"] {
-            let mut stream = DeepSeekStream::default();
+            let mut stream = AiStream::default();
             stream
                 .push(format!("{DELTA}{tail}").as_bytes(), &|_| {})
                 .unwrap();
@@ -153,12 +203,12 @@ mod tests {
             "insufficient_system_resource",
             "unknown",
         ] {
-            let mut stream = DeepSeekStream::default();
+            let mut stream = AiStream::default();
             stream.push(DELTA.as_bytes(), &|_| {}).unwrap();
             let error = stream.push(format!("data: {{\"choices\":[{{\"finish_reason\":\"{reason}\"}}]}}\ndata: [DONE]\n").as_bytes(), &|_| {}).unwrap_err();
             assert!(error.to_string().contains(reason));
         }
-        let mut stream = DeepSeekStream::default();
+        let mut stream = AiStream::default();
         assert!(stream
             .push(
                 b"data: {\"error\":{\"message\":\"fixture failure\"}}\n",
@@ -171,7 +221,7 @@ mod tests {
 
     #[test]
     fn completed_stream_ignores_trailing_data_and_rejects_empty_output() {
-        let mut stream = DeepSeekStream::default();
+        let mut stream = AiStream::default();
         stream
             .push(
                 format!("{DELTA}data: [DONE]\ngarbage\n{DELTA}").as_bytes(),
@@ -179,14 +229,14 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stream.finish(&|_| {}).unwrap(), "你好🦀");
-        let mut empty = DeepSeekStream::default();
+        let mut empty = AiStream::default();
         empty.push(b"data: [DONE]\n", &|_| {}).unwrap();
         assert!(empty.finish(&|_| {}).is_err());
     }
 
     #[test]
     fn oversized_events_and_outputs_fail_before_growth_or_callback() {
-        let mut stream = DeepSeekStream::default();
+        let mut stream = AiStream::default();
         assert!(stream
             .push(&vec![b'x'; MAX_LINE_BYTES + 1], &|_| panic!(
                 "unexpected callback"
@@ -195,11 +245,57 @@ mod tests {
         assert!(stream.pending.is_empty());
         let mut output = "x".repeat(MAX_TRANSLATION_BYTES);
         assert!(
-            consume_deepseek_stream_line(DELTA.as_bytes(), &mut output, &|_| panic!(
+            consume_openai_stream_line(DELTA.as_bytes(), &mut output, &|_| panic!(
                 "unexpected callback"
             ))
             .is_err()
         );
         assert_eq!(output.len(), MAX_TRANSLATION_BYTES);
+    }
+}
+
+#[cfg(test)]
+mod anthropic_tests {
+    use super::*;
+    const DELTA: &str = "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"你好🦀\"}}\n\n";
+    const END: &str = "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n";
+
+    #[test]
+    fn anthropic_handles_fragmented_utf8_and_requires_completion() {
+        let wire = format!("{DELTA}{END}");
+        for split in 0..=wire.len() {
+            let mut stream = AiStream::new(true);
+            stream.push(&wire.as_bytes()[..split], &|_| {}).unwrap();
+            stream.push(&wire.as_bytes()[split..], &|_| {}).unwrap();
+            assert_eq!(stream.finish(&|_| {}).unwrap(), "你好🦀");
+        }
+        let mut stream = AiStream::new(true);
+        stream.push(DELTA.as_bytes(), &|_| {}).unwrap();
+        assert!(stream
+            .finish(&|_| {})
+            .unwrap_err()
+            .to_string()
+            .contains("incomplete"));
+    }
+
+    #[test]
+    fn anthropic_rejects_truncation_refusal_and_errors() {
+        for reason in ["max_tokens", "tool_use", "refusal", "pause_turn"] {
+            let mut stream = AiStream::new(true);
+            stream.push(DELTA.as_bytes(), &|_| {}).unwrap();
+            let wire = format!("data: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"{reason}\"}}}}\n{END}");
+            assert!(stream
+                .push(wire.as_bytes(), &|_| {})
+                .unwrap_err()
+                .to_string()
+                .contains(reason));
+        }
+        let mut stream = AiStream::new(true);
+        assert!(stream
+            .push(
+                b"data: {\"type\":\"error\",\"error\":{\"message\":\"overloaded\"}}\n",
+                &|_| {}
+            )
+            .is_err());
     }
 }

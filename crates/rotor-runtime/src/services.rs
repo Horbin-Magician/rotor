@@ -30,6 +30,9 @@ use settings_worker::{
     merge_settings_changes, settings_loop, SettingsCommand, SettingsPatch, SettingsTail,
 };
 
+mod ai_test;
+mod chat;
+pub use rotor_translator::engine::ChatMessage;
 mod capture_worker;
 use capture_worker::{CaptureRequest, CaptureWorker};
 
@@ -56,7 +59,19 @@ pub struct CaptureBundle {
 }
 
 pub enum RuntimeEvent {
+    Chat {
+        id: OperationId,
+        event: TranslateStreamEvent,
+    },
+    ChatFinished {
+        id: OperationId,
+        result: Result<String, String>,
+    },
     Update(Arc<crate::UpdateSnapshot>),
+    AiProviderTested {
+        id: OperationId,
+        result: Result<(), String>,
+    },
     Overview {
         id: OperationId,
         result: Result<Overview, String>,
@@ -148,6 +163,8 @@ pub struct Services {
     settings_worker: Option<JoinHandle<()>>,
     pins: PinService,
     searcher: Option<Searcher>,
+    chat: Mutex<Option<(OperationId, JoinHandle<()>)>>,
+    ai_test: Mutex<Option<(OperationId, JoinHandle<()>)>>,
     translation: Mutex<Option<JoinHandle<()>>>,
     translation_id: Arc<AtomicU64>,
     selection: Mutex<Option<Arc<AtomicBool>>>,
@@ -225,6 +242,8 @@ impl Services {
                 settings_worker: Some(settings_worker),
                 pins,
                 searcher,
+                chat: Mutex::new(None),
+                ai_test: Mutex::new(None),
                 translation: Mutex::new(None),
                 translation_id: Arc::new(AtomicU64::new(0)),
                 selection: Mutex::new(None),
@@ -868,6 +887,8 @@ impl Services {
         }
         self.updates.shutdown();
         *lock(&self.pins.final_updates) = updates;
+        self.cancel_chat(None);
+        self.cancel_ai_provider_test(None);
         self.cancel_translation();
         self.slots.close();
         self.cancel_selection();

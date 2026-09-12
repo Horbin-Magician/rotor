@@ -183,6 +183,7 @@ impl AppConfig {
     pub fn get_all(&self) -> Config {
         let mut merged = DEFAULT_CONFIG.clone();
         merged.extend(self.config.clone());
+        crate::ai_provider::apply_defaults(&mut merged);
         merged
     }
 

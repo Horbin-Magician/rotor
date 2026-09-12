@@ -46,6 +46,7 @@ fn settings_pages_render_with_windows_main_thread_stack() {
             for _ in 0..3 {
                 for section in [
                     Section::General,
+                    Section::AiProvider,
                     Section::Overview,
                     Section::Pin,
                     Section::Search,
@@ -59,7 +60,27 @@ fn settings_pages_render_with_windows_main_thread_stack() {
                     cx.update(|window, cx| window.draw(cx).clear(cx));
                 }
             }
-            for engine in ["deepseek", "custom"] {
+            for provider in rotor_common::ai_provider::PROVIDERS {
+                view.update(cx, |view, cx| {
+                    view.section = Section::AiProvider;
+                    view.config.insert("ai_provider".into(), (*provider).into());
+                    let visible: Vec<_> = view
+                        .fields
+                        .iter()
+                        .filter(|field| view.field_visible(field))
+                        .collect();
+                    assert_eq!(visible.len(), 4);
+                    assert!(
+                        visible
+                            .iter()
+                            .all(|field| field.key.starts_with(&format!("ai_{provider}_")))
+                    );
+                    cx.notify();
+                });
+                cx.update(|window, cx| window.draw(cx).clear(cx));
+            }
+            view.update(cx, |view, cx| view.check_ai_test_result_identity(cx));
+            for engine in ["google", "ai", "deepseek", "custom"] {
                 view.update(cx, |view, cx| {
                     view.section = Section::Translation;
                     view.config

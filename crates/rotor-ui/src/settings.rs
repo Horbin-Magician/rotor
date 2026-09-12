@@ -15,6 +15,7 @@ use rotor_runtime::{IndexState, OperationId, RuntimeEvent, SearchIndexStatus, Se
 use std::sync::Arc;
 mod action_change;
 mod actions;
+mod ai_provider;
 mod appearance;
 mod automatic;
 mod autosave;
@@ -49,6 +50,7 @@ fn text(config: &Config, zh: &'static str, en: &'static str) -> &'static str {
 enum Section {
     Overview,
     General,
+    AiProvider,
     Search,
     Pin,
     Translation,
@@ -66,6 +68,7 @@ enum CloseTarget {
     Application,
 }
 pub struct SettingsView {
+    ai_test: ai_provider::ConfigurationTest,
     update: Arc<rotor_runtime::UpdateSnapshot>,
     config: Config,
     services: Arc<Services>,
@@ -100,7 +103,7 @@ pub struct SettingsView {
     startup_request: Option<OperationId>,
     logo: logo::Logo,
     navigation_hover: Option<Section>,
-    navigation_highlights: [motion::Transition; 6],
+    navigation_highlights: [motion::Transition; 7],
     navigation_indicator: motion::Transition,
     logo_hover: bool,
     logo_glow: motion::Transition,
@@ -111,11 +114,12 @@ impl SettingsView {
         cx.notify();
     }
     pub fn new(
-        config: Config,
+        mut config: Config,
         services: Arc<Services>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        rotor_common::ai_provider::apply_defaults(&mut config);
         let definitions = [
             (
                 "shortcut_search",
@@ -172,28 +176,100 @@ impl SettingsView {
                 false,
             ),
             (
-                "translator_deepseek_api_key",
-                Section::Translation,
-                ("DeepSeek API 密钥", "DeepSeek API key"),
-                true,
-            ),
-            (
-                "translator_deepseek_model",
-                Section::Translation,
-                ("DeepSeek 模型", "DeepSeek model"),
+                "ai_deepseek_base_url",
+                Section::AiProvider,
+                ("API 基础地址", "API base URL"),
                 false,
             ),
             (
-                "translator_custom_url",
-                Section::Translation,
-                ("自定义 URL 模板", "Custom URL template"),
+                "ai_deepseek_api_key",
+                Section::AiProvider,
+                ("API 密钥", "API key"),
+                true,
+            ),
+            (
+                "ai_deepseek_model",
+                Section::AiProvider,
+                ("模型 ID", "Model ID"),
                 false,
             ),
             (
-                "translator_custom_key",
-                Section::Translation,
-                ("自定义 API 密钥", "Custom API key"),
+                "ai_deepseek_max_tokens",
+                Section::AiProvider,
+                ("最大输出 Token 数", "Maximum output tokens"),
+                false,
+            ),
+            (
+                "ai_openai_base_url",
+                Section::AiProvider,
+                ("API 基础地址", "API base URL"),
+                false,
+            ),
+            (
+                "ai_openai_api_key",
+                Section::AiProvider,
+                ("API 密钥", "API key"),
                 true,
+            ),
+            (
+                "ai_openai_model",
+                Section::AiProvider,
+                ("模型 ID", "Model ID"),
+                false,
+            ),
+            (
+                "ai_openai_max_tokens",
+                Section::AiProvider,
+                ("最大输出 Token 数", "Maximum output tokens"),
+                false,
+            ),
+            (
+                "ai_anthropic_base_url",
+                Section::AiProvider,
+                ("API 基础地址", "API base URL"),
+                false,
+            ),
+            (
+                "ai_anthropic_api_key",
+                Section::AiProvider,
+                ("API 密钥", "API key"),
+                true,
+            ),
+            (
+                "ai_anthropic_model",
+                Section::AiProvider,
+                ("模型 ID", "Model ID"),
+                false,
+            ),
+            (
+                "ai_anthropic_max_tokens",
+                Section::AiProvider,
+                ("最大输出 Token 数", "Maximum output tokens"),
+                false,
+            ),
+            (
+                "ai_custom_base_url",
+                Section::AiProvider,
+                ("API 基础地址", "API base URL"),
+                false,
+            ),
+            (
+                "ai_custom_api_key",
+                Section::AiProvider,
+                ("API 密钥", "API key"),
+                true,
+            ),
+            (
+                "ai_custom_model",
+                Section::AiProvider,
+                ("模型 ID", "Model ID"),
+                false,
+            ),
+            (
+                "ai_custom_max_tokens",
+                Section::AiProvider,
+                ("最大输出 Token 数", "Maximum output tokens"),
+                false,
             ),
         ];
         let fields: Vec<Field> = definitions
@@ -235,6 +311,8 @@ impl SettingsView {
                         "if_ask_save_path",
                         "if_auto_change_save_path",
                         "zoom_delta",
+                        "ai_provider",
+                        "ai_custom_protocol",
                         "translator_engine",
                         "translator_target_lang",
                     ]
@@ -305,6 +383,7 @@ impl SettingsView {
             }
         });
         Self {
+            ai_test: ai_provider::ConfigurationTest::default(),
             update: services.update_snapshot(),
             config,
             services,
@@ -357,6 +436,9 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) {
         match event {
+            RuntimeEvent::AiProviderTested { id, result } => {
+                self.finish_ai_test(id, result, cx);
+            }
             RuntimeEvent::Update(snapshot) if snapshot.revision >= self.update.revision => {
                 self.update = snapshot;
             }
@@ -462,16 +544,15 @@ impl SettingsView {
         if field.section != self.section {
             return false;
         }
-        let engine = self
-            .config
-            .get("translator_engine")
-            .map(String::as_str)
-            .unwrap_or("google");
-        match field.key {
-            "translator_deepseek_api_key" | "translator_deepseek_model" => engine == "deepseek",
-            "translator_custom_url" | "translator_custom_key" => engine == "custom",
-            _ => true,
+        if field.section == Section::AiProvider {
+            let provider = self
+                .config
+                .get("ai_provider")
+                .map(String::as_str)
+                .unwrap_or("deepseek");
+            return field.key.starts_with(&format!("ai_{provider}_"));
         }
+        true
     }
 
     fn choose_save_directory(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -532,6 +613,7 @@ impl Render for SettingsView {
                 });
             }
         }
+        self.invalidate_ai_test(cx);
         let compact = window.viewport_size().width < px(760.);
         let logo_size = 50.;
         let logo = self.logo.image(logo_size, window.scale_factor());
@@ -554,6 +636,14 @@ impl Render for SettingsView {
                 "General",
                 "让 Rotor 符合你的使用习惯",
                 "Make Rotor feel at home",
+            ),
+            (
+                "ai-provider",
+                Section::AiProvider,
+                "AI 服务商",
+                "AI providers",
+                "统一管理 AI 服务、密钥与模型",
+                "Manage AI services, credentials and models",
             ),
             (
                 "pin",
@@ -595,7 +685,7 @@ impl Render for SettingsView {
         let indicator_inset = f32::from(window.rem_size()) * 0.25;
         let mut row_top = 0.;
         let mut indicator_target = 0.;
-        let mut highlights = [0.; 6];
+        let mut highlights = [0.; 7];
         let (glow_opacity, mut animating) =
             self.logo_glow
                 .sample(if self.logo_hover { 1. } else { 0. }, now, reduce_motion);
@@ -639,6 +729,39 @@ impl Render for SettingsView {
             Section::General => {
                 content = content.child(self.general_panel(cx));
             }
+            Section::AiProvider => {
+                content = content
+                    .child(appearance::heading(
+                        self.t("全局 AI 服务", "Global AI service"),
+                        cx,
+                    ))
+                    .child(self.dropdown(
+                        "ai_provider",
+                        ("当前服务商", "Active provider"),
+                        &[
+                            ("deepseek", "DeepSeek", "DeepSeek"),
+                            ("openai", "OpenAI", "OpenAI"),
+                            ("anthropic", "Claude (Anthropic)", "Claude (Anthropic)"),
+                            ("custom", "自定义", "Custom"),
+                        ],
+                        cx,
+                    ));
+                if self
+                    .config
+                    .get("ai_provider")
+                    .is_some_and(|value| value == "custom")
+                {
+                    content = content.child(self.dropdown(
+                        "ai_custom_protocol",
+                        ("接口协议", "API protocol"),
+                        &[
+                            ("openai", "OpenAI 兼容", "OpenAI compatible"),
+                            ("anthropic", "Anthropic Messages", "Anthropic Messages"),
+                        ],
+                        cx,
+                    ));
+                }
+            }
             Section::Search => {
                 content = content
                     .child(
@@ -678,18 +801,40 @@ impl Render for SettingsView {
                     .child(self.zoom_step_slider(cx));
             }
             Section::Translation => {
-                content = content
-                    .child(appearance::heading(
-                        self.t("翻译服务", "Translation service"),
+                content = content.child(appearance::heading(
+                    self.t("翻译服务", "Translation service"),
+                    cx,
+                ));
+                if self
+                    .config
+                    .get("translator_engine")
+                    .is_some_and(|value| matches!(value.as_str(), "ai" | "deepseek"))
+                {
+                    content = content.child(appearance::caption(
+                        self.t(
+                            "AI 翻译的密钥、模型与服务地址在「AI 服务商」中统一设置。",
+                            "Configure AI translation credentials, model and endpoint in AI providers.",
+                        ),
                         cx,
-                    ))
+                    ));
+                }
+                if self
+                    .config
+                    .get("translator_engine")
+                    .is_some_and(|value| value == "custom")
+                {
+                    content = content.child(appearance::caption(self.t(
+                        "当前仍使用已保存的旧版 URL 翻译引擎；选择 AI 翻译后将使用全局 AI 服务。",
+                        "The saved legacy URL engine is still active. Select AI translation to use the global AI service."
+                    ), cx));
+                }
+                content = content
                     .child(self.dropdown(
                         "translator_engine",
                         ("翻译引擎", "Translation engine"),
                         &[
                             ("google", "Google", "Google"),
-                            ("deepseek", "DeepSeek", "DeepSeek"),
-                            ("custom", "自定义", "Custom"),
+                            ("ai", "AI 翻译", "AI translation"),
                         ],
                         cx,
                     ))
@@ -710,12 +855,12 @@ impl Render for SettingsView {
                 content = content.child(self.action_editor(cx));
             }
         }
-        if matches!(self.section, Section::Pin | Section::Translation) {
+        if matches!(self.section, Section::Pin | Section::AiProvider) {
             let mut fields = appearance::group(
                 if self.section == Section::Pin {
                     self.t("贴图快捷键", "Pin shortcuts")
                 } else {
-                    self.t("引擎配置", "Engine configuration")
+                    self.t("服务商配置", "Provider configuration")
                 },
                 cx,
             )
@@ -771,6 +916,9 @@ impl Render for SettingsView {
             {
                 content = content.child(fields);
             }
+        }
+        if self.section == Section::AiProvider {
+            content = content.child(self.ai_test_controls(cx));
         }
         div()
             .id("settings")
@@ -1046,6 +1194,9 @@ impl Render for SettingsView {
 
 impl Drop for SettingsView {
     fn drop(&mut self) {
+        if let Some(id) = self.ai_test.pending {
+            self.services.cancel_ai_provider_test(Some(id));
+        }
         self.services.set_shortcut_recording(false);
     }
 }
