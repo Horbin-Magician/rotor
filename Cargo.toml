@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-exclude = ["native/gpui-platform", "native/gpui-macos"]
+exclude = ["native/block", "native/gpui-platform", "native/gpui-macos"]
 members = [
   "crates/rotor-common",
   "crates/rotor-platform",
@@ -39,5 +39,6 @@ codegen-units = 1
 strip = "symbols"
 
 [patch.crates-io]
+block = { path = "native/block" }
 gpui-pre-platform = { path = "native/gpui-platform" }
 gpui-pre-macos = { path = "native/gpui-macos" }

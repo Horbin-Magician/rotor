@@ -1,4 +1,5 @@
 #![cfg(target_os = "macos")]
+#![deny(deprecated)]
 //! macOS platform implementation for GPUI.
 //!
 //! macOS screens have a y axis that goes up from the bottom of the screen and
@@ -9,12 +10,14 @@ mod display;
 mod display_link;
 mod events;
 mod keyboard;
+mod objc_bridge;
 mod pasteboard;
 mod system_notifications;
 
 #[cfg(feature = "screen-capture")]
 mod screen_capture;
 
+use crate::objc_bridge::{ObjcId as id, string_utf8};
 use gpui_apple::metal_renderer as renderer;
 
 pub mod metal_renderer {
@@ -34,10 +37,7 @@ mod platform;
 mod window;
 mod window_appearance;
 
-use cocoa::{
-    base::{id, nil},
-    foundation::{NSAutoreleasePool, NSNotFound, NSString, NSUInteger},
-};
+use objc2_foundation::{NSNotFound, NSUInteger};
 
 use objc::runtime::{BOOL, NO, YES};
 use std::{
@@ -74,7 +74,7 @@ trait NSStringExt {
 impl NSStringExt for id {
     unsafe fn to_str(&self) -> &str {
         unsafe {
-            let cstr = self.UTF8String();
+            let cstr = string_utf8(*self);
             if cstr.is_null() {
                 ""
             } else {
@@ -134,8 +134,7 @@ unsafe impl objc::Encode for NSRange {
     }
 }
 
-/// Allow NSString::alloc use here because it sets autorelease
-#[allow(clippy::disallowed_methods)]
+/// Return an autoreleased string for the remaining raw AppKit calls.
 unsafe fn ns_string(string: &str) -> id {
-    unsafe { NSString::alloc(nil).init_str(string).autorelease() }
+    objc2::rc::Retained::autorelease_ptr(objc2_foundation::NSString::from_str(string)).cast()
 }

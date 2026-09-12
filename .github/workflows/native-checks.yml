@@ -50,6 +50,14 @@ jobs:
       - run: cargo check -p rotor-platform --locked
       - run: cargo check --workspace --locked
       - run: cargo test --workspace --locked
+      - if: runner.os == 'macOS'
+        run: rustfmt --edition 2024 --check native/gpui-macos/src/gpui_macos.rs
+      - if: runner.os == 'macOS'
+        run: cargo test -p gpui-pre-macos -p rotor-desktop --lib --features gpui-platform/test-support --locked
+      - if: runner.os == 'macOS'
+        run: cargo test --manifest-path native/block/Cargo.toml --target-dir target/block-tests --locked
+      - if: runner.os == 'macOS'
+        run: cargo clippy -p gpui-pre-macos -p rotor-desktop --all-targets --features gpui-platform/test-support --locked -- -D warnings
       - shell: pwsh
         run: ./.github/scripts/check-core-dependencies.ps1
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings

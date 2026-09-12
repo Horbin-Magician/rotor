@@ -19,3 +19,26 @@ finish releasing the state. No rendering, input or platform APIs are changed.
 Re-evaluate this patch when upgrading GPUI. Preserve the original license;
 do not edit the Cargo registry cache. Validate repeated native window closure
 with accessibility enabled when replacing or removing the patch.
+
+## Foundation compatibility
+
+The backend uses objc2 Foundation objects and geometry instead of deprecated
+Cocoa Foundation bindings. `objc_bridge.rs` keeps raw handles at the remaining
+objc 0.2 AppKit boundaries and wraps objc2 geometry transparently for callback
+registration with the legacy runtime. Its encodings come from objc2; it does
+not duplicate the Foundation layouts. Autoreleased strings, arrays and data
+retain their existing ownership contracts. Deprecated API use is denied in
+this local backend, including when Cargo checks it as a dependency.
+
+From the repository root, run:
+
+```sh
+rustfmt --edition 2024 --check native/gpui-macos/src/gpui_macos.rs
+cargo test -p gpui-pre-macos -p rotor-desktop --lib --features gpui-platform/test-support --locked
+```
+
+Select rotor-desktop as well so Cargo can enable the dependency's test-support
+feature without making the vendored backend a workspace member. The native
+tests verify geometry across both runtimes and Foundation ownership; the
+pasteboard tests use unique pasteboards and require access to the macOS
+pasteboard service. These tests do not replace visual window/input validation.

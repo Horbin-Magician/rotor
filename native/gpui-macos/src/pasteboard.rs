@@ -1,14 +1,12 @@
-use core::slice;
-use std::ffi::{CStr, c_void};
+use crate::objc_bridge::{
+    ObjcId as id, array_count, array_item, data_from_bytes, nil, string_utf8,
+};
+use std::ffi::CStr;
 use std::path::PathBuf;
 
-use cocoa::{
-    appkit::{
-        NSFilenamesPboardType, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString,
-        NSPasteboardTypeTIFF,
-    },
-    base::{id, nil},
-    foundation::{NSArray, NSData, NSFastEnumeration, NSString},
+use cocoa::appkit::{
+    NSFilenamesPboardType, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString,
+    NSPasteboardTypeTIFF,
 };
 use objc::{msg_send, rc::StrongPtr, runtime::Object, sel, sel_impl};
 use smallvec::SmallVec;
@@ -53,10 +51,11 @@ impl Pasteboard {
         unsafe {
             // Check for file paths first
             let filenames = NSPasteboard::propertyListForType(*self.inner, NSFilenamesPboardType);
-            if filenames != nil && NSArray::count(filenames) > 0 {
+            if filenames != nil && array_count(filenames) > 0 {
                 let mut paths = SmallVec::new();
-                for file in filenames.iter() {
-                    let f = NSString::UTF8String(file);
+                for i in 0..array_count(filenames) {
+                    let file = array_item(filenames, i);
+                    let f = string_utf8(file);
                     let path = CStr::from_ptr(f).to_string_lossy().into_owned();
                     paths.push(PathBuf::from(path));
                 }
@@ -146,12 +145,8 @@ impl Pasteboard {
             let data = self.inner.dataForType(kind);
             if data == nil {
                 None
-            } else if data.bytes().is_null() {
-                Some(Vec::new())
             } else {
-                Some(
-                    slice::from_raw_parts(data.bytes() as *mut u8, data.length() as usize).to_vec(),
-                )
+                Some((&*data.cast::<objc2_foundation::NSData>()).to_vec())
             }
         }
     }
@@ -205,28 +200,16 @@ impl Pasteboard {
         unsafe {
             self.inner.clearContents();
 
-            let text_bytes = NSData::dataWithBytes_length_(
-                nil,
-                string.text.as_ptr() as *const c_void,
-                string.text.len() as u64,
-            );
+            let text_bytes = data_from_bytes(string.text.as_bytes());
             self.inner
                 .setData_forType(text_bytes, NSPasteboardTypeString);
 
             if let Some(metadata) = string.metadata.as_ref() {
                 let hash_bytes = ClipboardString::text_hash(&string.text).to_be_bytes();
-                let hash_bytes = NSData::dataWithBytes_length_(
-                    nil,
-                    hash_bytes.as_ptr() as *const c_void,
-                    hash_bytes.len() as u64,
-                );
+                let hash_bytes = data_from_bytes(&hash_bytes);
                 self.inner.setData_forType(hash_bytes, *self.text_hash_type);
 
-                let metadata_bytes = NSData::dataWithBytes_length_(
-                    nil,
-                    metadata.as_ptr() as *const c_void,
-                    metadata.len() as u64,
-                );
+                let metadata_bytes = data_from_bytes(metadata.as_bytes());
                 self.inner
                     .setData_forType(metadata_bytes, *self.metadata_type);
             }
@@ -237,11 +220,7 @@ impl Pasteboard {
         unsafe {
             self.inner.clearContents();
 
-            let bytes = NSData::dataWithBytes_length_(
-                nil,
-                image.bytes.as_ptr() as *const c_void,
-                image.bytes.len() as u64,
-            );
+            let bytes = data_from_bytes(&image.bytes);
 
             self.inner
                 .setData_forType(bytes, Into::<UTType>::into(image.format).inner_mut());
@@ -331,12 +310,8 @@ impl UTType {
 
 #[cfg(test)]
 mod tests {
-    use cocoa::{
-        appkit::{NSFilenamesPboardType, NSPasteboard, NSPasteboardTypeString},
-        base::{id, nil},
-        foundation::{NSArray, NSData},
-    };
-    use std::ffi::c_void;
+    use crate::objc_bridge::array_from_objects;
+    use cocoa::appkit::{NSFilenamesPboardType, NSPasteboard, NSPasteboardTypeString};
 
     use gpui::{ClipboardEntry, ClipboardItem, ClipboardString, ImageFormat};
     use objc::rc::autoreleasepool;
@@ -346,12 +321,12 @@ mod tests {
     unsafe fn simulate_external_file_copy(pasteboard: &Pasteboard, paths: &[&str]) {
         unsafe {
             let ns_paths: Vec<id> = paths.iter().map(|p| ns_string(p)).collect();
-            let ns_array = NSArray::arrayWithObjects(nil, &ns_paths);
+            let ns_array = array_from_objects(&ns_paths);
 
             let mut types = vec![NSFilenamesPboardType];
             types.push(NSPasteboardTypeString);
 
-            let types_array = NSArray::arrayWithObjects(nil, &types);
+            let types_array = array_from_objects(&types);
             pasteboard.inner.declareTypes_owner(types_array, nil);
 
             pasteboard
@@ -359,11 +334,7 @@ mod tests {
                 .setPropertyList_forType(ns_array, NSFilenamesPboardType);
 
             let joined = paths.join("\n");
-            let bytes = NSData::dataWithBytes_length_(
-                nil,
-                joined.as_ptr() as *const c_void,
-                joined.len() as u64,
-            );
+            let bytes = data_from_bytes(joined.as_bytes());
             pasteboard
                 .inner
                 .setData_forType(bytes, NSPasteboardTypeString);
@@ -389,11 +360,7 @@ mod tests {
 
         let text_from_other_app = "text from other app";
         unsafe {
-            let bytes = NSData::dataWithBytes_length_(
-                nil,
-                text_from_other_app.as_ptr() as *const c_void,
-                text_from_other_app.len() as u64,
-            );
+            let bytes = data_from_bytes(text_from_other_app.as_bytes());
             pasteboard
                 .inner
                 .setData_forType(bytes, NSPasteboardTypeString);
@@ -409,8 +376,8 @@ mod tests {
         let pasteboard = autoreleasepool(|| unsafe { Pasteboard::new(nil) });
 
         unsafe {
-            let text_hash_type = CStr::from_ptr(NSString::UTF8String(*pasteboard.text_hash_type));
-            let metadata_type = CStr::from_ptr(NSString::UTF8String(*pasteboard.metadata_type));
+            let text_hash_type = CStr::from_ptr(string_utf8(*pasteboard.text_hash_type));
+            let metadata_type = CStr::from_ptr(string_utf8(*pasteboard.metadata_type));
             assert_eq!(text_hash_type.to_bytes(), b"zed-text-hash");
             assert_eq!(metadata_type.to_bytes(), b"zed-metadata");
         }
@@ -512,14 +479,10 @@ mod tests {
 
         unsafe {
             let ns_png_type = NSPasteboardTypePNG;
-            let types_array = NSArray::arrayWithObjects(nil, &[ns_png_type]);
+            let types_array = array_from_objects(&[ns_png_type]);
             pasteboard.inner.declareTypes_owner(types_array, nil);
 
-            let data = NSData::dataWithBytes_length_(
-                nil,
-                png_bytes.as_ptr() as *const c_void,
-                png_bytes.len() as u64,
-            );
+            let data = data_from_bytes(&png_bytes);
             pasteboard.inner.setData_forType(data, ns_png_type);
         }
 

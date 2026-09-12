@@ -1,10 +1,7 @@
 use crate::ns_string;
+use crate::objc_bridge::{ObjcId as id, array_count, array_from_objects, array_item, nil};
 use anyhow::{Result, anyhow};
 use block::ConcreteBlock;
-use cocoa::{
-    base::{YES, id, nil},
-    foundation::NSArray,
-};
 use collections::HashMap;
 use core_foundation::base::TCFType;
 use core_graphics::display::{
@@ -18,7 +15,7 @@ use gpui::{
     SharedString, SourceMetadata, size,
 };
 use media::core_media::{CMSampleBuffer, CMSampleBufferRef};
-use metal::NSInteger;
+use objc::runtime::YES;
 use objc::{
     class,
     declare::ClassDecl,
@@ -26,6 +23,7 @@ use objc::{
     runtime::{Class, Object, Sel},
     sel, sel_impl,
 };
+use objc2_foundation::NSInteger;
 use std::{cell::RefCell, ffi::c_void, mem, ptr, rc::Rc};
 
 use crate::NSStringExt;
@@ -89,7 +87,7 @@ impl ScreenCaptureSource for MacScreenCaptureSource {
             let delegate: id = msg_send![DELEGATE_CLASS, alloc];
             let output: id = msg_send![OUTPUT_CLASS, alloc];
 
-            let excluded_windows = NSArray::array(nil);
+            let excluded_windows = array_from_objects(&[]);
             let filter: id = msg_send![filter, initWithDisplay:self.sc_display excludingWindows:excluded_windows];
             let configuration: id = msg_send![configuration, init];
             let _: id = msg_send![configuration, setScalesToFit: true];
@@ -253,8 +251,8 @@ pub(crate) fn get_sources() -> oneshot::Receiver<Result<Vec<Rc<dyn ScreenCapture
             let result = if error == nil {
                 let displays: id = msg_send![shareable_content, displays];
                 let mut result = Vec::new();
-                for i in 0..displays.count() {
-                    let display = displays.objectAtIndex(i);
+                for i in 0..array_count(displays) {
+                    let display = array_item(displays, i);
                     let id: CGDirectDisplayID = msg_send![display, displayID];
                     let meta = screen_id_to_label.get(&id).cloned();
                     let source = MacScreenCaptureSource {
