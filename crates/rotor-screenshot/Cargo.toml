@@ -13,7 +13,6 @@ rotor-common = { path = "../rotor-common" }
 rotor-platform = { path = "../rotor-platform" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8.23"
-xcap = "0.7.0"
 
 [dev-dependencies]
 tempfile = "=3.27.0"

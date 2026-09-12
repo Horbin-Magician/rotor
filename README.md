@@ -17,6 +17,9 @@ A native desktop toolbox built with Rust, GPUI and gpui-component.
 
 ## Current platform status
 
+Rotor supports only Windows and macOS. Linux and other operating systems are not supported.
+Display enumeration, screen capture and window geometry use native APIs in `rotor-platform`.
+
 Release drafts default to Windows x64 and macOS arm64 (macOS 15.0+).
 See [validation status](doc/validation-status.md) for executed checks, installation
 results and pending manual acceptance. A CI matrix entry is not platform acceptance.

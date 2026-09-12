@@ -150,25 +150,13 @@ pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Erro
     Ok(res)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+#[path = "sys_util/macos_windows.rs"]
+mod macos_windows;
+
+#[cfg(target_os = "macos")]
 pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
-    let mut res = Vec::new();
-
-    let windows = xcap::Window::all()?;
-    for window in windows {
-        // Skip windows whose properties cannot be read instead of failing the whole list
-        if let (Ok(x), Ok(y), Ok(width), Ok(height), Ok(z)) = (
-            window.x(),
-            window.y(),
-            window.width(),
-            window.height(),
-            window.z(),
-        ) {
-            res.push((x, y, z, width, height));
-        }
-    }
-
-    Ok(res)
+    macos_windows::window_rectangles().map_err(Into::into)
 }
 
 pub fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {

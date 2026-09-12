@@ -16,7 +16,6 @@ image = "0.25.6"
 log = "0.4.27"
 rotor-common = { path = "../rotor-common" }
 serde = { version = "1", features = ["derive"] }
-xcap = "0.7.0"
 
 [dev-dependencies]
 tempfile = "=3.27.0"

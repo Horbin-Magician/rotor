@@ -17,6 +17,9 @@
 
 ## 当前平台状态
 
+本项目只支持 Windows 和 macOS，不支持 Linux 或其他操作系统。
+显示器枚举、屏幕采集和窗口几何信息统一使用 `rotor-platform` 的原生接口。
+
 发布草稿默认准备 Windows x64 与 macOS arm64（最低 macOS 15.0）双平台。
 已执行的检查、安装结果及待完成的人工验收分别记录在[验收状态](validation-status.md)。
 CI 矩阵中的平台配置不能作为该平台实际验收通过的依据。

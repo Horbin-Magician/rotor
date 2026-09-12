@@ -1,4 +1,9 @@
-//! Thread-owned Windows capture resources. No UI handles or entities are retained.
+//! Native capture resources. No UI handles or entities are retained.
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::capture_display_bgra;
 
 #[cfg(target_os = "windows")]
 mod windows_capture {

@@ -13,6 +13,9 @@ file focused on durable working instructions, not historical test-pass claims.
 
 ## Constraints
 
+- Support only Windows and macOS. Keep display enumeration, screen capture and
+  window geometry in rotor-platform using native OS APIs; do not add xcap or
+  unsupported-platform capture fallbacks.
 - Keep shared business crates free of GPUI dependencies.
 - Platform code may accept wrapped native handles; it must not depend on UI Entity types.
 - Keep window/lifecycle code in rotor-desktop and rendering/interaction in rotor-ui.
