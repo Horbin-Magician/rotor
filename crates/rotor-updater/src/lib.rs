@@ -18,11 +18,9 @@ pub use tokio_util::sync::CancellationToken;
 
 pub const PUBLIC_KEY: &str = include_str!("../../../native/update-public.key");
 pub const PREVIEW_ENDPOINTS: &[&str] = &[
-    "https://gitee.com/horbin/rotor/releases/download/native-preview/native-preview.json",
     "https://github.com/Horbin-Magician/rotor/releases/download/native-preview/native-preview.json",
 ];
 pub const STABLE_ENDPOINTS: &[&str] = &[
-    "https://gitee.com/horbin/rotor/releases/download/native-stable/native-stable.json",
     "https://github.com/Horbin-Magician/rotor/releases/download/native-stable/native-stable.json",
 ];
 const MAX_MANIFEST: usize = 1024 * 1024;

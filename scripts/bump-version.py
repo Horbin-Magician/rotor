@@ -67,7 +67,7 @@ def bump(root, version, *, dry_run=False, no_push=False, remote="origin"):
         print("Push failed; local commit and tag are preserved. Resolve the remote error, then retry:", file=sys.stderr)
         print(" ".join(push), file=sys.stderr)
         raise
-    print(f"Pushed {tag}. Review the native-publish-draft result and publish the draft manually; Gitee sync follows publication.")
+    print(f"Pushed {tag}. Review the native-publish-draft result and publish the draft manually.")
 
 
 def main():

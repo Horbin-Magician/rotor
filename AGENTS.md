@@ -76,7 +76,6 @@ cargo run -p rotor-screenshot --example profile_roundtrip --locked -- target/pro
 
 The OCR example generates its fixture under `target/ocr-smoke`; profile roundtrip
 requires a new destination. Release metadata changes also use
-`python .github/scripts/test-prepare-gitee-release.py` and
 `python .github/scripts/test-prepare-native-draft.py`.
 
 ## Packaging and releases
