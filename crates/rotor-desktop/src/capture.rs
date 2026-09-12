@@ -348,7 +348,8 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
             .map_err(|error| error.to_string())??;
         cx.spawn(async move |cx| {
             // The foreground task runs with no App/Window/Entity borrow held.
-            // Obtain a fresh native handle, then let WM_PAINT re-enter GPUI.
+            // Obtain a fresh native handle, then let native painting re-enter
+            // GPUI and submit the real frame before exposing the window.
             let ready = cx.update(|cx| {
                 if !cx.global::<ShellState>().capture.session.is_ready(session, monitor) {
                     return None;
@@ -359,9 +360,9 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                 }).ok()
             });
             let Some(ready) = ready else { return; };
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             let painted = ready.and_then(rotor_platform::overlay::paint_hidden_window);
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
             let painted = ready.map(|_| ());
             cx.update(|cx| {
                 if !cx.global::<ShellState>().capture.session.is_ready(session, monitor) { return; }

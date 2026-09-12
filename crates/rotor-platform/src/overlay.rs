@@ -290,6 +290,31 @@ pub fn paint_hidden_window(handle: raw_window_handle::RawWindowHandle) -> Result
     Ok(())
 }
 
+/// Submit a hidden capture window's backing layer before ordering it onscreen.
+/// Call on the main thread outside UI framework borrows: the layer's display
+/// delegate re-enters the renderer. Keep the window alive until this returns.
+#[cfg(target_os = "macos")]
+pub fn paint_hidden_window(handle: raw_window_handle::RawWindowHandle) -> Result<(), String> {
+    use objc2_foundation::MainThreadMarker;
+    use raw_window_handle::RawWindowHandle;
+
+    let RawWindowHandle::AppKit(raw) = handle else {
+        return Err("Expected an AppKit window".into());
+    };
+    let _main_thread =
+        MainThreadMarker::new().ok_or("Hidden paint must run on the owning UI thread")?;
+    // The caller obtained this handle from a live window on this thread.
+    let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
+    let _window = view.window().ok_or("View is not attached to a window")?;
+    let layer = unsafe { view.layer() }.ok_or("Capture window has no backing layer")?;
+    // Hidden views are not serviced by ordinary window invalidation. CALayer's
+    // display calls GPUI's displayLayer: delegate synchronously, which renders
+    // and presents Metal content with the current Core Animation transaction.
+    // Merely refreshing and then orderFront would expose the placeholder frame.
+    layer.display();
+    Ok(())
+}
+
 #[cfg(all(test, target_os = "windows"))]
 mod repaint_tests {
     use super::*;
@@ -559,7 +584,7 @@ pub fn fit_capture_screen(
     display_id: u32,
 ) -> Result<(), String> {
     use core_graphics::display::CGDisplay;
-    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindowStyleMask};
+    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindowAnimationBehavior, NSWindowStyleMask};
     use objc2_foundation::{NSPoint, NSRect, NSSize};
     use raw_window_handle::RawWindowHandle;
 
@@ -573,6 +598,9 @@ pub fn fit_capture_screen(
     // The borrowed handle refers to a live NSView on the owning UI thread.
     let view = unsafe { &*raw.ns_view.as_ptr().cast::<objc2_app_kit::NSView>() };
     let window = view.window().ok_or("View is not attached to a window")?;
+    // A capture mask must replace the desktop in one step, without AppKit's
+    // popup fade changing the apparent brightness of the frozen screenshot.
+    unsafe { window.setAnimationBehavior(NSWindowAnimationBehavior::None) };
     // GPUI's titlebar: None still uses Titled | FullSizeContentView on macOS.
     // Remove those flags so AppKit does not constrain the mask below the menu
     // bar. Preserve the popup's nonactivating panel behavior.

@@ -614,6 +614,11 @@ impl Render for MaskView {
             // Native window hover changes also cover leaving without a final
             // mouse move (Windows reports this separately from MouseExitEvent).
             .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                // Hidden prepainting must preserve the primed cursor/selection;
+                // it has no meaningful native hover state until shown and armed.
+                if !this.active || !this.armed {
+                    return;
+                }
                 if *hovered {
                     this.move_pointer(window.mouse_position(), window, cx);
                 } else if this.pointer_inside {
