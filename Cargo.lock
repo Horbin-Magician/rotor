@@ -6522,7 +6522,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-canvas"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "image",
  "resvg 0.45.1",
@@ -6531,7 +6531,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-common"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "log",
  "serde",
@@ -6544,7 +6544,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-desktop"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "async-channel",
  "embed-resource",
@@ -6570,7 +6570,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-platform"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "arboard",
  "core-foundation 0.9.4",
@@ -6598,7 +6598,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-runtime"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "async-channel",
  "global-hotkey",
@@ -6619,7 +6619,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-screenshot"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "image",
  "log",
@@ -6635,7 +6635,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-searcher"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "fxhash",
  "image",
@@ -6651,7 +6651,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-translator"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "reqwest",
  "rotor-common",
@@ -6662,7 +6662,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-ui"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "chrono",
  "global-hotkey",
@@ -6680,7 +6680,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-updater"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "flate2",
  "futures-util",
@@ -10111,7 +10111,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "minisign",
  "plist",

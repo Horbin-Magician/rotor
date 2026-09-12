@@ -17,7 +17,7 @@ members = [
 default-members = ["crates/rotor-desktop"]
 
 [workspace.package]
-version = "3.0.0"
+version = "3.0.1"
 
 [workspace.dependencies]
 gpui-kit = { version = "=0.6.1", default-features = false, features = ["component", "assets"] }
