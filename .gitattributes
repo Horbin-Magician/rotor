@@ -2,6 +2,9 @@
 .gitattributes text eol=lf
 *LICENSE* text eol=lf
 
+# SVG assets are hashed verbatim in native source receipts.
+*.svg text eol=lf
+
 # Model artifacts and their matching dictionary must retain their exact bytes.
 assets/model/*.onnx -text
 assets/model/*dict.txt -text

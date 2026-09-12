@@ -30,6 +30,7 @@ def collect(source: Path, destination: Path, version: str, platforms="both", pro
     payload_count = 0
     observed_payloads = set()
     source_digest = None
+    source_package = None
     signatures = {}
     for package in packages:
         if package.is_symlink() or not package.is_dir():
@@ -79,8 +80,13 @@ def collect(source: Path, destination: Path, version: str, platforms="both", pro
         if len(receipt) != 64 or any(c not in "0123456789abcdef" for c in receipt):
             raise ValueError("Invalid source receipt")
         if source_digest is not None and source_digest != receipt:
-            raise ValueError("Packages were built from different inputs")
+            raise ValueError(
+                f"Packages were built from different inputs: "
+                f"{source_package}/source.sha256={source_digest}; "
+                f"{package.name}/source.sha256={receipt}"
+            )
         source_digest = receipt
+        source_package = package.name
     if observed_payloads != payload_names:
         raise ValueError("Selected platform package set is incomplete")
     if update_manifest is not None:

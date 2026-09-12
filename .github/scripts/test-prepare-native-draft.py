@@ -74,6 +74,17 @@ class DraftTests(unittest.TestCase):
         self.package()
         self.rejected()
 
+    def test_different_source_inputs_identify_packages_before_copying(self):
+        self.package()
+        mac = self.package("macos", "Rotor_3.0.0_aarch64.app.tar.gz")
+        (mac / "source.sha256").write_text("b" * 64)
+        self.inventory(mac)
+        with self.assertRaises(ValueError) as error:
+            draft.collect(self.source, self.output, "3.0.0")
+        self.assertIn("windows/source.sha256=" + "a" * 64, str(error.exception))
+        self.assertIn("macos/source.sha256=" + "b" * 64, str(error.exception))
+        self.assertFalse(self.output.exists())
+
     def test_tampering_rejects_before_copying_any_package(self):
         self.package("a-valid")
         bad = self.package("z-bad", "Rotor_3.0.0_aarch64.app.tar.gz")
