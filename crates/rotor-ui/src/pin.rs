@@ -75,6 +75,7 @@ pub struct PinView {
     position: PinPositionReader,
     minimized: PinMinimizedReader,
     save_task: Option<Task<()>>,
+    zoom_hint_task: Option<Task<()>>,
     _bounds: Subscription,
     _activation: Subscription,
     canvas: annotation::CanvasState,
@@ -127,6 +128,7 @@ impl PinView {
             position: init.position,
             minimized: init.minimized,
             save_task: None,
+            zoom_hint_task: None,
             _bounds: bounds,
             _activation: activation,
             canvas,
@@ -489,6 +491,16 @@ impl PinView {
             px((height as f32 * scale).round().max(1.)),
         ));
         self.record_position(window, cx);
+        // Replacing the task restarts the timeout for each scroll event.
+        self.zoom_hint_task = Some(cx.spawn_in(window, async move |view, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(800))
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                this.zoom_hint_task = None;
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
     pub fn handle_event(
@@ -633,6 +645,27 @@ impl Render for PinView {
                             toolbar
                         },
                     ),
+                )
+            })
+            .when(self.zoom_hint_task.is_some(), |root| {
+                root.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            div()
+                                .flex_none()
+                                .px(px(8.))
+                                .py(px(4.))
+                                .rounded(px(6.))
+                                .bg(rgba(0x101923cc))
+                                .text_color(rgb(0xffffff))
+                                .text_size(px(14.))
+                                .child(format!("{}%", self.record.zoom_factor)),
+                        ),
                 )
             })
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
