@@ -97,4 +97,4 @@ jobs:
           flags=(--draft --verify-tag)
           if [[ "$RELEASE_VERSION" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "${flags[@]}" \
-            --title "Rotor $RELEASE_VERSION (native)" --notes-file notes.txt release-assets/*
+            --title "$RELEASE_TAG" --notes-file notes.txt release-assets/*
