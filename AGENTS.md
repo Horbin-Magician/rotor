@@ -103,10 +103,11 @@ It never commits, tags or pushes. For the full release flow, commit the version'
 (`python` on Windows). This updates versions, commits, tags and atomically pushes
 the current branch and that tag. Use `--dry-run` to preview or `--no-push` to keep
 the release local. Validate script changes with `python3 scripts/test-bump-version.py`.
-`publish.yml` creates native release drafts;
-update-feed promotion is separate. `native-candidate.yml` produces review
-artifacts without publishing a release and defaults to Windows. Keep native
-stable and preview feeds separate from `latest.json`. Signing uses only
+`publish.yml` creates native release drafts; publishing the reviewed latest release
+exposes its `native-update.json` through the single update endpoint.
+`native-candidate.yml` produces review artifacts without publishing a release
+and defaults to Windows. Keep the native manifest separate from the historical
+`latest.json` format. Signing uses only
 `ROTOR_SIGNING_PRIVATE_KEY` and `ROTOR_SIGNING_PRIVATE_KEY_PASSWORD`; never commit
 private keys. Preserve signature validation and tamper rejection.
 

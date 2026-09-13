@@ -1,17 +1,10 @@
 product_name = "Rotor Development"
 identifier = "cc.fluctus.rotor.dev"
 production_identifier = "cc.fluctus.rotor"
-production_update_endpoints = [
-  "https://github.com/Horbin-Magician/rotor/releases/download/native-stable/native-stable.json",
-]
 minimum_macos = "15.0"
 data_directory = ".rotor-dev"
-update_channel = "preview"
-update_endpoints = [
-  "https://github.com/Horbin-Magician/rotor/releases/download/native-preview/native-preview.json",
-]
+update_endpoint = "https://github.com/Horbin-Magician/rotor/releases/latest/download/native-update.json"
 production_product_name = "Rotor"
 production_data_directory = ".rotor"
 executable_name = "rotor-desktop"
 production_executable_name = "rotor"
-production_update_channel = "stable"

@@ -1,4 +1,4 @@
-# Release and channel operations
+# Release and update operations
 
 Complete the platform-specific gates in `doc/validation-status.md` before merging,
 tagging or publishing. Keep the draft unpublished while selected platforms lack
@@ -35,24 +35,21 @@ single-platform release must select it consistently through build and validation
    dispatch. `native-publish-draft` still accepts an existing tag for recovery or
    deliberate single-platform builds. Configure the signing secrets described in
    `native/signing.md` before releasing. Publishing the version completes the
-   release flow; update-channel promotion below is separate.
-4. Retain the existing channel manifest outside the source tree for withdrawal.
-   Compare the new manifest against the reviewed version release.
-5. Production stable uses release `native-stable`, attachment `native-stable.json`.
-   Development preview uses `native-preview`, attachment `native-preview.json`,
-   referencing development artifacts published at `native-dev-v<version>`.
-   Stable must never advertise a prerelease. Create channel releases once as
-   marked prereleases so maintenance does not become the default latest release.
-6. Rename the reviewed version's `native-update.json` to the channel filename.
-   Use `gh release upload native-stable native-stable.json --clobber` on GitHub
-   (or preview). Fixed artifact URLs remain unchanged. Verify the promoted channel
-   URL and signed artifacts before announcing updates.
-7. To withdraw, restore the previous verified manifest on the affected channel,
-   or remove the channel attachment when no accepted predecessor exists. Retain version
-   artifacts and install backups for diagnosis. Clients reject downgrades;
-   withdrawal prevents new offers. Publish a higher fixed version for clients
-   that already installed a problematic release.
+   release flow. Mark the reviewed production release as GitHub's latest release
+   to make it available to the updater.
+4. Both application identities read the single update endpoint:
+   `https://github.com/Horbin-Magician/rotor/releases/latest/download/native-update.json`.
+   The published latest release must include the reviewed `native-update.json`
+   and its signed production artifacts. No separate channel release, renamed
+   manifest or promotion upload is required. Verify the endpoint after publishing.
+5. To withdraw an update, select the previous accepted release as GitHub's latest
+   release. Retain version artifacts and install backups for diagnosis. Clients
+   reject downgrades; withdrawal prevents new offers. Publish a higher fixed
+   version for clients that already installed a problematic release.
 
-Channel addresses in `native/app.toml` are tested against updater constants.
-No operation writes the historical generic feed. Signing setup is documented in
-`native/signing.md`; synthetic tests do not prove hosted key access or pairing.
+The endpoint in `native/app.toml` is tested against the updater constant.
+Development and production retain separate application identities and profiles;
+sharing update metadata does not bypass installation identity checks.
+The native manifest remains separate from the historical `latest.json` format.
+Signing setup is documented in `native/signing.md`; synthetic tests do not prove
+hosted key access or pairing.

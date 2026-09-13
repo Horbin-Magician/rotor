@@ -14,7 +14,7 @@ records automated checks, installation results and manual acceptance separately.
 | Profile directory in the user home | .rotor-dev | .rotor |
 | Executable | rotor-desktop | rotor |
 | macOS bundle | Rotor Development.app | Rotor.app |
-| Update channel | preview | stable |
+| Update manifest | Latest release `native-update.json` | Latest release `native-update.json` |
 
 Windows uninstall keys use the registry identifier. Windows startup entries use
 the product name; macOS LaunchAgents use the bundle identifier. Single-instance
@@ -80,7 +80,8 @@ DMG and updater archive signatures.
 `publish.yml` builds an existing matching tag, defaults to Windows and macOS,
 reads `doc/releases/<version>.md`, checks inventories and manifest agreement,
 and creates an unpublished draft with packages, signatures, receipts and
-`native-update.json`. Neither workflow promotes channels. See [release operations](release-operations.md).
+`native-update.json`. Publishing it as the latest release makes the update available
+through the single update endpoint. See [release operations](release-operations.md).
 
 ## Native 3.x recovery and isolated checks
 

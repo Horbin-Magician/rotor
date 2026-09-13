@@ -17,12 +17,8 @@ use tokio::io::AsyncWriteExt;
 pub use tokio_util::sync::CancellationToken;
 
 pub const PUBLIC_KEY: &str = include_str!("../../../native/update-public.key");
-pub const PREVIEW_ENDPOINTS: &[&str] = &[
-    "https://github.com/Horbin-Magician/rotor/releases/download/native-preview/native-preview.json",
-];
-pub const STABLE_ENDPOINTS: &[&str] = &[
-    "https://github.com/Horbin-Magician/rotor/releases/download/native-stable/native-stable.json",
-];
+pub const UPDATE_ENDPOINT: &str =
+    "https://github.com/Horbin-Magician/rotor/releases/latest/download/native-update.json";
 const MAX_MANIFEST: usize = 1024 * 1024;
 const MAX_DOWNLOAD: u64 = 1024 * 1024 * 1024;
 
@@ -87,53 +83,35 @@ pub fn select_release(
     }))
 }
 
-pub async fn check(
-    endpoints: &[String],
-    current: &str,
-    target: &str,
-) -> Result<Option<Release>, String> {
+pub async fn check(endpoint: &str, current: &str, target: &str) -> Result<Option<Release>, String> {
+    let url = url::Url::parse(endpoint).map_err(|error| error.to_string())?;
+    if url.scheme() != "https" {
+        return Err("Update metadata requires HTTPS".into());
+    }
     let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::builder()
         .https_only(true)
         .timeout(Duration::from_secs(20))
         .build()
         .map_err(|error| error.to_string())?;
-    if endpoints.is_empty() {
-        return Err("No update endpoints configured".into());
-    }
-    let mut errors = Vec::new();
-    for endpoint in endpoints {
-        let request = async {
-            let url = url::Url::parse(endpoint).map_err(|error| error.to_string())?;
-            if url.scheme() != "https" {
-                return Err("Update metadata requires HTTPS".into());
-            }
-            let response = client
-                .get(url)
-                .send()
-                .await
-                .map_err(|error| error.without_url().to_string())?
-                .error_for_status()
-                .map_err(|error| error.without_url().to_string())?;
-            let mut stream = response.bytes_stream();
-            let mut bytes = Vec::new();
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|error| error.to_string())?;
-                if bytes.len() + chunk.len() > MAX_MANIFEST {
-                    return Err("Update metadata is too large".into());
-                }
-                bytes.extend_from_slice(&chunk);
-            }
-            let manifest = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-            select_release(manifest, current, target)
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| error.without_url().to_string())?
+        .error_for_status()
+        .map_err(|error| error.without_url().to_string())?;
+    let mut stream = response.bytes_stream();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| error.to_string())?;
+        if bytes.len() + chunk.len() > MAX_MANIFEST {
+            return Err("Update metadata is too large".into());
         }
-        .await;
-        match request {
-            Ok(release) => return Ok(release),
-            Err(error) => errors.push(error),
-        }
+        bytes.extend_from_slice(&chunk);
     }
-    Err(errors.join("; "))
+    let manifest = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    select_release(manifest, current, target)
 }
 
 pub fn verify(bytes: &[u8], signature: &str, public_key: &str) -> Result<(), String> {
@@ -430,7 +408,7 @@ mod tests {
             .await
             .is_err());
         assert!(!staging.exists());
-        assert!(check(&[], "3.0.0", "windows-x86_64").await.is_err());
+        assert!(check("", "3.0.0", "windows-x86_64").await.is_err());
     }
 
     #[tokio::test]

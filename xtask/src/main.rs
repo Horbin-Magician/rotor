@@ -126,10 +126,6 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
     config["product_name"] = info.product_name.clone().into();
     config["identifier"] = info.identifier.clone().into();
     config["data_directory"] = info.profile_directory.clone().into();
-    if production {
-        config["update_endpoints"] = config["production_update_endpoints"].clone();
-        config["update_channel"] = config["production_update_channel"].clone();
-    }
     config
         .as_table_mut()
         .unwrap()

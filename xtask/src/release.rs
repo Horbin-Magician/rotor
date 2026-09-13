@@ -244,25 +244,12 @@ mod tests {
         .is_err());
     }
     #[test]
-    fn channel_metadata_matches_runtime_endpoints() {
+    fn update_metadata_matches_runtime_endpoint() {
         let config: toml::Value = toml::from_str(include_str!("../../native/app.toml")).unwrap();
-        for (name, expected) in [
-            ("update_endpoints", rotor_updater::PREVIEW_ENDPOINTS),
-            (
-                "production_update_endpoints",
-                rotor_updater::STABLE_ENDPOINTS,
-            ),
-        ] {
-            let actual = config[name]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|value| value.as_str().unwrap())
-                .collect::<Vec<_>>();
-            assert_eq!(actual, expected);
-        }
-        assert_eq!(config["update_channel"].as_str(), Some("preview"));
-        assert_eq!(config["production_update_channel"].as_str(), Some("stable"));
+        assert_eq!(
+            config["update_endpoint"].as_str(),
+            Some(rotor_updater::UPDATE_ENDPOINT)
+        );
     }
     #[test]
     fn encrypted_signing_keys_produce_native_signatures() {
