@@ -27,6 +27,7 @@ pub struct Volume {
     pub drive: String,
     cache_path: std::path::PathBuf,
     file_map: FileMap,
+    loaded: bool,
     watcher: Option<RecommendedWatcher>,
     event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
     rescan_required: Arc<AtomicBool>,
@@ -44,6 +45,7 @@ impl Volume {
             cache_path: cache::index_path(&drive, &excluded_dirs),
             drive,
             file_map: FileMap::new(),
+            loaded: false,
             watcher: None,
             event_receiver: None,
             rescan_required: Arc::new(AtomicBool::new(false)),
@@ -128,8 +130,7 @@ impl Volume {
         cache::check_cancel(cancel)?;
         // Removed directories no longer have metadata; remove descendants by indexed path.
         if matches!(action, FileAction::Remove) {
-            self.file_map.remove_subtree(path);
-            return Ok(());
+            return self.file_map.remove_subtrees(&[path.to_owned()], cancel);
         }
         if self.is_ignored_event_path(path, action) {
             return Ok(());
@@ -223,9 +224,11 @@ impl Volume {
             }
         }
         self.event_receiver = Some(receiver);
-        // Reconcile final filesystem state once per path, regardless of event ordering.
-        for path in paths {
-            self.process_path_with_cancel(&path, FileAction::Remove, cancel)?;
+        // A parent reconciliation already covers its descendants, including
+        // removed directories whose metadata is no longer available.
+        let roots = coalesced_paths(&paths);
+        self.file_map.remove_subtrees(&roots, cancel)?;
+        for path in roots {
             if path.exists() {
                 self.process_path_with_cancel(&path, FileAction::Insert, cancel)?;
             }
@@ -355,6 +358,7 @@ impl Volume {
             log::error!("{} Failed to start file watching: {:?}", self.drive, e);
         }
 
+        self.loaded = true;
         let result = self.serialization_write();
         self.release_index_without_save();
         result
@@ -371,7 +375,10 @@ impl Volume {
         if query.is_empty() || cancel.load(Ordering::Relaxed) {
             return None;
         }
-        if self.file_map.is_empty() && self.serialization_read_with_cancel(Some(&cancel)).is_err() {
+        if !self.loaded
+            && self.file_map.is_empty()
+            && self.serialization_read_with_cancel(Some(&cancel)).is_err()
+        {
             if let Err(error) = self.build_index_with_cancel(Some(&cancel)) {
                 log::error!("{} Rebuild index failed: {error}", self.drive);
                 return None;
@@ -387,13 +394,18 @@ impl Volume {
 
     // Clears the database
     pub fn release_index(&mut self) -> io::Result<()> {
-        let result = self.serialization_write();
+        let result = if self.loaded || !self.file_map.is_empty() {
+            self.serialization_write()
+        } else {
+            Ok(())
+        };
         self.release_index_without_save();
         result
     }
 
     pub fn release_index_without_save(&mut self) {
         self.file_map.clear();
+        self.loaded = false;
     }
 
     // update index, add new file, remove deleted file
@@ -413,7 +425,10 @@ impl Volume {
 
     fn update_index_inner(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         cache::check_cancel(cancel)?;
-        if self.file_map.is_empty() && self.serialization_read_with_cancel(cancel).is_err() {
+        if !self.loaded
+            && self.file_map.is_empty()
+            && self.serialization_read_with_cancel(cancel).is_err()
+        {
             self.build_index_with_cancel(cancel)?;
             self.serialization_read_with_cancel(cancel)
                 .map_err(|error| io::Error::other(error.to_string()))?;
@@ -475,6 +490,7 @@ impl Volume {
 
         self.file_map
             .read_with_cancel(&self.index_file_path().to_string_lossy(), cancel)?;
+        self.loaded = true;
         self.saved_item_count = self.file_map.len();
 
         #[cfg(debug_assertions)]
@@ -509,6 +525,21 @@ impl Volume {
             FileAction::Remove => self.excluded_dirs.is_excluded_parent_path(path),
         }
     }
+}
+
+fn coalesced_paths(
+    paths: &std::collections::HashSet<std::path::PathBuf>,
+) -> Vec<std::path::PathBuf> {
+    paths
+        .iter()
+        .filter(|path| {
+            !path
+                .ancestors()
+                .skip(1)
+                .any(|parent| paths.contains(parent))
+        })
+        .cloned()
+        .collect()
 }
 
 fn enqueue_event(
@@ -589,6 +620,46 @@ fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
 #[cfg(test)]
 mod event_tests {
     use super::*;
+
+    #[test]
+    fn empty_loaded_index_does_not_resurrect_old_snapshot_rows() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut volume = Volume::new("synthetic".into());
+        volume.cache_path = temp.path().join("cache.idx");
+        volume.file_map.insert("old.txt".into(), "synthetic".into());
+        volume.loaded = true;
+        volume.serialization_write().unwrap();
+        volume.file_map.clear();
+        let result = volume
+            .find("old".into(), None, 20, Arc::new(AtomicBool::new(false)))
+            .unwrap();
+        assert!(result.items.is_empty());
+        volume.release_index().unwrap();
+        volume.serialization_read().unwrap();
+        assert!(volume.file_map.is_empty());
+    }
+
+    #[test]
+    fn parent_events_cover_descendants_without_hiding_sibling_names() {
+        let paths = [
+            "root/A",
+            "root/A/child",
+            "root/A/child/file",
+            "root/AB/file",
+        ]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+        let mut roots = coalesced_paths(&paths);
+        roots.sort();
+        assert_eq!(
+            roots,
+            vec![
+                std::path::PathBuf::from("root/A"),
+                std::path::PathBuf::from("root/AB/file")
+            ]
+        );
+    }
 
     #[test]
     fn portable_backend_reloads_pages_and_cancels_without_retaining_index() {

@@ -46,6 +46,11 @@ against the original application. Timings vary with hardware, filesystem cache
 and system load. They do not establish native cold-start, real-volume search,
 macOS runtime, visual or installation acceptance.
 
+Portable directory updates coalesce parent/child notifications and remove all
+changed subtrees in one index traversal per batch. Snapshot serialization drops
+unreferenced directory nodes so repeated renames/deletions do not accumulate
+obsolete directory storage across releases and reloads.
+
 Regular tests cover cross-volume ordering and duplicate prevention, explicit
 paging, index release/reload, Unicode/wildcard/pinyin matching, corrupted and
 truncated snapshots, failed atomic replacement, journal identity/range validation,

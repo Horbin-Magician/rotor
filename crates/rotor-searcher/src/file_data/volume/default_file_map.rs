@@ -305,22 +305,76 @@ impl FileMap {
         self.main_set.replace(file);
     }
 
+    #[cfg(test)]
     pub fn remove_subtree(&mut self, path: &Path) {
-        if let Some(root) = self.dir_tree.find_path(path) {
-            let mut descendants = vec![false; self.dir_tree.nodes.len()];
-            descendants[root as usize] = true;
+        self.remove_subtrees(&[path.to_owned()], None).unwrap();
+    }
+
+    /// Mark all changed directory roots, then traverse the index once for the
+    /// entire event batch instead of once for each changed path.
+    pub fn remove_subtrees(
+        &mut self,
+        paths: &[PathBuf],
+        cancel: Option<&AtomicBool>,
+    ) -> io::Result<()> {
+        if paths.is_empty() {
+            return cache::check_cancel(cancel);
+        }
+        let mut descendants = vec![false; self.dir_tree.nodes.len()];
+        let mut has_directory = false;
+        for path in paths {
+            cache::check_cancel(cancel)?;
+            if let Some(root) = self.dir_tree.find_path(path) {
+                descendants[root as usize] = true;
+                has_directory = true;
+            }
+        }
+        if has_directory {
             for (id, node) in self.dir_tree.nodes.iter().enumerate().skip(1) {
+                if id.is_multiple_of(256) {
+                    cache::check_cancel(cancel)?;
+                }
                 descendants[id] |= descendants[node.parent_id as usize];
             }
             self.main_set
                 .retain(|file| !descendants[file.parent_id as usize]);
         }
-        if let (Some(name), Some(parent)) = (path.file_name(), path.parent()) {
-            self.remove(
-                name.to_string_lossy().into_owned(),
-                parent.to_string_lossy().into_owned(),
-            );
+        for path in paths {
+            cache::check_cancel(cancel)?;
+            if let (Some(name), Some(parent)) = (path.file_name(), path.parent()) {
+                self.remove(
+                    name.to_string_lossy().into_owned(),
+                    parent.to_string_lossy().into_owned(),
+                );
+            }
         }
+        Ok(())
+    }
+
+    fn live_directories(&self) -> (Vec<u32>, u32) {
+        let mut live = vec![false; self.dir_tree.nodes.len()];
+        live[0] = true;
+        for file in &self.main_set {
+            let mut id = file.parent_id as usize;
+            while !live[id] {
+                live[id] = true;
+                id = self.dir_tree.nodes[id].parent_id as usize;
+            }
+        }
+        let mut next = 0;
+        let remap = live
+            .into_iter()
+            .map(|live| {
+                if live {
+                    let id = next;
+                    next += 1;
+                    id
+                } else {
+                    u32::MAX
+                }
+            })
+            .collect();
+        (remap, next - 1)
     }
 
     pub fn remove(&mut self, file_name: String, path: String) {
@@ -420,17 +474,20 @@ impl FileMap {
             writer.write_all(&INDEX_MAGIC)?;
             writer.write_all(&INDEX_VERSION.to_be_bytes())?;
 
-            let dir_count = self.dir_tree.nodes.len().saturating_sub(1) as u32;
+            let (remap, dir_count) = self.live_directories();
             writer.write_all(&dir_count.to_be_bytes())?;
-            for node in self.dir_tree.nodes.iter().skip(1) {
-                writer.write_all(&node.parent_id.to_be_bytes())?;
+            for (id, node) in self.dir_tree.nodes.iter().enumerate().skip(1) {
+                if remap[id] == u32::MAX {
+                    continue;
+                }
+                writer.write_all(&remap[node.parent_id as usize].to_be_bytes())?;
                 writer.write_all(&(node.name.len() as u16).to_be_bytes())?;
                 writer.write_all(node.name.as_bytes())?;
             }
 
             writer.write_all(&(self.main_set.len() as u32).to_be_bytes())?;
             for file in self.iter() {
-                writer.write_all(&file.parent_id.to_be_bytes())?;
+                writer.write_all(&remap[file.parent_id as usize].to_be_bytes())?;
                 writer.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
                 writer.write_all(file.file_name.as_bytes())?;
 
@@ -567,6 +624,31 @@ mod tests {
             .into_iter()
             .map(|item| item.file_name)
             .collect()
+    }
+
+    #[test]
+    fn batched_removals_preserve_siblings_and_snapshots_drop_orphan_directories() {
+        let mut map = FileMap::new();
+        for index in 0..100 {
+            map.insert(
+                "removed.txt".into(),
+                format!("synthetic/deleted-{index}/nested"),
+            );
+        }
+        map.insert("keep.txt".into(), "synthetic/keep".into());
+        let paths: Vec<_> = (0..100)
+            .map(|index| PathBuf::from(format!("synthetic/deleted-{index}")))
+            .collect();
+        map.remove_subtrees(&paths, None).unwrap();
+        assert_eq!(map.len(), 1);
+        assert!(map.dir_tree.nodes.len() > 200);
+        let expected = search_items(&map, "keep")[0].file_path.clone();
+        let index = super::super::release_tests::IndexFile::new();
+        map.save(index.path()).unwrap();
+        map.clear();
+        map.read(index.path()).unwrap();
+        assert_eq!(map.dir_tree.nodes.len(), 3);
+        assert_eq!(search_items(&map, "keep")[0].file_path, expected);
     }
 
     #[test]
