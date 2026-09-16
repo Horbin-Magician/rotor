@@ -220,20 +220,27 @@ impl SearchView {
                         .iter()
                         .any(|item| &item.file_path == path)
                 });
-                for item in &mut self.results.items {
-                    // The render cache owns the converted pixels. Release the
-                    // source after this event instead of retaining both copies.
-                    if let Some(icon) = item.icon.take()
-                        && !self.icons.contains_key(&item.file_path)
-                        && let Ok(prepared) = crate::capture::prepare_image(icon)
-                    {
-                        self.icons.insert(item.file_path.clone(), prepared.render);
-                    }
-                }
                 self.resize(window, cx);
                 if self.pending_enter {
                     self.pending_enter = false;
                     self.submit(window, cx);
+                }
+            }
+            RuntimeEvent::SearchIcons(batch) => {
+                if !self.results.accepts_icons(batch.id) {
+                    return;
+                }
+                for (path, pixels) in &batch.icons {
+                    if !self.icons.contains_key(path)
+                        && self
+                            .results
+                            .items
+                            .iter()
+                            .any(|item| &item.file_path == path)
+                        && let Ok(prepared) = crate::capture::prepare_image(pixels.clone())
+                    {
+                        self.icons.insert(path.clone(), prepared.render);
+                    }
                 }
             }
             RuntimeEvent::FileOpened { id, result } if self.opening == Some(*id) => {

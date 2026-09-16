@@ -27,3 +27,10 @@ pub struct SearchBatch {
     pub items: Vec<SearchResultItem>,
     pub append: bool,
 }
+
+#[derive(Clone)]
+pub struct SearchIconBatch {
+    /// Identity of the first page in the current query, retained across paging.
+    pub id: QueryId,
+    pub icons: Vec<(String, std::sync::Arc<image::RgbaImage>)>,
+}

@@ -43,13 +43,6 @@ pub struct SearchResultItem {
     pub alias: Option<String>,
 }
 
-impl SearchResultItem {
-    pub fn attach_icon(mut self) -> Self {
-        self.icon = rotor_platform::file_util::file_icon(&self.file_path).map(std::sync::Arc::new);
-        self
-    }
-}
-
 #[derive(Clone, Debug)]
 
 pub struct VolumeIndexStatus {

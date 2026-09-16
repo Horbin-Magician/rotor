@@ -13,7 +13,7 @@ pub use rotor_screenshot::pin_store::source_crop as pin_source_crop;
 pub use rotor_screenshot::session::NativeSession;
 pub use rotor_screenshot::{pin_store::StoredPin, shotter_record::ShotterConfig};
 pub use rotor_searcher::file_data::SearchIndexStatus;
-pub use rotor_searcher::{file_data::SearchResultItem, SearchBatch};
+pub use rotor_searcher::{file_data::SearchResultItem, SearchBatch, SearchIconBatch};
 pub use rotor_searcher::{IndexState, QueryId};
 pub use rotor_translator::engine::TranslateStreamEvent;
 pub use services::{

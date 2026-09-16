@@ -8,7 +8,9 @@ use rotor_screenshot::{
     img_util::{self, TextResult},
     monitor::{self, MonitorConfig},
 };
-use rotor_searcher::{file_data::SearchIndexStatus, IndexState, QueryId, SearchBatch, Searcher};
+use rotor_searcher::{
+    file_data::SearchIndexStatus, IndexState, QueryId, SearchBatch, SearchIconBatch, Searcher,
+};
 use rotor_translator::engine::{self, EngineConfig, TranslateResult, TranslateStreamEvent};
 use std::{
     path::Path,
@@ -88,6 +90,7 @@ pub enum RuntimeEvent {
     },
     Pin(crate::PinEvent),
     Search(SearchBatch),
+    SearchIcons(SearchIconBatch),
     IndexState(IndexState),
     IndexStatus {
         id: OperationId,
@@ -216,10 +219,14 @@ impl Services {
         ));
         let searcher = options.index_files.then(|| {
             let results = events.clone();
+            let icons = events.clone();
             let state_events = events.clone();
             Searcher::new(
                 move |batch| {
                     let _ = results.send_blocking(RuntimeEvent::Search(batch));
+                },
+                move |batch| {
+                    let _ = icons.send_blocking(RuntimeEvent::SearchIcons(batch));
                 },
                 Some(Box::new(move |state| {
                     let _ = state_events.send_blocking(RuntimeEvent::IndexState(state));

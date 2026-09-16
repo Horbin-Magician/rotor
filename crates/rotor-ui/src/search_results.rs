@@ -11,6 +11,7 @@ pub struct SearchResults {
     pub replacing: bool,
     pub exhausted: bool,
     active: Option<(QueryId, String)>,
+    icon_generation: Option<QueryId>,
 }
 
 impl SearchResults {
@@ -24,10 +25,15 @@ impl SearchResults {
             // typing does not repeatedly collapse and expand the launcher.
             self.selected = 0;
             self.exhausted = false;
+            self.icon_generation = None;
         }
         self.active = Some((id, query));
         self.loading = true;
         self.replacing = !append;
+    }
+
+    pub fn accepts_icons(&self, id: QueryId) -> bool {
+        self.icon_generation == Some(id)
     }
 
     pub fn accept(&mut self, batch: &SearchBatch) -> bool {
@@ -39,6 +45,7 @@ impl SearchResults {
             return false;
         }
         if !batch.append {
+            self.icon_generation = Some(batch.id);
             self.items.clear();
             self.selected = 0;
         }
@@ -76,6 +83,41 @@ mod tests {
             alias: None,
         }
     }
+    #[test]
+    fn icon_generation_survives_paging_and_rejects_repeated_query_replacements() {
+        let mut results = SearchResults::default();
+        results.begin(QueryId(1), "same".into(), false);
+        results.accept(&SearchBatch {
+            id: QueryId(1),
+            query: "same".into(),
+            items: vec![item("first")],
+            append: false,
+        });
+        assert!(results.accepts_icons(QueryId(1)));
+        results.begin(QueryId(2), "same".into(), true);
+        results.accept(&SearchBatch {
+            id: QueryId(2),
+            query: "same".into(),
+            items: vec![item("second")],
+            append: true,
+        });
+        assert!(results.accepts_icons(QueryId(1)));
+        assert!(!results.accepts_icons(QueryId(2)));
+        results.begin(QueryId(3), "other".into(), false);
+        assert!(!results.accepts_icons(QueryId(1)));
+        results.begin(QueryId(4), "same".into(), false);
+        results.accept(&SearchBatch {
+            id: QueryId(4),
+            query: "same".into(),
+            items: vec![item("fresh")],
+            append: false,
+        });
+        assert!(results.accepts_icons(QueryId(4)));
+        assert!(!results.accepts_icons(QueryId(1)));
+        results.reset();
+        assert!(!results.accepts_icons(QueryId(4)));
+    }
+
     #[test]
     fn accepted_results_share_icon_pixels_and_reject_stale_icons() {
         let pixels = std::sync::Arc::new(image::RgbaImage::from_pixel(

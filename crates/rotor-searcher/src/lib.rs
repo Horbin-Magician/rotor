@@ -1,9 +1,10 @@
 pub mod file_data;
+mod icons;
 mod latest;
 mod mailbox;
 mod request;
 pub use file_data::FileState as IndexState;
-pub use request::{QueryId, SearchBatch, SearchRequest, SearchUnavailable};
+pub use request::{QueryId, SearchBatch, SearchIconBatch, SearchRequest, SearchUnavailable};
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -45,6 +46,7 @@ impl SearchIndexStatusReader {
 impl Searcher {
     pub fn new<F>(
         find_result_callback: F,
+        icon_result_callback: impl Fn(SearchIconBatch) + Send + 'static,
         state_change_callback: Option<Box<dyn Fn(IndexState) + Send>>,
     ) -> Searcher
     where
@@ -53,11 +55,12 @@ impl Searcher {
         let (searcher_msg_sender, searcher_msg_receiver) = mailbox::channel();
         let search_index_state = Arc::new(Mutex::new(FileState::Unbuild));
 
-        let _file_data = FileData::new(
+        let mut _file_data = FileData::new(
             find_result_callback,
             state_change_callback,
             search_index_state.clone(),
         );
+        _file_data.icons = Some(icons::IconWorker::new(icon_result_callback));
         let snapshot = _file_data.snapshot.clone();
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Startup);

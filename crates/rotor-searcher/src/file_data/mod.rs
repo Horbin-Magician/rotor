@@ -210,6 +210,7 @@ impl SearchTask {
 }
 
 pub struct FileData {
+    pub(crate) icons: Option<crate::icons::IconWorker>,
     pub(crate) snapshot: Arc<Mutex<SearchIndexStatus>>,
     work_cancel: Arc<AtomicBool>,
     vols: Vec<String>,
@@ -232,6 +233,7 @@ impl FileData {
         F: Fn(SearchBatch) + Send + 'static,
     {
         FileData {
+            icons: None,
             snapshot: Arc::new(Mutex::new(SearchIndexStatus::empty())),
             work_cancel: Arc::new(AtomicBool::new(false)),
             vols: Vec::new(),
@@ -373,9 +375,9 @@ impl FileData {
         update_result: Vec<SearchResultItem>,
         if_increase: bool,
     ) {
-        let update_result = update_result
-            .into_iter()
-            .map(SearchResultItem::attach_icon)
+        let paths = update_result
+            .iter()
+            .map(|item| item.file_path.clone())
             .collect();
         (self.find_result_callback)(SearchBatch {
             id,
@@ -383,6 +385,9 @@ impl FileData {
             items: update_result,
             append: if_increase,
         });
+        if let Some(icons) = &mut self.icons {
+            icons.enqueue(id, if_increase, paths);
+        }
     }
 
     pub(crate) fn find(
@@ -395,6 +400,9 @@ impl FileData {
         let SearchRequest { id, query } = request;
         let append = self.finding_name == query;
         if !append {
+            if let Some(icons) = &mut self.icons {
+                icons.reset();
+            }
             self.finding_name = query.clone();
             self.pages = MergePages::new(self.volume_packs.len());
         }
@@ -496,6 +504,9 @@ impl FileData {
     }
 
     fn reset_search_results(&mut self) {
+        if let Some(icons) = &mut self.icons {
+            icons.reset();
+        }
         self.finding_name.clear();
         self.pages = MergePages::default();
     }
