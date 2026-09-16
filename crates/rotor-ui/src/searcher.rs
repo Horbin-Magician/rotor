@@ -18,6 +18,7 @@ struct SearchKeybindings;
 impl Global for SearchKeybindings {}
 
 const SEARCH_HEADER_HEIGHT: f32 = 50.;
+const SEARCH_INPUT_LINE_HEIGHT: f32 = 28.;
 const SEARCH_ROW_HEIGHT: f32 = 60.;
 
 pub struct SearchView {
@@ -614,6 +615,9 @@ impl Render for SearchView {
                             .min_w_0()
                             .p_0()
                             .text_size(px(16.))
+                            // The editor clips glyphs to its line box and sizes the
+                            // centered caret from it; avoid the smaller rem default.
+                            .line_height(px(SEARCH_INPUT_LINE_HEIGHT))
                             .aria_label(match (self.ai_mode, chinese) {
                                 (true, true) => "向 AI 提问",
                                 (true, false) => "Ask AI",
@@ -631,6 +635,7 @@ impl Render for SearchView {
                                 .flex()
                                 .items_center()
                                 .text_size(px(16.))
+                                .line_height(px(SEARCH_INPUT_LINE_HEIGHT))
                                 .text_color(rgb(if dark { 0x666666 } else { 0x999999 }))
                                 .child(match (self.ai_mode, chinese) {
                                     (true, true) => "输入问题，回车发送…",
