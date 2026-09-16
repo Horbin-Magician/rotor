@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
+#[cfg(not(test))]
 use rotor_common::AppConfig;
 
+#[cfg(not(test))]
 pub const SEARCH_EXCLUDED_DIRS_CONFIG_KEY: &str = "search_excluded_dirs";
 
 #[derive(Clone, Debug, Default)]
@@ -12,6 +14,18 @@ pub struct ExcludedDirs {
 }
 
 impl ExcludedDirs {
+    pub(super) fn cache_identity(&self) -> String {
+        let mut names: Vec<_> = self.names.iter().map(String::as_str).collect();
+        let mut paths: Vec<_> = self
+            .paths
+            .iter()
+            .map(|path| path.to_string_lossy())
+            .collect();
+        names.sort_unstable();
+        paths.sort_unstable();
+        format!("{names:?}\n{paths:?}")
+    }
+    #[cfg(not(test))]
     pub fn from_config() -> Self {
         let value = AppConfig::lock_global()
             .get(SEARCH_EXCLUDED_DIRS_CONFIG_KEY)
@@ -117,6 +131,7 @@ fn normalize_path(path: &Path) -> PathBuf {
     normalized
 }
 
+#[cfg(not(test))]
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }

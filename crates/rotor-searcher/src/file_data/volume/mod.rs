@@ -1,3 +1,4 @@
+mod cache;
 #[cfg(any(target_os = "macos", test))]
 pub mod default_file_map;
 #[cfg(target_os = "macos")]
@@ -65,30 +66,13 @@ pub fn metadata_modified_at(metadata: &Metadata) -> Option<u64> {
         .map(|duration| duration.as_millis() as u64)
 }
 
-pub fn index_file_stem(name: &str) -> String {
-    let stem = name.trim_start_matches('/').replace(['/', '\\'], "_");
-
-    if stem.is_empty() {
-        "root".to_string()
-    } else {
-        stem
-    }
-}
-
-pub(super) fn read_u16_or_eof(reader: &mut impl Read) -> io::Result<Option<u16>> {
-    let mut bytes = [0u8; 2];
-    match reader.read_exact(&mut bytes) {
-        Ok(()) => Ok(Some(u16::from_be_bytes(bytes))),
-        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
 pub(super) fn read_u16(reader: &mut impl Read) -> io::Result<u16> {
-    read_u16_or_eof(reader)?
-        .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "Unexpected end of index"))
+    let mut bytes = [0; 2];
+    reader.read_exact(&mut bytes)?;
+    Ok(u16::from_be_bytes(bytes))
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub(super) fn read_u32(reader: &mut impl Read) -> io::Result<u32> {
     let mut bytes = [0u8; 4];
     reader.read_exact(&mut bytes)?;
@@ -103,19 +87,10 @@ pub(super) fn read_u8(reader: &mut impl Read) -> io::Result<u8> {
 }
 
 #[cfg(target_os = "windows")]
-pub(super) fn read_u64_or_eof(reader: &mut impl Read) -> io::Result<Option<u64>> {
-    let mut bytes = [0u8; 8];
-    match reader.read_exact(&mut bytes) {
-        Ok(()) => Ok(Some(u64::from_be_bytes(bytes))),
-        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
-#[cfg(target_os = "windows")]
 pub(super) fn read_u64(reader: &mut impl Read) -> io::Result<u64> {
-    read_u64_or_eof(reader)?
-        .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "Unexpected end of index"))
+    let mut bytes = [0; 8];
+    reader.read_exact(&mut bytes)?;
+    Ok(u64::from_be_bytes(bytes))
 }
 
 #[cfg(target_os = "windows")]
@@ -123,13 +98,6 @@ pub(super) fn read_i64(reader: &mut impl Read) -> io::Result<i64> {
     let mut bytes = [0u8; 8];
     reader.read_exact(&mut bytes)?;
     Ok(i64::from_be_bytes(bytes))
-}
-
-#[cfg(target_os = "windows")]
-pub(super) fn read_i8(reader: &mut impl Read) -> io::Result<i8> {
-    let mut bytes = [0u8; 1];
-    reader.read_exact(&mut bytes)?;
-    Ok(i8::from_be_bytes(bytes))
 }
 
 pub(super) fn read_string(reader: &mut impl Read, len: usize) -> io::Result<String> {

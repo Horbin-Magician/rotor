@@ -12,7 +12,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use super::super::excluded_dirs::ExcludedDirs;
 use super::default_file_map::FileMap;
-use super::{index_file_stem, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexStatus};
+use super::{cache, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexStatus};
 
 const EVENT_CAPACITY: usize = 1024;
 const MAX_EVENT_PATHS: usize = 128;
@@ -25,6 +25,7 @@ enum FileAction {
 
 pub struct Volume {
     pub drive: String,
+    cache_path: std::path::PathBuf,
     file_map: FileMap,
     watcher: Option<RecommendedWatcher>,
     event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
@@ -35,14 +36,19 @@ pub struct Volume {
 
 impl Volume {
     pub fn new(drive: String) -> Volume {
+        #[cfg(not(test))]
+        let excluded_dirs = ExcludedDirs::from_config();
+        #[cfg(test)]
+        let excluded_dirs = ExcludedDirs::default();
         Volume {
+            cache_path: cache::index_path(&drive, &excluded_dirs),
             drive,
             file_map: FileMap::new(),
             watcher: None,
             event_receiver: None,
             rescan_required: Arc::new(AtomicBool::new(false)),
             saved_item_count: 0,
-            excluded_dirs: ExcludedDirs::from_config(),
+            excluded_dirs,
         }
     }
 
@@ -235,7 +241,6 @@ impl Volume {
     fn scan_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let sys_time = SystemTime::now();
 
-        self.excluded_dirs = ExcludedDirs::from_config();
         self.stop_watching();
         self.rescan_required.store(false, Ordering::Release);
         self.release_index_without_save();
@@ -431,8 +436,6 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_write", self.drive);
 
-        let index_dir = std::env::temp_dir();
-        fs::create_dir_all(index_dir)?;
         self.file_map
             .save(&self.index_file_path().to_string_lossy())?;
         self.saved_item_count = self.file_map.len();
@@ -469,7 +472,7 @@ impl Volume {
     }
 
     fn index_file_path(&self) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("{}.fd", index_file_stem(&self.drive)))
+        self.cache_path.clone()
     }
 
     fn is_ignored_event_path(&self, path: &std::path::Path, action: FileAction) -> bool {

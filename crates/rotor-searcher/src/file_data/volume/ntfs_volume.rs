@@ -15,10 +15,11 @@ use windows::Win32::System::{Ioctl, IO};
 
 use super::super::excluded_dirs::ExcludedDirs;
 use super::ntfs_file_map::FileMap;
-use super::{index_file_stem, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexStatus};
+use super::{cache, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexStatus};
 
 pub struct Volume {
     pub drive: String,
+    cache_path: std::path::PathBuf,
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     file_map: FileMap,
@@ -28,7 +29,12 @@ pub struct Volume {
 
 impl Volume {
     pub fn new(drive: String) -> Volume {
+        #[cfg(not(test))]
+        let excluded_dirs = ExcludedDirs::from_config();
+        #[cfg(test)]
+        let excluded_dirs = ExcludedDirs::default();
         Volume {
+            cache_path: cache::index_path(&drive, &excluded_dirs),
             drive,
             drive_frn: 0x5000000000005,
             file_map: FileMap::new(),
@@ -42,7 +48,7 @@ impl Volume {
                 AllocationDelta: 0x0,
             },
             saved_item_count: 0,
-            excluded_dirs: ExcludedDirs::from_config(),
+            excluded_dirs,
         }
     }
 
@@ -106,7 +112,6 @@ impl Volume {
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::build_index", self.drive);
 
-        self.excluded_dirs = ExcludedDirs::from_config();
         self.release_index();
 
         let h_vol = Self::open_drive(&self.drive);
@@ -130,6 +135,7 @@ impl Volume {
         };
 
         self.file_map.start_usn = self.ujd.NextUsn;
+        self.file_map.journal_id = self.ujd.UsnJournalID;
 
         // add the root directory
         let sz_root = format!("{}:", self.drive);
@@ -433,7 +439,7 @@ impl Volume {
     }
 
     fn index_file_path(&self) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("{}.fd", index_file_stem(&self.drive)))
+        self.cache_path.clone()
     }
 
     fn is_excluded_record(&self, file_name: &str, parent_index: u64) -> bool {
@@ -458,6 +464,7 @@ mod tests {
         // Construct directly to avoid configuration/profile reads and drive I/O.
         let mut volume = Volume {
             drive: "synthetic".into(),
+            cache_path: std::path::PathBuf::new(),
             drive_frn: 42,
             ujd: Ioctl::USN_JOURNAL_DATA_V0 {
                 UsnJournalID: 123,

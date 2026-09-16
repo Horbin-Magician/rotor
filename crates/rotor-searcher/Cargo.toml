@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 fxhash = "0.2.1"
 log = "0.4.27"
+sha2 = "0.10"
 notify = "8.2.0"
 pinyin = { version = "0.11.0", default-features = false, features = ["plain"] }
 rotor-common = { path = "../rotor-common" }

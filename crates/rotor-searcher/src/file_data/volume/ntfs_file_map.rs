@@ -1,16 +1,15 @@
 use super::{SearchCursor, SearchPage};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
+#[cfg(test)]
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read};
 use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::excluded_dirs::ExcludedDirs;
 use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
-use super::{
-    read_i64, read_i8, read_string, read_u16, read_u32, read_u64, read_u64_or_eof, SearchResultItem,
-};
+use super::{cache, read_i64, read_string, read_u16, read_u64, SearchResultItem};
 
 pub struct FileView {
     pub parent_index: u64,
@@ -28,6 +27,7 @@ pub struct FileKey {
 
 pub struct FileMap {
     pub start_usn: i64,
+    pub journal_id: u64,
     main_map: BTreeMap<FileKey, FileView>,
     rank_map: HashMap<u64, i8, std::hash::BuildHasherDefault<fxhash::FxHasher>>,
 }
@@ -36,6 +36,7 @@ impl FileMap {
     pub fn new() -> FileMap {
         FileMap {
             start_usn: 0,
+            journal_id: 0,
             main_map: BTreeMap::new(),
             rank_map: HashMap::default(),
         }
@@ -63,7 +64,14 @@ impl FileMap {
             rank: file.rank,
             index,
         };
-        self.rank_map.insert(index, file.rank);
+        if let Some(previous_rank) = self.rank_map.insert(index, file.rank) {
+            if previous_rank != file.rank {
+                self.main_map.remove(&FileKey {
+                    rank: previous_rank,
+                    index,
+                });
+            }
+        }
         self.main_map.insert(key, file);
     }
 
@@ -146,49 +154,47 @@ impl FileMap {
         })
     }
 
-    pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        let save_file = fs::File::create(path)?;
-        let mut writer = io::BufWriter::new(save_file);
-
-        writer.write_all(&self.start_usn.to_be_bytes())?;
-        for (file_key, file) in self.iter() {
-            writer.write_all(&file_key.index.to_be_bytes())?;
-            writer.write_all(&file.parent_index.to_be_bytes())?;
-            writer.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
-            writer.write_all(file.file_name.as_bytes())?;
-            writer.write_all(&file.filter.to_be_bytes())?;
-            writer.write_all(&file.rank.to_be_bytes())?;
-        }
-        writer.flush()?;
-
-        Ok(())
+    pub fn save(&self, path: &str) -> io::Result<()> {
+        cache::write(std::path::Path::new(path), |writer| {
+            writer.write_all(b"RNF1")?;
+            writer.write_all(&self.journal_id.to_be_bytes())?;
+            writer.write_all(&self.start_usn.to_be_bytes())?;
+            writer.write_all(&(self.len() as u64).to_be_bytes())?;
+            for (key, file) in self.iter() {
+                writer.write_all(&key.index.to_be_bytes())?;
+                writer.write_all(&file.parent_index.to_be_bytes())?;
+                let length = u16::try_from(file.file_name.len())
+                    .map_err(|_| cache::invalid("Index name too long"))?;
+                writer.write_all(&length.to_be_bytes())?;
+                writer.write_all(file.file_name.as_bytes())?;
+            }
+            Ok(())
+        })
     }
 
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let save_file = fs::File::open(path)?;
-        let mut reader = io::BufReader::new(save_file);
-
-        self.start_usn = read_i64(&mut reader)?;
-
-        while let Some(index) = read_u64_or_eof(&mut reader)? {
+        let mut reader = cache::read(std::path::Path::new(path))?;
+        let mut magic = [0; 4];
+        reader.read_exact(&mut magic)?;
+        if &magic != b"RNF1" {
+            return Err(cache::invalid("Unsupported NTFS index format").into());
+        }
+        let mut next = Self::new();
+        next.journal_id = read_u64(&mut reader)?;
+        next.start_usn = read_i64(&mut reader)?;
+        let count = read_u64(&mut reader)?;
+        for _ in 0..count {
+            let index = read_u64(&mut reader)?;
             let parent_index = read_u64(&mut reader)?;
             let file_name_len = read_u16(&mut reader)?;
             let file_name = read_string(&mut reader, file_name_len as usize)?;
-            let _stored_filter = read_u32(&mut reader)?;
-            let rank = read_i8(&mut reader)?;
-            let prepared = prepare_search_name(&file_name, None);
-            self.insert_simple(
-                index,
-                FileView {
-                    parent_index,
-                    file_name,
-                    filter: prepared.filter,
-                    rank,
-                    search_aliases: prepared.aliases,
-                },
-            );
+            if index == 0 || index == parent_index || next.contains_index(&index) {
+                return Err(cache::invalid("Invalid or duplicate file reference").into());
+            }
+            next.insert(index, file_name, parent_index);
         }
-
+        cache::end(&mut reader)?;
+        *self = next;
         Ok(())
     }
 
@@ -237,10 +243,7 @@ impl FileMap {
             rank += 25;
         }
 
-        let tmp = 40i16 - file_name.len() as i16;
-        if tmp > 0 {
-            rank += tmp as i8;
-        }
+        rank += 40usize.saturating_sub(file_name.len()) as i8;
 
         rank
     }
@@ -249,7 +252,11 @@ impl FileMap {
     fn get_path(&self, index: &u64) -> Option<String> {
         let mut segments = Vec::new();
         let mut loop_index = *index;
+        let mut visited = std::collections::HashSet::new();
         while loop_index != 0 {
+            if !visited.insert(loop_index) {
+                return None;
+            }
             let file = self.get(&loop_index)?;
             segments.push(file.file_name.as_str());
             loop_index = file.parent_index;
@@ -304,6 +311,55 @@ mod release_tests {
             }
             cursor = page.cursor;
         }
+    }
+
+    #[test]
+    fn corrupt_read_preserves_live_index_and_rename_replaces_old_rank() {
+        let index = IndexFile::new();
+        let mut map = FileMap::new();
+        map.insert(1, "X:".into(), 0);
+        map.insert(2, "old.txt".into(), 1);
+        map.insert(2, "new-shortcut.lnk".into(), 1);
+        assert_eq!(map.len(), 2);
+        assert!(map
+            .search(
+                "old",
+                None,
+                20,
+                &AtomicBool::new(false),
+                &ExcludedDirs::default()
+            )
+            .unwrap()
+            .items
+            .is_empty());
+        map.save(index.path()).unwrap();
+        let mut bytes = fs::read(index.path()).unwrap();
+        bytes.truncate(bytes.len() - 1);
+        fs::write(index.path(), bytes).unwrap();
+        assert!(map.read(index.path()).is_err());
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&2).unwrap().file_name, "new-shortcut.lnk");
+        map.remove(&2);
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn cyclic_parent_links_terminate_path_resolution() {
+        let mut map = FileMap::new();
+        map.insert(1, "a".into(), 2);
+        map.insert(2, "b".into(), 1);
+        assert_eq!(map.get_path(&1), None);
+        assert!(map
+            .search(
+                "*",
+                None,
+                20,
+                &AtomicBool::new(false),
+                &ExcludedDirs::default()
+            )
+            .unwrap()
+            .items
+            .is_empty());
     }
 
     #[test]

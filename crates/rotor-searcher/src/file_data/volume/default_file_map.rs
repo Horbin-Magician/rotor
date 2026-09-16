@@ -2,14 +2,15 @@ use super::{SearchCursor, SearchPage};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
+#[cfg(test)]
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::ops::Bound::{Excluded, Unbounded};
 use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
-use super::{read_string, read_u16, read_u32, read_u8, SearchResultItem};
+use super::{cache, read_string, read_u16, read_u32, read_u8, SearchResultItem};
 use rotor_platform::file_util;
 
 type DirId = u32;
@@ -415,41 +416,37 @@ impl FileMap {
     }
 
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        let save_file = fs::File::create(path)?;
-        let mut writer = io::BufWriter::new(save_file);
+        cache::write(Path::new(path), |writer| {
+            writer.write_all(&INDEX_MAGIC)?;
+            writer.write_all(&INDEX_VERSION.to_be_bytes())?;
 
-        writer.write_all(&INDEX_MAGIC)?;
-        writer.write_all(&INDEX_VERSION.to_be_bytes())?;
-
-        let dir_count = self.dir_tree.nodes.len().saturating_sub(1) as u32;
-        writer.write_all(&dir_count.to_be_bytes())?;
-        for node in self.dir_tree.nodes.iter().skip(1) {
-            writer.write_all(&node.parent_id.to_be_bytes())?;
-            writer.write_all(&(node.name.len() as u16).to_be_bytes())?;
-            writer.write_all(node.name.as_bytes())?;
-        }
-
-        writer.write_all(&(self.main_set.len() as u32).to_be_bytes())?;
-        for file in self.iter() {
-            writer.write_all(&file.parent_id.to_be_bytes())?;
-            writer.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
-            writer.write_all(file.file_name.as_bytes())?;
-
-            let aliases = file.aliases.as_deref().unwrap_or(&[]);
-            writer.write_all(&(aliases.len() as u16).to_be_bytes())?;
-            for alias in aliases {
-                writer.write_all(&(alias.len() as u16).to_be_bytes())?;
-                writer.write_all(alias.as_bytes())?;
+            let dir_count = self.dir_tree.nodes.len().saturating_sub(1) as u32;
+            writer.write_all(&dir_count.to_be_bytes())?;
+            for node in self.dir_tree.nodes.iter().skip(1) {
+                writer.write_all(&node.parent_id.to_be_bytes())?;
+                writer.write_all(&(node.name.len() as u16).to_be_bytes())?;
+                writer.write_all(node.name.as_bytes())?;
             }
-        }
-        writer.flush()?;
 
-        Ok(())
+            writer.write_all(&(self.main_set.len() as u32).to_be_bytes())?;
+            for file in self.iter() {
+                writer.write_all(&file.parent_id.to_be_bytes())?;
+                writer.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
+                writer.write_all(file.file_name.as_bytes())?;
+
+                let aliases = file.aliases.as_deref().unwrap_or(&[]);
+                writer.write_all(&(aliases.len() as u16).to_be_bytes())?;
+                for alias in aliases {
+                    writer.write_all(&(alias.len() as u16).to_be_bytes())?;
+                    writer.write_all(alias.as_bytes())?;
+                }
+            }
+            Ok(())
+        })
     }
 
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let save_file = fs::File::open(path)?;
-        let mut reader = io::BufReader::new(save_file);
+        let mut reader = cache::read(Path::new(path))?;
 
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
@@ -504,6 +501,7 @@ impl FileMap {
             next.insert_with_aliases(file_name, parent_id, aliases);
         }
 
+        cache::end(&mut reader)?;
         *self = next;
         Ok(())
     }
@@ -535,10 +533,7 @@ impl FileMap {
             rank += 25;
         }
 
-        let tmp = 40i16 - file_name.len() as i16;
-        if tmp > 0 {
-            rank += tmp as i8;
-        }
+        rank += 40usize.saturating_sub(file_name.len()) as i8;
 
         rank
     }

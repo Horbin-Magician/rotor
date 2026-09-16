@@ -6644,6 +6644,7 @@ dependencies = [
  "pinyin",
  "rotor-common",
  "rotor-platform",
+ "sha2 0.10.9",
  "tempfile",
  "walkdir",
  "windows 0.61.3",

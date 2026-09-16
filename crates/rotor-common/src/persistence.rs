@@ -11,14 +11,26 @@ static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 /// Replace one file only after its complete contents have been written and
 /// flushed. A failed write/rename leaves the original file untouched.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    atomic_write_impl(path, bytes, false)
+    atomic_write_impl(path, false, |file| file.write_all(bytes))
 }
 
 pub fn atomic_write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    atomic_write_impl(path, bytes, true)
+    atomic_write_private_with(path, |file| file.write_all(bytes))
 }
 
-fn atomic_write_impl(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> {
+/// Stream large private artifacts without allocating a second in-memory copy.
+pub fn atomic_write_private_with(
+    path: &Path,
+    write: impl FnOnce(&mut fs::File) -> io::Result<()>,
+) -> io::Result<()> {
+    atomic_write_impl(path, true, write)
+}
+
+fn atomic_write_impl(
+    path: &Path,
+    private: bool,
+    write: impl FnOnce(&mut fs::File) -> io::Result<()>,
+) -> io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "file has no parent directory")
     })?;
@@ -50,7 +62,7 @@ fn atomic_write_impl(path: &Path, bytes: &[u8], private: bool) -> io::Result<()>
             Err(error) => return Err(error),
         };
         let result = (|| {
-            file.write_all(bytes)?;
+            write(&mut file)?;
             file.sync_all()?;
             drop(file);
             fs::rename(&temporary, path)
