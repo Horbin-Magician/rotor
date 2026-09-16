@@ -3,7 +3,7 @@ use std::error::Error;
 use std::ffi::{c_void, CString};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    mpsc, Arc,
+    Arc,
 };
 #[cfg(debug_assertions)]
 use std::time::SystemTime;
@@ -15,15 +15,13 @@ use windows::Win32::System::{Ioctl, IO};
 
 use super::super::excluded_dirs::ExcludedDirs;
 use super::ntfs_file_map::FileMap;
-use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
+use super::{index_file_stem, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexStatus};
 
 pub struct Volume {
     pub drive: String,
     drive_frn: u64,
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     file_map: FileMap,
-    last_query: String,
-    last_search_num: usize,
     saved_item_count: usize,
     excluded_dirs: ExcludedDirs,
 }
@@ -43,8 +41,6 @@ impl Volume {
                 MaximumSize: 0x0,
                 AllocationDelta: 0x0,
             },
-            last_query: String::new(),
-            last_search_num: 0,
             saved_item_count: 0,
             excluded_dirs: ExcludedDirs::from_config(),
         }
@@ -238,8 +234,6 @@ impl Volume {
     // Clears the database
     pub fn release_index(&mut self) {
         // Even an index emptied by file removals can still own table capacity.
-        self.last_query = String::new();
-        self.last_search_num = 0;
 
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::release_index", self.drive);
@@ -251,68 +245,28 @@ impl Volume {
     pub fn find(
         &mut self,
         query: String,
+        cursor: Option<SearchCursor>,
         batch: u8,
         cancel: Arc<AtomicBool>,
-        sender: mpsc::Sender<Option<Vec<SearchResultItem>>>,
-    ) {
-        #[cfg(debug_assertions)]
-        let sys_time = SystemTime::now();
-
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::Find {query}", self.drive);
-
+    ) -> Option<SearchPage> {
         if query.is_empty() || cancel.load(Ordering::Relaxed) {
-            let _ = sender.send(None);
-            return;
+            return None;
         }
-
-        if self.last_query != query {
-            self.last_search_num = 0;
-            self.last_query = query.clone();
-        }
-
-        if self.file_map.is_empty() {
-            if let Err(e) = self.serialization_read() {
-                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
-                if let Err(error) = self.build_index_with_cancel(Some(&cancel)) {
-                    log::error!("{} Rebuild index failed: {error}", self.drive);
-                    let _ = sender.send(None);
-                    return;
-                }
+        if self.file_map.is_empty() && self.serialization_read().is_err() {
+            if let Err(error) = self.build_index_with_cancel(Some(&cancel)) {
+                log::error!("{} Rebuild index failed: {error}", self.drive);
+                return None;
             }
-        };
-
-        let (result, search_num) = self.file_map.search(
-            &query,
-            self.last_search_num,
-            batch,
-            &cancel,
-            &self.excluded_dirs,
-        );
-
-        #[cfg(debug_assertions)]
-        log::info!(
-            "{} End Volume::Find {query}, use time: {:?} ms",
-            self.drive,
-            sys_time.elapsed().unwrap_or_default().as_millis()
-        );
-
-        if cancel.load(Ordering::Relaxed) {
-            let _ = sender.send(None);
-            return;
+            // Building persists and releases the index.
+            if self.serialization_read().is_err() {
+                return None;
+            }
         }
-
-        if result.is_some() {
-            self.last_search_num += search_num;
-        }
-
-        let _ = sender.send(result);
+        self.file_map
+            .search(&query, cursor.as_ref(), batch, &cancel, &self.excluded_dirs)
     }
 
-    // update index, add new file, remove deleted file
     pub fn update_index(&mut self) -> io::Result<()> {
-        self.last_query.clear();
-        self.last_search_num = 0;
         let result = self.update_index_inner();
         if result.is_err() {
             self.release_index();
@@ -511,8 +465,6 @@ mod tests {
                 ..Default::default()
             },
             file_map: FileMap::new(),
-            last_query: String::new(),
-            last_search_num: 0,
             saved_item_count: 128,
             excluded_dirs: ExcludedDirs::default(),
         };
@@ -523,14 +475,11 @@ mod tests {
     fn populate(volume: &mut Volume) {
         volume.file_map.insert(1, "fixture-a.txt".into(), 0);
         volume.file_map.insert(2, "fixture-b.txt".into(), 0);
-        volume.last_query = "fixture".into();
-        volume.last_search_num = 99;
     }
 
     fn assert_released(volume: &Volume) {
         assert!(volume.file_map.is_empty());
-        assert!(volume.last_query.is_empty());
-        assert_eq!(volume.last_search_num, 0);
+
         assert_eq!(volume.file_map.start_usn, 456);
     }
 
@@ -617,15 +566,13 @@ mod tests {
         for remove_all in [false, true] {
             volume.file_map.insert(1, "fixture-a.txt".into(), 0);
             volume.file_map.insert(2, "fixture-b.txt".into(), 0);
-            volume.last_query = "fixture".into();
-            volume.last_search_num = 99;
+
             if remove_all {
                 volume.file_map.remove(&1);
                 volume.file_map.remove(&2);
             }
             volume.release_index();
-            assert!(volume.last_query.is_empty());
-            assert_eq!(volume.last_search_num, 0);
+
             assert!(volume.file_map.is_empty());
             assert_eq!(volume.file_map.start_usn, 456);
             assert_eq!(volume.drive, "synthetic");
@@ -637,17 +584,12 @@ mod tests {
             // Reload synthetically; find must restart the same query at page 1.
             volume.file_map.insert(1, "fixture-a.txt".into(), 0);
             volume.file_map.insert(2, "fixture-b.txt".into(), 0);
-            let (sender, receiver) = mpsc::channel();
-            volume.find(
-                "fixture".into(),
-                1,
-                Arc::new(AtomicBool::new(false)),
-                sender,
-            );
-            let page = receiver.recv().unwrap().unwrap();
-            assert_eq!(page.len(), 1);
-            assert_eq!(page[0].file_name, "fixture-b.txt");
-            assert_eq!(volume.last_search_num, 1);
+            let page = volume
+                .find("fixture".into(), None, 1, Arc::new(AtomicBool::new(false)))
+                .unwrap();
+            assert_eq!(page.items.len(), 1);
+            assert_eq!(page.items[0].file_name, "fixture-b.txt");
+
             volume.release_index();
         }
     }

@@ -1,7 +1,9 @@
+use super::{SearchCursor, SearchPage};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fs;
 use std::io::{self, Write};
+use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::excluded_dirs::ExcludedDirs;
@@ -81,22 +83,31 @@ impl FileMap {
     pub fn search(
         &self,
         query: &str,
-        last_search_num: usize,
+        cursor: Option<&SearchCursor>,
         batch: u8,
         cancel: &AtomicBool,
         excluded_dirs: &ExcludedDirs,
-    ) -> (Option<Vec<SearchResultItem>>, usize) {
+    ) -> Option<SearchPage> {
         let mut result = Vec::new();
         let mut find_num = 0;
-        let mut search_num: usize = 0;
+        let mut next_cursor = cursor.cloned();
+        let mut exhausted = true;
         let mut query = SearchQuery::new(query);
 
-        let file_map_iter = self.iter().rev().skip(last_search_num);
-        for (_, file) in file_map_iter {
+        let bound = cursor.map(|cursor| FileKey {
+            rank: cursor.rank,
+            index: cursor.id,
+        });
+        let range = (Unbounded, bound.as_ref().map_or(Unbounded, Excluded));
+        for (key, file) in self.main_map.range::<FileKey, _>(range).rev() {
             if cancel.load(Ordering::Relaxed) {
-                return (None, 0);
+                return None;
             }
-            search_num += 1;
+            next_cursor = Some(SearchCursor {
+                rank: key.rank,
+                id: key.index,
+                name: String::new(),
+            });
             if query
                 .match_name(
                     &file.file_name,
@@ -121,13 +132,18 @@ impl FileMap {
                     });
                     find_num += 1;
                     if find_num >= batch {
+                        exhausted = false;
                         break;
                     }
                 }
             }
         }
 
-        (Some(result), search_num)
+        Some(SearchPage {
+            items: result,
+            cursor: next_cursor,
+            exhausted,
+        })
     }
 
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
@@ -267,25 +283,26 @@ mod release_tests {
     }
 
     fn pages(map: &FileMap, batch: u8) -> Vec<(String, i8)> {
-        let mut offset = 0;
+        let mut cursor = None;
         let mut items = Vec::new();
         loop {
-            let (page, scanned) = map.search(
+            let page = map.search(
                 "fixture",
-                offset,
+                cursor.as_ref(),
                 batch,
                 &AtomicBool::new(false),
                 &ExcludedDirs::default(),
             );
+            let page = page.unwrap();
             items.extend(
-                page.unwrap()
+                page.items
                     .into_iter()
                     .map(|item| (item.file_path, item.rank)),
             );
-            if scanned == 0 {
+            if page.exhausted {
                 return items;
             }
-            offset += scanned;
+            cursor = page.cursor;
         }
     }
 

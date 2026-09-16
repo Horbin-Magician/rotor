@@ -15,6 +15,21 @@ pub mod ntfs_file_map;
 #[cfg(target_os = "windows")]
 pub mod ntfs_volume;
 
+/// A position in a volume's descending index order. Owned by the coordinator,
+/// so a cancelled worker cannot advance the next accepted request's position.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchCursor {
+    pub rank: i8,
+    pub id: u64,
+    pub name: String,
+}
+
+pub struct SearchPage {
+    pub items: Vec<SearchResultItem>,
+    pub cursor: Option<SearchCursor>,
+    pub exhausted: bool,
+}
+
 #[derive(Clone)]
 pub struct SearchResultItem {
     pub path: String,

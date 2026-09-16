@@ -12,7 +12,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use super::super::excluded_dirs::ExcludedDirs;
 use super::default_file_map::FileMap;
-use super::{index_file_stem, metadata_modified_at, SearchResultItem, VolumeIndexStatus};
+use super::{index_file_stem, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexStatus};
 
 const EVENT_CAPACITY: usize = 1024;
 const MAX_EVENT_PATHS: usize = 128;
@@ -26,8 +26,6 @@ enum FileAction {
 pub struct Volume {
     pub drive: String,
     file_map: FileMap,
-    last_query: String,
-    last_search_num: usize,
     watcher: Option<RecommendedWatcher>,
     event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
     rescan_required: Arc<AtomicBool>,
@@ -40,8 +38,6 @@ impl Volume {
         Volume {
             drive,
             file_map: FileMap::new(),
-            last_query: String::new(),
-            last_search_num: 0,
             watcher: None,
             event_receiver: None,
             rescan_required: Arc::new(AtomicBool::new(false)),
@@ -117,8 +113,6 @@ impl Volume {
     }
 
     fn process_path(&mut self, path: &std::path::Path, action: FileAction) {
-        self.last_query.clear();
-        self.last_search_num = 0;
         // Removed directories no longer have metadata; remove descendants by indexed path.
         if matches!(action, FileAction::Remove) {
             self.file_map.remove_subtree(path);
@@ -352,58 +346,25 @@ impl Volume {
     pub fn find(
         &mut self,
         query: String,
+        cursor: Option<SearchCursor>,
         batch: u8,
         cancel: Arc<AtomicBool>,
-        sender: mpsc::Sender<Option<Vec<SearchResultItem>>>,
-    ) {
-        #[cfg(debug_assertions)]
-        let sys_time = SystemTime::now();
-
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::Find {query}", self.drive);
-
+    ) -> Option<SearchPage> {
         if query.is_empty() || cancel.load(Ordering::Relaxed) {
-            let _ = sender.send(None);
-            return;
+            return None;
         }
-
-        if self.last_query != query {
-            self.last_search_num = 0;
-            self.last_query = query.clone();
-        }
-
-        if self.file_map.is_empty() {
-            if let Err(e) = self.serialization_read() {
-                log::error!("{} Volume::serialization_read, error: {:?}", self.drive, e);
-                if let Err(e) = self.build_index_with_cancel(Some(&cancel)) {
-                    log::error!("{} Volume::build_index, error: {:?}", self.drive, e);
-                    let _ = sender.send(None);
-                    return;
-                }
+        if self.file_map.is_empty() && self.serialization_read().is_err() {
+            if let Err(error) = self.build_index_with_cancel(Some(&cancel)) {
+                log::error!("{} Rebuild index failed: {error}", self.drive);
+                return None;
             }
-        };
-
-        let (result, search_num) =
-            self.file_map
-                .search(&query, self.last_search_num, batch, &cancel);
-
-        #[cfg(debug_assertions)]
-        log::info!(
-            "{} End Volume::Find {query}, use time: {:?} ms",
-            self.drive,
-            sys_time.elapsed().unwrap_or_default().as_millis()
-        );
-
-        if cancel.load(Ordering::Relaxed) {
-            let _ = sender.send(None);
-            return;
+            // Building persists and releases the index.
+            if self.serialization_read().is_err() {
+                return None;
+            }
         }
-
-        if result.is_some() {
-            self.last_search_num += search_num;
-        }
-
-        let _ = sender.send(result);
+        self.file_map
+            .search(&query, cursor.as_ref(), batch, &cancel)
     }
 
     // Clears the database
@@ -425,15 +386,11 @@ impl Volume {
     }
 
     pub fn release_index_without_save(&mut self) {
-        self.last_query = String::new();
-        self.last_search_num = 0;
         self.file_map.clear();
     }
 
     // update index, add new file, remove deleted file
     pub fn update_index(&mut self) -> io::Result<()> {
-        self.last_query.clear();
-        self.last_search_num = 0;
         let result = self.update_index_inner();
         if result.is_err() {
             self.rescan_required.store(true, Ordering::Release);
@@ -637,14 +594,14 @@ mod event_tests {
         assert!(denied, "test requires an unprivileged user");
         result.unwrap();
         volume.serialization_read().unwrap();
-        let (items, _) = volume
+        let items = volume
             .file_map
-            .search("z-searchable", 0, 1, &AtomicBool::new(false));
-        assert_eq!(items.unwrap().len(), 1);
-        let (items, _) = volume
+            .search("z-searchable", None, 1, &AtomicBool::new(false));
+        assert_eq!(items.unwrap().items.len(), 1);
+        let items = volume
             .file_map
-            .search("private.txt", 0, 1, &AtomicBool::new(false));
-        assert!(items.is_none_or(|items| items.is_empty()));
+            .search("private.txt", None, 1, &AtomicBool::new(false));
+        assert!(items.is_none_or(|page| page.items.is_empty()));
         volume.stop_watching();
         fs::remove_file(volume.index_file_path()).unwrap();
 
@@ -725,10 +682,10 @@ mod event_tests {
                 .add_path(a)
                 .add_path(b.clone()),
         );
-        let (items, _) = volume
+        let items = volume
             .file_map
-            .search("report", 0, 1, &AtomicBool::new(false));
-        assert!(items.unwrap()[0].path.contains("B"));
+            .search("report", None, 1, &AtomicBool::new(false));
+        assert!(items.unwrap().items[0].path.contains("B"));
         volume.excluded_dirs =
             crate::file_data::excluded_dirs::parse_excluded_dirs("excluded", None);
         let hidden = root.join("excluded");

@@ -1,8 +1,10 @@
+use super::{SearchCursor, SearchPage};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
 use std::fs;
 use std::io::{self, Read, Write};
+use std::ops::Bound::{Excluded, Unbounded};
 use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -339,21 +341,29 @@ impl FileMap {
     pub fn search(
         &self,
         query: &str,
-        last_search_num: usize,
+        cursor: Option<&SearchCursor>,
         batch: u8,
         cancel: &AtomicBool,
-    ) -> (Option<Vec<SearchResultItem>>, usize) {
+    ) -> Option<SearchPage> {
         let mut result = Vec::new();
         let mut find_num = 0;
-        let mut search_num: usize = 0;
+        let mut next_cursor = cursor.cloned();
+        let mut exhausted = true;
         let mut query = SearchQuery::new(query);
 
-        let file_map_iter = self.iter().rev().skip(last_search_num);
-        for file in file_map_iter {
+        let bound = cursor.map(|cursor| FileView {
+            rank: cursor.rank,
+            parent_id: cursor.id as DirId,
+            file_name: cursor.name.clone(),
+            filter: 0,
+            aliases: None,
+            search_aliases: None,
+        });
+        let range = (Unbounded, bound.as_ref().map_or(Unbounded, Excluded));
+        for file in self.main_set.range::<FileView, _>(range).rev() {
             if cancel.load(Ordering::Relaxed) {
-                return (None, 0);
+                return None;
             }
-            search_num += 1;
 
             if let Some(file_alias) = query.match_name(
                 &file.file_name,
@@ -377,12 +387,22 @@ impl FileMap {
 
                 find_num += 1;
                 if find_num >= batch {
+                    next_cursor = Some(SearchCursor {
+                        rank: file.rank,
+                        id: file.parent_id as u64,
+                        name: file.file_name.clone(),
+                    });
+                    exhausted = false;
                     break;
                 }
             }
         }
 
-        (Some(result), search_num)
+        Some(SearchPage {
+            items: result,
+            cursor: next_cursor,
+            exhausted,
+        })
     }
 
     fn result_paths(&self, parent_id: DirId, file_name: &str) -> Option<(String, String)> {
@@ -531,8 +551,7 @@ mod tests {
 
     fn search_items(file_map: &FileMap, query: &str) -> Vec<SearchResultItem> {
         let cancel = AtomicBool::new(false);
-        let (result, _) = file_map.search(query, 0, 10, &cancel);
-        result.unwrap_or_default()
+        file_map.search(query, None, 10, &cancel).unwrap().items
     }
 
     fn search_names(file_map: &FileMap, query: &str) -> Vec<String> {
@@ -540,6 +559,16 @@ mod tests {
             .into_iter()
             .map(|item| item.file_name)
             .collect()
+    }
+
+    #[test]
+    fn subtree_removal_preserves_siblings() {
+        let mut map = FileMap::new();
+        map.insert("inside.txt".into(), "synthetic/remove/nested".into());
+        map.insert("outside.txt".into(), "synthetic/keep".into());
+        map.remove_subtree(Path::new("synthetic/remove"));
+        assert!(search_names(&map, "inside").is_empty());
+        assert_eq!(search_names(&map, "outside"), vec!["outside.txt"]);
     }
 
     #[test]
@@ -649,19 +678,20 @@ mod tests {
     }
 
     fn pages(map: &FileMap, batch: u8) -> Vec<(String, i8)> {
-        let mut offset = 0;
+        let mut cursor = None;
         let mut items = Vec::new();
         loop {
-            let (page, scanned) = map.search("fixture", offset, batch, &AtomicBool::new(false));
+            let page = map.search("fixture", cursor.as_ref(), batch, &AtomicBool::new(false));
+            let page = page.unwrap();
             items.extend(
-                page.unwrap()
+                page.items
                     .into_iter()
                     .map(|item| (item.file_path, item.rank)),
             );
-            if scanned == 0 {
+            if page.exhausted {
                 return items;
             }
-            offset += scanned;
+            cursor = page.cursor;
         }
     }
 

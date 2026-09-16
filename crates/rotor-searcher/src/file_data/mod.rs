@@ -1,5 +1,8 @@
+mod paging;
 mod volume;
 use crate::{QueryId, SearchBatch, SearchRequest};
+use paging::MergePages;
+use volume::{SearchCursor, SearchPage};
 
 mod excluded_dirs;
 use std::collections::VecDeque;
@@ -122,13 +125,14 @@ impl VolumePack {
         thread::spawn(move || {
             while let Ok(task) = find_receiver.recv() {
                 if task.cancel.load(Ordering::Relaxed) {
-                    let _ = task.result_sender.send(None);
+                    let _ = task.result_sender.send((task.volume_index, None));
                     continue;
                 }
-                worker_volume
+                let result = worker_volume
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .find(task.filename, task.batch, task.cancel, task.result_sender);
+                    .find(task.filename, task.cursor, task.batch, task.cancel);
+                let _ = task.result_sender.send((task.volume_index, result));
             }
         });
         Self {
@@ -140,41 +144,50 @@ impl VolumePack {
 }
 
 struct VolumeFindTask {
+    volume_index: usize,
+    cursor: Option<SearchCursor>,
     filename: String,
     batch: u8,
     cancel: Arc<AtomicBool>,
-    result_sender: mpsc::Sender<Option<Vec<SearchResultItem>>>,
+    result_sender: mpsc::Sender<(usize, Option<SearchPage>)>,
 }
 
 struct SearchTask {
     cancel: Arc<AtomicBool>,
-    result_receiver: mpsc::Receiver<Option<Vec<SearchResultItem>>>,
+    result_receiver: mpsc::Receiver<(usize, Option<SearchPage>)>,
     pending: usize,
 }
 
 impl SearchTask {
-    fn dispatch(volume_packs: &[VolumePack], filename: String, batch: u8) -> SearchTask {
+    fn dispatch(
+        volume_packs: &[VolumePack],
+        pages: &mut MergePages,
+        filename: String,
+        batch: u8,
+    ) -> SearchTask {
         let cancel = Arc::new(AtomicBool::new(false));
-        let (result_sender, result_receiver) = mpsc::channel::<Option<Vec<SearchResultItem>>>();
+        let (result_sender, result_receiver) = mpsc::channel::<(usize, Option<SearchPage>)>();
         let mut pending = 0;
 
-        for VolumePack {
-            find_sender,
-            available,
-            ..
-        } in volume_packs
-        {
-            if !available {
+        for (volume_index, pack) in volume_packs.iter().enumerate() {
+            if !pages.needs_page(volume_index) {
+                continue;
+            }
+            if !pack.available {
+                pages.accept(volume_index, None);
                 continue;
             }
             let task = VolumeFindTask {
+                volume_index,
+                cursor: pages.cursor(volume_index),
                 filename: filename.clone(),
                 batch,
                 cancel: cancel.clone(),
                 result_sender: result_sender.clone(),
             };
 
-            if find_sender.send(task).is_err() {
+            if pack.find_sender.send(task).is_err() {
+                pages.accept(volume_index, None);
                 log::error!("Dispatch search task failed");
                 continue;
             }
@@ -217,10 +230,9 @@ impl SearchTask {
 pub struct FileData {
     vols: Vec<String>,
     finding_name: String,
-    finding_result: Vec<SearchResultItem>,
+    pages: MergePages,
     volume_packs: Vec<VolumePack>,
     state: SharedFileState,
-    show_num: usize,
     batch: u8,
     find_result_callback: Box<dyn Fn(SearchBatch) + Send>,
     state_change_callback: Option<Box<dyn Fn(FileState) + Send>>,
@@ -239,9 +251,8 @@ impl FileData {
             vols: Vec::new(),
             volume_packs: Vec::new(),
             finding_name: String::new(),
-            finding_result: Vec::new(),
+            pages: MergePages::default(),
             state,
-            show_num: 20,
             batch: 20,
             find_result_callback: Box::new(find_result_callback),
             state_change_callback,
@@ -371,7 +382,6 @@ impl FileData {
         update_result: Vec<SearchResultItem>,
         if_increase: bool,
     ) {
-        self.show_num += update_result.len();
         let update_result = update_result
             .into_iter()
             .map(SearchResultItem::attach_icon)
@@ -389,84 +399,58 @@ impl FileData {
         request: SearchRequest,
         msg_reciever: &mpsc::Receiver<SearcherMessage>,
     ) -> Option<SearcherMessage> {
-        let SearchRequest {
-            id,
-            query: filename,
-        } = request;
-        let mut reply: Option<SearcherMessage> = None;
-        let mut if_increase = false;
-        let need_num;
-
-        if self.finding_name == filename {
-            need_num = self.show_num + self.batch as usize;
-            if_increase = true;
-            if self.finding_result.len() >= need_num {
-                let return_result = self.finding_result[self.show_num..need_num].to_vec();
-                self.find_result(id, filename, return_result, if_increase);
-                return reply;
-            }
-        } else {
-            self.finding_name = filename.clone();
-            need_num = self.batch as usize;
-            self.show_num = 0;
-            self.finding_result.clear();
+        let SearchRequest { id, query } = request;
+        let append = self.finding_name == query;
+        if !append {
+            self.finding_name = query.clone();
+            self.pages = MergePages::new(self.volume_packs.len());
         }
-
-        if filename.is_empty() {
-            return reply;
+        if query.is_empty() {
+            return None;
         }
-
-        let mut task = SearchTask::dispatch(&self.volume_packs, filename.clone(), self.batch);
-
-        while task.pending > 0 {
-            while let Ok(searcher_msg) = msg_reciever.try_recv() {
-                match searcher_msg {
-                    SearcherMessage::Status(sender) => {
-                        if sender.send(self.index_status()).is_err() {
-                            log::warn!("Send search index status failed");
+        let mut result = Vec::with_capacity(self.batch as usize);
+        while result.len() < self.batch as usize {
+            if self.pages.needs_refill() {
+                let mut task = SearchTask::dispatch(
+                    &self.volume_packs,
+                    &mut self.pages,
+                    query.clone(),
+                    self.batch,
+                );
+                while task.pending > 0 {
+                    while let Ok(message) = msg_reciever.try_recv() {
+                        match message {
+                            SearcherMessage::Status(sender) => {
+                                let _ = sender.send(self.index_status());
+                            }
+                            message => {
+                                task.cancel();
+                                task.drain_cancelled();
+                                self.reset_search_results();
+                                return Some(message);
+                            }
                         }
                     }
-                    searcher_msg => {
-                        task.cancel();
-                        task.drain_cancelled();
-                        self.finding_result.clear();
-                        reply = Some(searcher_msg);
-                        break;
+                    match task.result_receiver.recv_timeout(SEARCH_WAIT_TIMEOUT) {
+                        Ok((index, page)) => {
+                            task.pending -= 1;
+                            self.pages.accept(index, page);
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        Err(mpsc::RecvTimeoutError::Disconnected) => {
+                            self.pages.finish_missing();
+                            break;
+                        }
                     }
                 }
             }
-
-            if reply.is_some() {
+            let Some(item) = self.pages.pop_best() else {
                 break;
-            }
-
-            match task.result_receiver.recv_timeout(SEARCH_WAIT_TIMEOUT) {
-                Ok(op_result) => {
-                    task.pending -= 1;
-                    if let Some(mut result) = op_result {
-                        self.finding_result.append(&mut result);
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    break;
-                }
-            }
-        }
-
-        if reply.is_none() {
-            self.finding_result
-                .sort_by_key(|item| std::cmp::Reverse(item.rank)); // sort by rank desc
-            let return_result = if self.finding_result.len() > self.show_num {
-                let max = std::cmp::min(self.finding_result.len(), need_num);
-                self.finding_result[self.show_num..max].to_vec()
-            } else {
-                vec![]
             };
-            self.find_result(id, filename, return_result, if_increase);
+            result.push(item);
         }
-
-        reply
+        self.find_result(id, query, result, append);
+        None
     }
 
     pub fn init_volumes(&mut self) {
@@ -518,8 +502,7 @@ impl FileData {
 
     fn reset_search_results(&mut self) {
         self.finding_name.clear();
-        self.finding_result = Vec::new();
-        self.show_num = 0;
+        self.pages = MergePages::default();
     }
 
     fn sync_volume_packs(&mut self) {
@@ -768,16 +751,22 @@ mod tests {
                 Arc::new(Mutex::new(FileState::Ready)),
             );
             data.finding_name = "same-query".into();
-            data.finding_result = Vec::with_capacity(128);
-            data.finding_result.push(SearchResultItem {
-                path: "fixture".repeat(1024),
-                file_path: "fixture/file".into(),
-                file_name: "file".into(),
-                rank: 0,
-                icon: None,
-                alias: None,
-            });
-            data.show_num = 80;
+            data.pages = MergePages::new(1);
+            data.pages.accept(
+                0,
+                Some(SearchPage {
+                    items: vec![SearchResultItem {
+                        path: "fixture".repeat(1024),
+                        file_path: "fixture/file".into(),
+                        file_name: "file".into(),
+                        rank: 0,
+                        icon: None,
+                        alias: None,
+                    }],
+                    cursor: None,
+                    exhausted: true,
+                }),
+            );
             // No volume workers are attached: even a failed/missing-volume release
             // must relinquish result ownership and old paging state.
             if refresh {
@@ -785,10 +774,8 @@ mod tests {
             } else {
                 let _ = data.release_index();
             }
-            assert!(data.finding_result.is_empty());
-            assert_eq!(data.finding_result.capacity(), 0);
+            assert_eq!(data.pages.buffered_len(), 0);
             assert!(data.finding_name.is_empty());
-            assert_eq!(data.show_num, 0);
             let (_sender, receiver) = mpsc::channel();
             data.find(
                 SearchRequest {
