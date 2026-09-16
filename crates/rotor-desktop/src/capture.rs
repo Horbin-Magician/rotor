@@ -16,6 +16,8 @@ pub struct CaptureState {
     frames: HashMap<u32, Arc<PreparedCapture>>,
     preparing: Option<Task<()>>,
     detecting: Option<Task<()>>,
+    selecting: Option<Task<()>>,
+    selection_cancel: Option<rotor_runtime::Cancellation>,
     started: Option<Instant>,
     desktop_dirty: bool,
     shown: HashSet<u32>,
@@ -197,6 +199,8 @@ pub fn stop(cx: &mut App) {
     state.capture.session.cancel();
     state.capture.preparing = None;
     state.capture.detecting = None;
+    state.capture.selecting = None;
+    state.capture.selection_cancel = None;
     state.capture.frames.clear();
     state.capture.shown.clear();
     state.capture.started = None;
@@ -392,7 +396,7 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                     state.shown.insert(monitor);
                     if state.shown.len() == state.frames.len() {
                         mark(session, "all_masks_show_requested", cx);
-                        start_detection(session, cx);
+                        start_detection(session, focus_id, cx);
                     }
                 }
             });
@@ -402,19 +406,22 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
     Ok(())
 }
 
-fn start_detection(session: u64, cx: &mut App) {
-    let frames: Vec<_> = cx
+fn start_detection(session: u64, focus_id: Option<u32>, cx: &mut App) {
+    let mut frames: Vec<_> = cx
         .global::<ShellState>()
         .capture
         .frames
         .values()
         .cloned()
         .collect();
+    frames.sort_by_key(|frame| (Some(frame.monitor.id) != focus_id, frame.monitor.id));
     let services = cx.global::<ShellState>().services.clone();
     let task = cx.spawn(async move |cx| {
         for frame in frames {
             let monitor = frame.monitor.id;
-            let rectangles = services.detect_capture_rectangles(frame).await;
+            let rectangles = services
+                .detect_capture_rectangles(OperationId(session), frame)
+                .await;
             let current = cx.update(|cx| {
                 if !cx
                     .global::<ShellState>()
@@ -488,6 +495,9 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
             monitor,
             rect,
         } => {
+            if cx.global::<ShellState>().capture.selecting.is_some() {
+                return;
+            }
             if !cx
                 .global::<ShellState>()
                 .capture
@@ -523,20 +533,46 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
                 mask_label: format!("ssmask-{monitor}"),
                 minimized: false,
             };
-            match frame
-                .image
-                .crop_rgba(rect)
-                .and_then(|image| crate::pins::from_capture(image, config, cx))
-            {
-                Ok(()) => {
-                    cx.global_mut::<ShellState>()
+            mark(session, "selection_submitted", cx);
+            let cancellation = rotor_runtime::Cancellation::default();
+            let cancelled = cancellation.flag();
+            cx.global_mut::<ShellState>().capture.selection_cancel = Some(cancellation);
+            let task = cx.spawn(async move |cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let check = || cancelled.is_cancelled();
+                        let image = frame.image.crop_rgba_cancellable(rect, check)?;
+                        let prepared = rotor_ui::prepare_image_cancellable(image.clone(), check)?;
+                        Ok::<_, String>((image, prepared))
+                    })
+                    .await;
+                cx.update(|cx| {
+                    if !cx
+                        .global::<ShellState>()
                         .capture
                         .session
-                        .consume(session, monitor);
-                    let _ = cancel(Some(window), cx);
-                }
-                Err(error) => report(error, cx),
-            }
+                        .is_ready(session, monitor)
+                    {
+                        return;
+                    }
+                    cx.global_mut::<ShellState>().capture.selecting = None;
+                    cx.global_mut::<ShellState>().capture.selection_cancel = None;
+                    mark(session, "selection_prepared", cx);
+                    match result {
+                        Ok((image, prepared)) => {
+                            crate::pins::from_capture(image, prepared, config, cx);
+                            cx.global_mut::<ShellState>()
+                                .capture
+                                .session
+                                .consume(session, monitor);
+                            let _ = cancel(None, cx);
+                        }
+                        Err(error) => report(error, cx),
+                    }
+                });
+            });
+            cx.global_mut::<ShellState>().capture.selecting = Some(task);
         }
     }
 }

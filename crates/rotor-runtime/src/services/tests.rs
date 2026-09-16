@@ -14,6 +14,81 @@ fn create(config: ConfigService) -> (Services, Receiver<RuntimeEvent>) {
 }
 
 #[test]
+fn ocr_queue_is_bounded_isolated_and_skips_cancelled_work() {
+    let directory = tempfile::tempdir().unwrap();
+    let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+    let (started, starts) = std::sync::mpsc::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let event = |id, result| RuntimeEvent::OcrFinished {
+        id,
+        pin_id: 8,
+        revision: 3,
+        result,
+    };
+    let first = services
+        .spawn_ocr_job(
+            crate::CancellationFlag::default(),
+            move || {
+                started.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
+                Ok(Vec::new())
+            },
+            event,
+        )
+        .unwrap();
+    starts.recv_timeout(Duration::from_secs(5)).unwrap();
+    let executed = Arc::new(AtomicU64::new(0));
+    let mut cancellations = Vec::new();
+    for _ in 1..BACKGROUND_LIMIT {
+        let cancellation = crate::Cancellation::default();
+        let executed = executed.clone();
+        services
+            .spawn_ocr_job(
+                cancellation.flag(),
+                move || {
+                    executed.fetch_add(1, Ordering::Relaxed);
+                    Ok(Vec::new())
+                },
+                event,
+            )
+            .unwrap();
+        cancellations.push(cancellation);
+    }
+    assert!(services
+        .spawn_ocr_job(crate::CancellationFlag::default(), || Ok(Vec::new()), event)
+        .is_err());
+    assert_eq!(executed.load(Ordering::Relaxed), 0);
+    let normal = services
+        .slots
+        .clone()
+        .try_acquire_many_owned(BACKGROUND_LIMIT as u32)
+        .unwrap();
+    drop(normal);
+    drop(cancellations);
+    // Cancelled requests release images and queue capacity even while native
+    // inference is still blocked; they need not wait for the running request.
+    services.runtime().block_on(async {
+        let _cancelled_slots = tokio::time::timeout(
+            Duration::from_secs(3),
+            services
+                .ocr_slots
+                .clone()
+                .acquire_many_owned((BACKGROUND_LIMIT - 1) as u32),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    });
+    release.send(()).unwrap();
+    services.runtime().block_on(async {
+        let _all = tokio::time::timeout(Duration::from_secs(5), services.ocr_slots.clone().acquire_many_owned(BACKGROUND_LIMIT as u32)).await.unwrap().unwrap();
+        assert!(matches!(tokio::time::timeout(Duration::from_secs(5), events.recv()).await.unwrap().unwrap(), RuntimeEvent::OcrFinished { id, pin_id: 8, revision: 3, result: Ok(_) } if id == first));
+    });
+    assert_eq!(executed.load(Ordering::Relaxed), 0);
+    assert!(events.is_empty());
+}
+
+#[test]
 fn hidden_pin_restore_is_explicit_preserves_ids_and_does_not_rewrite_records() {
     let directory = tempfile::tempdir().unwrap();
     let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());

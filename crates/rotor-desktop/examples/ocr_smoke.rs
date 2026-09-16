@@ -63,7 +63,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(resources),
         ServiceOptions { index_files: false },
     )?;
-    let request = services.recognize_text(7, 42, Arc::new(image))?;
+    // Exercise the pin's single BGRA buffer through the same borrowed-pixel
+    // export path that feeds OCR, including the generated text and alpha.
+    let expected = Arc::new(image);
+    let prepared = rotor_ui::prepare_image(expected.clone())?;
+    let composed = Document::new(
+        size,
+        ImageRect {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+        },
+    )?;
+    let image = futures::executor::block_on(services.render_canvas(
+        Arc::new(prepared),
+        composed.scene().clone(),
+        size,
+    ))?;
+    assert_eq!(image.as_ref(), expected.as_ref());
+    drop(expected);
+    let request = services.recognize_text(7, 42, image)?;
     let (sender, receiver) = mpsc::channel();
     let bridge = std::thread::spawn(move || {
         while let Ok(event) = events.recv_blocking() {

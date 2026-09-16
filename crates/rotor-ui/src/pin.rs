@@ -33,6 +33,8 @@ pub struct PinBounds {
 }
 pub type PinBoundsSetter = Rc<dyn Fn(&Window, PinBounds) -> Result<(), String>>;
 pub type PinPointerCapture = Rc<dyn Fn(&Window, bool) -> Result<(), String>>;
+/// Activate through the shell without replacing the pin's current geometry.
+pub type PinActivation = Rc<dyn Fn(&mut Window) -> Result<(), String>>;
 pub struct PinInit {
     pub image: PreparedImage,
     pub config: ShotterConfig,
@@ -40,6 +42,7 @@ pub struct PinInit {
     pub pending: Option<OperationId>,
     pub error: Option<String>,
     pub position: PinPositionReader,
+    pub activate: PinActivation,
     pub minimized: PinMinimizedReader,
     pub content_scale: f32,
     pub bounds: PinBoundsSetter,
@@ -73,6 +76,7 @@ pub struct PinView {
     message: String,
     focus: FocusHandle,
     position: PinPositionReader,
+    activate: PinActivation,
     minimized: PinMinimizedReader,
     save_task: Option<Task<()>>,
     zoom_hint_task: Option<Task<()>>,
@@ -126,6 +130,7 @@ impl PinView {
             message: init.error.unwrap_or_default(),
             focus,
             position: init.position,
+            activate: init.activate,
             minimized: init.minimized,
             save_task: None,
             zoom_hint_task: None,
@@ -177,24 +182,25 @@ impl PinView {
         &self.image
     }
     fn crop(&self) -> (u32, u32, u32, u32) {
-        rotor_runtime::pin_source_crop(
-            &self.record,
-            self.image.image.width(),
-            self.image.image.height(),
-        )
-        .unwrap_or((0, 0, 0, 0))
+        rotor_runtime::pin_source_crop(&self.record, self.image.width(), self.image.height())
+            .unwrap_or((0, 0, 0, 0))
     }
     pub fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.record.minimized = false;
         self.dirty = true;
         self.flush(cx);
-        window.activate_window();
+        self.activate(window);
         if let Some(input) = self.canvas.editor.clone() {
             input.update(cx, |input, cx| input.focus(window, cx));
         } else {
             self.focus.focus(window, cx);
         }
         cx.notify();
+    }
+    fn activate(&self, window: &mut Window) {
+        if let Err(error) = (self.activate)(window) {
+            log::warn!("Could not activate pin: {error}");
+        }
     }
     fn sync_minimized(&mut self, window: &Window, cx: &mut Context<Self>) {
         if let Some(minimized) = (self.minimized)(window)
@@ -332,7 +338,7 @@ impl PinView {
             width: scene.crop.width,
             height: scene.crop.height,
         };
-        let source = self.image.image.clone();
+        let source = Arc::new(self.image.clone());
         let services = self.services.clone();
         self.preparing_export = true;
         self.message = self.t("正在准备导出…", "Preparing export…").into();
@@ -520,6 +526,10 @@ impl PinView {
                         self.id = Some(pin.id);
                         window.set_window_title(&pin_title(&self.settings, self.id));
                         self.message.clear();
+                        // The window may have clamped its placement/zoom while
+                        // creation was pending. Persist that accepted geometry
+                        // after creation, preserving the persistence queue order.
+                        self.persist_geometry(cx);
                     }
                     Err(error) => {
                         self.message = format!(
@@ -750,5 +760,100 @@ mod shortcut_tests {
             &Keystroke::parse("s").unwrap(),
             Some(&"Ctrl+KeyS".into())
         ));
+    }
+}
+
+#[cfg(test)]
+mod creation_tests {
+    use super::{PinInit, PinView};
+    use gpui_kit::{TestAppContext, px, size};
+    use rotor_runtime::{OperationId, PinEvent, RuntimeEvent, Services, ShotterConfig};
+    use std::{rc::Rc, sync::Arc};
+
+    #[gpui::test]
+    fn pending_pin_renders_and_failed_creation_keeps_exportable_pixels(cx: &mut TestAppContext) {
+        let profile = tempfile::tempdir().unwrap();
+        let (services, _events) = Services::new(
+            Arc::new(std::sync::Mutex::new(
+                rotor_common::ConfigService::load_from(profile.path()).unwrap(),
+            )),
+            None,
+            rotor_runtime::ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        cx.update(gpui_kit::component::init);
+        let (pin, cx) = cx.add_window_view(|window, cx| {
+            window.resize(size(px(100.), px(80.)));
+            PinView::new(
+                Arc::new(services),
+                PinInit {
+                    image: crate::prepare_image(Arc::new(image::RgbaImage::from_pixel(
+                        100,
+                        80,
+                        image::Rgba([20, 40, 60, 128]),
+                    )))
+                    .unwrap(),
+                    config: ShotterConfig {
+                        annotations: Vec::new(),
+                        monitor_pos: (0, 0),
+                        monitor_size: (100, 80),
+                        rect: (0, 0, 100, 80),
+                        image_rect: (0, 0, 100, 80),
+                        offset: (0, 0),
+                        zoom_factor: 100,
+                        mask_label: "synthetic".into(),
+                        minimized: false,
+                    },
+                    id: None,
+                    pending: Some(OperationId(9)),
+                    error: None,
+                    position: Rc::new(|_| Some((0, 0))),
+                    minimized: Rc::new(|_| None),
+                    activate: Rc::new(|_| Ok(())),
+                    content_scale: 1.,
+                    bounds: Rc::new(|_, _| Ok(())),
+                    pointer: Rc::new(|_, _| Ok(())),
+                    cursor: Rc::new(|_| Some((0., 0.))),
+                },
+                window,
+                cx,
+            )
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        pin.read_with(cx, |pin, _| {
+            assert!(pin.canvas.ready());
+            assert_eq!(pin.pending_create, Some(OperationId(9)));
+            assert!(pin.persisted_id().is_none());
+        });
+        cx.update(|window, cx| {
+            pin.update(cx, |pin, cx| {
+                pin.handle_event(
+                    &RuntimeEvent::Pin(PinEvent::Created {
+                        id: OperationId(8),
+                        result: Err("stale".into()),
+                    }),
+                    window,
+                    cx,
+                );
+                assert_eq!(pin.pending_create, Some(OperationId(9)));
+                pin.handle_event(
+                    &RuntimeEvent::Pin(PinEvent::Created {
+                        id: OperationId(9),
+                        result: Err("synthetic disk failure".into()),
+                    }),
+                    window,
+                    cx,
+                );
+                assert!(pin.pending_create.is_none());
+                assert!(!pin.busy());
+                assert!(pin.message.contains("synthetic disk failure"));
+                assert_eq!(
+                    &pin.image.render.as_bytes(0).unwrap()[..4],
+                    &[60, 40, 20, 128]
+                );
+                assert!(pin.canvas.can_request_export());
+            })
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
     }
 }

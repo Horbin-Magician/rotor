@@ -234,8 +234,8 @@ impl PinView {
             y: (pointer.y - drag.pointer.y) / drag.ratio,
         };
         let size = ImageSize {
-            width: self.image.image.width(),
-            height: self.image.image.height(),
+            width: self.image.width(),
+            height: self.image.height(),
         };
         let Some(crop) = rotor_canvas::resize_crop(drag.start, drag.edges, delta, size, 12) else {
             return;
@@ -494,6 +494,7 @@ mod tests {
                         content_scale: 2.,
                         position: Rc::new(move |_| Some((read.get().x, read.get().y))),
                         minimized: Rc::new(|_| None),
+                        activate: Rc::new(|_| Ok(())),
                         bounds: Rc::new(move |_, bounds| {
                             write.set(bounds);
                             calls.set(calls.get() + 1);

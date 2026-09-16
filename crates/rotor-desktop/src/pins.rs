@@ -3,21 +3,35 @@ use gpui_kit::{component::Root, *};
 use raw_window_handle::HasWindowHandle;
 use rotor_runtime::{OperationId, PinEvent, RuntimeEvent, ShotterConfig};
 use rotor_ui::PreparedImage;
-use std::{collections::HashMap, rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc};
 
 struct DeferredPin {
     image: PreparedImage,
     config: ShotterConfig,
     id: Option<u32>,
+    pending: Option<OperationId>,
     error: Option<String>,
     activate: bool,
 }
-struct PendingImage {
-    image: Arc<image::RgbaImage>,
-    config: ShotterConfig,
-    id: Option<u32>,
-    error: Option<String>,
-    activate: bool,
+impl DeferredPin {
+    fn complete_creation(
+        &mut self,
+        request: OperationId,
+        result: &Result<rotor_runtime::StoredPin, String>,
+    ) {
+        if self.pending != Some(request) {
+            return;
+        }
+        self.pending = None;
+        match result {
+            Ok(stored) => self.id = Some(stored.id),
+            Err(error) => {
+                self.error = Some(format!(
+                    "Pin is not persisted; Save or Copy is still available: {error}"
+                ))
+            }
+        }
+    }
 }
 #[derive(Default)]
 pub struct PinWindows {
@@ -25,16 +39,23 @@ pub struct PinWindows {
     deferred: Vec<DeferredPin>,
     restoring: Option<Task<()>>,
     reveal_request: Option<OperationId>,
-    creating: HashMap<OperationId, PendingImage>,
-    preparing: HashMap<u64, Task<()>>,
 }
 pub fn stop(cx: &mut App) {
     let state = cx.global_mut::<ShellState>();
     state.pins.restoring = None;
     state.pins.reveal_request = None;
     state.pins.deferred.clear();
-    state.pins.creating.clear();
-    state.pins.preparing.clear();
+}
+fn activate_pin(window: &mut Window) -> Result<(), String> {
+    // Hidden GPUI windows retain an initial placement. Applying it on first
+    // activation would overwrite the calibrated client bounds (or later moves).
+    #[cfg(target_os = "windows")]
+    rotor_platform::overlay::activate_window_in_place(
+        HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+    )?;
+    #[cfg(not(target_os = "windows"))]
+    window.activate_window();
+    Ok(())
 }
 fn views(cx: &App) -> Vec<(AnyWindowHandle, WeakEntity<rotor_ui::PinView>)> {
     cx.global::<ShellState>()
@@ -89,93 +110,38 @@ pub fn show_all(cx: &mut App) {
 }
 pub fn from_capture(
     image: Arc<image::RgbaImage>,
+    prepared: PreparedImage,
     config: ShotterConfig,
     cx: &mut App,
-) -> Result<(), String> {
-    let pending = PendingImage {
-        image: image.clone(),
-        config: config.clone(),
-        id: None,
-        error: None,
-        activate: true,
-    };
-    match cx.global::<ShellState>().services.create_pin(image, config) {
-        Ok(id) => {
-            cx.global_mut::<ShellState>()
-                .pins
-                .creating
-                .insert(id, pending);
-            Ok(())
-        }
-        Err(error) => queue_image(
-            PendingImage {
-                error: Some(error),
-                ..pending
-            },
-            cx,
-        ),
-    }
-}
-fn queue_image(pending: PendingImage, cx: &mut App) -> Result<(), String> {
-    let token = cx
+) {
+    let (pending, error) = match cx
         .global::<ShellState>()
-        .pins
-        .next
-        .checked_add(1)
-        .ok_or("Pin task ID space exhausted")?;
-    cx.global_mut::<ShellState>().pins.next = token;
-    let task = cx.spawn(async move |cx| {
-        let prepared = cx
-            .background_executor()
-            .spawn(async move {
-                let image = pending.image;
-                Ok::<_, String>(DeferredPin {
-                    image: rotor_ui::prepare_image(image)?,
-                    config: pending.config,
-                    id: pending.id,
-                    error: pending.error,
-                    activate: pending.activate,
-                })
-            })
-            .await;
-        cx.update(|cx| {
-            cx.global_mut::<ShellState>().pins.preparing.remove(&token);
-            match prepared {
-                Ok(pin) => {
-                    cx.global_mut::<ShellState>().pins.deferred.push(pin);
-                    drain_deferred(cx);
-                }
-                Err(error) => crate::capture::report(error, cx),
-            }
-        });
-    });
+        .services
+        .create_pin(image, config.clone())
+    {
+        Ok(id) => (Some(id), None),
+        Err(error) => (None, Some(error)),
+    };
+    // Display preparation is complete before submitting persistence. The shell
+    // receives completion only after this pending identity has been registered.
     cx.global_mut::<ShellState>()
         .pins
-        .preparing
-        .insert(token, task);
-    Ok(())
+        .deferred
+        .push(DeferredPin {
+            image: prepared,
+            config,
+            id: None,
+            pending,
+            error,
+            activate: true,
+        });
 }
 pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
-    if let RuntimeEvent::Pin(PinEvent::Created { id, result }) = event
-        && let Some(pending) = cx.global_mut::<ShellState>().pins.creating.remove(id)
-    {
-        let pending = match result {
-            Ok(pin) => PendingImage {
-                image: pin.image.clone(),
-                config: pin.config.clone(),
-                id: Some(pin.id),
-                error: None,
-                activate: true,
-            },
-            Err(error) => PendingImage {
-                error: Some(format!(
-                    "Pin is not persisted; Save or Copy is still available: {error}"
-                )),
-                ..pending
-            },
-        };
-        if let Err(error) = queue_image(pending, cx) {
-            crate::capture::report(error, cx);
+    // A new capture can delay opening a prepared pin. Resolve its identity here
+    // too so a completion arriving before window creation cannot be lost.
+    if let RuntimeEvent::Pin(PinEvent::Created { id, result }) = event {
+        for pin in &mut cx.global_mut::<ShellState>().pins.deferred {
+            pin.complete_creation(*id, result);
         }
     }
     if let RuntimeEvent::Pin(PinEvent::Restored { id, reveal, result }) = event {
@@ -210,6 +176,7 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
                                     image: rotor_ui::prepare_image(pin.image)?,
                                     config: pin.config,
                                     id: Some(pin.id),
+                                    pending: None,
                                     error: None,
                                     activate: reveal,
                                 });
@@ -290,8 +257,8 @@ pub fn drain_deferred(cx: &mut App) {
                     if let Err(error) = crate::capture::show(window) {
                         log::warn!("Could not show restored pin: {error}");
                     }
-                    if activate {
-                        window.activate_window();
+                    if activate && let Err(error) = activate_pin(window) {
+                        log::warn!("Could not activate pin: {error}");
                     }
                 });
             }
@@ -307,6 +274,7 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
         image,
         mut config,
         id,
+        pending,
         error,
         activate,
     } = pin;
@@ -373,7 +341,7 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
         .filter(|scale| scale.is_finite() && *scale > 0.)
         .unwrap_or(scale);
     let (_, _, width, height) =
-        rotor_runtime::pin_source_crop(&config, image.image.width(), image.image.height())?;
+        rotor_runtime::pin_source_crop(&config, image.width(), image.height())?;
     let maximum_zoom = (8192. / width.max(height) as f32 * content_scale / scale * 100.)
         .floor()
         .clamp(1., 500.) as u32;
@@ -491,9 +459,10 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             image,
                             config,
                             id,
-                            pending: None,
+                            pending,
                             error,
                             position: reader,
+                            activate: Rc::new(activate_pin),
                             minimized: Rc::new(|window| {
                                 #[cfg(any(target_os = "windows", target_os = "macos"))]
                                 {
@@ -577,4 +546,60 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
         let _ = view.update(cx, |view, cx| view.persist_geometry(cx));
     }
     Ok((*handle, activate))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DeferredPin;
+    use rotor_runtime::{OperationId, ShotterConfig};
+    use std::sync::Arc;
+
+    #[test]
+    fn deferred_pin_handles_early_creation_and_preserves_pixels_on_failure() {
+        let image = Arc::new(image::RgbaImage::from_pixel(
+            2,
+            3,
+            image::Rgba([20, 40, 60, 128]),
+        ));
+        let config = ShotterConfig {
+            annotations: Vec::new(),
+            monitor_pos: (0, 0),
+            monitor_size: (2, 3),
+            rect: (0, 0, 2, 3),
+            image_rect: (0, 0, 2, 3),
+            offset: (0, 0),
+            zoom_factor: 100,
+            mask_label: "synthetic".into(),
+            minimized: false,
+        };
+        let stored = rotor_runtime::StoredPin {
+            id: 7,
+            image: image.clone(),
+            config: config.clone(),
+        };
+        for result in [Ok(stored), Err("synthetic disk failure".into())] {
+            let mut pin = DeferredPin {
+                image: rotor_ui::prepare_image(image.clone()).unwrap(),
+                config: config.clone(),
+                id: None,
+                pending: Some(OperationId(9)),
+                error: None,
+                activate: true,
+            };
+            let allocation = pin.image.render.as_bytes(0).unwrap().as_ptr();
+            pin.complete_creation(OperationId(8), &result);
+            assert_eq!(pin.pending, Some(OperationId(9)));
+            pin.complete_creation(OperationId(9), &result);
+            assert!(pin.pending.is_none());
+            assert_eq!(pin.id, result.as_ref().ok().map(|pin| pin.id));
+            assert_eq!(pin.error.is_some(), result.is_err());
+            assert_eq!(pin.image.render.as_bytes(0).unwrap().as_ptr(), allocation);
+            pin.complete_creation(OperationId(9), &Err("late duplicate".into()));
+            assert!(
+                !pin.error
+                    .as_ref()
+                    .is_some_and(|error| error.contains("late duplicate"))
+            );
+        }
+    }
 }

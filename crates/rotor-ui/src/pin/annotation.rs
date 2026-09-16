@@ -38,12 +38,12 @@ impl CanvasState {
     }
     pub(super) fn new(image: &PreparedImage, record: &ShotterConfig) -> Self {
         let (x, y, width, height) =
-            rotor_runtime::pin_source_crop(record, image.image.width(), image.image.height())
+            rotor_runtime::pin_source_crop(record, image.width(), image.height())
                 .expect("validated pin source");
         let mut document = Document::new(
             ImageSize {
-                width: image.image.width(),
-                height: image.image.height(),
+                width: image.width(),
+                height: image.height(),
             },
             ImageRect {
                 x,
@@ -531,8 +531,8 @@ impl PinView {
                 .absolute()
                 .left(px(-(transform.crop.x as f64 * scale_x) as f32))
                 .top(px(-(transform.crop.y as f64 * scale_y) as f32))
-                .w(px((self.image.image.width() as f64 * scale_x) as f32))
-                .h(px((self.image.image.height() as f64 * scale_y) as f32)),
+                .w(px((self.image.width() as f64 * scale_x) as f32))
+                .h(px((self.image.height() as f64 * scale_y) as f32)),
         );
         let key = (self.canvas.document.revision(), scale_y.to_bits());
         if self.canvas.display_key != Some(key) {
@@ -1085,6 +1085,7 @@ mod tests {
                         content_scale: 1.,
                         position: Rc::new(|_| None),
                         minimized: Rc::new(|_| None),
+                        activate: Rc::new(|_| Ok(())),
                         bounds: Rc::new(|_, _| Ok(())),
                         pointer: Rc::new(|_, _| Ok(())),
                         cursor: Rc::new(|_| Some((0., 0.))),

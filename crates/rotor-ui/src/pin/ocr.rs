@@ -24,6 +24,7 @@ impl Selection {
 }
 #[derive(Default)]
 pub(super) struct OcrState {
+    cancellation: rotor_runtime::Cancellation,
     pub(super) active: bool,
     pending: Option<OperationId>,
     render_task: Option<Task<()>>,
@@ -129,7 +130,7 @@ impl PinView {
             width: scene.crop.width,
             height: scene.crop.height,
         };
-        let source = self.image.image.clone();
+        let source = Arc::new(self.image.clone());
         let services = self.services.clone();
         let revision = self.ocr.revision;
         let signature = self.ocr_signature();
@@ -147,8 +148,12 @@ impl PinView {
                 }
                 this.ocr.render_task = None;
                 match result.and_then(|image| {
-                    this.services
-                        .recognize_text(this.id.unwrap_or(0), revision, image)
+                    this.services.recognize_text_cancellable(
+                        this.id.unwrap_or(0),
+                        revision,
+                        image,
+                        this.ocr.cancellation.flag(),
+                    )
                 }) {
                     Ok(id) => this.ocr.pending = Some(id),
                     Err(error) => this.ocr.error = Some(error),
@@ -302,7 +307,7 @@ impl PinView {
             cx.notify();
             return false;
         };
-        window.activate_window();
+        self.activate(window);
         if let Some(input) = &self.ocr.input {
             input.update(cx, |input, cx| input.focus(window, cx));
         }
@@ -522,6 +527,7 @@ mod tests {
                     content_scale: 1.,
                     position: Rc::new(|_| Some((0, 0))),
                     minimized: Rc::new(|_| None),
+                    activate: Rc::new(|_| Ok(())),
                     bounds: Rc::new(|_, _| Ok(())),
                     pointer: Rc::new(|_, _| Ok(())),
                     cursor: Rc::new(|_| Some((0., 0.))),

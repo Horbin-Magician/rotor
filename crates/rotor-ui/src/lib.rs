@@ -12,11 +12,11 @@ mod visual;
 pub use assets::UiAssets;
 pub use capture::{
     MaskAction, MaskCallback, MaskView, PreparedCapture, PreparedImage, prepare_capture,
-    prepare_image,
+    prepare_image, prepare_image_cancellable,
 };
 pub use pin::{
-    PinBounds, PinBoundsSetter, PinCursorReader, PinInit, PinPointerCapture, PinPositionReader,
-    PinView,
+    PinActivation, PinBounds, PinBoundsSetter, PinCursorReader, PinInit, PinPointerCapture,
+    PinPositionReader, PinView,
 };
 pub use searcher::SearchView;
 pub use settings::{SettingsView, settings_title};

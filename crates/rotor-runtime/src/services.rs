@@ -175,6 +175,8 @@ pub struct Services {
     capture_worker: CaptureWorker,
     background: Mutex<Vec<JoinHandle<()>>>,
     slots: Arc<Semaphore>,
+    ocr_slots: Arc<Semaphore>,
+    ocr_serial: Arc<Semaphore>,
     canvas_fonts: Arc<Mutex<Option<Arc<rotor_canvas::Renderer>>>>,
     coordinate_shortcuts: Arc<AtomicBool>,
     development_shortcuts: AtomicBool,
@@ -258,6 +260,8 @@ impl Services {
                 capture_worker,
                 background: Mutex::new(Vec::new()),
                 slots: Arc::new(Semaphore::new(BACKGROUND_LIMIT)),
+                ocr_slots: Arc::new(Semaphore::new(BACKGROUND_LIMIT)),
+                ocr_serial: Arc::new(Semaphore::new(1)),
                 canvas_fonts: Arc::new(Mutex::new(None)),
                 coordinate_shortcuts,
                 development_shortcuts: AtomicBool::new(true),
@@ -408,9 +412,9 @@ impl Services {
         )
     }
 
-    pub async fn render_canvas(
+    pub async fn render_canvas<T: crate::CapturePixels>(
         &self,
-        image: Arc<RgbaImage>,
+        image: Arc<T>,
         scene: rotor_canvas::Scene,
         output: rotor_canvas::ImageSize,
     ) -> Result<Arc<RgbaImage>, String> {
@@ -426,6 +430,7 @@ impl Services {
         self.runtime()
             .spawn_blocking(move || {
                 let _permit = permit;
+                let image = img_util::PixelView::new(image.as_ref())?;
                 if scene.has_text() {
                     let renderer = {
                         let mut loaded = lock(&fonts);
@@ -767,6 +772,7 @@ impl Services {
 
     pub async fn detect_capture_rectangles<T: crate::CapturePixels>(
         &self,
+        session: OperationId,
         image: Arc<T>,
     ) -> Result<Vec<rotor_canvas::ImageRect>, String> {
         self.ensure_running()?;
@@ -777,18 +783,21 @@ impl Services {
             .await
             .map_err(|_| "capture detection is stopped")?;
         self.ensure_running()?;
+        let current = self.capture_id.clone();
         self.runtime()
             .spawn_blocking(move || {
                 let _permit = permit;
-                Ok(img_util::detect_pixels(image.as_ref())?
-                    .into_iter()
-                    .map(|(x, y, width, height)| rotor_canvas::ImageRect {
-                        x,
-                        y,
-                        width,
-                        height,
-                    })
-                    .collect())
+                Ok(img_util::detect_pixels_cancellable(image.as_ref(), || {
+                    current.load(Ordering::Acquire) != session.0
+                })?
+                .into_iter()
+                .map(|(x, y, width, height)| rotor_canvas::ImageRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                })
+                .collect())
             })
             .await
             .map_err(|error| error.to_string())?
@@ -804,21 +813,33 @@ impl Services {
         revision: u64,
         image: Arc<RgbaImage>,
     ) -> Result<OperationId, String> {
+        self.recognize_text_cancellable(pin_id, revision, image, crate::CancellationFlag::default())
+    }
+
+    pub fn recognize_text_cancellable(
+        &self,
+        pin_id: u32,
+        revision: u64,
+        image: Arc<RgbaImage>,
+        cancelled: crate::CancellationFlag,
+    ) -> Result<OperationId, String> {
         let root = self
             .resources
             .as_ref()
             .ok_or("OCR resources are unavailable")?
             .resolve(Path::new("model"))
             .map_err(|error| error.to_string())?;
-        self.spawn_job(
+        let work_cancelled = cancelled.clone();
+        self.spawn_ocr_job(
+            cancelled,
             move || {
-                img_util::img2text(
+                img_util::img2text_cancellable(
                     &root,
                     &DynamicImage::ImageRgba8(Arc::unwrap_or_clone(image)),
+                    || work_cancelled.is_cancelled(),
                 )
                 .map_err(|error| error.to_string())
             },
-            None,
             move |id, result| RuntimeEvent::OcrFinished {
                 id,
                 pin_id,
@@ -826,6 +847,61 @@ impl Services {
                 result,
             },
         )
+    }
+
+    fn spawn_ocr_job<T, F, E>(
+        &self,
+        cancelled: crate::CancellationFlag,
+        work: F,
+        event: E,
+    ) -> Result<OperationId, String>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, String> + Send + 'static,
+        E: FnOnce(OperationId, Result<T, String>) -> RuntimeEvent + Send + 'static,
+    {
+        self.ensure_running()?;
+        let queued = self
+            .ocr_slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| "OCR queue is busy")?;
+        let serial = self.ocr_serial.clone();
+        let id = next_operation();
+        let events = self.events.clone();
+        let stopped = self.stopped.clone();
+        let task = self.runtime().spawn(async move {
+            let running = tokio::select! {
+                result = serial.acquire_owned() => result,
+                _ = cancelled.cancelled() => return,
+            };
+            let Ok(running) = running else {
+                return;
+            };
+            if cancelled.is_cancelled() || stopped.load(Ordering::Acquire) {
+                return;
+            }
+            let check = cancelled.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                // Permits belong to the actual work, even if its async waiter is
+                // dropped. Queued OCR never occupies a general worker slot.
+                let (_queued, _running) = (queued, running);
+                if check.is_cancelled() {
+                    return Err("OCR cancelled".into());
+                }
+                work()
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|result| result);
+            if !cancelled.is_cancelled() && !stopped.load(Ordering::Acquire) {
+                let _ = events.send(event(id, result)).await;
+            }
+        });
+        let mut tasks = lock(&self.background);
+        tasks.retain(|task| !task.is_finished());
+        tasks.push(task);
+        Ok(id)
     }
 
     fn spawn_job<T, F, E>(
@@ -902,6 +978,8 @@ impl Services {
         self.cancel_ai_provider_test(None);
         self.cancel_translation();
         self.slots.close();
+        self.ocr_slots.close();
+        self.ocr_serial.close();
         self.cancel_selection();
         self.cancel_capture();
         self.capture_worker.stop();

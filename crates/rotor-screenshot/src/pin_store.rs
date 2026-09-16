@@ -4,7 +4,7 @@ use crate::shotter_record::ShotterConfig;
 use image::{ImageEncoder, RgbaImage};
 use std::{
     fs::{self, OpenOptions},
-    io::Write,
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -200,15 +200,6 @@ impl PinStore {
 
     pub fn create(&mut self, image: &RgbaImage, config: ShotterConfig) -> Result<u32, String> {
         validate(&config, image.width(), image.height())?;
-        let mut png = Vec::new();
-        image::codecs::png::PngEncoder::new(&mut png)
-            .write_image(
-                image.as_raw(),
-                image.width(),
-                image.height(),
-                image::ExtendedColorType::Rgba8,
-            )
-            .map_err(|error| error.to_string())?;
         fs::create_dir_all(self.root.join("images")).map_err(|error| error.to_string())?;
         let (id, path, mut file) = loop {
             let id = self.next_id;
@@ -230,10 +221,25 @@ impl PinStore {
                 Err(error) => return Err(error.to_string()),
             }
         };
-        let write = file
-            .write_all(&png)
-            .and_then(|_| file.sync_all())
-            .map_err(|error| error.to_string());
+        // Encode directly to the new file: noisy screenshots need not retain
+        // another image-sized compressed Vec. Flush and sync still precede
+        // metadata publication, and any failure removes this uncommitted file.
+        let write = (|| {
+            let mut writer = BufWriter::new(&mut file);
+            image::codecs::png::PngEncoder::new(&mut writer)
+                .write_image(
+                    image.as_raw(),
+                    image.width(),
+                    image.height(),
+                    image::ExtendedColorType::Rgba8,
+                )
+                .map_err(|error| error.to_string())?;
+            writer.flush().map_err(|error| error.to_string())?;
+            writer
+                .get_ref()
+                .sync_all()
+                .map_err(|error| error.to_string())
+        })();
         drop(file);
         let result = write.and_then(|_| {
             let mut candidate = self.document.clone();

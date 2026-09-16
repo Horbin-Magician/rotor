@@ -178,6 +178,15 @@ fn synthetic_pin(
                 }
             }),
             minimized: Rc::new(|_| None),
+            activate: Rc::new(|window| {
+                #[cfg(target_os = "windows")]
+                rotor_platform::overlay::activate_window_in_place(
+                    HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
+                )?;
+                #[cfg(not(target_os = "windows"))]
+                window.activate_window();
+                Ok(())
+            }),
             bounds: Rc::new(|window, bounds| {
                 rotor_platform::overlay::set_client_bounds(
                     HasWindowHandle::window_handle(window).map_err(|e| e.to_string())?,

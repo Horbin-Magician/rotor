@@ -1,4 +1,6 @@
+mod cancellation;
 mod pins;
+pub use cancellation::{Cancellation, CancellationFlag};
 pub mod quick;
 pub mod services;
 pub mod shortcuts;

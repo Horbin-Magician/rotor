@@ -44,7 +44,7 @@ impl Renderer {
     /// Vectors are rasterized at output resolution, after resizing the base.
     pub fn render(
         &self,
-        source: &RgbaImage,
+        source: &impl GenericImageView<Pixel = Rgba<u8>>,
         scene: &Scene,
         output: ImageSize,
     ) -> Result<RgbaImage, String> {
@@ -127,13 +127,15 @@ impl Renderer {
 }
 
 fn resize_crop(
-    source: &RgbaImage,
+    source: &impl GenericImageView<Pixel = Rgba<u8>>,
     crop: ImageRect,
     output: ImageSize,
 ) -> Result<RgbaImage, String> {
     let source = image::imageops::crop_imm(source, crop.x, crop.y, crop.width, crop.height);
     if (crop.width, crop.height) == (output.width, output.height) {
-        return Ok(source.to_image());
+        return Ok(RgbaImage::from_fn(output.width, output.height, |x, y| {
+            source.get_pixel(x, y)
+        }));
     }
     let mut premultiplied =
         Pixmap::new(crop.width, crop.height).ok_or("Cannot allocate canvas sampling buffer")?;

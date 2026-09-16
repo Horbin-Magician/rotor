@@ -22,6 +22,7 @@ pub(super) struct CaptureWorker {
 impl CaptureWorker {
     pub fn new(events: Sender<RuntimeEvent>, current: Arc<AtomicU64>) -> Result<Self, String> {
         let preparation_events = events.clone();
+        let capture_current = current.clone();
         Self::start_initialized(events, current, move || {
             let mut pool = monitor::CapturePool::default();
             // Prestart output workers without reading any desktop pixels.
@@ -31,7 +32,9 @@ impl CaptureWorker {
                     log::warn!("Capture worker warmup: {error}");
                 }
             }
-            move |request| capture_monitors(&mut pool, request, &preparation_events)
+            move |request| {
+                capture_monitors(&mut pool, request, &preparation_events, &capture_current)
+            }
         })
     }
 
@@ -109,6 +112,7 @@ fn capture_monitors(
     pool: &mut monitor::CapturePool,
     request: CaptureRequest,
     events: &Sender<RuntimeEvent>,
+    current: &AtomicU64,
 ) -> Result<CaptureBundle, String> {
     let mark = |stage| {
         log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage={} elapsed_us={}",
@@ -123,15 +127,19 @@ fn capture_monitors(
         events,
         || monitor::current_configs().map_err(|error| error.to_string()),
         |before| {
-            let (images, windows) = pool.capture_with(&before, || {
-                let windows =
-                    rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
-                        log::warn!("Capture window rectangles: {error}");
-                        Vec::new()
-                    });
-                mark("window_rectangles");
-                windows
-            })?;
+            let (images, windows) = pool.capture_with(
+                &before,
+                || current.load(Ordering::Acquire) != request.id.0,
+                || {
+                    let windows =
+                        rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
+                            log::warn!("Capture window rectangles: {error}");
+                            Vec::new()
+                        });
+                    mark("window_rectangles");
+                    windows
+                },
+            )?;
             let monitors = before
                 .into_iter()
                 .zip(images)

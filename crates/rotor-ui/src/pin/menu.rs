@@ -240,6 +240,7 @@ mod tests {
                     content_scale: 1.,
                     position: Rc::new(|_| Some((0, 0))),
                     minimized: Rc::new(|_| None),
+                    activate: Rc::new(|_| Ok(())),
                     bounds: Rc::new(|_, _| Ok(())),
                     pointer: Rc::new(|_, _| Ok(())),
                     cursor: Rc::new(|_| Some((0., 0.))),

@@ -6,19 +6,55 @@ use std::{rc::Rc, sync::Arc};
 
 #[derive(Clone)]
 pub struct PreparedImage {
-    pub image: Arc<RgbaImage>,
     pub render: Arc<RenderImage>,
+    width: u32,
+    height: u32,
+}
+impl PreparedImage {
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+impl rotor_runtime::CapturePixels for PreparedImage {
+    fn pixels(&self) -> (&[u8], u32, u32, rotor_runtime::PixelFormat) {
+        (
+            self.render.as_bytes(0).expect("pin has one frame"),
+            self.width,
+            self.height,
+            rotor_runtime::PixelFormat::Bgra,
+        )
+    }
 }
 pub fn prepare_image(image: Arc<RgbaImage>) -> Result<PreparedImage, String> {
+    prepare_image_cancellable(image, || false)
+}
+
+pub fn prepare_image_cancellable(
+    image: Arc<RgbaImage>,
+    cancelled: impl Fn() -> bool,
+) -> Result<PreparedImage, String> {
+    if cancelled() {
+        return Err("Image preparation cancelled".into());
+    }
     if image.width() == 0 || image.height() == 0 {
         return Err("Image is empty".into());
     }
-    let mut bgra = image.as_ref().clone();
-    for pixel in bgra.pixels_mut() {
-        pixel.0.swap(0, 2);
+    let (width, height) = image.dimensions();
+    let mut bgra = Arc::unwrap_or_clone(image);
+    for row in bgra.rows_mut() {
+        if cancelled() {
+            return Err("Image preparation cancelled".into());
+        }
+        for pixel in row {
+            pixel.0.swap(0, 2);
+        }
     }
     Ok(PreparedImage {
-        image,
+        width,
+        height,
         render: Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])),
     })
 }
@@ -57,6 +93,17 @@ impl PreparedScreenshot {
 
     /// Copy only selected pixels at native resolution, preserving every channel.
     pub fn crop_rgba(&self, rect: ImageRect) -> Result<Arc<RgbaImage>, String> {
+        self.crop_rgba_cancellable(rect, || false)
+    }
+
+    pub fn crop_rgba_cancellable(
+        &self,
+        rect: ImageRect,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Arc<RgbaImage>, String> {
+        if cancelled() {
+            return Err("Capture selection cancelled".into());
+        }
         if rect.width == 0
             || rect.height == 0
             || rect
@@ -71,20 +118,20 @@ impl PreparedScreenshot {
             return Err("Capture source rectangle is invalid".into());
         }
         let bytes = self.render.as_bytes(0).expect("capture has one frame");
-        Ok(Arc::new(RgbaImage::from_fn(
-            rect.width,
-            rect.height,
-            |x, y| {
-                let offset =
-                    ((rect.y + y) as usize * self.width as usize + (rect.x + x) as usize) * 4;
-                image::Rgba([
-                    bytes[offset + 2],
-                    bytes[offset + 1],
-                    bytes[offset],
-                    bytes[offset + 3],
-                ])
-            },
-        )))
+        let mut output = RgbaImage::new(rect.width, rect.height);
+        let row_bytes = rect.width as usize * 4;
+        let output_bytes: &mut [u8] = output.as_mut();
+        for (y, row) in output_bytes.chunks_exact_mut(row_bytes).enumerate() {
+            if cancelled() {
+                return Err("Capture selection cancelled".into());
+            }
+            let offset = ((rect.y as usize + y) * self.width as usize + rect.x as usize) * 4;
+            row.copy_from_slice(&bytes[offset..offset + row_bytes]);
+            for pixel in row.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+        }
+        Ok(Arc::new(output))
     }
 
     fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
@@ -785,6 +832,62 @@ mod tests {
             assert_eq!(super::inspector_axis(40., length, 80., gap), 0.);
         }
     }
+    #[test]
+    fn selection_and_preparation_cancel_without_changing_shared_pixels() {
+        let prepared = super::PreparedScreenshot::new(rotor_runtime::BgraCapture {
+            width: 16,
+            height: 8,
+            bytes: vec![128; 16 * 8 * 4],
+        })
+        .unwrap();
+        let checks = std::cell::Cell::new(0);
+        let cancelled = || {
+            checks.set(checks.get() + 1);
+            checks.get() >= 3
+        };
+        assert!(
+            prepared
+                .crop_rgba_cancellable(
+                    ImageRect {
+                        x: 0,
+                        y: 0,
+                        width: 16,
+                        height: 8
+                    },
+                    cancelled
+                )
+                .is_err()
+        );
+        assert_eq!(checks.get(), 3);
+        let source = Arc::new(RgbaImage::from_pixel(16, 8, image::Rgba([20, 40, 60, 128])));
+        checks.set(0);
+        assert!(super::prepare_image_cancellable(source.clone(), cancelled).is_err());
+        assert_eq!(checks.get(), 3);
+        assert!(source.pixels().all(|pixel| pixel.0 == [20, 40, 60, 128]));
+        assert_eq!(Arc::strong_count(&source), 1);
+    }
+
+    #[test]
+    fn owned_pin_reuses_pixels_and_shared_pin_does_not_retain_rgba() {
+        let original = RgbaImage::from_pixel(4, 3, image::Rgba([19, 37, 71, 128]));
+        let pointer = original.as_raw().as_ptr();
+        let prepared = prepare_image(Arc::new(original)).unwrap();
+        assert_eq!(prepared.render.as_bytes(0).unwrap().as_ptr(), pointer);
+        assert_eq!((prepared.width(), prepared.height()), (4, 3));
+        assert_eq!(
+            &prepared.render.as_bytes(0).unwrap()[..4],
+            &[71, 37, 19, 128]
+        );
+
+        let shared = Arc::new(RgbaImage::new(4, 3));
+        let prepared = prepare_image(shared.clone()).unwrap();
+        assert_eq!(Arc::strong_count(&shared), 1);
+        assert_ne!(
+            prepared.render.as_bytes(0).unwrap().as_ptr(),
+            shared.as_raw().as_ptr()
+        );
+    }
+
     #[test]
     fn native_upload_is_straight_bgra_without_mutating_export_pixels() {
         let source = Arc::new(RgbaImage::from_pixel(

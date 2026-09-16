@@ -36,6 +36,49 @@ pub enum PixelFormat {
 pub trait CapturePixels: Send + Sync + 'static {
     fn pixels(&self) -> (&[u8], u32, u32, PixelFormat);
 }
+/// Checked borrowed pixels. Canvas rendering can read BGRA directly without
+/// retaining a second full-resolution image or converting pixels outside a crop.
+pub struct PixelView<'a> {
+    bytes: &'a [u8],
+    width: u32,
+    height: u32,
+    format: PixelFormat,
+}
+impl<'a> PixelView<'a> {
+    pub fn new(image: &'a impl CapturePixels) -> Result<Self, String> {
+        let (bytes, width, height, format) = image.pixels();
+        if width == 0
+            || height == 0
+            || (width as usize)
+                .checked_mul(height as usize)
+                .and_then(|n| n.checked_mul(4))
+                != Some(bytes.len())
+        {
+            return Err("Invalid capture pixel buffer".into());
+        }
+        Ok(Self {
+            bytes,
+            width,
+            height,
+            format,
+        })
+    }
+}
+impl image::GenericImageView for PixelView<'_> {
+    type Pixel = image::Rgba<u8>;
+    fn dimensions(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
+        assert!(x < self.width && y < self.height);
+        let offset = (y as usize * self.width as usize + x as usize) * 4;
+        let mut pixel: [u8; 4] = self.bytes[offset..offset + 4].try_into().unwrap();
+        if matches!(self.format, PixelFormat::Bgra) {
+            pixel.swap(0, 2);
+        }
+        image::Rgba(pixel)
+    }
+}
 impl CapturePixels for RgbaImage {
     fn pixels(&self) -> (&[u8], u32, u32, PixelFormat) {
         (
@@ -47,6 +90,14 @@ impl CapturePixels for RgbaImage {
     }
 }
 pub fn detect_pixels(image: &impl CapturePixels) -> Result<Vec<(u32, u32, u32, u32)>, String> {
+    detect_pixels_cancellable(image, || false)
+}
+
+pub fn detect_pixels_cancellable(
+    image: &impl CapturePixels,
+    cancelled: impl Fn() -> bool,
+) -> Result<Vec<(u32, u32, u32, u32)>, String> {
+    check_cancelled(&cancelled)?;
     let (bytes, original_width, original_height, format) = image.pixels();
     let expected = (original_width as usize)
         .checked_mul(original_height as usize)
@@ -56,13 +107,16 @@ pub fn detect_pixels(image: &impl CapturePixels) -> Result<Vec<(u32, u32, u32, u
     }
     let scale_factor = calculate_optimal_scale_factor(original_width, original_height);
     let gray = image_to_scaled_gray(bytes, original_width, original_height, format, scale_factor);
+    check_cancelled(&cancelled)?;
     let edge_image = canny_edge_detection(&gray, 10.0, 30.0);
+    check_cancelled(&cancelled)?;
 
     let morph_size = cmp::max(1, 4 / scale_factor) as u8;
     let processed_image = morphological_close(edge_image, morph_size);
+    check_cancelled(&cancelled)?;
 
     let min_size = 100 / scale_factor;
-    let rects = find_bounding_boxes(&processed_image, min_size);
+    let rects = find_bounding_boxes(&processed_image, min_size, &cancelled)?;
 
     // 6. Rescale back
     Ok(rects
@@ -76,6 +130,14 @@ pub fn detect_pixels(image: &impl CapturePixels) -> Result<Vec<(u32, u32, u32, u
             (left, top, right - left, bottom - top)
         })
         .collect())
+}
+
+fn check_cancelled(cancelled: &impl Fn() -> bool) -> Result<(), String> {
+    if cancelled() {
+        Err("Image operation cancelled".into())
+    } else {
+        Ok(())
+    }
 }
 
 fn calculate_optimal_scale_factor(width: u32, height: u32) -> u32 {
@@ -238,28 +300,41 @@ fn morphological_close(img: GrayImage, size: u8) -> GrayImage {
     })
 }
 
-fn find_bounding_boxes(img: &GrayImage, min_size: u32) -> Vec<(u32, u32, u32, u32)> {
+fn find_bounding_boxes(
+    img: &GrayImage,
+    min_size: u32,
+    cancelled: &impl Fn() -> bool,
+) -> Result<Vec<(u32, u32, u32, u32)>, String> {
     let (width, height) = img.dimensions();
     let mut visited = vec![false; (width * height) as usize];
     let mut boxes = Vec::new();
     let img_data = img.as_raw();
 
     for y in 0..height {
+        check_cancelled(cancelled)?;
         for x in 0..width {
             let idx = (y * width + x) as usize;
             if img_data[idx] > 64 && !visited[idx] {
-                if let Some(rect) =
-                    flood_fill_bbox(img_data, &mut visited, x, y, width, height, min_size)
-                {
+                if let Some(rect) = flood_fill_bbox(
+                    img_data,
+                    &mut visited,
+                    x,
+                    y,
+                    width,
+                    height,
+                    min_size,
+                    cancelled,
+                )? {
                     boxes.push(rect);
                 }
             }
         }
     }
 
-    boxes
+    Ok(boxes)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn flood_fill_bbox(
     img_data: &[u8],
     visited: &mut [bool],
@@ -268,7 +343,8 @@ fn flood_fill_bbox(
     width: u32,
     height: u32,
     min_size: u32,
-) -> Option<(u32, u32, u32, u32)> {
+    cancelled: &impl Fn() -> bool,
+) -> Result<Option<(u32, u32, u32, u32)>, String> {
     let w_usize = width as usize;
     let start_idx = start_y as usize * w_usize + start_x as usize;
     let mut stack = Vec::with_capacity(512);
@@ -282,6 +358,9 @@ fn flood_fill_bbox(
     let mut pixel_count = 0;
 
     while let Some(idx) = stack.pop() {
+        if pixel_count % 4096 == 0 {
+            check_cancelled(cancelled)?;
+        }
         let x = (idx % w_usize) as u32;
         let y = (idx / w_usize) as u32;
 
@@ -340,10 +419,10 @@ fn flood_fill_bbox(
 
     // 过滤过小的区域
     if w < min_size || h < min_size || pixel_count < min_size * min_size / 4 {
-        return None;
+        return Ok(None);
     }
 
-    Some((min_x, min_y, w, h))
+    Ok(Some((min_x, min_y, w, h)))
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -409,22 +488,43 @@ pub fn img2text(
     model_path: &Path,
     img: &DynamicImage,
 ) -> Result<Vec<TextResult>, Box<dyn std::error::Error>> {
+    img2text_cancellable(model_path, img, || false)
+}
+
+pub fn img2text_cancellable(
+    model_path: &Path,
+    img: &DynamicImage,
+    cancelled: impl Fn() -> bool,
+) -> Result<Vec<TextResult>, Box<dyn std::error::Error>> {
+    check_cancelled(&cancelled)?;
     let result = {
         let pipeline_cache = OCR_PIPELINE.get_or_init(|| Mutex::new(OcrCache::default()));
         let mut cache = lock_ocr_cache(pipeline_cache);
+        check_cancelled(&cancelled)?;
         if cache.pipeline.is_none() {
             cache.pipeline = Some(build_ocr_pipeline(model_path)?);
         }
 
-        let result = cache
-            .pipeline
-            .as_ref()
-            .expect("OCR pipeline was initialized")
-            .predict(vec![img.to_rgb8()]);
+        // Model loading may take time. Even a cancelled first request must
+        // schedule release of the newly loaded pipeline.
+        cache.last_used = Some(Instant::now());
+        let result = if cancelled() {
+            None
+        } else {
+            Some(
+                cache
+                    .pipeline
+                    .as_ref()
+                    .expect("OCR pipeline was initialized")
+                    .predict(vec![img.to_rgb8()]),
+            )
+        };
         cache.last_used = Some(Instant::now());
         result
     };
     schedule_ocr_reaper();
+    check_cancelled(&cancelled)?;
+    let result = result.ok_or("Image operation cancelled")?;
 
     let Some(result) = result?.into_iter().next() else {
         return Ok(Vec::new());
@@ -831,6 +931,93 @@ mod tests {
         fn pixels(&self) -> (&[u8], u32, u32, PixelFormat) {
             (&self.0, self.1, self.2, self.3)
         }
+    }
+
+    #[test]
+    fn borrowed_bgra_canvas_matches_rgba_for_crop_scale_alpha_and_annotations() {
+        use rotor_canvas::{
+            Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, Renderer, StrokeStyle,
+        };
+        let rgba = RgbaImage::from_fn(32, 24, |x, y| {
+            image::Rgba([x as u8 * 7, y as u8 * 9, 51, (x * y) as u8])
+        });
+        let mut bgra = rgba.as_raw().clone();
+        for pixel in bgra.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        let pixels = Pixels(bgra, 32, 24, PixelFormat::Bgra);
+        let view = PixelView::new(&pixels).unwrap();
+        let mut document = Document::new(
+            ImageSize {
+                width: 32,
+                height: 24,
+            },
+            ImageRect {
+                x: 3,
+                y: 4,
+                width: 22,
+                height: 17,
+            },
+        )
+        .unwrap();
+        let renderer = Renderer::without_fonts();
+        for annotated in [false, true] {
+            if annotated {
+                document
+                    .add(Annotation::Arrow {
+                        start: ImagePoint { x: 5., y: 5. },
+                        end: ImagePoint { x: 21., y: 19. },
+                        style: StrokeStyle {
+                            width: 2.,
+                            color: Color([200, 30, 40, 128]),
+                        },
+                    })
+                    .unwrap();
+            }
+            for output in [
+                ImageSize {
+                    width: 22,
+                    height: 17,
+                },
+                ImageSize {
+                    width: 11,
+                    height: 8,
+                },
+            ] {
+                assert_eq!(
+                    renderer.render(&view, document.scene(), output).unwrap(),
+                    renderer.render(&rgba, document.scene(), output).unwrap()
+                );
+            }
+        }
+        assert!(PixelView::new(&Pixels(vec![0; 3], 1, 1, PixelFormat::Bgra)).is_err());
+    }
+
+    #[test]
+    fn cancelled_detection_stops_before_pixels_and_during_connected_components() {
+        struct Unreadable;
+        impl CapturePixels for Unreadable {
+            fn pixels(&self) -> (&[u8], u32, u32, PixelFormat) {
+                panic!("cancelled work must not read pixels")
+            }
+        }
+        assert!(detect_pixels_cancellable(&Unreadable, || true).is_err());
+        let image = GrayImage::from_pixel(256, 256, image::Luma([255]));
+        let checks = std::cell::Cell::new(0);
+        let result = find_bounding_boxes(&image, 10, &|| {
+            checks.set(checks.get() + 1);
+            checks.get() > 2
+        });
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert_eq!(checks.get(), 3);
+    }
+
+    #[test]
+    fn cancelled_ocr_does_not_load_models() {
+        let image = DynamicImage::ImageRgba8(RgbaImage::new(1, 1));
+        let error = img2text_cancellable(Path::new("missing-synthetic-models"), &image, || true)
+            .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
     }
 
     #[test]
