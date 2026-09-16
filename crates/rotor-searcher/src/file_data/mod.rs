@@ -397,8 +397,8 @@ impl FileData {
     ) -> Option<SearcherMessage> {
         let cancel = Arc::new(AtomicBool::new(false));
         msg_reciever.activate(cancel.clone(), true);
-        let SearchRequest { id, query } = request;
-        let append = self.finding_name == query;
+        let SearchRequest { id, query, append } = request;
+        let append = append && self.finding_name == query;
         if !append {
             if let Some(icons) = &mut self.icons {
                 icons.reset();
@@ -799,6 +799,7 @@ mod tests {
             data.find(
                 SearchRequest {
                     id: QueryId(20),
+                    append: false,
                     query: "same-query".into(),
                 },
                 &receiver,
@@ -820,17 +821,20 @@ mod tests {
             Arc::new(Mutex::new(FileState::Ready)),
         );
         let (_sender, receiver) = mailbox::channel();
-        for id in [QueryId(10), QueryId(11)] {
+        for id in [QueryId(10), QueryId(11), QueryId(12)] {
             data.find(
                 SearchRequest {
                     id,
+                    append: id == QueryId(11),
                     query: "same-query".into(),
                 },
                 &receiver,
             );
         }
         let batches = batches.lock().unwrap();
-        assert_eq!(batches.len(), 2);
+        assert_eq!(batches.len(), 3);
+        assert!(!batches[2].append);
+        assert_eq!(batches[2].id, QueryId(12));
         assert_eq!(batches[0].id, QueryId(10));
         assert_eq!(batches[1].id, QueryId(11));
         assert!(!batches[0].append);

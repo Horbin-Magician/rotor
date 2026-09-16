@@ -18,6 +18,7 @@ impl std::error::Error for SearchUnavailable {}
 pub struct SearchRequest {
     pub id: QueryId,
     pub query: String,
+    pub append: bool,
 }
 
 #[derive(Clone)]

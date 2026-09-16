@@ -78,6 +78,10 @@ impl Searcher {
     }
 
     pub fn find(&self, filename: String) -> Result<QueryId, SearchUnavailable> {
+        self.find_page(filename, false)
+    }
+
+    pub fn find_page(&self, filename: String, append: bool) -> Result<QueryId, SearchUnavailable> {
         if self.stopped.load(Ordering::Acquire) {
             return Err(SearchUnavailable);
         }
@@ -86,6 +90,7 @@ impl Searcher {
             .send(SearcherMessage::Find(SearchRequest {
                 id,
                 query: filename,
+                append,
             }))
             .map_err(|_| SearchUnavailable)?;
         Ok(id)

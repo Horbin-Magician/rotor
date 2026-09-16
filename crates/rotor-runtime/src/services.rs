@@ -606,11 +606,15 @@ impl Services {
     }
 
     pub fn search(&self, query: String) -> Result<QueryId, String> {
+        self.search_page(query, false)
+    }
+
+    pub fn search_page(&self, query: String, append: bool) -> Result<QueryId, String> {
         self.ensure_running()?;
         self.searcher
             .as_ref()
             .ok_or("file indexing is disabled")?
-            .find(query)
+            .find_page(query, append)
             .map_err(|error| error.to_string())
     }
 

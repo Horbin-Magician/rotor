@@ -148,7 +148,7 @@ impl SearchView {
             }
             self.scroll.scroll_to_item(0, ScrollStrategy::Top);
         }
-        match self.services.search(query.clone()) {
+        match self.services.search_page(query.clone(), append) {
             Ok(id) if !query.trim().is_empty() => {
                 self.results.begin(id, query, append);
                 self.message.clear();

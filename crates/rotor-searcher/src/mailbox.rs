@@ -183,6 +183,7 @@ mod tests {
     fn query(id: u64) -> SearcherMessage {
         SearcherMessage::Find(SearchRequest {
             id: QueryId(id),
+            append: false,
             query: id.to_string(),
         })
     }
