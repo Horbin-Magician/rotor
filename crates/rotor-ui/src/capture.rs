@@ -224,6 +224,12 @@ pub fn prepare_capture(bundle: CaptureBundle) -> Result<Vec<Arc<PreparedCapture>
 }
 #[derive(Clone, Copy)]
 pub enum MaskAction {
+    #[cfg(target_os = "windows")]
+    Drag {
+        session: u64,
+        monitor: u32,
+        active: bool,
+    },
     Activate {
         session: u64,
         monitor: u32,
@@ -254,6 +260,8 @@ pub struct MaskView {
     focus: FocusHandle,
     armed: bool,
     _bounds: Subscription,
+    #[cfg(target_os = "windows")]
+    _activation: Subscription,
     detected: Vec<ImageRect>,
     chinese: bool,
     copied: bool,
@@ -275,6 +283,14 @@ impl MaskView {
         let focus = cx.focus_handle();
         let bounds =
             cx.observe_window_bounds(window, |this, window, cx| this.check_geometry(window, cx));
+        #[cfg(target_os = "windows")]
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active() && this.start.take().is_some() {
+                this.click_selection = None;
+                this.drag_changed(false, window, cx);
+                cx.notify();
+            }
+        });
         Self {
             session,
             active: session != 0,
@@ -287,6 +303,8 @@ impl MaskView {
             focus,
             armed: false,
             _bounds: bounds,
+            #[cfg(target_os = "windows")]
+            _activation: activation,
             detected: Vec::new(),
             chinese,
             copied: false,
@@ -432,6 +450,8 @@ impl MaskView {
         cx.notify();
     }
     fn finish(&mut self, position: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(target_os = "windows")]
+        self.drag_changed(false, window, cx);
         if !self.active || !self.armed || self.start.is_none() {
             return;
         }
@@ -464,6 +484,18 @@ impl MaskView {
         let x = (self.point.x.floor() as i64 + dx as i64).clamp(0, image.width as i64 - 1) as u32;
         let y = (self.point.y.floor() as i64 + dy as i64).clamp(0, image.height as i64 - 1) as u32;
         image.pixel(x, y)
+    }
+    #[cfg(target_os = "windows")]
+    fn drag_changed(&self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
+        (self.callback)(
+            MaskAction::Drag {
+                session: self.session,
+                monitor: self.capture.monitor.id,
+                active,
+            },
+            window,
+            cx,
+        );
     }
     fn color(&self) -> String {
         let [r, g, b, _] = self.pixel(0, 0);
@@ -686,6 +718,8 @@ impl Render for MaskView {
                     this.move_pointer(event.position, window, cx);
                     this.click_selection = this.auto_selection();
                     this.start = Some(this.point);
+                    #[cfg(target_os = "windows")]
+                    this.drag_changed(true, window, cx);
                     cx.notify();
                 }),
             )
@@ -743,6 +777,73 @@ mod tests {
     use rotor_canvas::ImageRect;
     use rotor_runtime::{CaptureBundle, MonitorConfig};
     use std::sync::Arc;
+    #[cfg(target_os = "windows")]
+    #[gpui::test]
+    fn drag_releases_cursor_even_when_no_selection_is_created(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        use std::cell::RefCell;
+
+        cx.update(gpui_kit::component::init);
+        let actions = Rc::new(RefCell::new(Vec::new()));
+        let recorded = actions.clone();
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let capture = Arc::new(PreparedCapture {
+                monitor: MonitorConfig {
+                    id: 1,
+                    x: 0,
+                    y: 0,
+                    width: 400,
+                    height: 400,
+                    scale_factor: 1.,
+                },
+                image: PreparedScreenshot::new(rotor_runtime::BgraCapture {
+                    width: 400,
+                    height: 400,
+                    bytes: vec![0; 400 * 400 * 4],
+                })
+                .unwrap(),
+                windows: Vec::new(),
+            });
+            MaskView::new(
+                7,
+                capture,
+                Rc::new(move |action, _, _| recorded.borrow_mut().push(action)),
+                false,
+                window,
+                cx,
+            )
+        });
+        cx.simulate_resize(size(px(400.), px(400.)));
+        view.update(cx, |view, cx| {
+            view.armed = true;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let position = point(px(40.), px(40.));
+        cx.simulate_mouse_down(position, MouseButton::Left, Default::default());
+        view.read_with(cx, |view, _| assert!(view.start.is_some()));
+        cx.simulate_mouse_up(position, MouseButton::Left, Default::default());
+        view.read_with(cx, |view, _| assert!(view.start.is_none()));
+        let actions = actions.borrow();
+        let drags: Vec<_> = actions
+            .iter()
+            .filter_map(|action| match action {
+                MaskAction::Drag {
+                    session,
+                    monitor,
+                    active,
+                } => Some((*session, *monitor, *active)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(drags, [(7, 1, true), (7, 1, false)]);
+        assert!(
+            !actions
+                .iter()
+                .any(|action| matches!(action, MaskAction::Choose { .. }))
+        );
+    }
+
     #[test]
     fn bgra_capture_moves_into_render_storage_and_converts_only_on_demand() {
         let bytes = vec![50, 100, 200, 255, 3, 2, 1, 128];

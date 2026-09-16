@@ -21,6 +21,8 @@ pub struct CaptureState {
     started: Option<Instant>,
     desktop_dirty: bool,
     shown: HashSet<u32>,
+    #[cfg(target_os = "windows")]
+    cursor_confinement: Option<(u64, u32, rotor_platform::cursor::CursorConfinement)>,
 }
 pub fn report(error: String, cx: &mut App) {
     eprintln!("Capture: {error}");
@@ -60,6 +62,10 @@ fn activate_mask(window: &mut Window) -> Result<(), String> {
     Ok(())
 }
 fn close_masks(current: Option<&mut Window>, cx: &mut App) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        cx.global_mut::<ShellState>().capture.cursor_confinement = None;
+    }
     let current_id = current
         .as_ref()
         .map(|window| Window::window_handle(window).window_id());
@@ -196,6 +202,10 @@ fn fit_mask(
 
 pub fn stop(cx: &mut App) {
     let state = cx.global_mut::<ShellState>();
+    #[cfg(target_os = "windows")]
+    {
+        state.capture.cursor_confinement = None;
+    }
     state.capture.session.cancel();
     state.capture.preparing = None;
     state.capture.detecting = None;
@@ -460,6 +470,54 @@ fn start_detection(session: u64, focus_id: Option<u32>, cx: &mut App) {
 }
 fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
     match action {
+        #[cfg(target_os = "windows")]
+        MaskAction::Drag {
+            session,
+            monitor,
+            active,
+        } => {
+            let state = cx.global_mut::<ShellState>();
+            if !state
+                .windows
+                .get(&WindowRole::Mask { session, monitor })
+                .is_some_and(|slot| {
+                    slot.window.window_id() == Window::window_handle(window).window_id()
+                })
+            {
+                return;
+            }
+            if !active {
+                if state
+                    .capture
+                    .cursor_confinement
+                    .as_ref()
+                    .is_some_and(|(owner, display, _)| (*owner, *display) == (session, monitor))
+                {
+                    state.capture.cursor_confinement = None;
+                }
+                return;
+            }
+            if !state.capture.session.is_ready(session, monitor) || !window.is_window_active() {
+                return;
+            }
+            let Some(frame) = state.capture.frames.get(&monitor) else {
+                return;
+            };
+            let bounds = frame.monitor.clone();
+            state.capture.cursor_confinement = None;
+            match rotor_platform::cursor::CursorConfinement::new(
+                bounds.x,
+                bounds.y,
+                bounds.width,
+                bounds.height,
+            ) {
+                Ok(guard) => state.capture.cursor_confinement = Some((session, monitor, guard)),
+                Err(error) => {
+                    let _ = cancel(Some(window), cx);
+                    report(error, cx);
+                }
+            }
+        }
         MaskAction::Activate { session, monitor } => {
             if cx
                 .global::<ShellState>()
