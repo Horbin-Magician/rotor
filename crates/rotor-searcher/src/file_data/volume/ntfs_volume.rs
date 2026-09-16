@@ -153,7 +153,10 @@ impl Volume {
         let mut request = Ioctl::MFT_ENUM_DATA_V0 {
             StartFileReferenceNumber: 0,
             LowUsn: 0,
-            HighUsn: self.ujd.NextUsn,
+            // MFT filtering uses each file's most recent USN. Capping this at
+            // the initial journal position would omit existing files whose
+            // contents change during enumeration (outside our rename mask).
+            HighUsn: i64::MAX,
         };
         let mut data = vec![0u8; 512 * 1024];
         // MFT order is not directory order. Keep descendants whose parents have

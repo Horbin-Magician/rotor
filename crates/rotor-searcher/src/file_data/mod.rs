@@ -287,7 +287,11 @@ impl FileData {
                                 wait_deals.push_back(rtn);
                             }
                         }
-                        _ => {}
+                        _ => {
+                            // The accepted request must finish even when every
+                            // volume failed; otherwise the view stays loading.
+                            file_data.find_result(filename.id, filename.query, Vec::new(), false);
+                        }
                     },
                     Ok(SearcherMessage::Release) => {
                         if matches!(file_data.state(), FileState::Ready | FileState::Partial) {
@@ -839,6 +843,32 @@ mod tests {
         assert_eq!(batches[1].id, QueryId(11));
         assert!(!batches[0].append);
         assert!(batches[1].append);
+    }
+
+    #[test]
+    fn unavailable_index_completes_accepted_query_without_loading_forever() {
+        let (batches, results) = mpsc::channel();
+        let data = FileData::new(
+            move |batch| {
+                batches.send(batch).unwrap();
+            },
+            None,
+            Arc::new(Mutex::new(FileState::Error)),
+        );
+        let (sender, receiver) = mailbox::channel();
+        let worker = FileData::event_loop(receiver, data);
+        sender
+            .send(SearcherMessage::Find(SearchRequest {
+                id: QueryId(1),
+                query: "fixture".into(),
+                append: false,
+            }))
+            .unwrap();
+        let batch = results.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(batch.id, QueryId(1));
+        assert!(batch.items.is_empty());
+        sender.send(SearcherMessage::Shutdown).unwrap();
+        worker.join().unwrap();
     }
 
     #[test]

@@ -16,6 +16,13 @@ the available journal range, and checkpoint changes before release. A missing,
 invalid or expired snapshot triggers rebuilding. macOS still scans on startup:
 the portable watcher has no persisted event cursor to cover process downtime.
 
+MFT enumeration includes the complete USN range while retaining the journal
+position captured before enumeration for subsequent replay. This avoids filtering
+out files whose contents change during the scan. The native filtering and journal
+continuation rules are documented by Microsoft in
+[MFT_ENUM_DATA_V0](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-mft_enum_data_v0)
+and [READ_USN_JOURNAL_DATA_V0](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-read_usn_journal_data_v0).
+
 ## Reproducible synthetic measurement
 
 Run in isolation on Windows, using the pinned toolchain:
