@@ -15,6 +15,8 @@ use std::time::UNIX_EPOCH;
 pub mod ntfs_file_map;
 #[cfg(target_os = "windows")]
 pub mod ntfs_volume;
+#[cfg(target_os = "windows")]
+mod usn;
 
 /// A position in a volume's descending index order. Owned by the coordinator,
 /// so a cancelled worker cannot advance the next accepted request's position.

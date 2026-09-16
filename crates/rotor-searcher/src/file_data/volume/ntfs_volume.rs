@@ -1,21 +1,39 @@
-use std::collections::HashSet;
+use super::super::excluded_dirs::ExcludedDirs;
+use super::ntfs_file_map::FileMap;
+use super::{cache, metadata_modified_at, usn, SearchCursor, SearchPage, VolumeIndexStatus};
 use std::error::Error;
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-#[cfg(debug_assertions)]
-use std::time::SystemTime;
 use std::{fs, io};
-use windows::Win32::Foundation;
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Storage::FileSystem;
-use windows::Win32::System::{Ioctl, IO};
+use windows::Win32::{
+    Foundation,
+    Storage::FileSystem,
+    System::{Ioctl, IO},
+};
 
-use super::super::excluded_dirs::ExcludedDirs;
-use super::ntfs_file_map::FileMap;
-use super::{cache, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexStatus};
+struct DriveHandle(Foundation::HANDLE);
+impl Drop for DriveHandle {
+    fn drop(&mut self) {
+        let _ = unsafe { Foundation::CloseHandle(self.0) };
+    }
+}
+
+fn os_error(error: windows::core::Error) -> io::Error {
+    io::Error::from_raw_os_error((error.code().0 as u32 & 0xffff) as i32)
+}
+fn check_cancel(cancel: Option<&AtomicBool>) -> io::Result<()> {
+    if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+        Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "Index operation cancelled",
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 pub struct Volume {
     pub drive: String,
@@ -24,6 +42,7 @@ pub struct Volume {
     ujd: Ioctl::USN_JOURNAL_DATA_V0,
     file_map: FileMap,
     saved_item_count: usize,
+    dirty: bool,
     excluded_dirs: ExcludedDirs,
 }
 
@@ -33,221 +52,177 @@ impl Volume {
         let excluded_dirs = ExcludedDirs::from_config();
         #[cfg(test)]
         let excluded_dirs = ExcludedDirs::default();
-        Volume {
+        Self {
             cache_path: cache::index_path(&drive, &excluded_dirs),
             drive,
             drive_frn: 0x5000000000005,
+            ujd: Ioctl::USN_JOURNAL_DATA_V0::default(),
             file_map: FileMap::new(),
-            ujd: Ioctl::USN_JOURNAL_DATA_V0 {
-                UsnJournalID: 0x0,
-                FirstUsn: 0x0,
-                NextUsn: 0x0,
-                LowestValidUsn: 0x0,
-                MaxUsn: 0x0,
-                MaximumSize: 0x0,
-                AllocationDelta: 0x0,
-            },
             saved_item_count: 0,
+            dirty: false,
             excluded_dirs,
         }
     }
 
-    // This is a helper function that opens a handle to the volume specified by the cDriveLetter parameter.
-    fn open_drive(drive_letter: &str) -> Foundation::HANDLE {
+    fn open_drive(&self) -> io::Result<DriveHandle> {
+        let name = CString::new(format!("\\\\.\\{}:", self.drive)).map_err(io::Error::other)?;
         unsafe {
-            if let Ok(c_str) = CString::new(format!("\\\\.\\{}:", drive_letter)) {
-                FileSystem::CreateFileA(
-                    windows::core::PCSTR(c_str.as_ptr() as *const u8),
-                    Foundation::GENERIC_READ.0,
-                    FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE,
-                    None,
-                    FileSystem::OPEN_EXISTING,
-                    windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
-                    None,
-                )
-                .unwrap_or_default()
-            } else {
-                HANDLE::default()
-            }
+            FileSystem::CreateFileA(
+                windows::core::PCSTR(name.as_ptr().cast()),
+                Foundation::GENERIC_READ.0,
+                FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE,
+                None,
+                FileSystem::OPEN_EXISTING,
+                FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
+                None,
+            )
+            .map(DriveHandle)
+            .map_err(os_error)
         }
     }
 
-    // This is a helper function that close a handle.
-    fn close_drive(h_vol: Foundation::HANDLE) {
+    fn query_journal(&mut self, drive: &DriveHandle) -> io::Result<()> {
+        let mut returned = 0;
         unsafe {
-            Foundation::CloseHandle(h_vol)
-                .unwrap_or_else(|e| log::error!("Volume::close_drive, error: {:?}", e));
+            IO::DeviceIoControl(
+                drive.0,
+                Ioctl::FSCTL_QUERY_USN_JOURNAL,
+                None,
+                0,
+                Some((&mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0).cast()),
+                std::mem::size_of_val(&self.ujd) as u32,
+                Some(&mut returned),
+                None,
+            )
         }
+        .map_err(os_error)?;
+        if returned < std::mem::size_of_val(&self.ujd) as u32 {
+            return Err(cache::invalid("Truncated USN journal metadata"));
+        }
+        Ok(())
     }
 
     pub fn index_status(&self) -> VolumeIndexStatus {
-        let index_file_path = self.index_file_path();
-        let index_file_metadata = index_file_path.metadata().ok();
-        let loaded_item_count = self.file_map.len();
-        let index_item_count = match loaded_item_count.max(self.saved_item_count) {
-            0 => None,
-            count => Some(count),
+        let metadata = self.cache_path.metadata().ok();
+        let count = if self.file_map.is_empty() {
+            self.saved_item_count
+        } else {
+            self.file_map.len()
         };
-
         VolumeIndexStatus {
             name: self.drive.clone(),
-            indexed: loaded_item_count > 0 || index_file_metadata.is_some(),
-            index_item_count,
-            index_file_size_bytes: index_file_metadata
-                .as_ref()
-                .map(|metadata| metadata.len())
-                .unwrap_or(0),
-            index_file_modified_at: index_file_metadata.as_ref().and_then(metadata_modified_at),
+            indexed: !self.file_map.is_empty() || metadata.is_some(),
+            index_item_count: (count > 0).then_some(count),
+            index_file_size_bytes: metadata.as_ref().map_or(0, |metadata| metadata.len()),
+            index_file_modified_at: metadata.as_ref().and_then(metadata_modified_at),
         }
     }
 
-    // Enumerate the MFT for all entries. Store the file reference numbers of any directories in the database.
+    /// Startup can reuse a verified snapshot; an explicit rebuild still enumerates MFT.
+    pub fn initialize_index(&mut self) -> io::Result<()> {
+        self.update_index()?;
+        self.release_index()
+    }
+
     pub fn build_index(&mut self) -> io::Result<()> {
         self.build_index_with_cancel(None)
     }
 
     fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
-        #[cfg(debug_assertions)]
-        let sys_time = SystemTime::now();
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::build_index", self.drive);
+        let result = self.scan_index(cancel).and_then(|_| {
+            check_cancel(cancel)?;
+            self.serialization_write()
+        });
+        if result.is_err() {
+            self.clear_index();
+        }
+        result
+    }
 
-        self.release_index();
-
-        let h_vol = Self::open_drive(&self.drive);
-
-        // Query, Return statistics about the journal on the current volume
-        let mut cd: u32 = 0;
-        unsafe {
-            if let Err(error) = IO::DeviceIoControl(
-                h_vol,
-                Ioctl::FSCTL_QUERY_USN_JOURNAL,
-                None,
-                0,
-                Some(&mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0 as *mut c_void),
-                std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>() as u32,
-                Some(&mut cd),
-                None,
-            ) {
-                Self::close_drive(h_vol);
-                return Err(io::Error::other(error.to_string()));
-            }
-        };
-
+    fn scan_index(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        check_cancel(cancel)?;
+        self.clear_index();
+        let drive = self.open_drive()?;
+        self.query_journal(&drive)?;
         self.file_map.start_usn = self.ujd.NextUsn;
         self.file_map.journal_id = self.ujd.UsnJournalID;
-
-        // add the root directory
-        let sz_root = format!("{}:", self.drive);
-        self.file_map.insert(self.drive_frn, sz_root, 0);
-
-        let mut med: Ioctl::MFT_ENUM_DATA_V0 = Ioctl::MFT_ENUM_DATA_V0 {
+        self.file_map
+            .insert(self.drive_frn, format!("{}:", self.drive), 0);
+        let mut request = Ioctl::MFT_ENUM_DATA_V0 {
             StartFileReferenceNumber: 0,
             LowUsn: 0,
             HighUsn: self.ujd.NextUsn,
         };
-        let mut data = [0u64; 0x10000];
-        let mut cb: u32 = 0;
-        let excluded_dirs = self.excluded_dirs.clone();
-        let mut excluded_indexes = HashSet::new();
-
-        unsafe {
-            loop {
-                if let Err(error) = IO::DeviceIoControl(
-                    h_vol,
+        let mut data = vec![0u8; 512 * 1024];
+        // MFT order is not directory order. Keep descendants whose parents have
+        // not been seen yet; path filtering rejects excluded ancestors at search.
+        let mut excluded = std::collections::HashSet::new();
+        loop {
+            check_cancel(cancel)?;
+            let mut returned = 0;
+            let result = unsafe {
+                IO::DeviceIoControl(
+                    drive.0,
                     Ioctl::FSCTL_ENUM_USN_DATA,
-                    Some(&med as *const _ as *const c_void),
-                    std::mem::size_of::<Ioctl::MFT_ENUM_DATA_V0>() as u32,
-                    Some(data.as_mut_ptr() as *mut c_void),
-                    std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32,
-                    Some(&mut cb as *mut u32),
+                    Some((&request as *const Ioctl::MFT_ENUM_DATA_V0).cast()),
+                    std::mem::size_of_val(&request) as u32,
+                    Some(data.as_mut_ptr().cast()),
+                    data.len() as u32,
+                    Some(&mut returned),
                     None,
-                ) {
-                    if error.code()
-                        == windows::core::HRESULT::from_win32(Foundation::ERROR_HANDLE_EOF.0)
-                    {
-                        break;
-                    }
-                    Self::close_drive(h_vol);
-                    self.release_index();
-                    return Err(io::Error::other(error.to_string()));
+                )
+            };
+            if let Err(error) = result {
+                if error.code()
+                    == windows::core::HRESULT::from_win32(Foundation::ERROR_HANDLE_EOF.0)
+                {
+                    break;
                 }
-                let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
-                let data_end = data.as_ptr() as usize + cb as usize;
-
-                while (record_ptr as usize) < data_end {
-                    if cancel
-                        .map(|cancel| cancel.load(Ordering::Relaxed))
-                        .unwrap_or(false)
-                    {
-                        log::info!("{} Volume::build_index cancelled by user", self.drive);
-                        Self::close_drive(h_vol);
-                        self.release_index();
-                        return Err(io::Error::new(
-                            io::ErrorKind::Interrupted,
-                            "Index build cancelled",
-                        ));
-                    }
-
-                    let record = &*record_ptr;
-
-                    let file_name_begin_ptr =
-                        (record_ptr as usize + record.FileNameOffset as usize) as *const u16;
-                    let file_name_length =
-                        record.FileNameLength as usize / std::mem::size_of::<u16>();
-                    let file_name_list =
-                        std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
-                    let file_name =
-                        String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
-
-                    if excluded_indexes.contains(&record.ParentFileReferenceNumber)
-                        || excluded_dirs.is_excluded_name(&file_name)
-                    {
-                        excluded_indexes.insert(record.FileReferenceNumber);
-                    } else {
-                        self.file_map.insert(
-                            record.FileReferenceNumber,
-                            file_name,
-                            record.ParentFileReferenceNumber,
-                        );
-                    }
-                    record_ptr = (record_ptr as usize + record.RecordLength as usize)
-                        as *mut Ioctl::USN_RECORD_V2;
-                }
-
-                med.StartFileReferenceNumber = data[0];
+                return Err(os_error(error));
             }
+            let bytes = data
+                .get(..returned as usize)
+                .ok_or_else(|| cache::invalid("Invalid MFT buffer length"))?;
+            let (next, records) = usn::records(bytes)?;
+            for record in records {
+                check_cancel(cancel)?;
+                let record = record?;
+                if record.index == self.drive_frn {
+                    continue;
+                }
+                if excluded.contains(&record.parent)
+                    || self.excluded_dirs.is_excluded_name(&record.name)
+                {
+                    excluded.insert(record.index);
+                } else {
+                    self.file_map
+                        .insert(record.index, record.name, record.parent);
+                }
+            }
+            if next <= request.StartFileReferenceNumber {
+                return Err(cache::invalid("MFT enumeration did not advance"));
+            }
+            request.StartFileReferenceNumber = next;
         }
-
-        #[cfg(debug_assertions)]
-        log::info!(
-            "{} End Volume::build_index, use time: {:?} ms",
-            self.drive,
-            sys_time.elapsed().unwrap_or_default().as_millis()
-        );
-
-        Self::close_drive(h_vol);
-        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
-            self.release_index();
-            return Err(io::Error::new(
-                io::ErrorKind::Interrupted,
-                "Index build cancelled",
-            ));
-        }
-        self.serialization_write()
+        self.dirty = true;
+        Ok(())
     }
 
-    // Clears the database
-    pub fn release_index(&mut self) {
-        // Even an index emptied by file removals can still own table capacity.
-
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::release_index", self.drive);
-
+    fn clear_index(&mut self) {
         self.file_map.clear();
+        self.dirty = false;
     }
 
-    // searching
+    pub fn release_index(&mut self) -> io::Result<()> {
+        let result = if self.dirty {
+            self.checkpoint()
+        } else {
+            Ok(())
+        };
+        self.clear_index();
+        result
+    }
+
     pub fn find(
         &mut self,
         query: String,
@@ -255,58 +230,72 @@ impl Volume {
         batch: u8,
         cancel: Arc<AtomicBool>,
     ) -> Option<SearchPage> {
-        if query.is_empty() || cancel.load(Ordering::Relaxed) {
+        if query.is_empty() || check_cancel(Some(&cancel)).is_err() {
             return None;
         }
-        if self.file_map.is_empty() && self.serialization_read().is_err() {
-            if let Err(error) = self.build_index_with_cancel(Some(&cancel)) {
-                log::error!("{} Rebuild index failed: {error}", self.drive);
-                return None;
-            }
-            // Building persists and releases the index.
-            if self.serialization_read().is_err() {
-                return None;
-            }
+        if self.file_map.is_empty() && self.update_index_with_cancel(Some(&cancel)).is_err() {
+            return None;
         }
         self.file_map
             .search(&query, cursor.as_ref(), batch, &cancel, &self.excluded_dirs)
     }
 
     pub fn update_index(&mut self) -> io::Result<()> {
-        let result = self.update_index_inner();
+        self.update_index_with_cancel(None)
+    }
+
+    fn update_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        let result = self.update_index_inner(cancel);
         if result.is_err() {
-            self.release_index();
+            self.clear_index();
         }
         result.map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", self.drive)))
     }
 
-    fn update_index_inner(&mut self) -> io::Result<()> {
+    fn update_index_inner(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        check_cancel(cancel)?;
         if self.file_map.is_empty() && self.serialization_read().is_err() {
-            self.build_index()?;
-            self.serialization_read()
-                .map_err(|error| io::Error::other(error.to_string()))?;
+            self.scan_index(cancel)?;
         }
+        for attempt in 0..2 {
+            check_cancel(cancel)?;
+            let drive = self.open_drive()?;
+            self.query_journal(&drive)?;
+            let result = if self.can_resume_journal() {
+                self.replay_journal(&drive, cancel)
+            } else {
+                Err(cache::invalid("USN snapshot expired or journal replaced"))
+            };
+            match result {
+                Ok(()) => return Ok(()),
+                Err(error)
+                    if attempt == 0
+                        && (error.kind() == io::ErrorKind::InvalidData
+                            || matches!(error.raw_os_error(), Some(code) if code == Foundation::ERROR_JOURNAL_ENTRY_DELETED.0 as i32
+                        || code == Foundation::ERROR_JOURNAL_DELETE_IN_PROGRESS.0 as i32)) =>
+                {
+                    drop(drive);
+                    log::info!("{} Rebuilding invalid USN snapshot: {error}", self.drive);
+                    self.scan_index(cancel)?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("second attempt returns")
+    }
 
-        let h_vol = Self::open_drive(&self.drive);
-        let mut journal_bytes = 0;
-        if let Err(error) = unsafe {
-            IO::DeviceIoControl(
-                h_vol,
-                Ioctl::FSCTL_QUERY_USN_JOURNAL,
-                None,
-                0,
-                Some(&mut self.ujd as *mut Ioctl::USN_JOURNAL_DATA_V0 as *mut c_void),
-                std::mem::size_of::<Ioctl::USN_JOURNAL_DATA_V0>() as u32,
-                Some(&mut journal_bytes),
-                None,
-            )
-        } {
-            Self::close_drive(h_vol);
-            return Err(io::Error::other(error.to_string()));
-        }
-        let mut data = [0i64; 0x10000];
-        let mut cb: u32 = 0;
-        let mut rujd: Ioctl::READ_USN_JOURNAL_DATA_V0 = Ioctl::READ_USN_JOURNAL_DATA_V0 {
+    fn can_resume_journal(&self) -> bool {
+        self.file_map.journal_id == self.ujd.UsnJournalID
+            && self.file_map.start_usn >= self.ujd.FirstUsn.max(self.ujd.LowestValidUsn)
+            && self.file_map.start_usn <= self.ujd.NextUsn
+    }
+
+    fn replay_journal(
+        &mut self,
+        drive: &DriveHandle,
+        cancel: Option<&AtomicBool>,
+    ) -> io::Result<()> {
+        let mut request = Ioctl::READ_USN_JOURNAL_DATA_V0 {
             StartUsn: self.file_map.start_usn,
             ReasonMask: Ioctl::USN_REASON_FILE_CREATE
                 | Ioctl::USN_REASON_FILE_DELETE
@@ -315,88 +304,76 @@ impl Volume {
             ReturnOnlyOnClose: 0,
             Timeout: 0,
             BytesToWaitFor: 0,
-            UsnJournalID: self.ujd.UsnJournalID,
+            UsnJournalID: self.file_map.journal_id,
         };
-
-        unsafe {
-            loop {
-                if let Err(error) = IO::DeviceIoControl(
-                    h_vol,
+        let mut data = vec![0u8; 512 * 1024];
+        while request.StartUsn < self.ujd.NextUsn {
+            check_cancel(cancel)?;
+            let mut returned = 0;
+            unsafe {
+                IO::DeviceIoControl(
+                    drive.0,
                     Ioctl::FSCTL_READ_USN_JOURNAL,
-                    Some(&rujd as *const _ as *const c_void),
-                    std::mem::size_of::<Ioctl::READ_USN_JOURNAL_DATA_V0>() as u32,
-                    Some(data.as_mut_ptr() as *mut c_void),
-                    std::mem::size_of::<[u8; std::mem::size_of::<u64>() * 0x10000]>() as u32,
-                    Some(&mut cb as *mut u32),
+                    Some((&request as *const Ioctl::READ_USN_JOURNAL_DATA_V0).cast()),
+                    std::mem::size_of_val(&request) as u32,
+                    Some(data.as_mut_ptr().cast()),
+                    data.len() as u32,
+                    Some(&mut returned),
                     None,
-                ) {
-                    Self::close_drive(h_vol);
-                    return Err(io::Error::other(error.to_string()));
-                }
-                if cb == 8 {
-                    break;
-                };
-                let mut record_ptr = data.as_ptr().offset(1) as *const Ioctl::USN_RECORD_V2;
-                let data_end = data.as_ptr() as usize + cb as usize;
-
-                while (record_ptr as usize) < data_end {
-                    let record = &*record_ptr;
-                    let file_name_begin_ptr =
-                        (record_ptr as usize + record.FileNameOffset as usize) as *const u16;
-                    let file_name_length =
-                        record.FileNameLength as usize / std::mem::size_of::<u16>();
-                    let file_name_list =
-                        std::slice::from_raw_parts(file_name_begin_ptr, file_name_length);
-                    let file_name =
-                        String::from_utf16(file_name_list).unwrap_or(String::from("unknown"));
-
-                    if record.Reason
-                        & (Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_RENAME_NEW_NAME)
-                        != 0
-                    {
-                        if self.is_excluded_record(&file_name, record.ParentFileReferenceNumber) {
-                            self.file_map.remove(&record.FileReferenceNumber);
-                        } else {
-                            self.file_map.insert(
-                                record.FileReferenceNumber,
-                                file_name,
-                                record.ParentFileReferenceNumber,
-                            );
-                        }
-                    } else {
-                        // Ioctl::USN_REASON_FILE_DELETE | Ioctl::USN_REASON_RENAME_OLD_NAME
-                        self.file_map.remove(&record.FileReferenceNumber);
-                    }
-
-                    record_ptr = (record_ptr as usize + record.RecordLength as usize)
-                        as *mut Ioctl::USN_RECORD_V2;
-                }
-
-                rujd.StartUsn = data[0];
+                )
             }
+            .map_err(os_error)?;
+            let bytes = data
+                .get(..returned as usize)
+                .ok_or_else(|| cache::invalid("Invalid USN buffer length"))?;
+            let (next, records) = usn::records(bytes)?;
+            for record in records {
+                check_cancel(cancel)?;
+                self.apply_record(record?);
+            }
+            let next =
+                i64::try_from(next).map_err(|_| cache::invalid("Invalid USN continuation"))?;
+            if next <= request.StartUsn {
+                return Err(cache::invalid("USN journal did not advance"));
+            }
+            request.StartUsn = next;
         }
-        self.file_map.start_usn = rujd.StartUsn;
-        Self::close_drive(h_vol);
+        self.dirty |= self.file_map.start_usn != request.StartUsn;
+        self.file_map.start_usn = request.StartUsn;
         Ok(())
     }
 
-    // serializate file_map to reduce memory usage
-    fn serialization_write(&mut self) -> Result<(), io::Error> {
-        #[cfg(debug_assertions)]
-        let sys_time = SystemTime::now();
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::serialization_write", self.drive);
+    fn apply_record(&mut self, record: usn::Record) {
+        if record.index == self.drive_frn {
+            return;
+        }
+        // Reasons accumulate: deletion must win over an earlier creation.
+        if record.reason & Ioctl::USN_REASON_FILE_DELETE != 0 {
+            self.file_map.remove(&record.index);
+        } else if record.reason
+            & (Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_RENAME_NEW_NAME)
+            != 0
+        {
+            if self.excluded_dirs.is_excluded_name(&record.name) {
+                self.file_map.remove(&record.index);
+            } else {
+                self.file_map
+                    .insert(record.index, record.name, record.parent);
+            }
+        } else if record.reason & Ioctl::USN_REASON_RENAME_OLD_NAME != 0 {
+            self.file_map.remove(&record.index);
+        }
+    }
 
-        let result = self.serialization_write_to(&self.index_file_path());
+    fn checkpoint(&mut self) -> io::Result<()> {
+        self.file_map.save(&self.cache_path.to_string_lossy())?;
+        self.saved_item_count = self.file_map.len();
+        self.dirty = false;
+        Ok(())
+    }
 
-        #[cfg(debug_assertions)]
-        log::info!(
-            "{} End Volume::serialization_write, use time: {:?} ms",
-            self.drive,
-            sys_time.elapsed().unwrap_or_default().as_millis()
-        );
-
-        result
+    fn serialization_write(&mut self) -> io::Result<()> {
+        self.serialization_write_to(&self.index_file_path())
     }
 
     fn serialization_write_to(&mut self, path: &std::path::Path) -> io::Result<()> {
@@ -411,47 +388,20 @@ impl Volume {
             self.saved_item_count = self.file_map.len();
             Ok(())
         })();
-        // The index can be rebuilt. A failed cache write must not retain the
-        // entire file tree while the service is idle in its error state.
-        self.release_index();
+        self.clear_index();
         result
     }
 
-    // deserializate file_map from file
     fn serialization_read(&mut self) -> Result<(), Box<dyn Error>> {
-        #[cfg(debug_assertions)]
-        let sys_time = SystemTime::now();
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::serialization_read", self.drive);
-
         self.file_map
             .read(&self.index_file_path().to_string_lossy())?;
         self.saved_item_count = self.file_map.len();
-
-        #[cfg(debug_assertions)]
-        log::info!(
-            "{} End Volume::serialization_read, use time: {:?} ms",
-            self.drive,
-            sys_time.elapsed().unwrap_or_default().as_millis()
-        );
-
+        self.dirty = false;
         Ok(())
     }
 
     fn index_file_path(&self) -> std::path::PathBuf {
         self.cache_path.clone()
-    }
-
-    fn is_excluded_record(&self, file_name: &str, parent_index: u64) -> bool {
-        if self.excluded_dirs.is_excluded_name(file_name) {
-            return true;
-        }
-
-        if parent_index == 0 || parent_index == self.drive_frn {
-            return false;
-        }
-
-        !self.file_map.contains_index(&parent_index)
     }
 }
 
@@ -473,9 +423,11 @@ mod tests {
             },
             file_map: FileMap::new(),
             saved_item_count: 128,
+            dirty: false,
             excluded_dirs: ExcludedDirs::default(),
         };
         volume.file_map.start_usn = 456;
+        volume.file_map.journal_id = 123;
         volume
     }
 
@@ -488,6 +440,51 @@ mod tests {
         assert!(volume.file_map.is_empty());
 
         assert_eq!(volume.file_map.start_usn, 456);
+    }
+
+    #[test]
+    fn resume_requires_matching_journal_and_available_usn_range() {
+        let mut volume = synthetic_volume();
+        volume.ujd.FirstUsn = 100;
+        volume.ujd.LowestValidUsn = 200;
+        volume.ujd.NextUsn = 500;
+        assert!(volume.can_resume_journal());
+        for (journal, usn) in [(122, 456), (123, 199), (123, 501)] {
+            volume.file_map.journal_id = journal;
+            volume.file_map.start_usn = usn;
+            assert!(!volume.can_resume_journal());
+        }
+    }
+
+    #[test]
+    fn release_checkpoints_latest_changes_and_cursor() {
+        let index = IndexFile::new();
+        let mut volume = synthetic_volume();
+        volume.cache_path = index.path().into();
+        populate(&mut volume);
+        volume.file_map.start_usn = 789;
+        volume.dirty = true;
+        volume.release_index().unwrap();
+        assert!(volume.file_map.is_empty());
+        assert!(!volume.dirty);
+        volume.serialization_read().unwrap();
+        assert_eq!(volume.file_map.len(), 2);
+        assert_eq!(volume.file_map.start_usn, 789);
+        assert_eq!(volume.file_map.journal_id, 123);
+    }
+
+    #[test]
+    fn accumulated_delete_reason_wins_over_creation() {
+        let mut volume = synthetic_volume();
+        populate(&mut volume);
+        volume.apply_record(usn::Record {
+            index: 1,
+            parent: 0,
+            name: "fixture-a.txt".into(),
+            reason: Ioctl::USN_REASON_FILE_CREATE | Ioctl::USN_REASON_FILE_DELETE,
+        });
+        assert!(!volume.file_map.contains_index(&1));
+        assert!(volume.file_map.contains_index(&2));
     }
 
     #[test]
@@ -578,7 +575,7 @@ mod tests {
                 volume.file_map.remove(&1);
                 volume.file_map.remove(&2);
             }
-            volume.release_index();
+            volume.release_index().unwrap();
 
             assert!(volume.file_map.is_empty());
             assert_eq!(volume.file_map.start_usn, 456);
@@ -597,7 +594,7 @@ mod tests {
             assert_eq!(page.items.len(), 1);
             assert_eq!(page.items[0].file_name, "fixture-b.txt");
 
-            volume.release_index();
+            volume.release_index().unwrap();
         }
     }
 }

@@ -24,6 +24,7 @@ use volume::ntfs_volume::Volume;
 pub use volume::{SearchResultItem, VolumeIndexStatus};
 
 pub enum SearcherMessage {
+    Startup,
     Init,
     Update,
     Find(SearchRequest),
@@ -273,9 +274,13 @@ impl FileData {
                 };
 
                 match msg {
+                    Ok(SearcherMessage::Startup) => {
+                        file_data.set_state(FileState::Building);
+                        file_data.init_volumes(false);
+                    }
                     Ok(SearcherMessage::Init) => {
                         file_data.set_state(FileState::Building);
-                        file_data.init_volumes();
+                        file_data.init_volumes(true);
                     }
                     Ok(SearcherMessage::Update) => {
                         file_data.set_state(FileState::Loading);
@@ -453,7 +458,7 @@ impl FileData {
         None
     }
 
-    pub fn init_volumes(&mut self) {
+    pub fn init_volumes(&mut self, rebuild: bool) {
         self.reset_search_results();
         self.volume_packs.clear();
         self.update_valid_vols();
@@ -470,7 +475,12 @@ impl FileData {
                     let mut volume = volume
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
-                    volume.build_index().map_err(|error| {
+                    let result = if rebuild {
+                        volume.build_index()
+                    } else {
+                        volume.initialize_index()
+                    };
+                    result.map_err(|error| {
                         std::io::Error::new(error.kind(), format!("{}: {error}", volume.drive))
                     })
                 })
@@ -586,16 +596,19 @@ impl FileData {
                     volume
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .release_index();
+                        .release_index()
                 })
             })
             .collect::<Vec<_>>();
 
         let mut ok = true;
         for handle in handles {
-            if let Err(e) = handle.join() {
-                log::error!("Release index failed: {:?}", e);
-                ok = false;
+            match handle.join() {
+                Ok(Ok(())) => {}
+                result => {
+                    log::error!("Release index failed: {result:?}");
+                    ok = false;
+                }
             }
         }
         ok && !self.volume_packs.is_empty()

@@ -225,6 +225,11 @@ impl Volume {
     }
 
     // Enumerate the filesystem using walkdir. Store the file entries in the database.
+    // Without a persistent filesystem event cursor, startup requires a scan.
+    pub fn initialize_index(&mut self) -> io::Result<()> {
+        self.build_index()
+    }
+
     pub fn build_index(&mut self) -> io::Result<()> {
         self.build_index_with_cancel(None)
     }
@@ -373,21 +378,10 @@ impl Volume {
     }
 
     // Clears the database
-    pub fn release_index(&mut self) {
-        #[cfg(debug_assertions)]
-        log::info!("{} Begin Volume::release_index", self.drive);
-
-        if self.file_map.is_empty() {
-            // Removed files can leave interned directories and paging state.
-            self.release_index_without_save();
-            return;
-        }
-
-        self.serialization_write().unwrap_or_else(|e| {
-            log::error!("{} Volume::serialization_write, error: {:?}", self.drive, e)
-        });
-
+    pub fn release_index(&mut self) -> io::Result<()> {
+        let result = self.serialization_write();
         self.release_index_without_save();
+        result
     }
 
     pub fn release_index_without_save(&mut self) {

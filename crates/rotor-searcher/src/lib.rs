@@ -72,7 +72,7 @@ impl Searcher {
             search_index_state.clone(),
         );
         FileData::event_loop(searcher_msg_receiver, _file_data);
-        let _ = searcher_msg_sender.send(SearcherMessage::Init);
+        let _ = searcher_msg_sender.send(SearcherMessage::Startup);
 
         Searcher {
             searcher_msg_sender,

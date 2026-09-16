@@ -35,7 +35,7 @@ impl ExcludedDirs {
     }
 
     pub fn is_excluded_name(&self, name: &str) -> bool {
-        self.names.contains(&name.to_lowercase())
+        name.eq_ignore_ascii_case(".search-index") || self.names.contains(&name.to_lowercase())
     }
 
     pub fn is_excluded_path(&self, path: &Path) -> bool {
