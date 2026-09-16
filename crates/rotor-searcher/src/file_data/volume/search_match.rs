@@ -2,7 +2,7 @@ use pinyin::ToPinyin;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SearchAlias {
-    pub text: String,
+    pub text: Box<str>,
     pub display_alias_index: Option<usize>,
 }
 
@@ -147,6 +147,11 @@ fn push_pinyin_aliases(
     display_alias_index: Option<usize>,
     aliases: &mut Vec<SearchAlias>,
 ) {
+    // Most indexed names need no transliteration. Avoid two temporary strings
+    // and pinyin table lookups for every ASCII filename during build/reload.
+    if source.is_ascii() {
+        return;
+    }
     let mut full = String::new();
     let mut initials = String::new();
     let mut has_pinyin = false;
@@ -177,12 +182,12 @@ fn push_unique_alias(
     text: String,
     display_alias_index: Option<usize>,
 ) {
-    if text.is_empty() || aliases.iter().any(|alias| alias.text == text) {
+    if text.is_empty() || aliases.iter().any(|alias| alias.text.as_ref() == text) {
         return;
     }
 
     aliases.push(SearchAlias {
-        text,
+        text: text.into_boxed_str(),
         display_alias_index,
     });
 }

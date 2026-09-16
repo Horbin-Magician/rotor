@@ -13,7 +13,7 @@ use super::{cache, read_i64, read_string, read_u16, read_u64, SearchResultItem};
 
 pub struct FileView {
     pub parent_index: u64,
-    pub file_name: String,
+    pub file_name: Box<str>,
     pub filter: u32,
     pub rank: i8,
     pub search_aliases: Option<Box<[SearchAlias]>>,
@@ -50,7 +50,7 @@ impl FileMap {
             index,
             FileView {
                 parent_index,
-                file_name,
+                file_name: file_name.into_boxed_str(),
                 filter: prepared.filter,
                 rank,
                 search_aliases: prepared.aliases,
@@ -133,7 +133,7 @@ impl FileMap {
                     result.push(SearchResultItem {
                         path,
                         file_path: full_path,
-                        file_name: file.file_name.clone(),
+                        file_name: file.file_name.to_string(),
                         rank: file.rank,
                         icon: None,
                         alias: None,
@@ -247,9 +247,12 @@ impl FileMap {
     fn get_file_rank(file_name: &str) -> i8 {
         let mut rank: i8 = 0;
 
-        if file_name.to_lowercase().ends_with(".exe") {
+        let extension = file_name
+            .rsplit_once('.')
+            .map_or("", |(_, extension)| extension);
+        if extension.eq_ignore_ascii_case("exe") {
             rank += 10;
-        } else if file_name.to_lowercase().ends_with(".lnk") {
+        } else if extension.eq_ignore_ascii_case("lnk") {
             rank += 25;
         }
 
@@ -268,7 +271,7 @@ impl FileMap {
                 return None;
             }
             let file = self.get(&loop_index)?;
-            segments.push(file.file_name.as_str());
+            segments.push(file.file_name.as_ref());
             loop_index = file.parent_index;
         }
 
@@ -364,7 +367,7 @@ mod release_tests {
         fs::write(index.path(), bytes).unwrap();
         assert!(map.read(index.path()).is_err());
         assert_eq!(map.len(), 2);
-        assert_eq!(map.get(&2).unwrap().file_name, "new-shortcut.lnk");
+        assert_eq!(map.get(&2).unwrap().file_name.as_ref(), "new-shortcut.lnk");
         map.remove(&2);
         assert_eq!(map.len(), 1);
     }
@@ -420,6 +423,70 @@ mod release_tests {
         map.clear();
         map.clear();
         assert_eq!(map.rank_map.capacity(), 0);
+    }
+
+    #[test]
+    #[ignore = "synthetic performance measurement; run alone in release mode"]
+    fn measure_ntfs_search_workload() {
+        use std::time::Instant;
+        let baseline = private_commit_bytes();
+        let mut map = FileMap::new();
+        let start = Instant::now();
+        map.insert(1, "X:".into(), 0);
+        for index in 0..250_000u64 {
+            let name = if index % 8 == 0 {
+                format!("项目报告-{index:06}.txt")
+            } else {
+                format!("Report-{index:06}.txt")
+            };
+            map.insert(index + 2, name, 1);
+        }
+        let build_ms = start.elapsed().as_secs_f64() * 1000.;
+        let loaded = private_commit_bytes();
+        let index = IndexFile::new();
+        let start = Instant::now();
+        map.save(index.path()).unwrap();
+        let save_ms = start.elapsed().as_secs_f64() * 1000.;
+        map.clear();
+        let start = Instant::now();
+        map.read(index.path()).unwrap();
+        let load_ms = start.elapsed().as_secs_f64() * 1000.;
+        let cancel = AtomicBool::new(false);
+        let excluded = ExcludedDirs::default();
+        let mut measurements = Vec::new();
+        for query in [
+            "report",
+            "1999",
+            "xiangmubaogao",
+            "xmbg*199",
+            "definitely-missing",
+        ] {
+            let mut times = Vec::new();
+            for _ in 0..11 {
+                let start = Instant::now();
+                let mut cursor = None;
+                for _ in 0..5 {
+                    let page = map
+                        .search(
+                            std::hint::black_box(query),
+                            cursor.as_ref(),
+                            20,
+                            &cancel,
+                            &excluded,
+                        )
+                        .unwrap();
+                    std::hint::black_box(&page.items);
+                    if page.exhausted {
+                        break;
+                    }
+                    cursor = page.cursor;
+                }
+                times.push(start.elapsed().as_secs_f64() * 1000.);
+            }
+            times.sort_by(f64::total_cmp);
+            measurements.push((query, times[5]));
+        }
+        println!("ntfs_workload entries=250001 build_ms={build_ms:.2} save_ms={save_ms:.2} load_ms={load_ms:.2} commit_delta_bytes={} file_view_bytes={} queries_5_pages_median_ms={measurements:?}", loaded.saturating_sub(baseline), std::mem::size_of::<FileView>());
     }
 
     #[test]

@@ -216,7 +216,7 @@ fn path_component_names(path: &Path) -> Vec<String> {
 
 pub struct FileView {
     pub parent_id: DirId,
-    pub file_name: String,
+    pub file_name: Box<str>,
     pub filter: u32,
     pub rank: i8,
     pub aliases: Option<Box<[String]>>,
@@ -275,7 +275,7 @@ impl FileMap {
         );
 
         self.insert_simple(FileView {
-            file_name,
+            file_name: file_name.into_boxed_str(),
             parent_id,
             filter: prepared.filter,
             rank,
@@ -329,7 +329,7 @@ impl FileMap {
         };
         let rank = Self::get_file_rank(&file_name);
         let file = FileView {
-            file_name,
+            file_name: file_name.into_boxed_str(),
             parent_id,
             filter: 0,
             rank,
@@ -355,7 +355,7 @@ impl FileMap {
         let bound = cursor.map(|cursor| FileView {
             rank: cursor.rank,
             parent_id: cursor.id as DirId,
-            file_name: cursor.name.clone(),
+            file_name: cursor.name.clone().into_boxed_str(),
             filter: 0,
             aliases: None,
             search_aliases: None,
@@ -380,7 +380,7 @@ impl FileMap {
                 result.push(SearchResultItem {
                     path,
                     file_path,
-                    file_name: file.file_name.clone(),
+                    file_name: file.file_name.to_string(),
                     rank: file.rank,
                     icon: None,
                     alias: file_alias,
@@ -391,7 +391,7 @@ impl FileMap {
                     next_cursor = Some(SearchCursor {
                         rank: file.rank,
                         id: file.parent_id as u64,
-                        name: file.file_name.clone(),
+                        name: file.file_name.to_string(),
                     });
                     exhausted = false;
                     break;
@@ -537,10 +537,12 @@ impl FileMap {
     fn get_file_rank(file_name: &str) -> i8 {
         let mut rank: i8 = 0;
 
-        let file_name_lower = file_name.to_lowercase();
-        if file_name_lower.ends_with(".exe") {
+        let extension = file_name
+            .rsplit_once('.')
+            .map_or("", |(_, extension)| extension);
+        if extension.eq_ignore_ascii_case("exe") {
             rank += 10;
-        } else if file_name_lower.ends_with(".app") || file_name_lower.ends_with(".lnk") {
+        } else if extension.eq_ignore_ascii_case("app") || extension.eq_ignore_ascii_case("lnk") {
             rank += 25;
         }
 
