@@ -57,11 +57,7 @@ impl Volume {
             return Ok(());
         }
 
-        let root_path = if cfg!(target_os = "windows") {
-            format!("{}:\\", self.drive)
-        } else {
-            self.drive.to_string()
-        };
+        let root_path = self.drive.clone();
 
         if !std::path::Path::new(&root_path).exists() {
             return Err(format!("Root path {} does not exist", root_path).into());
@@ -118,14 +114,25 @@ impl Volume {
         self.event_receiver = None;
     }
 
+    #[cfg(test)]
     fn process_path(&mut self, path: &std::path::Path, action: FileAction) {
+        self.process_path_with_cancel(path, action, None).unwrap();
+    }
+
+    fn process_path_with_cancel(
+        &mut self,
+        path: &std::path::Path,
+        action: FileAction,
+        cancel: Option<&AtomicBool>,
+    ) -> io::Result<()> {
+        cache::check_cancel(cancel)?;
         // Removed directories no longer have metadata; remove descendants by indexed path.
         if matches!(action, FileAction::Remove) {
             self.file_map.remove_subtree(path);
-            return;
+            return Ok(());
         }
         if self.is_ignored_event_path(path, action) {
-            return;
+            return Ok(());
         }
         // A directory arriving via rename/create may have no child notifications.
         let excluded = self.excluded_dirs.clone();
@@ -134,6 +141,7 @@ impl Volume {
             .into_iter()
             .filter_entry(|entry| !is_ignored_walk_entry(entry, &excluded))
         {
+            cache::check_cancel(cancel)?;
             match entry {
                 Ok(entry) => {
                     if let (Some(name), Some(parent)) =
@@ -151,6 +159,7 @@ impl Volume {
                 }
             }
         }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -201,9 +210,9 @@ impl Volume {
         }
     }
 
-    fn handle_file_events(&mut self) {
+    fn handle_file_events_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let Some(receiver) = self.event_receiver.take() else {
-            return;
+            return Ok(());
         };
 
         let mut paths = std::collections::HashSet::new();
@@ -213,28 +222,30 @@ impl Volume {
                 Err(_) => self.rescan_required.store(true, Ordering::Release),
             }
         }
+        self.event_receiver = Some(receiver);
         // Reconcile final filesystem state once per path, regardless of event ordering.
         for path in paths {
-            self.process_path(&path, FileAction::Remove);
+            self.process_path_with_cancel(&path, FileAction::Remove, cancel)?;
             if path.exists() {
-                self.process_path(&path, FileAction::Insert);
+                self.process_path_with_cancel(&path, FileAction::Insert, cancel)?;
             }
         }
 
-        self.event_receiver = Some(receiver);
+        Ok(())
     }
 
     // Enumerate the filesystem using walkdir. Store the file entries in the database.
     // Without a persistent filesystem event cursor, startup requires a scan.
-    pub fn initialize_index(&mut self) -> io::Result<()> {
-        self.build_index()
+    pub fn initialize_index(&mut self, cancel: &AtomicBool) -> io::Result<()> {
+        self.build_index_with_cancel(Some(cancel))
     }
 
+    #[cfg(all(test, unix))]
     pub fn build_index(&mut self) -> io::Result<()> {
         self.build_index_with_cancel(None)
     }
 
-    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+    pub fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let result = self.scan_index_with_cancel(cancel);
         if result.is_err() {
             self.rescan_required.store(true, Ordering::Release);
@@ -244,6 +255,7 @@ impl Volume {
     }
 
     fn scan_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        cache::check_cancel(cancel)?;
         let sys_time = SystemTime::now();
 
         self.stop_watching();
@@ -251,11 +263,7 @@ impl Volume {
         self.release_index_without_save();
 
         // Build the root path based on the drive letter
-        let root_path = if cfg!(target_os = "windows") {
-            format!("{}:\\", self.drive)
-        } else {
-            self.drive.to_string()
-        };
+        let root_path = self.drive.clone();
 
         // Check if the root path exists
         if !std::path::Path::new(&root_path).exists() {
@@ -363,13 +371,13 @@ impl Volume {
         if query.is_empty() || cancel.load(Ordering::Relaxed) {
             return None;
         }
-        if self.file_map.is_empty() && self.serialization_read().is_err() {
+        if self.file_map.is_empty() && self.serialization_read_with_cancel(Some(&cancel)).is_err() {
             if let Err(error) = self.build_index_with_cancel(Some(&cancel)) {
                 log::error!("{} Rebuild index failed: {error}", self.drive);
                 return None;
             }
             // Building persists and releases the index.
-            if self.serialization_read().is_err() {
+            if self.serialization_read_with_cancel(Some(&cancel)).is_err() {
                 return None;
             }
         }
@@ -389,8 +397,13 @@ impl Volume {
     }
 
     // update index, add new file, remove deleted file
+    #[cfg(test)]
     pub fn update_index(&mut self) -> io::Result<()> {
-        let result = self.update_index_inner();
+        self.update_index_with_cancel(None)
+    }
+
+    pub fn update_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        let result = self.update_index_inner(cancel);
         if result.is_err() {
             self.rescan_required.store(true, Ordering::Release);
             self.release_index_without_save();
@@ -398,21 +411,22 @@ impl Volume {
         result.map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", self.drive)))
     }
 
-    fn update_index_inner(&mut self) -> io::Result<()> {
-        if self.file_map.is_empty() && self.serialization_read().is_err() {
-            self.build_index()?;
-            self.serialization_read()
+    fn update_index_inner(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        cache::check_cancel(cancel)?;
+        if self.file_map.is_empty() && self.serialization_read_with_cancel(cancel).is_err() {
+            self.build_index_with_cancel(cancel)?;
+            self.serialization_read_with_cancel(cancel)
                 .map_err(|error| io::Error::other(error.to_string()))?;
         }
         self.start_watching()
             .map_err(|error| io::Error::other(error.to_string()))?;
-        self.handle_file_events();
+        self.handle_file_events_with_cancel(cancel)?;
         if self.rescan_required.load(Ordering::Acquire) {
-            if let Err(error) = self.build_index() {
+            if let Err(error) = self.build_index_with_cancel(cancel) {
                 self.rescan_required.store(true, Ordering::Release);
                 return Err(error);
             }
-            self.serialization_read()
+            self.serialization_read_with_cancel(cancel)
                 .map_err(|error| io::Error::other(error.to_string()))?;
             if self.rescan_required.load(Ordering::Acquire) {
                 return Err(io::Error::other(
@@ -445,14 +459,22 @@ impl Volume {
     }
 
     // deserializate file_map from file
+    #[cfg(test)]
     fn serialization_read(&mut self) -> Result<(), Box<dyn Error>> {
+        self.serialization_read_with_cancel(None)
+    }
+
+    fn serialization_read_with_cancel(
+        &mut self,
+        cancel: Option<&AtomicBool>,
+    ) -> Result<(), Box<dyn Error>> {
         #[cfg(debug_assertions)]
         let sys_time = SystemTime::now();
         #[cfg(debug_assertions)]
         log::info!("{} Begin Volume::serialization_read", self.drive);
 
         self.file_map
-            .read(&self.index_file_path().to_string_lossy())?;
+            .read_with_cancel(&self.index_file_path().to_string_lossy(), cancel)?;
         self.saved_item_count = self.file_map.len();
 
         #[cfg(debug_assertions)]
@@ -554,7 +576,6 @@ fn has_hidden_component(path: &std::path::Path) -> bool {
     })
 }
 
-#[cfg(target_os = "macos")]
 fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
     path.components().any(|component| match component {
         std::path::Component::Normal(segment) => segment
@@ -569,6 +590,34 @@ fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
 mod event_tests {
     use super::*;
 
+    #[test]
+    fn portable_backend_reloads_pages_and_cancels_without_retaining_index() {
+        let temp = tempfile::Builder::new()
+            .prefix("rotor-portable-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path().join("files");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("report.txt"), b"fixture").unwrap();
+        let mut volume = Volume::new(root.to_string_lossy().into_owned());
+        volume.cache_path = temp.path().join("cache.idx");
+        let cancel = Arc::new(AtomicBool::new(false));
+        volume.initialize_index(&cancel).unwrap();
+        assert!(volume.index_status().indexed);
+        volume.serialization_read().unwrap();
+        let page = volume
+            .find("report".into(), None, 20, cancel.clone())
+            .unwrap();
+        assert_eq!(page.items.len(), 1);
+        volume.release_index().unwrap();
+        assert!(volume.file_map.is_empty());
+        cancel.store(true, Ordering::Release);
+        assert!(volume.update_index_with_cancel(Some(&cancel)).is_err());
+        assert!(volume.file_map.is_empty());
+        volume.stop_watching();
+    }
+
+    #[cfg(unix)]
     #[test]
     fn unreadable_child_preserves_searchable_siblings_but_root_failure_is_fatal() {
         use std::os::unix::fs::PermissionsExt;

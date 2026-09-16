@@ -6,6 +6,18 @@ use std::{
 };
 
 use super::super::excluded_dirs::ExcludedDirs;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub(super) fn check_cancel(cancel: Option<&AtomicBool>) -> io::Result<()> {
+    if cancel.is_some_and(|cancel| cancel.load(Ordering::Acquire)) {
+        Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "Index operation cancelled",
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 pub(super) fn index_path(drive: &str, excluded: &ExcludedDirs) -> PathBuf {
     #[cfg(not(test))]
@@ -60,7 +72,16 @@ pub(super) fn write(
 
 /// Validate the complete snapshot before constructing the index. Verification
 /// uses a fixed buffer rather than retaining serialized and decoded copies.
+#[cfg(test)]
 pub(super) fn read(path: &Path) -> io::Result<BufReader<Take<File>>> {
+    read_with_cancel(path, None)
+}
+
+pub(super) fn read_with_cancel(
+    path: &Path,
+    cancel: Option<&AtomicBool>,
+) -> io::Result<BufReader<Take<File>>> {
+    check_cancel(cancel)?;
     let mut file = File::open(path)?;
     let length = file
         .metadata()?
@@ -71,6 +92,7 @@ pub(super) fn read(path: &Path) -> io::Result<BufReader<Take<File>>> {
     let mut remaining = length;
     let mut buffer = [0u8; 64 * 1024];
     while remaining > 0 {
+        check_cancel(cancel)?;
         let count = remaining.min(buffer.len() as u64) as usize;
         file.read_exact(&mut buffer[..count])?;
         hash.update(&buffer[..count]);

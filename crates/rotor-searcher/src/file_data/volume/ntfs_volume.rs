@@ -119,16 +119,18 @@ impl Volume {
     }
 
     /// Startup can reuse a verified snapshot; an explicit rebuild still enumerates MFT.
-    pub fn initialize_index(&mut self) -> io::Result<()> {
-        self.update_index()?;
-        self.release_index()
+    pub fn initialize_index(&mut self, cancel: &AtomicBool) -> io::Result<()> {
+        let result = self.update_index_with_cancel(Some(cancel)).and_then(|_| {
+            check_cancel(Some(cancel))?;
+            self.release_index()
+        });
+        if result.is_err() {
+            self.clear_index();
+        }
+        result
     }
 
-    pub fn build_index(&mut self) -> io::Result<()> {
-        self.build_index_with_cancel(None)
-    }
-
-    fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+    pub fn build_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let result = self.scan_index(cancel).and_then(|_| {
             check_cancel(cancel)?;
             self.serialization_write()
@@ -240,11 +242,7 @@ impl Volume {
             .search(&query, cursor.as_ref(), batch, &cancel, &self.excluded_dirs)
     }
 
-    pub fn update_index(&mut self) -> io::Result<()> {
-        self.update_index_with_cancel(None)
-    }
-
-    fn update_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+    pub fn update_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let result = self.update_index_inner(cancel);
         if result.is_err() {
             self.clear_index();
@@ -254,7 +252,7 @@ impl Volume {
 
     fn update_index_inner(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         check_cancel(cancel)?;
-        if self.file_map.is_empty() && self.serialization_read().is_err() {
+        if self.file_map.is_empty() && self.serialization_read_with_cancel(cancel).is_err() {
             self.scan_index(cancel)?;
         }
         for attempt in 0..2 {
@@ -392,9 +390,17 @@ impl Volume {
         result
     }
 
+    #[cfg(test)]
     fn serialization_read(&mut self) -> Result<(), Box<dyn Error>> {
+        self.serialization_read_with_cancel(None)
+    }
+
+    fn serialization_read_with_cancel(
+        &mut self,
+        cancel: Option<&AtomicBool>,
+    ) -> Result<(), Box<dyn Error>> {
         self.file_map
-            .read(&self.index_file_path().to_string_lossy())?;
+            .read_with_cancel(&self.index_file_path().to_string_lossy(), cancel)?;
         self.saved_item_count = self.file_map.len();
         self.dirty = false;
         Ok(())

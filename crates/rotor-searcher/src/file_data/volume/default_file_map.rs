@@ -445,8 +445,17 @@ impl FileMap {
         })
     }
 
+    #[cfg(test)]
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let mut reader = cache::read(Path::new(path))?;
+        self.read_with_cancel(path, None)
+    }
+
+    pub fn read_with_cancel(
+        &mut self,
+        path: &str,
+        cancel: Option<&AtomicBool>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut reader = cache::read_with_cancel(Path::new(path), cancel)?;
 
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
@@ -470,6 +479,7 @@ impl FileMap {
         let mut next = FileMap::new();
         let dir_count = read_u32(&mut reader)?;
         for _ in 0..dir_count {
+            cache::check_cancel(cancel)?;
             let parent_id = read_u32(&mut reader)?;
             let name_len = read_u16(&mut reader)?;
             let name = read_string(&mut reader, name_len as usize)?;
@@ -478,6 +488,7 @@ impl FileMap {
 
         let file_count = read_u32(&mut reader)?;
         for _ in 0..file_count {
+            cache::check_cancel(cancel)?;
             let parent_id = read_u32(&mut reader)?;
             if !next.dir_tree.contains(parent_id) {
                 return Err(io::Error::new(

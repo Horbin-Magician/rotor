@@ -172,8 +172,17 @@ impl FileMap {
         })
     }
 
+    #[cfg(test)]
     pub fn read(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let mut reader = cache::read(std::path::Path::new(path))?;
+        self.read_with_cancel(path, None)
+    }
+
+    pub fn read_with_cancel(
+        &mut self,
+        path: &str,
+        cancel: Option<&AtomicBool>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut reader = cache::read_with_cancel(std::path::Path::new(path), cancel)?;
         let mut magic = [0; 4];
         reader.read_exact(&mut magic)?;
         if &magic != b"RNF1" {
@@ -184,6 +193,7 @@ impl FileMap {
         next.start_usn = read_i64(&mut reader)?;
         let count = read_u64(&mut reader)?;
         for _ in 0..count {
+            cache::check_cancel(cancel)?;
             let index = read_u64(&mut reader)?;
             let parent_index = read_u64(&mut reader)?;
             let file_name_len = read_u16(&mut reader)?;
@@ -311,6 +321,22 @@ mod release_tests {
             }
             cursor = page.cursor;
         }
+    }
+
+    #[test]
+    fn cancelled_load_preserves_existing_index() {
+        let index = IndexFile::new();
+        let mut map = FileMap::new();
+        populate(&mut map, 128);
+        map.save(index.path()).unwrap();
+        let cancel = AtomicBool::new(true);
+        assert!(map.read_with_cancel(index.path(), Some(&cancel)).is_err());
+        assert_eq!(map.len(), 129);
+        assert!(map
+            .search("fixture", None, 20, &cancel, &ExcludedDirs::default())
+            .is_none());
+        cancel.store(false, Ordering::Release);
+        assert_eq!(pages(&map, 2).len(), 4);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 mod cache;
 #[cfg(any(target_os = "macos", test))]
 pub mod default_file_map;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 pub mod default_volume;
 #[cfg(test)]
 mod release_tests;

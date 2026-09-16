@@ -1,57 +1,44 @@
 pub mod file_data;
+mod latest;
+mod mailbox;
 mod request;
 pub use file_data::FileState as IndexState;
 pub use request::{QueryId, SearchBatch, SearchRequest, SearchUnavailable};
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    mpsc, Arc, Mutex,
+    Arc, Mutex,
 };
-use std::time::Duration;
 
 use file_data::{FileData, FileState, SearchIndexStatus, SearcherMessage, SharedFileState};
 
 static NEXT_QUERY: AtomicU64 = AtomicU64::new(1);
 
 pub struct Searcher {
-    searcher_msg_sender: mpsc::Sender<SearcherMessage>,
+    searcher_msg_sender: mailbox::Sender,
     search_index_state: SharedFileState,
     stopped: AtomicBool,
+    snapshot: Arc<Mutex<SearchIndexStatus>>,
 }
 
 #[derive(Clone)]
 pub struct SearchIndexStatusReader {
-    searcher_msg_sender: mpsc::Sender<SearcherMessage>,
+    snapshot: Arc<Mutex<SearchIndexStatus>>,
     search_index_state: SharedFileState,
 }
 
 impl SearchIndexStatusReader {
     pub fn index_status(&self) -> SearchIndexStatus {
-        let (sender, receiver) = mpsc::channel();
-
-        if self
-            .searcher_msg_sender
-            .send(SearcherMessage::Status(sender))
-            .is_err()
-        {
-            log::warn!("Failed to request search index status");
-            return SearchIndexStatus::empty();
-        }
-
-        receiver
-            .recv_timeout(Duration::from_millis(800))
-            .unwrap_or_else(|error| {
-                log::warn!("Failed to receive search index status: {error}");
-                let state = *self.search_index_state.lock().unwrap_or_else(|poisoned| {
-                    log::error!("Search index state lock poisoned; recovering inner state");
-                    poisoned.into_inner()
-                });
-
-                SearchIndexStatus {
-                    state,
-                    ..SearchIndexStatus::empty()
-                }
-            })
+        let mut status = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        status.state = *self
+            .search_index_state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        status
     }
 }
 
@@ -63,7 +50,7 @@ impl Searcher {
     where
         F: Fn(SearchBatch) + Send + 'static,
     {
-        let (searcher_msg_sender, searcher_msg_receiver) = mpsc::channel::<SearcherMessage>();
+        let (searcher_msg_sender, searcher_msg_receiver) = mailbox::channel();
         let search_index_state = Arc::new(Mutex::new(FileState::Unbuild));
 
         let _file_data = FileData::new(
@@ -71,6 +58,7 @@ impl Searcher {
             state_change_callback,
             search_index_state.clone(),
         );
+        let snapshot = _file_data.snapshot.clone();
         FileData::event_loop(searcher_msg_receiver, _file_data);
         let _ = searcher_msg_sender.send(SearcherMessage::Startup);
 
@@ -78,6 +66,7 @@ impl Searcher {
             searcher_msg_sender,
             search_index_state,
             stopped: AtomicBool::new(false),
+            snapshot,
         }
     }
 
@@ -114,7 +103,7 @@ impl Searcher {
 
     pub fn index_status_reader(&self) -> SearchIndexStatusReader {
         SearchIndexStatusReader {
-            searcher_msg_sender: self.searcher_msg_sender.clone(),
+            snapshot: self.snapshot.clone(),
             search_index_state: self.search_index_state.clone(),
         }
     }
@@ -130,16 +119,29 @@ impl Drop for Searcher {
 mod tests {
     use super::*;
 
-    fn service() -> (Searcher, mpsc::Receiver<SearcherMessage>) {
-        let (sender, receiver) = mpsc::channel();
+    fn service() -> (Searcher, mailbox::Receiver) {
+        let (sender, receiver) = mailbox::channel();
         (
             Searcher {
                 searcher_msg_sender: sender,
                 search_index_state: Arc::new(Mutex::new(FileState::Ready)),
                 stopped: AtomicBool::new(false),
+                snapshot: Arc::new(Mutex::new(SearchIndexStatus::empty())),
             },
             receiver,
         )
+    }
+
+    #[test]
+    fn status_reads_snapshot_without_waiting_for_busy_coordinator() {
+        let (searcher, _receiver) = service();
+        searcher.snapshot.lock().unwrap().index_item_count = 1234;
+        for _ in 0..64 {
+            searcher.update();
+        }
+        let status = searcher.index_status_reader().index_status();
+        assert_eq!(status.index_item_count, 1234);
+        assert_eq!(status.state, FileState::Ready);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 mod paging;
 mod volume;
-use crate::{QueryId, SearchBatch, SearchRequest};
+use crate::{latest, mailbox, QueryId, SearchBatch, SearchRequest};
 use paging::MergePages;
 use volume::{SearchCursor, SearchPage};
 
@@ -11,7 +11,9 @@ use std::sync::{
     mpsc, Arc, Mutex,
 };
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(test)]
+use std::time::Instant;
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem;
 
@@ -30,7 +32,6 @@ pub enum SearcherMessage {
     Find(SearchRequest),
     Release,
     Shutdown,
-    Status(mpsc::Sender<SearchIndexStatus>),
 }
 
 #[derive(Clone, Debug)]
@@ -59,8 +60,7 @@ impl SearchIndexStatus {
     }
 }
 
-const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(50);
-const SEARCH_CANCEL_DRAIN_TIMEOUT: Duration = Duration::from_millis(200);
+const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
@@ -113,15 +113,16 @@ fn refresh_state(results: impl IntoIterator<Item = std::io::Result<()>>) -> File
 }
 
 struct VolumePack {
+    drive: String,
     available: bool,
     volume: Arc<Mutex<Volume>>,
-    find_sender: mpsc::Sender<VolumeFindTask>,
+    find_sender: latest::Sender<VolumeFindTask>,
 }
 
 impl VolumePack {
     fn new(drive: String) -> Self {
-        let (find_sender, find_receiver) = mpsc::channel::<VolumeFindTask>();
-        let volume = Arc::new(Mutex::new(Volume::new(drive)));
+        let (find_sender, find_receiver) = latest::channel::<VolumeFindTask>();
+        let volume = Arc::new(Mutex::new(Volume::new(drive.clone())));
         let worker_volume = volume.clone();
         thread::spawn(move || {
             while let Ok(task) = find_receiver.recv() {
@@ -137,6 +138,7 @@ impl VolumePack {
             }
         });
         Self {
+            drive,
             available: true,
             volume,
             find_sender,
@@ -165,8 +167,8 @@ impl SearchTask {
         pages: &mut MergePages,
         filename: String,
         batch: u8,
+        cancel: Arc<AtomicBool>,
     ) -> SearchTask {
-        let cancel = Arc::new(AtomicBool::new(false));
         let (result_sender, result_receiver) = mpsc::channel::<(usize, Option<SearchPage>)>();
         let mut pending = 0;
 
@@ -205,30 +207,11 @@ impl SearchTask {
     fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
-
-    fn drain_cancelled(&mut self) {
-        let deadline = Instant::now() + SEARCH_CANCEL_DRAIN_TIMEOUT;
-        while self.pending > 0 {
-            let now = Instant::now();
-            if now >= deadline {
-                break;
-            }
-
-            let timeout = std::cmp::min(SEARCH_WAIT_TIMEOUT, deadline - now);
-            match self.result_receiver.recv_timeout(timeout) {
-                Ok(_) => {
-                    self.pending -= 1;
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    break;
-                }
-            }
-        }
-    }
 }
 
 pub struct FileData {
+    pub(crate) snapshot: Arc<Mutex<SearchIndexStatus>>,
+    work_cancel: Arc<AtomicBool>,
     vols: Vec<String>,
     finding_name: String,
     pages: MergePages,
@@ -249,6 +232,8 @@ impl FileData {
         F: Fn(SearchBatch) + Send + 'static,
     {
         FileData {
+            snapshot: Arc::new(Mutex::new(SearchIndexStatus::empty())),
+            work_cancel: Arc::new(AtomicBool::new(false)),
             vols: Vec::new(),
             volume_packs: Vec::new(),
             finding_name: String::new(),
@@ -261,7 +246,7 @@ impl FileData {
     }
 
     pub(crate) fn event_loop(
-        msg_reciever: mpsc::Receiver<SearcherMessage>,
+        msg_reciever: mailbox::Receiver,
         mut file_data: FileData,
     ) -> thread::JoinHandle<()> {
         std::thread::spawn(move || {
@@ -273,6 +258,8 @@ impl FileData {
                     msg_reciever.recv()
                 };
 
+                file_data.work_cancel = Arc::new(AtomicBool::new(false));
+                msg_reciever.activate(file_data.work_cancel.clone(), false);
                 match msg {
                     Ok(SearcherMessage::Startup) => {
                         file_data.set_state(FileState::Building);
@@ -310,13 +297,12 @@ impl FileData {
                             });
                         }
                     }
-                    Ok(SearcherMessage::Status(sender)) => {
-                        if sender.send(file_data.index_status()).is_err() {
-                            log::warn!("Send search index status failed");
-                        }
-                    }
                     Ok(SearcherMessage::Shutdown) | Err(_) => break,
                 }
+                msg_reciever.deactivate();
+                // All maintenance workers have completed here. Status readers
+                // use this snapshot and never contend with a volume worker.
+                file_data.publish_status();
             }
         })
     }
@@ -399,11 +385,13 @@ impl FileData {
         });
     }
 
-    pub fn find(
+    pub(crate) fn find(
         &mut self,
         request: SearchRequest,
-        msg_reciever: &mpsc::Receiver<SearcherMessage>,
+        msg_reciever: &mailbox::Receiver,
     ) -> Option<SearcherMessage> {
+        let cancel = Arc::new(AtomicBool::new(false));
+        msg_reciever.activate(cancel.clone(), true);
         let SearchRequest { id, query } = request;
         let append = self.finding_name == query;
         if !append {
@@ -415,26 +403,23 @@ impl FileData {
         }
         let mut result = Vec::with_capacity(self.batch as usize);
         while result.len() < self.batch as usize {
+            if cancel.load(Ordering::Acquire) {
+                self.reset_search_results();
+                return msg_reciever.try_recv().ok();
+            }
             if self.pages.needs_refill() {
                 let mut task = SearchTask::dispatch(
                     &self.volume_packs,
                     &mut self.pages,
                     query.clone(),
                     self.batch,
+                    cancel.clone(),
                 );
                 while task.pending > 0 {
-                    while let Ok(message) = msg_reciever.try_recv() {
-                        match message {
-                            SearcherMessage::Status(sender) => {
-                                let _ = sender.send(self.index_status());
-                            }
-                            message => {
-                                task.cancel();
-                                task.drain_cancelled();
-                                self.reset_search_results();
-                                return Some(message);
-                            }
-                        }
+                    if cancel.load(Ordering::Acquire) {
+                        task.cancel();
+                        self.reset_search_results();
+                        return msg_reciever.try_recv().ok();
                     }
                     match task.result_receiver.recv_timeout(SEARCH_WAIT_TIMEOUT) {
                         Ok((index, page)) => {
@@ -470,15 +455,15 @@ impl FileData {
                 let pack = VolumePack::new(c.clone());
                 let volume = pack.volume.clone();
                 self.volume_packs.push(pack);
-
+                let cancel = self.work_cancel.clone();
                 thread::spawn(move || {
                     let mut volume = volume
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                     let result = if rebuild {
-                        volume.build_index()
+                        volume.build_index_with_cancel(Some(&cancel))
                     } else {
-                        volume.initialize_index()
+                        volume.initialize_index(&cancel)
                     };
                     result.map_err(|error| {
                         std::io::Error::new(error.kind(), format!("{}: {error}", volume.drive))
@@ -516,21 +501,10 @@ impl FileData {
     }
 
     fn sync_volume_packs(&mut self) {
-        self.volume_packs.retain(|pack| {
-            let volume = pack
-                .volume
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            self.vols.contains(&volume.drive)
-        });
+        self.volume_packs
+            .retain(|pack| self.vols.contains(&pack.drive));
         for drive in &self.vols {
-            if !self.volume_packs.iter().any(|pack| {
-                pack.volume
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .drive
-                    == *drive
-            }) {
+            if !self.volume_packs.iter().any(|pack| pack.drive == *drive) {
                 self.volume_packs.push(VolumePack::new(drive.clone()));
             }
         }
@@ -550,11 +524,12 @@ impl FileData {
             .iter()
             .map(|VolumePack { volume, .. }| {
                 let volume = volume.clone();
+                let cancel = self.work_cancel.clone();
                 thread::spawn(move || {
                     volume
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .update_index()
+                        .update_index_with_cancel(Some(&cancel))
                 })
             })
             .collect::<Vec<_>>();
@@ -614,19 +589,39 @@ impl FileData {
         ok && !self.volume_packs.is_empty()
     }
 
+    fn publish_status(&self) {
+        let status = self.index_status();
+        *self
+            .snapshot
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = status;
+    }
+
     pub fn index_status(&self) -> SearchIndexStatus {
+        let previous = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
         let volumes = self
             .volume_packs
             .iter()
-            .filter_map(|VolumePack { volume, .. }| {
-                volume
-                    .lock()
-                    .map(|volume| volume.index_status())
-                    .map_err(|error| {
-                        log::warn!("Failed to lock volume for index status: {error}");
-                        error
+            .map(|pack| {
+                if let Ok(volume) = pack.volume.try_lock() {
+                    return volume.index_status();
+                }
+                previous
+                    .volumes
+                    .iter()
+                    .find(|volume| volume.name == pack.drive)
+                    .cloned()
+                    .unwrap_or(VolumeIndexStatus {
+                        name: pack.drive.clone(),
+                        indexed: false,
+                        index_item_count: None,
+                        index_file_size_bytes: 0,
+                        index_file_modified_at: None,
                     })
-                    .ok()
             })
             .collect::<Vec<_>>();
 
@@ -789,7 +784,7 @@ mod tests {
             }
             assert_eq!(data.pages.buffered_len(), 0);
             assert!(data.finding_name.is_empty());
-            let (_sender, receiver) = mpsc::channel();
+            let (_sender, receiver) = mailbox::channel();
             data.find(
                 SearchRequest {
                     id: QueryId(20),
@@ -813,7 +808,7 @@ mod tests {
             None,
             Arc::new(Mutex::new(FileState::Ready)),
         );
-        let (_sender, receiver) = mpsc::channel();
+        let (_sender, receiver) = mailbox::channel();
         for id in [QueryId(10), QueryId(11)] {
             data.find(
                 SearchRequest {
@@ -834,7 +829,7 @@ mod tests {
     #[test]
     fn disconnected_request_channel_terminates_instead_of_spinning() {
         let data = FileData::new(|_| {}, None, Arc::new(Mutex::new(FileState::Unbuild)));
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = mailbox::channel();
         let worker = FileData::event_loop(receiver, data);
         drop(sender);
         let deadline = Instant::now() + Duration::from_secs(1);
