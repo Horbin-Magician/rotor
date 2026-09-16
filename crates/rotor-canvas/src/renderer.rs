@@ -383,6 +383,82 @@ mod tests {
         assert_eq!(rendered.get_pixel(6, 8).0, [255, 255, 255, 255]);
     }
     #[test]
+    fn cropped_scaled_text_and_arrow_survive_png_export() {
+        let renderer = Renderer::with_system_fonts().unwrap();
+        let image = RgbaImage::new(240, 120);
+        let mut scene = scene(240, 120);
+        scene.annotations = vec![
+            Annotation::Text {
+                origin: ImagePoint { x: 40., y: 25. },
+                text: "Rotor 中文\n<&>".into(),
+                font_size: 18.,
+                color: Color::RED,
+            },
+            Annotation::Arrow {
+                start: ImagePoint { x: 45., y: 90. },
+                end: ImagePoint { x: 190., y: 90. },
+                style: StrokeStyle {
+                    color: Color([0, 0, 255, 128]),
+                    width: 6.,
+                },
+            },
+        ];
+        let full = renderer
+            .render(
+                &image,
+                &scene,
+                ImageSize {
+                    width: 480,
+                    height: 240,
+                },
+            )
+            .unwrap();
+        scene.crop = ImageRect {
+            x: 30,
+            y: 20,
+            width: 180,
+            height: 85,
+        };
+        let rendered = renderer
+            .render(
+                &image,
+                &scene,
+                ImageSize {
+                    width: 360,
+                    height: 170,
+                },
+            )
+            .unwrap();
+        // Cropping must translate both glyphs and the arrow without changing pixels.
+        assert_eq!(
+            rendered,
+            image::imageops::crop_imm(&full, 60, 40, 360, 170).to_image()
+        );
+        for (top, height) in [(10, 45), (55, 45)] {
+            assert!(
+                image::imageops::crop_imm(&rendered, 0, top, 360, height)
+                    .pixels()
+                    .filter(|(_, _, pixel)| pixel[0] > 0 && pixel[3] > 0)
+                    .count()
+                    > 50
+            );
+        }
+        assert_eq!(rendered.get_pixel(100, 140).0, [0, 0, 255, 128]);
+        assert!(rendered
+            .enumerate_pixels()
+            .filter(|(x, y, _)| *x >= 320 && *y >= 110)
+            .all(|(_, _, pixel)| pixel[3] == 0));
+        let mut png = std::io::Cursor::new(Vec::new());
+        rendered
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let decoded = image::load_from_memory_with_format(png.get_ref(), image::ImageFormat::Png)
+            .unwrap()
+            .to_rgba8();
+        assert_eq!(decoded, rendered);
+    }
+
+    #[test]
     fn system_text_renders_and_markup_is_literal() {
         let renderer = Renderer::with_system_fonts().unwrap();
         let image = RgbaImage::new(128, 64);

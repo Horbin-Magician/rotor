@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 image.workspace = true
-resvg = "=0.45.1"
+resvg = "=0.46.0"
 serde = { version = "1", features = ["derive"] }

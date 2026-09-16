@@ -6525,7 +6525,7 @@ name = "rotor-canvas"
 version = "3.0.1"
 dependencies = [
  "image",
- "resvg 0.45.1",
+ "resvg 0.46.0",
  "serde",
 ]
 
