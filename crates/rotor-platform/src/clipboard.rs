@@ -155,11 +155,6 @@ pub fn capture_selected_text(cancelled: impl Fn() -> bool) -> Result<SelectedTex
     })
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn capture_selected_text(_: impl Fn() -> bool) -> Result<SelectedText, String> {
-    Err("Selection capture is not supported on this platform".into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{changed, overwritten};

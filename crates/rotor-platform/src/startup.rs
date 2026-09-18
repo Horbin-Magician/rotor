@@ -177,14 +177,6 @@ pub fn set_enabled(enable: bool, executable: &Path, arguments: &[String]) -> Res
     }
     Ok(())
 }
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn enabled(_: &Path, _: &[String]) -> Result<bool, String> {
-    Err("Native startup is unsupported".into())
-}
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn set_enabled(_: bool, _: &Path, _: &[String]) -> Result<(), String> {
-    Err("Native startup is unsupported".into())
-}
 
 #[cfg(test)]
 mod tests {

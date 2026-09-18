@@ -188,16 +188,6 @@ pub fn clipboard_change_count() -> Option<isize> {
     (sequence != 0).then_some(sequence as isize)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn clipboard_change_count() -> Option<isize> {
-    None
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub fn simulate_copy_if(_: impl Fn() -> bool) -> Result<(), Box<dyn Error + Send + Sync>> {
-    Err("Simulated copy is not supported on this platform".into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::wait_until_released;

@@ -187,11 +187,6 @@ pub fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
         }
         Ok((point.x, point.y))
     }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        Ok((0, 0))
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -240,11 +235,6 @@ pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
     })
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
-    Ok(MemoryUsage { resident_bytes: 0 })
-}
-
 #[cfg(target_os = "macos")]
 pub fn get_permission_statuses() -> Vec<PermissionStatus> {
     vec![
@@ -291,16 +281,6 @@ pub fn get_permission_statuses() -> Vec<PermissionStatus> {
             detail: "Uses readable NTFS volumes".to_string(),
         },
     ]
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn get_permission_statuses() -> Vec<PermissionStatus> {
-    vec![PermissionStatus {
-        key: "file_search".to_string(),
-        name: "File Search".to_string(),
-        granted: None,
-        detail: "Permission checks are unavailable on this platform".to_string(),
-    }]
 }
 
 #[cfg(target_os = "macos")]

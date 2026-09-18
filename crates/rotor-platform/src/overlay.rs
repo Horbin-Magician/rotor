@@ -21,10 +21,6 @@ pub fn screen_cursor_position(scale: f32) -> Option<(f64, f64)> {
         let (x, y) = crate::sys_util::get_cursor_position().ok()?;
         Some((x as f64, y as f64))
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        None
-    }
 }
 
 /// Keep a text-entry panel above ordinary windows without covering IME candidates.
@@ -590,11 +586,6 @@ pub fn set_client_bounds(
         window.setFrame_display(frame, false);
         Ok(())
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let _ = (handle, x, y);
-        Err("Pin window resizing is unavailable".into())
-    }
 }
 
 /// Fit a capture mask to the entire display, including the menu bar and Dock.
@@ -676,11 +667,6 @@ pub fn hide_window(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), St
         window.orderOut(None);
         Ok(())
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let _ = handle;
-        Err("Native overlay hiding is unavailable".into())
-    }
 }
 
 pub fn show_window(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), String> {
@@ -710,11 +696,6 @@ pub fn show_window(handle: raw_window_handle::WindowHandle<'_>) -> Result<(), St
             .ok_or("View is not attached to a window")?
             .orderFront(None);
         Ok(())
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let _ = handle;
-        Err("Native overlay showing is unavailable".into())
     }
 }
 

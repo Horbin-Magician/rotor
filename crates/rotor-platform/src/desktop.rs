@@ -34,10 +34,6 @@ pub fn open_url(value: &str) -> Result<(), String> {
             .spawn()
             .map_err(|error| error.to_string())?;
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        return Err("Opening links is unsupported".into());
-    }
     Ok(())
 }
 
@@ -114,8 +110,6 @@ pub fn show_startup_error(message: &str) {
             alert.runModal();
         }
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    eprintln!("Rotor: {message}");
 }
 
 #[cfg(target_os = "windows")]
