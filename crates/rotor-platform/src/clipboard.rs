@@ -72,6 +72,12 @@ fn changed(
     }
 }
 
+/// The copy replaced the backup even when the new content is not text (files,
+/// an image) or its owner keeps the clipboard busy; only the sequence proves it.
+fn overwritten(before: Option<isize>, after: Option<isize>) -> bool {
+    matches!((before, after), (Some(before), Some(after)) if before != after)
+}
+
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub fn capture_selected_text(cancelled: impl Fn() -> bool) -> Result<SelectedText, String> {
     let _guard = SELECTION.lock().unwrap_or_else(|error| error.into_inner());
@@ -97,14 +103,16 @@ pub fn capture_selected_text(cancelled: impl Fn() -> bool) -> Result<SelectedTex
     let mut read_error = None;
     loop {
         let current_sequence = crate::selection::clipboard_change_count();
-        match optional(clipboard.get_text()) {
+        let current = optional(clipboard.get_text());
+        let stable = current_sequence == crate::selection::clipboard_change_count();
+        if stable && overwritten(before, current_sequence) {
+            sequence = current_sequence;
+        }
+        match current {
             Ok(current) => {
-                if current_sequence == crate::selection::clipboard_change_count()
-                    && changed(before, current_sequence, &previous, &current)
-                {
+                if stable && changed(before, current_sequence, &previous, &current) {
                     captured = current.clone();
                     observed = current;
-                    sequence = current_sequence;
                     break;
                 }
             }
@@ -154,7 +162,7 @@ pub fn capture_selected_text(_: impl Fn() -> bool) -> Result<SelectedText, Strin
 
 #[cfg(test)]
 mod tests {
-    use super::changed;
+    use super::{changed, overwritten};
     #[test]
     fn copy_of_identical_text_requires_a_new_sequence() {
         let text = Some("same".to_owned());
@@ -162,6 +170,14 @@ mod tests {
         assert!(!changed(Some(7), Some(7), &text, &text));
         assert!(!changed(None, None, &text, &text));
         assert!(changed(None, None, &text, &Some("new".into())));
+    }
+
+    #[test]
+    fn non_text_copies_are_detected_by_the_sequence_alone() {
+        assert!(overwritten(Some(7), Some(8)));
+        assert!(!overwritten(Some(7), Some(7)));
+        assert!(!overwritten(None, None));
+        assert!(!overwritten(Some(7), None));
     }
 
     #[test]
