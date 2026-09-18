@@ -34,8 +34,6 @@ pub struct Manifest {
     pub version: String,
     #[serde(default)]
     pub notes: String,
-    #[serde(default)]
-    pub pub_date: Option<String>,
     pub platforms: HashMap<String, Artifact>,
 }
 #[derive(Clone, Debug)]
@@ -227,8 +225,8 @@ async fn download_with_client(
 ) -> Result<PathBuf, String> {
     let version = semver::Version::parse(&release.version).map_err(|error| error.to_string())?;
     let extension = match release.target.as_str() {
-        "windows-x86_64" | "windows-x86_64-nsis" => "exe",
-        "darwin-aarch64" | "darwin-aarch64-app" => "app.tar.gz",
+        "windows-x86_64" => "exe",
+        "darwin-aarch64" => "app.tar.gz",
         _ => return Err("Unsupported update platform".into()),
     };
     if cancelled.is_cancelled() {
@@ -326,7 +324,6 @@ mod tests {
             schema_version: 1,
             version: "3.1.0".into(),
             notes: String::new(),
-            pub_date: None,
             platforms: HashMap::from([(
                 "windows-x86_64".into(),
                 Artifact {

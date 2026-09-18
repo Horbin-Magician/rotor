@@ -70,7 +70,8 @@ impl NativeSession {
         true
     }
 
-    pub fn recoverable(&self, id: u64, mut current: Vec<crate::monitor::MonitorConfig>) -> bool {
+    #[cfg(test)]
+    fn recoverable(&self, id: u64, mut current: Vec<crate::monitor::MonitorConfig>) -> bool {
         current.sort_by_key(|monitor| monitor.id);
         matches!(&self.phase, NativePhase::Ready { id: ready, monitors } if *ready == id && monitors == &current)
     }

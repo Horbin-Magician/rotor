@@ -1,6 +1,5 @@
 pub use rotor_platform::monitor::MonitorConfig;
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc,
@@ -170,8 +169,8 @@ fn wait_for_capture(
     }
 }
 
-pub fn current_configs() -> Result<Vec<MonitorConfig>, Box<dyn Error>> {
-    rotor_platform::monitor::current_configs().map_err(Into::into)
+pub fn current_configs() -> Result<Vec<MonitorConfig>, String> {
+    rotor_platform::monitor::current_configs()
 }
 
 pub fn sorted_configs(mut configs: Vec<MonitorConfig>) -> Vec<MonitorConfig> {

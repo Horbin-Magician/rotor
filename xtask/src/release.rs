@@ -126,7 +126,6 @@ fn build_manifest(
         schema_version: 1,
         version: version.into(),
         notes: notes.into(),
-        pub_date: None,
         platforms,
     })
 }
