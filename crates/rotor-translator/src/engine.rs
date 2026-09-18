@@ -10,7 +10,11 @@ use stream::AiStream;
 
 const GOOGLE_TRANSLATE_URL: &str = "https://translate.googleapis.com/translate_a/single";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+// Streamed LLM replies can legitimately take minutes, so the total deadline only
+// guards against a permanently hung connection; idle reads fail much sooner.
+const LLM_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const LLM_READ_TIMEOUT: Duration = Duration::from_secs(60);
+const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_ERROR_BYTES: usize = 64 * 1024;
@@ -206,6 +210,8 @@ where
     F: Fn(TranslateStreamEvent) + Send + Sync,
 {
     let client = reqwest::Client::builder()
+        .connect_timeout(LLM_CONNECT_TIMEOUT)
+        .read_timeout(LLM_READ_TIMEOUT)
         .timeout(LLM_REQUEST_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
