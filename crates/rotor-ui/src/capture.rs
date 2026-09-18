@@ -265,6 +265,8 @@ pub struct MaskView {
     detected: Vec<ImageRect>,
     chinese: bool,
     copied: bool,
+    // reset() has no window; the next render applies the language/monitor title.
+    title_stale: bool,
 }
 impl MaskView {
     pub fn new(
@@ -275,11 +277,7 @@ impl MaskView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        window.set_window_title(&format!(
-            "Rotor · {} {}",
-            if chinese { "截图" } else { "Capture" },
-            capture.monitor.id
-        ));
+        window.set_window_title(&mask_title(chinese, capture.monitor.id));
         let focus = cx.focus_handle();
         let bounds =
             cx.observe_window_bounds(window, |this, window, cx| this.check_geometry(window, cx));
@@ -308,6 +306,7 @@ impl MaskView {
             detected: Vec::new(),
             chinese,
             copied: false,
+            title_stale: false,
         }
     }
     pub fn monitor(&self) -> &MonitorConfig {
@@ -322,6 +321,7 @@ impl MaskView {
     ) {
         self.session = session;
         self.active = true;
+        self.title_stale = self.chinese != chinese || self.capture.monitor.id != capture.monitor.id;
         self.capture = capture;
         self.chinese = chinese;
         self.armed = false;
@@ -450,18 +450,25 @@ impl MaskView {
         cx.notify();
     }
     fn finish(&mut self, position: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        // Only a started drag confined the cursor; a plain mouse-up must not
+        // report a release for a drag that never began.
         #[cfg(target_os = "windows")]
-        self.drag_changed(false, window, cx);
+        if self.start.is_some() {
+            self.drag_changed(false, window, cx);
+        }
         if !self.active || !self.armed || self.start.is_none() {
             return;
         }
         self.move_pointer(position, window, cx);
         let start = self.start.take().unwrap();
         let minimum = 5. * window.scale_factor() as f64;
+        // Moving past the threshold on either axis is a drag, matching the
+        // preview in selected(): a thin selection keeps its drawn rectangle,
+        // and a degenerate zero-extent one falls back to the click target.
         let rect = if (start.x - self.point.x).abs() > minimum
-            && (start.y - self.point.y).abs() > minimum
+            || (start.y - self.point.y).abs() > minimum
         {
-            ImageRect::from_drag(start, self.point, self.dimensions())
+            ImageRect::from_drag(start, self.point, self.dimensions()).or(self.click_selection)
         } else {
             self.click_selection
         };
@@ -501,6 +508,14 @@ impl MaskView {
         let [r, g, b, _] = self.pixel(0, 0);
         format!("#{r:02x}{g:02x}{b:02x}")
     }
+}
+
+fn mask_title(chinese: bool, monitor: u32) -> String {
+    format!(
+        "Rotor · {} {}",
+        if chinese { "截图" } else { "Capture" },
+        monitor
+    )
 }
 
 fn choose_rectangle(
@@ -549,6 +564,9 @@ const INSPECTOR_INFO_HEIGHT: f32 = INSPECTOR_HEIGHT - INSPECTOR_PREVIEW_SIZE - 2
 
 impl Render for MaskView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.title_stale) {
+            window.set_window_title(&mask_title(self.chinese, self.capture.monitor.id));
+        }
         if !self.active {
             return div().size_full().bg(rgb(0x000000)).into_any_element();
         }
@@ -824,6 +842,8 @@ mod tests {
         view.read_with(cx, |view, _| assert!(view.start.is_some()));
         cx.simulate_mouse_up(position, MouseButton::Left, Default::default());
         view.read_with(cx, |view, _| assert!(view.start.is_none()));
+        // A mouse-up without a started drag must not report a stale release.
+        cx.simulate_mouse_up(position, MouseButton::Left, Default::default());
         let actions = actions.borrow();
         let drags: Vec<_> = actions
             .iter()
@@ -842,6 +862,103 @@ mod tests {
                 .iter()
                 .any(|action| matches!(action, MaskAction::Choose { .. }))
         );
+    }
+
+    #[gpui::test]
+    fn thin_drags_keep_their_rectangle_and_degenerate_ones_fall_back(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::*;
+        use std::cell::RefCell;
+
+        cx.update(gpui_kit::component::init);
+        let actions = Rc::new(RefCell::new(Vec::new()));
+        let recorded = actions.clone();
+        let full = ImageRect {
+            x: 0,
+            y: 0,
+            width: 400,
+            height: 400,
+        };
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let capture = Arc::new(PreparedCapture {
+                monitor: MonitorConfig {
+                    id: 1,
+                    x: 0,
+                    y: 0,
+                    width: 400,
+                    height: 400,
+                    scale_factor: 1.,
+                },
+                image: PreparedScreenshot::new(rotor_runtime::BgraCapture {
+                    width: 400,
+                    height: 400,
+                    bytes: vec![0; 400 * 400 * 4],
+                })
+                .unwrap(),
+                windows: vec![(0, full)],
+            });
+            MaskView::new(
+                7,
+                capture,
+                Rc::new(move |action, _, _| recorded.borrow_mut().push(action)),
+                false,
+                window,
+                cx,
+            )
+        });
+        cx.simulate_resize(size(px(400.), px(400.)));
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let chosen = |actions: &RefCell<Vec<MaskAction>>| {
+            actions
+                .borrow()
+                .iter()
+                .filter_map(|action| match action {
+                    MaskAction::Choose { rect, .. } => Some(*rect),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        // The capture is sized in physical pixels, so drive the pointer with
+        // logical positions that land on the intended image coordinates.
+        let scale = cx.update(|window, _| window.scale_factor());
+        let at = |x: f32, y: f32| point(px(x / scale), px(y / scale));
+        // Wide but only two pixels tall: still a drag, not a click.
+        view.update(cx, |view, cx| {
+            view.armed = true;
+            cx.notify();
+        });
+        let start = at(40., 40.);
+        cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+        cx.simulate_mouse_up(at(340., 42.), MouseButton::Left, Default::default());
+        assert_eq!(
+            chosen(&actions),
+            [ImageRect {
+                x: 40,
+                y: 40,
+                width: 300,
+                height: 2,
+            }]
+        );
+        // Zero height cannot form a rectangle; use the click target instead.
+        view.update(cx, |view, cx| {
+            view.armed = true;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+        cx.simulate_mouse_up(at(340., 40.), MouseButton::Left, Default::default());
+        assert_eq!(chosen(&actions).last(), Some(&full));
+        // Sub-threshold jitter remains a click.
+        view.update(cx, |view, cx| {
+            view.armed = true;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+        cx.simulate_mouse_up(at(43., 41.), MouseButton::Left, Default::default());
+        assert_eq!(chosen(&actions).len(), 3);
+        assert_eq!(chosen(&actions).last(), Some(&full));
     }
 
     #[test]
