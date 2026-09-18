@@ -21,8 +21,15 @@ impl Drop for DriveHandle {
     }
 }
 
+/// Sizes for a change journal this process creates when a volume has none.
+const JOURNAL_MAXIMUM_SIZE: u64 = 32 * 1024 * 1024;
+const JOURNAL_ALLOCATION_DELTA: u64 = 4 * 1024 * 1024;
+
 fn os_error(error: windows::core::Error) -> io::Error {
     io::Error::from_raw_os_error((error.code().0 as u32 & 0xffff) as i32)
+}
+fn is_journal_inactive(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(Foundation::ERROR_JOURNAL_NOT_ACTIVE.0 as i32)
 }
 fn check_cancel(cancel: Option<&AtomicBool>) -> io::Result<()> {
     if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
@@ -43,6 +50,9 @@ pub struct Volume {
     file_map: FileMap,
     saved_item_count: usize,
     dirty: bool,
+    /// The volume has no change journal and none could be created: every
+    /// refresh enumerates the MFT instead of replaying journal records.
+    mft_only: bool,
     excluded_dirs: ExcludedDirs,
 }
 
@@ -60,16 +70,21 @@ impl Volume {
             file_map: FileMap::new(),
             saved_item_count: 0,
             dirty: false,
+            mft_only: false,
             excluded_dirs,
         }
     }
 
     fn open_drive(&self) -> io::Result<DriveHandle> {
+        self.open_drive_with(Foundation::GENERIC_READ.0)
+    }
+
+    fn open_drive_with(&self, access: u32) -> io::Result<DriveHandle> {
         let name = CString::new(format!("\\\\.\\{}:", self.drive)).map_err(io::Error::other)?;
         unsafe {
             FileSystem::CreateFileA(
                 windows::core::PCSTR(name.as_ptr().cast()),
-                Foundation::GENERIC_READ.0,
+                access,
                 FileSystem::FILE_SHARE_READ | FileSystem::FILE_SHARE_WRITE,
                 None,
                 FileSystem::OPEN_EXISTING,
@@ -100,6 +115,69 @@ impl Volume {
             return Err(cache::invalid("Truncated USN journal metadata"));
         }
         Ok(())
+    }
+
+    /// Creating a journal writes volume metadata, so it needs a write handle;
+    /// an unprivileged process fails here and falls back to MFT-only refreshes.
+    fn create_journal(&self) -> io::Result<()> {
+        let drive =
+            self.open_drive_with(Foundation::GENERIC_READ.0 | Foundation::GENERIC_WRITE.0)?;
+        let request = Ioctl::CREATE_USN_JOURNAL_DATA {
+            MaximumSize: JOURNAL_MAXIMUM_SIZE,
+            AllocationDelta: JOURNAL_ALLOCATION_DELTA,
+        };
+        let mut returned = 0;
+        unsafe {
+            IO::DeviceIoControl(
+                drive.0,
+                Ioctl::FSCTL_CREATE_USN_JOURNAL,
+                Some((&request as *const Ioctl::CREATE_USN_JOURNAL_DATA).cast()),
+                std::mem::size_of_val(&request) as u32,
+                None,
+                0,
+                Some(&mut returned),
+                None,
+            )
+        }
+        .map_err(os_error)
+    }
+
+    /// Query the journal, creating one when the volume has none. Returns whether
+    /// journal replay is possible; otherwise the volume stays searchable through
+    /// full MFT enumeration on every refresh.
+    fn ensure_journal(&mut self, drive: &DriveHandle) -> io::Result<bool> {
+        let inactive = match self.query_journal(drive) {
+            Ok(()) => {
+                if self.mft_only {
+                    log::info!("{} USN journal is active again", self.drive);
+                }
+                self.mft_only = false;
+                return Ok(true);
+            }
+            Err(error) if is_journal_inactive(&error) => error,
+            Err(error) => return Err(error),
+        };
+        match self
+            .create_journal()
+            .and_then(|()| self.query_journal(drive))
+        {
+            Ok(()) => {
+                log::info!("{} Created USN journal", self.drive);
+                self.mft_only = false;
+                Ok(true)
+            }
+            Err(error) => {
+                if !self.mft_only {
+                    log::warn!(
+                        "{} {inactive}; creating one failed ({error}); refreshing by full MFT enumeration only",
+                        self.drive
+                    );
+                }
+                self.ujd = Ioctl::USN_JOURNAL_DATA_V0::default();
+                self.mft_only = true;
+                Ok(false)
+            }
+        }
     }
 
     pub fn index_status(&self) -> VolumeIndexStatus {
@@ -145,7 +223,8 @@ impl Volume {
         check_cancel(cancel)?;
         self.clear_index();
         let drive = self.open_drive()?;
-        self.query_journal(&drive)?;
+        // Without a journal the position is zero and the snapshot never resumes.
+        self.ensure_journal(&drive)?;
         self.file_map.start_usn = self.ujd.NextUsn;
         self.file_map.journal_id = self.ujd.UsnJournalID;
         self.file_map
@@ -257,12 +336,16 @@ impl Volume {
         check_cancel(cancel)?;
         if self.file_map.is_empty() && self.serialization_read_with_cancel(cancel).is_err() {
             self.scan_index(cancel)?;
+            if self.mft_only {
+                return Ok(());
+            }
         }
         for attempt in 0..2 {
             check_cancel(cancel)?;
             let drive = self.open_drive()?;
-            self.query_journal(&drive)?;
-            let result = if self.can_resume_journal() {
+            let result = if !self.ensure_journal(&drive)? {
+                Err(cache::invalid("USN journal is not active"))
+            } else if self.can_resume_journal() {
                 self.replay_journal(&drive, cancel)
             } else {
                 Err(cache::invalid("USN snapshot expired or journal replaced"))
@@ -278,6 +361,10 @@ impl Volume {
                     drop(drive);
                     log::info!("{} Rebuilding invalid USN snapshot: {error}", self.drive);
                     self.scan_index(cancel)?;
+                    // Without a journal the fresh enumeration is the whole refresh.
+                    if self.mft_only {
+                        return Ok(());
+                    }
                 }
                 Err(error) => return Err(error),
             }
@@ -286,7 +373,8 @@ impl Volume {
     }
 
     fn can_resume_journal(&self) -> bool {
-        self.file_map.journal_id == self.ujd.UsnJournalID
+        !self.mft_only
+            && self.file_map.journal_id == self.ujd.UsnJournalID
             && self.file_map.start_usn >= self.ujd.FirstUsn.max(self.ujd.LowestValidUsn)
             && self.file_map.start_usn <= self.ujd.NextUsn
     }
@@ -433,6 +521,7 @@ mod tests {
             file_map: FileMap::new(),
             saved_item_count: 128,
             dirty: false,
+            mft_only: false,
             excluded_dirs: ExcludedDirs::default(),
         };
         volume.file_map.start_usn = 456;
@@ -463,6 +552,27 @@ mod tests {
             volume.file_map.start_usn = usn;
             assert!(!volume.can_resume_journal());
         }
+    }
+
+    #[test]
+    fn volumes_without_a_journal_never_resume_from_snapshots() {
+        let mut volume = synthetic_volume();
+        assert!(volume.can_resume_journal());
+        volume.mft_only = true;
+        assert!(!volume.can_resume_journal());
+        // An MFT-only snapshot records a zero position; it must not match an
+        // inactive journal's zeroed metadata either.
+        volume.ujd = Ioctl::USN_JOURNAL_DATA_V0::default();
+        volume.file_map.journal_id = 0;
+        volume.file_map.start_usn = 0;
+        assert!(!volume.can_resume_journal());
+        assert!(is_journal_inactive(&io::Error::from_raw_os_error(
+            Foundation::ERROR_JOURNAL_NOT_ACTIVE.0 as i32
+        )));
+        assert!(!is_journal_inactive(&io::Error::from_raw_os_error(
+            Foundation::ERROR_JOURNAL_ENTRY_DELETED.0 as i32
+        )));
+        assert!(!is_journal_inactive(&cache::invalid("not an OS error")));
     }
 
     #[test]
