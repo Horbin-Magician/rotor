@@ -11,9 +11,7 @@ use std::sync::{
     mpsc, Arc, Mutex,
 };
 use std::thread;
-use std::time::Duration;
-#[cfg(test)]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem;
 
@@ -61,6 +59,9 @@ impl SearchIndexStatus {
 }
 
 const SEARCH_WAIT_TIMEOUT: Duration = Duration::from_millis(10);
+/// Shutdown checkpoints dirty volumes like Release, but exit must not wait on a
+/// slow snapshot write; atomic replacement keeps an abandoned write harmless.
+const SHUTDOWN_CHECKPOINT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
@@ -93,21 +94,30 @@ impl FileState {
     }
 }
 
+/// Cancellation (Release, Init or Shutdown pre-empting the work) is not a
+/// failure: interrupted volumes already dropped their index, so nothing was
+/// loaded and the follow-up command sees a released index rather than an error.
 fn refresh_state(results: impl IntoIterator<Item = std::io::Result<()>>) -> FileState {
     let mut succeeded = 0;
     let mut failed = 0;
+    let mut interrupted = 0;
     for result in results {
         match result {
             Ok(()) => succeeded += 1,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                interrupted += 1;
+                log::info!("Index refresh cancelled: {error}");
+            }
             Err(error) => {
                 failed += 1;
                 log::error!("Index refresh failed: {error}");
             }
         }
     }
-    match (succeeded, failed) {
-        (0, _) => FileState::Error,
-        (_, 0) => FileState::Ready,
+    match (succeeded, failed, interrupted) {
+        (0, 0, 1..) => FileState::Released,
+        (0, _, _) => FileState::Error,
+        (_, 0, 0) => FileState::Ready,
         _ => FileState::Partial,
     }
 }
@@ -217,6 +227,9 @@ pub struct FileData {
     finding_name: String,
     pages: MergePages,
     volume_packs: Vec<VolumePack>,
+    /// Volumes hold an in-memory index (or dirty journal progress). Startup
+    /// releases every volume even when the resulting state is `Partial`.
+    loaded: bool,
     state: SharedFileState,
     batch: u8,
     find_result_callback: Box<dyn Fn(SearchBatch) + Send>,
@@ -238,6 +251,7 @@ impl FileData {
             work_cancel: Arc::new(AtomicBool::new(false)),
             vols: Vec::new(),
             volume_packs: Vec::new(),
+            loaded: false,
             finding_name: String::new(),
             pages: MergePages::default(),
             state,
@@ -275,17 +289,20 @@ impl FileData {
                         file_data.set_state(FileState::Loading);
                         let state = file_data.update_index();
                         file_data.set_state(state);
+                        if file_data.work_cancel.load(Ordering::Acquire) {
+                            // Only Release, Init or Shutdown cancel a refresh and
+                            // they run next. A deferred search would re-queue the
+                            // refresh ahead of them forever, so complete it now.
+                            file_data.discard_deferred(&mut wait_deals);
+                        }
+                    }
+                    Ok(SearcherMessage::Find(filename)) if file_data.needs_reload() => {
+                        wait_deals.push_back(SearcherMessage::Update);
+                        wait_deals.push_back(SearcherMessage::Find(filename));
                     }
                     Ok(SearcherMessage::Find(filename)) => match file_data.state() {
-                        FileState::Released => {
-                            wait_deals.push_back(SearcherMessage::Update);
-                            wait_deals.push_back(SearcherMessage::Find(filename));
-                        }
                         FileState::Ready | FileState::Partial => {
-                            let rtn = file_data.find(filename, &msg_reciever);
-                            if let Some(rtn) = rtn {
-                                wait_deals.push_back(rtn);
-                            }
+                            wait_deals.extend(file_data.find(filename, &msg_reciever));
                         }
                         _ => {
                             // The accepted request must finish even when every
@@ -303,7 +320,12 @@ impl FileData {
                             });
                         }
                     }
-                    Ok(SearcherMessage::Shutdown) | Err(_) => break,
+                    Ok(SearcherMessage::Shutdown) | Err(_) => {
+                        if file_data.loaded {
+                            file_data.release_index_within(Some(SHUTDOWN_CHECKPOINT_TIMEOUT));
+                        }
+                        break;
+                    }
                 }
                 msg_reciever.deactivate();
                 // All maintenance workers have completed here. Status readers
@@ -318,6 +340,25 @@ impl FileData {
             log::error!("Search index state lock poisoned; recovering inner state");
             poisoned.into_inner()
         })
+    }
+
+    /// A released index must refresh before serving a search. A partial startup
+    /// is released too, unlike a partial refresh whose volumes stay loaded.
+    fn needs_reload(&self) -> bool {
+        match self.state() {
+            FileState::Released => true,
+            FileState::Partial => !self.loaded,
+            _ => false,
+        }
+    }
+
+    /// Complete deferred searches with an empty batch so the view stops loading.
+    fn discard_deferred(&mut self, wait_deals: &mut VecDeque<SearcherMessage>) {
+        for message in wait_deals.drain(..) {
+            if let SearcherMessage::Find(request) = message {
+                self.find_result(request.id, request.query, Vec::new(), false);
+            }
+        }
     }
 
     fn set_state(&self, next_state: FileState) {
@@ -394,44 +435,43 @@ impl FileData {
         }
     }
 
+    /// Returns the commands to run next: empty once the request completed, or
+    /// the pre-empting command (plus this request again after an `Update`).
     pub(crate) fn find(
         &mut self,
         request: SearchRequest,
         msg_reciever: &mailbox::Receiver,
-    ) -> Option<SearcherMessage> {
+    ) -> Vec<SearcherMessage> {
         let cancel = Arc::new(AtomicBool::new(false));
         msg_reciever.activate(cancel.clone(), true);
-        let SearchRequest { id, query, append } = request;
-        let append = append && self.finding_name == query;
+        let append = request.append && self.finding_name == request.query;
         if !append {
             if let Some(icons) = &mut self.icons {
                 icons.reset();
             }
-            self.finding_name = query.clone();
+            self.finding_name = request.query.clone();
             self.pages = MergePages::new(self.volume_packs.len());
         }
-        if query.is_empty() {
-            return None;
+        if request.query.is_empty() {
+            return Vec::new();
         }
         let mut result = Vec::with_capacity(self.batch as usize);
         while result.len() < self.batch as usize {
             if cancel.load(Ordering::Acquire) {
-                self.reset_search_results();
-                return msg_reciever.try_recv().ok();
+                return self.interrupted_search(request, msg_reciever);
             }
             if self.pages.needs_refill() {
                 let mut task = SearchTask::dispatch(
                     &self.volume_packs,
                     &mut self.pages,
-                    query.clone(),
+                    request.query.clone(),
                     self.batch,
                     cancel.clone(),
                 );
                 while task.pending > 0 {
                     if cancel.load(Ordering::Acquire) {
                         task.cancel();
-                        self.reset_search_results();
-                        return msg_reciever.try_recv().ok();
+                        return self.interrupted_search(request, msg_reciever);
                     }
                     match task.result_receiver.recv_timeout(SEARCH_WAIT_TIMEOUT) {
                         Ok((index, page)) => {
@@ -451,8 +491,24 @@ impl FileData {
             };
             result.push(item);
         }
-        self.find_result(id, query, result, append);
-        None
+        self.find_result(request.id, request.query, result, append);
+        Vec::new()
+    }
+
+    /// A newer command pre-empted this search. A superseding search, Release,
+    /// Init or Shutdown drops it; an Update runs it again afterwards so the
+    /// accepted request still completes.
+    fn interrupted_search(
+        &mut self,
+        request: SearchRequest,
+        msg_reciever: &mailbox::Receiver,
+    ) -> Vec<SearcherMessage> {
+        self.reset_search_results();
+        match msg_reciever.try_recv() {
+            Ok(next @ SearcherMessage::Update) => vec![next, SearcherMessage::Find(request)],
+            Ok(next) => vec![next],
+            Err(_) => Vec::new(),
+        }
     }
 
     pub fn init_volumes(&mut self, rebuild: bool) {
@@ -500,6 +556,7 @@ impl FileData {
             }
             result
         }));
+        self.loaded = false;
         self.set_state(if state == FileState::Ready {
             FileState::Released
         } else {
@@ -549,59 +606,83 @@ impl FileData {
             })
             .collect::<Vec<_>>();
 
-        refresh_state(
-            self.volume_packs
-                .iter_mut()
-                .zip(handles)
-                .map(|(pack, handle)| {
-                    let result = match handle.join() {
-                        Ok(result) => result,
-                        Err(error) => {
-                            let volume = pack
-                                .volume
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            Err(std::io::Error::other(format!(
-                                "{}: volume worker panicked: {error:?}",
-                                volume.drive
-                            )))
-                        }
-                    };
-                    pack.available = result.is_ok();
-                    result
-                }),
-        )
+        let state = refresh_state(self.volume_packs.iter_mut().zip(handles).map(
+            |(pack, handle)| {
+                let result = match handle.join() {
+                    Ok(result) => result,
+                    Err(error) => {
+                        let volume = pack
+                            .volume
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        Err(std::io::Error::other(format!(
+                            "{}: volume worker panicked: {error:?}",
+                            volume.drive
+                        )))
+                    }
+                };
+                pack.available = result.is_ok();
+                result
+            },
+        ));
+        self.loaded = matches!(state, FileState::Ready | FileState::Partial);
+        state
     }
 
     pub fn release_index(&mut self) -> bool {
+        self.release_index_within(None)
+    }
+
+    /// Checkpoint and drop every volume index. With a timeout, volumes that
+    /// have not finished by the deadline are abandoned rather than awaited.
+    fn release_index_within(&mut self, timeout: Option<Duration>) -> bool {
         self.update_valid_vols();
 
         self.reset_search_results();
-        let handles = self
-            .volume_packs
-            .iter()
-            .map(|VolumePack { volume, .. }| {
-                let volume = volume.clone();
-                thread::spawn(move || {
-                    volume
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .release_index()
-                })
-            })
-            .collect::<Vec<_>>();
+        self.loaded = false;
+        let (result_sender, result_receiver) = mpsc::channel();
+        for VolumePack { volume, .. } in &self.volume_packs {
+            let volume = volume.clone();
+            let result_sender = result_sender.clone();
+            thread::spawn(move || {
+                let result = volume
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .release_index();
+                let _ = result_sender.send(result);
+            });
+        }
+        drop(result_sender);
 
-        let mut ok = true;
-        for handle in handles {
-            match handle.join() {
+        let deadline = timeout.map(|timeout| Instant::now() + timeout);
+        let mut ok = !self.volume_packs.is_empty();
+        for _ in 0..self.volume_packs.len() {
+            let result = match deadline {
+                Some(deadline) => {
+                    result_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                }
+                None => result_receiver
+                    .recv()
+                    .map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+            };
+            match result {
                 Ok(Ok(())) => {}
-                result => {
-                    log::error!("Release index failed: {result:?}");
+                Ok(Err(error)) => {
+                    log::error!("Release index failed: {error}");
                     ok = false;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    log::warn!("Release index timed out; remaining checkpoints abandoned");
+                    return false;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    log::error!("Release index failed: volume worker panicked");
+                    ok = false;
+                    break;
                 }
             }
         }
-        ok && !self.volume_packs.is_empty()
+        ok
     }
 
     fn publish_status(&self) {
