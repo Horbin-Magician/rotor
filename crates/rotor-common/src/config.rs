@@ -89,9 +89,26 @@ static DEFAULT_CONFIG: LazyLock<Config> = LazyLock::new(|| {
 });
 
 pub struct AppConfig {
+    /// The on-disk table. Unknown keys and non-string scalar types survive
+    /// every save until that key itself is written.
+    document: toml::Table,
     config: Config,
     path: Option<PathBuf>,
     load_error: Option<String>,
+}
+
+/// Read scalars as their TOML text so a hand-edited `zoom_delta = 2` or
+/// `if_ask_save_path = true` does not make the whole file unreadable.
+/// Arrays and tables have no string form and remain load errors.
+fn scalar_text(value: &toml::Value) -> Option<String> {
+    match value {
+        toml::Value::String(text) => Some(text.clone()),
+        toml::Value::Integer(_)
+        | toml::Value::Float(_)
+        | toml::Value::Boolean(_)
+        | toml::Value::Datetime(_) => Some(value.to_string()),
+        toml::Value::Array(_) | toml::Value::Table(_) => None,
+    }
 }
 
 impl AppConfig {
@@ -108,6 +125,7 @@ impl AppConfig {
                     "Configuration is read-only until its load error is resolved: {message}"
                 );
                 Self {
+                    document: toml::Table::new(),
                     config: HashMap::new(),
                     path: directory.map(|path| path.join("config.toml")),
                     load_error: Some(message),
@@ -120,19 +138,28 @@ impl AppConfig {
     /// Corrupt or unreadable files are never silently replaced with defaults.
     pub fn load_from(directory: &Path) -> Result<Self, Box<dyn Error>> {
         let path = directory.join("config.toml");
-        let config = match fs::read_to_string(&path) {
-            Ok(contents) => toml::from_str::<Config>(&contents)?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+        let document = match fs::read_to_string(&path) {
+            Ok(contents) => toml::from_str::<toml::Table>(&contents)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
             Err(error) => return Err(error.into()),
         };
+        let config = document
+            .iter()
+            .map(|(key, value)| {
+                let text = scalar_text(value)
+                    .ok_or_else(|| format!("configuration key `{key}` is not a scalar value"))?;
+                Ok((key.clone(), text))
+            })
+            .collect::<Result<Config, Box<dyn Error>>>()?;
         Ok(Self {
+            document,
             config,
             path: Some(path),
             load_error: None,
         })
     }
 
-    fn save_candidate(&self, config: &Config) -> Result<(), Box<dyn Error>> {
+    fn save_candidate(&self, document: &toml::Table) -> Result<(), Box<dyn Error>> {
         if let Some(error) = &self.load_error {
             return Err(
                 std::io::Error::other(format!("configuration load failed: {error}")).into(),
@@ -142,7 +169,10 @@ impl AppConfig {
             .path
             .as_deref()
             .ok_or_else(|| std::io::Error::other("configuration path unavailable"))?;
-        crate::persistence::atomic_write_private(path, toml::to_string_pretty(config)?.as_bytes())?;
+        crate::persistence::atomic_write_private(
+            path,
+            toml::to_string_pretty(document)?.as_bytes(),
+        )?;
         Ok(())
     }
 
@@ -165,9 +195,14 @@ impl AppConfig {
         &mut self,
         entries: impl IntoIterator<Item = (String, String)>,
     ) -> Result<(), Box<dyn Error>> {
+        let mut document = self.document.clone();
         let mut candidate = self.config.clone();
-        candidate.extend(entries);
-        self.save_candidate(&candidate)?;
+        for (key, value) in entries {
+            document.insert(key.clone(), toml::Value::String(value.clone()));
+            candidate.insert(key, value);
+        }
+        self.save_candidate(&document)?;
+        self.document = document;
         self.config = candidate;
         Ok(())
     }
@@ -243,6 +278,41 @@ mod tests {
     }
 
     #[test]
+    fn scalar_types_are_readable_and_only_written_keys_change_type() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.toml");
+        fs::write(
+            &path,
+            "zoom_delta = 2\nif_ask_save_path = true\nratio = 1.5\ntheme = '1'\n",
+        )
+        .unwrap();
+        let mut config = AppConfig::load_from(directory.path()).unwrap();
+        assert_eq!(config.get_user("zoom_delta").map(String::as_str), Some("2"));
+        assert_eq!(
+            config.get_user("if_ask_save_path").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(config.get_user("ratio").map(String::as_str), Some("1.5"));
+        config.set("theme".into(), "2".into()).unwrap();
+        let written: toml::Table = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["zoom_delta"].as_integer(), Some(2));
+        assert_eq!(written["if_ask_save_path"].as_bool(), Some(true));
+        assert_eq!(written["ratio"].as_float(), Some(1.5));
+        assert_eq!(written["theme"].as_str(), Some("2"));
+        config.set("zoom_delta".into(), "3".into()).unwrap();
+        let written: toml::Table = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["zoom_delta"].as_str(), Some("3"));
+        assert_eq!(written["if_ask_save_path"].as_bool(), Some(true));
+        let restored = AppConfig::load_from(directory.path()).unwrap();
+        assert_eq!(restored.get_all(), config.get_all());
+        // Structured values still fail loudly instead of being dropped.
+        fs::write(&path, "[section]\nvalue = 1\n").unwrap();
+        assert!(AppConfig::load_from(directory.path()).is_err());
+        fs::write(&path, "list = [1]\n").unwrap();
+        assert!(AppConfig::load_from(directory.path()).is_err());
+    }
+
+    #[test]
     fn corrupt_configuration_is_not_overwritten_on_load() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.toml");
@@ -254,6 +324,7 @@ mod tests {
     #[test]
     fn get_all_user_values_override_defaults() {
         let config = AppConfig {
+            document: toml::Table::new(),
             config: HashMap::from([("language".to_string(), "1".to_string())]),
             path: None,
             load_error: None,
@@ -268,6 +339,7 @@ mod tests {
     #[test]
     fn get_all_fills_missing_values_from_defaults() {
         let config = AppConfig {
+            document: toml::Table::new(),
             config: HashMap::new(),
             path: None,
             load_error: None,
