@@ -464,17 +464,9 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             position: reader,
                             activate: Rc::new(activate_pin),
                             minimized: Rc::new(|window| {
-                                #[cfg(any(target_os = "windows", target_os = "macos"))]
-                                {
-                                    rotor_platform::overlay::window_minimized(
-                                        HasWindowHandle::window_handle(window).ok()?,
-                                    )
-                                }
-                                #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-                                {
-                                    let _ = window;
-                                    None
-                                }
+                                rotor_platform::overlay::window_minimized(
+                                    HasWindowHandle::window_handle(window).ok()?,
+                                )
                             }),
                             content_scale,
                             bounds: bounds_setter,

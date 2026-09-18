@@ -74,7 +74,8 @@ fn close_masks(current: Option<&mut Window>, cx: &mut App) -> Result<(), String>
         .windows
         .keys()
         .copied()
-        .filter(|role| matches!(role, WindowRole::Mask { session, .. } if *session != 0))
+        // Every mask carries a real capture session: operation ids start at 1.
+        .filter(|role| matches!(role, WindowRole::Mask { .. }))
         .collect();
     if !roles.is_empty() {
         cx.global_mut::<ShellState>().capture.desktop_dirty = true;
@@ -195,8 +196,6 @@ fn fit_mask(
             Ok::<_, String>(())
         })
         .map_err(|error| error.to_string())??;
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = (handle, monitor, cx);
     Ok(())
 }
 
@@ -374,10 +373,7 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                 }).ok()
             });
             let Some(ready) = ready else { return; };
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
             let painted = ready.and_then(rotor_platform::overlay::paint_hidden_window);
-            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-            let painted = ready.map(|_| ());
             cx.update(|cx| {
                 if !cx.global::<ShellState>().capture.session.is_ready(session, monitor) { return; }
                 let result = painted.and_then(|()| {

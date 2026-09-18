@@ -31,16 +31,14 @@ fn search_bounds(screen: Bounds<Pixels>, requested: Size<Pixels>) -> Bounds<Pixe
     )
 }
 
-pub fn utility_options(requested: Size<Pixels>, near_cursor: bool, cx: &App) -> WindowOptions {
+/// Places a small utility window just below and right of the cursor, clamped to
+/// the cursor display's work area.
+pub fn utility_options(requested: Size<Pixels>, cx: &App) -> WindowOptions {
     let (display, cursor) = cursor_display(cx);
     let bounds = if let Some(display) = &display {
         let work = display.visible_bounds();
         let dimensions = requested.min(&work.size);
-        let origin = if near_cursor {
-            cursor.unwrap_or(work.center()) + point(px(12.), px(12.))
-        } else {
-            work.center() - point(dimensions.width / 2., dimensions.height / 2.)
-        };
+        let origin = cursor.unwrap_or(work.center()) + point(px(12.), px(12.));
         Bounds::new(
             point(
                 origin
