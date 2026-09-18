@@ -110,8 +110,8 @@ pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
 
     #[cfg(target_os = "macos")]
     {
-        open_file(file_path)?;
-        Err("MacOS does not support, use normal open instead".into())
+        log::info!("macOS does not support elevated open; opening normally instead");
+        open_file(file_path)
     }
 }
 

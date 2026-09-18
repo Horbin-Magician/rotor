@@ -57,11 +57,19 @@ fn number(dictionary: &CFDictionary, key: &str) -> Option<CFNumber> {
 }
 
 fn window_rect(window: &CFDictionary, z: i32) -> Option<WindowRect> {
+    // Skip windows owned by the current process (mask/pin windows).
+    if number(window, "kCGWindowOwnerPID")
+        .and_then(|pid| pid.to_i64())
+        .is_some_and(|pid| pid == i64::from(std::process::id()))
+    {
+        return None;
+    }
     // Preserve the existing selection filters, including the recording indicator
-    // and windows that the OS does not allow to be shared.
-    let name = value(window, "kCGWindowName")?.downcast::<CFString>()?;
+    // and windows that the OS does not allow to be shared. kCGWindowName is
+    // optional; untitled windows are still selectable.
+    let name = value(window, "kCGWindowName").and_then(|name| name.downcast::<CFString>());
     let owner = value(window, "kCGWindowOwnerName")?.downcast::<CFString>()?;
-    if name == "StatusIndicator" && owner == "Window Server" {
+    if owner == "Window Server" && name.is_some_and(|name| name == "StatusIndicator") {
         return None;
     }
     if number(window, "kCGWindowSharingState")?.to_i64()? == 0 {
@@ -91,17 +99,23 @@ mod tests {
     use super::*;
 
     fn window(name: &str, owner: &str, sharing: i32, x: f64) -> CFDictionary {
+        window_entry(Some(name), owner, sharing, x, None)
+    }
+
+    fn window_entry(
+        name: Option<&str>,
+        owner: &str,
+        sharing: i32,
+        x: f64,
+        pid: Option<i64>,
+    ) -> CFDictionary {
         let bounds = CFDictionary::from_CFType_pairs(&[
             (CFString::new("X"), CFNumber::from(x)),
             (CFString::new("Y"), CFNumber::from(-20.)),
             (CFString::new("Width"), CFNumber::from(800.)),
             (CFString::new("Height"), CFNumber::from(600.)),
         ]);
-        CFDictionary::from_CFType_pairs(&[
-            (
-                CFString::new("kCGWindowName"),
-                CFString::new(name).as_CFType(),
-            ),
+        let mut pairs = vec![
             (
                 CFString::new("kCGWindowOwnerName"),
                 CFString::new(owner).as_CFType(),
@@ -115,8 +129,20 @@ mod tests {
                 CFNumber::from(7).as_CFType(),
             ),
             (CFString::new("kCGWindowBounds"), bounds.as_CFType()),
-        ])
-        .into_untyped()
+        ];
+        if let Some(name) = name {
+            pairs.push((
+                CFString::new("kCGWindowName"),
+                CFString::new(name).as_CFType(),
+            ));
+        }
+        if let Some(pid) = pid {
+            pairs.push((
+                CFString::new("kCGWindowOwnerPID"),
+                CFNumber::from(pid).as_CFType(),
+            ));
+        }
+        CFDictionary::from_CFType_pairs(&pairs).into_untyped()
     }
 
     #[test]
@@ -150,6 +176,22 @@ mod tests {
         assert_eq!(
             rectangles_from_snapshot(&windows).unwrap(),
             [(30, -20, 0, 800, 600)]
+        );
+    }
+
+    #[test]
+    fn untitled_windows_are_kept_and_own_process_windows_are_skipped() {
+        let own = i64::from(std::process::id());
+        let windows = CFArray::from_CFTypes(&[
+            window_entry(Some("Mask"), "Rotor", 1, 0., Some(own)),
+            window_entry(None, "Rotor", 1, 0., Some(own)),
+            window_entry(None, "App", 1, 10., Some(own + 1)),
+            window_entry(None, "Window Server", 1, 20., None),
+        ])
+        .into_untyped();
+        assert_eq!(
+            rectangles_from_snapshot(&windows).unwrap(),
+            [(10, -20, 1, 800, 600), (20, -20, 0, 800, 600)]
         );
     }
 }

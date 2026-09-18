@@ -41,6 +41,7 @@ fn config(id: u32) -> Result<MonitorConfig, String> {
         bounds.size.width,
         bounds.size.height,
         mode.pixel_width(),
+        mode.pixel_height(),
     )
 }
 
@@ -51,6 +52,7 @@ fn config_from_bounds(
     width: f64,
     height: f64,
     pixel_width: u64,
+    pixel_height: u64,
 ) -> Result<MonitorConfig, String> {
     if [x, y]
         .iter()
@@ -65,7 +67,7 @@ fn config_from_bounds(
     // Keep Quartz desktop points separate from native capture pixels. Using
     // the mode's pixel width preserves Retina and scaled-display semantics.
     let scale_factor = pixel_width as f32 / width as f32;
-    let (width, height) = pixel_dimensions(width, height, scale_factor)?;
+    let (width, height) = pixel_dimensions(pixel_width, pixel_height, scale_factor)?;
     Ok(MonitorConfig {
         id,
         x: x as i32,
@@ -76,17 +78,17 @@ fn config_from_bounds(
     })
 }
 
-fn pixel_dimensions(width: u32, height: u32, scale: f32) -> Result<(u32, u32), String> {
+// The mode reports both pixel dimensions; use them directly instead of
+// re-deriving the height from the width scale, which can round differently.
+fn pixel_dimensions(width: u64, height: u64, scale: f32) -> Result<(u32, u32), String> {
     if !scale.is_finite() || scale <= 0. {
         return Err("Invalid display scale".into());
     }
-    let convert = |length: u32| {
-        let pixels = (length as f64 * scale as f64).round();
-        if pixels < 1. || pixels > u32::MAX as f64 {
-            Err("Invalid capture dimensions".to_string())
-        } else {
-            Ok(pixels as u32)
-        }
+    let convert = |pixels: u64| {
+        u32::try_from(pixels)
+            .ok()
+            .filter(|pixels| *pixels >= 1)
+            .ok_or_else(|| "Invalid capture dimensions".to_string())
     };
     Ok((convert(width)?, convert(height)?))
 }
@@ -97,7 +99,7 @@ mod tests {
 
     #[test]
     fn retina_and_external_displays_preserve_ids_and_point_origins() {
-        let retina = config_from_bounds(7, -1512., -20., 1512., 982., 3024).unwrap();
+        let retina = config_from_bounds(7, -1512., -20., 1512., 982., 3024, 1964).unwrap();
         assert_eq!(
             retina,
             MonitorConfig {
@@ -109,22 +111,27 @@ mod tests {
                 scale_factor: 2.,
             }
         );
-        let external = config_from_bounds(9, 0., 0., 1920., 1080., 1920).unwrap();
+        let external = config_from_bounds(9, 0., 0., 1920., 1080., 1920, 1080).unwrap();
         assert_eq!(
             (external.width, external.height, external.scale_factor),
             (1920, 1080, 1.)
         );
+        // Scaled modes report their own pixel height; do not re-derive it.
+        let scaled = config_from_bounds(3, 0., 0., 1680., 1050., 2880, 1801).unwrap();
+        assert_eq!((scaled.width, scaled.height), (2880, 1801));
     }
 
     #[test]
     fn invalid_geometry_and_scales_are_rejected() {
         for scale in [0., -1., f32::NAN, f32::INFINITY] {
-            assert!(pixel_dimensions(1512, 982, scale).is_err());
+            assert!(pixel_dimensions(3024, 1964, scale).is_err());
         }
-        assert!(pixel_dimensions(0, 982, 2.).is_err());
-        assert!(pixel_dimensions(u32::MAX, 982, 2.).is_err());
-        assert!(config_from_bounds(1, f64::NAN, 0., 1., 1., 1).is_err());
-        assert!(config_from_bounds(1, 0., 0., f64::INFINITY, 1., 1).is_err());
-        assert!(config_from_bounds(1, 0., 0., 1., 1., 0).is_err());
+        assert!(pixel_dimensions(0, 1964, 2.).is_err());
+        assert!(pixel_dimensions(3024, 0, 2.).is_err());
+        assert!(pixel_dimensions(u64::from(u32::MAX) + 1, 1964, 2.).is_err());
+        assert!(config_from_bounds(1, f64::NAN, 0., 1., 1., 1, 1).is_err());
+        assert!(config_from_bounds(1, 0., 0., f64::INFINITY, 1., 1, 1).is_err());
+        assert!(config_from_bounds(1, 0., 0., 1., 1., 0, 1).is_err());
+        assert!(config_from_bounds(1, 0., 0., 1., 1., 1, 0).is_err());
     }
 }
