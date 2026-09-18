@@ -8,17 +8,27 @@ use std::{fmt::Write, sync::Arc};
 
 pub struct Renderer {
     fonts: Arc<usvg::fontdb::Database>,
+    /// The family text annotations actually request: `FONT_FAMILY` when it is
+    /// installed, otherwise the first available family.
+    font_family: String,
 }
 impl Renderer {
     pub fn without_fonts() -> Self {
         Self {
             fonts: Arc::new(usvg::fontdb::Database::new()),
+            font_family: FONT_FAMILY.to_owned(),
         }
     }
     /// Load installed fonts once; no application font resources are required.
     pub fn with_system_fonts() -> Result<Self, String> {
         let mut fonts = usvg::fontdb::Database::new();
         fonts.load_system_fonts();
+        Self::with_fonts(fonts)
+    }
+    /// Use only the given faces. usvg's default selector falls back to the
+    /// generic serif family, so both generic families are mapped to the
+    /// resolved family and the SVG requests it by name.
+    pub fn with_fonts(mut fonts: usvg::fontdb::Database) -> Result<Self, String> {
         let fallback = fonts
             .faces()
             .flat_map(|face| &face.families)
@@ -30,14 +40,20 @@ impl Renderer {
                 .iter()
                 .any(|(family, _)| family == FONT_FAMILY)
         });
-        fonts.set_sans_serif_family(if preferred_available {
+        let font_family = if preferred_available {
             FONT_FAMILY.to_owned()
         } else {
             fallback
-        });
+        };
+        fonts.set_sans_serif_family(font_family.clone());
+        fonts.set_serif_family(font_family.clone());
         Ok(Self {
             fonts: Arc::new(fonts),
+            font_family,
         })
+    }
+    pub fn font_family(&self) -> &str {
+        &self.font_family
     }
 
     /// Render the current crop at its requested physical viewport/export size.
@@ -68,12 +84,12 @@ impl Renderer {
             return Err("Annotation font is unavailable".into());
         }
         let options = usvg::Options {
-            font_family: FONT_FAMILY.into(),
+            font_family: self.font_family.clone(),
             fontdb: self.fonts.clone(),
             ..Default::default()
         };
-        let tree =
-            usvg::Tree::from_str(&svg(scene), &options).map_err(|error| error.to_string())?;
+        let tree = usvg::Tree::from_str(&svg(scene, &self.font_family), &options)
+            .map_err(|error| error.to_string())?;
         let sx = output.width as f32 / scene.crop.width as f32;
         let sy = output.height as f32 / scene.crop.height as f32;
         let tx = -(scene.crop.x as f32) * sx;
@@ -188,7 +204,8 @@ fn escaped(value: &str) -> String {
     }
     result
 }
-fn svg(scene: &Scene) -> String {
+fn svg(scene: &Scene, font_family: &str) -> String {
+    let font_family = escaped(font_family);
     let mut svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">", scene.size.width, scene.size.height, scene.size.width, scene.size.height);
     for annotation in &scene.annotations {
         match annotation {
@@ -227,7 +244,7 @@ fn svg(scene: &Scene) -> String {
             } => {
                 let (color, opacity) = paint(*color);
                 for (line, text) in text.lines().enumerate() {
-                    write!(svg, "<text x=\"{:.4}\" y=\"{:.4}\" font-family=\"{FONT_FAMILY}\" font-size=\"{font_size:.4}\" dominant-baseline=\"text-before-edge\" xml:space=\"preserve\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\">{}</text>", origin.x, origin.y + line as f64 * font_size * 1.25, escaped(text)).unwrap();
+                    write!(svg, "<text x=\"{:.4}\" y=\"{:.4}\" font-family=\"{font_family}\" font-size=\"{font_size:.4}\" dominant-baseline=\"text-before-edge\" xml:space=\"preserve\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\">{}</text>", origin.x, origin.y + line as f64 * font_size * 1.25, escaped(text)).unwrap();
                 }
             }
         }
@@ -458,6 +475,73 @@ mod tests {
             .unwrap()
             .to_rgba8();
         assert_eq!(decoded, rendered);
+    }
+
+    #[test]
+    fn text_requests_the_resolved_fallback_family_when_preferred_is_missing() {
+        let mut system = usvg::fontdb::Database::new();
+        system.load_system_fonts();
+        if system.faces().any(|face| {
+            face.families
+                .iter()
+                .any(|(family, _)| family == FONT_FAMILY)
+        }) {
+            assert_eq!(
+                Renderer::with_system_fonts().unwrap().font_family(),
+                FONT_FAMILY
+            );
+        }
+        let latin = [
+            "Arial",
+            "Segoe UI",
+            "Helvetica",
+            "Helvetica Neue",
+            "DejaVu Sans",
+            "Liberation Sans",
+            "Noto Sans",
+        ];
+        let Some(face) = system
+            .faces()
+            .filter(|face| {
+                face.families
+                    .iter()
+                    .all(|(family, _)| family != FONT_FAMILY)
+            })
+            .max_by_key(|face| {
+                face.families
+                    .iter()
+                    .any(|(family, _)| latin.contains(&family.as_str()))
+            })
+        else {
+            return;
+        };
+        let expected = face.families[0].0.clone();
+        let latin_face = face
+            .families
+            .iter()
+            .any(|(family, _)| latin.contains(&family.as_str()));
+        let mut only = usvg::fontdb::Database::new();
+        only.load_font_source(face.source.clone());
+        let renderer = Renderer::with_fonts(only).unwrap();
+        assert_ne!(renderer.font_family(), FONT_FAMILY);
+        assert_eq!(renderer.font_family(), expected);
+        let mut scene = scene(128, 64);
+        scene.annotations.push(Annotation::Text {
+            origin: ImagePoint { x: 5., y: 5. },
+            text: "Rotor".into(),
+            font_size: 20.,
+            color: Color::RED,
+        });
+        let markup = svg(&scene, renderer.font_family());
+        assert!(markup.contains(&format!("font-family=\"{}\"", escaped(&expected))));
+        assert!(!markup.contains(FONT_FAMILY));
+        let rendered = renderer
+            .render(&RgbaImage::new(128, 64), &scene, scene.size)
+            .unwrap();
+        if latin_face {
+            // The Serif-only default fallback would draw nothing here.
+            assert!(rendered.pixels().filter(|pixel| pixel[3] > 0).count() > 50);
+        }
     }
 
     #[test]
