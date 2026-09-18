@@ -49,10 +49,13 @@ impl ExcludedDirs {
     }
 
     fn matches_configured_path(&self, path: &Path) -> bool {
+        if self.paths.is_empty() {
+            return false;
+        }
         let normalized_path = normalize_path(path);
         self.paths
             .iter()
-            .any(|excluded_path| normalized_path.starts_with(excluded_path))
+            .any(|excluded_path| path_starts_with(&normalized_path, excluded_path))
     }
 
     fn has_excluded_name_component(&self, path: &Path) -> bool {
@@ -131,9 +134,28 @@ fn normalize_path(path: &Path) -> PathBuf {
     normalized
 }
 
-#[cfg(not(test))]
+/// Component-wise prefix test. Windows volumes are case-insensitive and NTFS
+/// results carry the on-disk casing, so compare components ignoring case there.
+fn path_starts_with(path: &Path, prefix: &Path) -> bool {
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.starts_with(prefix)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut components = path.components();
+        prefix.components().all(|expected| {
+            components.next().is_some_and(|actual| {
+                actual.as_os_str().to_string_lossy().to_lowercase()
+                    == expected.as_os_str().to_string_lossy().to_lowercase()
+            })
+        })
+    }
+}
+
+/// `HOME` is normally unset on Windows; the standard resolver also reads `USERPROFILE`.
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    std::env::home_dir()
 }
 
 #[cfg(test)]
@@ -158,6 +180,34 @@ mod tests {
         assert!(excluded.is_excluded_name("target"));
         assert!(excluded.is_excluded_path(Path::new("/Users/alice/Library/Caches")));
         assert!(!excluded.is_excluded_path(Path::new("/Users/alice/Documents/Library")));
+    }
+
+    #[test]
+    fn expands_home_with_windows_separators() {
+        let excluded =
+            ExcludedDirs::parse("~\\AppData\\Local\n~", Some(Path::new("C:\\Users\\alice")));
+
+        assert!(excluded.is_excluded_path(Path::new("C:\\Users\\alice\\AppData\\Local\\Temp")));
+        assert!(excluded.is_excluded_path(Path::new("C:\\Users\\alice\\Documents")));
+        assert!(!excluded.is_excluded_path(Path::new("C:\\Users\\bob\\Documents")));
+    }
+
+    #[test]
+    fn home_directory_resolves_without_home_variable() {
+        // Windows sets USERPROFILE rather than HOME; either must be enough.
+        let configured = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+        assert_eq!(home_dir().is_some(), configured.is_some());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn configured_paths_ignore_case_on_windows() {
+        let excluded = ExcludedDirs::parse("C:\\Users\\Alice\\Downloads", None);
+
+        assert!(excluded.is_excluded_path(Path::new("c:\\users\\alice\\downloads\\setup.exe")));
+        assert!(excluded.is_excluded_path(Path::new("C:\\USERS\\ALICE\\DOWNLOADS")));
+        assert!(!excluded.is_excluded_path(Path::new("C:\\Users\\Alice\\Downloads2\\file")));
+        assert!(!excluded.is_excluded_path(Path::new("D:\\Users\\Alice\\Downloads\\file")));
     }
 
     #[test]
