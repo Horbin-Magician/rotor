@@ -194,9 +194,12 @@ impl Services {
         options: ServiceOptions,
     ) -> Result<(Self, Receiver<RuntimeEvent>), String> {
         let startup_warning = crate::quick::actions_from_config(&lock(&config).get_all()).err();
+        // Blocking budget: BACKGROUND_LIMIT general slots plus the long-lived
+        // occupants that never take a slot: the serial OCR inference, the
+        // settings write, the pin persistence step and an update installation.
         let runtime = Builder::new_multi_thread()
             .worker_threads(2)
-            .max_blocking_threads(BACKGROUND_LIMIT + 2)
+            .max_blocking_threads(BACKGROUND_LIMIT + 4)
             .thread_name("rotor-worker")
             .enable_all()
             .build()
@@ -708,17 +711,16 @@ impl Services {
         let current = self.translation_id.clone();
         let events = self.events.clone();
         *previous = Some(self.runtime().spawn(async move {
-            let progress_events = events.clone();
             let progress_id = current.clone();
-            let result = engine::translate_with_config(&config, &text, move |event| {
-                if progress_id.load(Ordering::Acquire) == id.0 {
-                    // A bounded callback sink provides backpressure. The UI
-                    // drains it independently of window visibility.
-                    let _ = progress_events.send_blocking(RuntimeEvent::Translation { id, event });
-                }
-            })
-            .await
-            .map_err(|error| config.redact_error(error.to_string()));
+            let relay = ProgressRelay::start(
+                events.clone(),
+                move || progress_id.load(Ordering::Acquire) == id.0,
+                move |event| RuntimeEvent::Translation { id, event },
+            );
+            let result = engine::translate_with_config(&config, &text, relay.callback())
+                .await
+                .map_err(|error| config.redact_error(error.to_string()));
+            relay.finish().await;
             if current.load(Ordering::Acquire) == id.0 {
                 let _ = events
                     .send(RuntimeEvent::TranslationFinished { id, result })
@@ -860,6 +862,9 @@ impl Services {
         F: FnOnce() -> Result<T, String> + Send + 'static,
         E: FnOnce(OperationId, Result<T, String>) -> RuntimeEvent + Send + 'static,
     {
+        // Hold the task list while spawning so shutdown cannot drain it
+        // between the running check and the push, which would leak the task.
+        let mut tasks = lock(&self.background);
         self.ensure_running()?;
         let queued = self
             .ocr_slots
@@ -898,7 +903,6 @@ impl Services {
                 let _ = events.send(event(id, result)).await;
             }
         });
-        let mut tasks = lock(&self.background);
         tasks.retain(|task| !task.is_finished());
         tasks.push(task);
         Ok(id)
@@ -915,6 +919,7 @@ impl Services {
         F: FnOnce() -> Result<T, String> + Send + 'static,
         E: FnOnce(OperationId, Result<T, String>) -> RuntimeEvent + Send + 'static,
     {
+        let mut tasks = lock(&self.background);
         self.ensure_running()?;
         let permit = self
             .slots
@@ -943,7 +948,6 @@ impl Services {
                 let _ = events.send(event(id, result)).await;
             }
         });
-        let mut tasks = lock(&self.background);
         tasks.retain(|task| !task.is_finished());
         tasks.push(task);
         Ok(id)
@@ -1023,6 +1027,56 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Forwards synchronous streaming callbacks to the bounded event queue from a
+/// separate task. The callback never blocks a runtime worker when the UI is
+/// slow, stale events are rejected before they are queued, and aborting the
+/// request also stops delivery. Events keep their callback order.
+struct ProgressRelay {
+    progress: Sender<TranslateStreamEvent>,
+    forward: JoinHandle<()>,
+}
+
+impl ProgressRelay {
+    fn start(
+        events: Sender<RuntimeEvent>,
+        accept: impl Fn() -> bool + Send + 'static,
+        publish: impl Fn(TranslateStreamEvent) -> RuntimeEvent + Send + 'static,
+    ) -> Self {
+        let (progress, relay) = async_channel::unbounded();
+        let forward = tokio::spawn(async move {
+            while let Ok(event) = relay.recv().await {
+                // Identities only move forward, so a stale relay stays stale;
+                // closing it makes later callbacks drop their events at once.
+                if !accept() || events.send(publish(event)).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Self { progress, forward }
+    }
+
+    fn callback(&self) -> impl Fn(TranslateStreamEvent) + Send + Sync + 'static {
+        let progress = self.progress.clone();
+        move |event| {
+            let _ = progress.try_send(event);
+        }
+    }
+
+    /// Delivers every accepted event before the caller publishes completion.
+    async fn finish(mut self) {
+        self.progress.close();
+        // Awaiting by reference keeps the abort-on-drop guard if the request
+        // is cancelled while the queue is still draining.
+        let _ = (&mut self.forward).await;
+    }
+}
+
+impl Drop for ProgressRelay {
+    fn drop(&mut self) {
+        self.forward.abort();
+    }
 }
 
 #[cfg(test)]

@@ -450,6 +450,119 @@ fn shutdown_wakes_canvas_requests_waiting_for_capacity() {
 }
 
 #[test]
+fn pin_store_recovers_after_a_persistence_panic() {
+    let directory = tempfile::tempdir().unwrap();
+    let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+    services
+        .create_pin(Arc::new(RgbaImage::new(2, 3)), pin_config())
+        .unwrap();
+    let receive = || {
+        services.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        })
+    };
+    assert!(matches!(
+        receive(),
+        RuntimeEvent::Pin(crate::PinEvent::Created { result: Ok(_), .. })
+    ));
+    let failed = next_operation();
+    services
+        .pins
+        .submit(PinCommand::Panic { id: failed })
+        .unwrap();
+    assert!(
+        matches!(receive(), RuntimeEvent::Pin(crate::PinEvent::Restored { id, result: Err(_), .. }) if id == failed)
+    );
+    let restored = services.restore_pins().unwrap();
+    let RuntimeEvent::Pin(crate::PinEvent::Restored {
+        id,
+        result: Ok(pins),
+        ..
+    }) = receive()
+    else {
+        panic!("expected the reloaded store to serve later commands");
+    };
+    assert_eq!(id, restored);
+    assert_eq!(pins.pins.len(), 1);
+    assert!(pins.warnings.is_empty());
+}
+
+#[test]
+fn progress_relay_never_blocks_callbacks_and_stops_with_its_request() {
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (events, receiver) = async_channel::bounded(1);
+    let accepted = Arc::new(AtomicBool::new(true));
+    let gate = accepted.clone();
+    let publish = |event| RuntimeEvent::Chat {
+        id: OperationId(1),
+        event,
+    };
+    let relay = runtime.block_on(async {
+        ProgressRelay::start(
+            events.clone(),
+            move || gate.load(Ordering::Acquire),
+            publish,
+        )
+    });
+    let callback = relay.callback();
+    // Far more events than the bounded queue holds return immediately.
+    for index in 0..EVENT_CAPACITY * 4 {
+        callback(TranslateStreamEvent::Delta {
+            content: index.to_string(),
+        });
+    }
+    runtime.block_on(async {
+        for index in 0..EVENT_CAPACITY * 4 {
+            let event = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(event, RuntimeEvent::Chat { id: OperationId(1), event: TranslateStreamEvent::Delta { content } } if content == index.to_string())
+            );
+        }
+    });
+    // Stale events are rejected before they reach the queue.
+    accepted.store(false, Ordering::Release);
+    callback(TranslateStreamEvent::Delta {
+        content: "stale".into(),
+    });
+    runtime.block_on(relay.finish());
+    assert!(receiver.try_recv().is_err());
+    // Dropping the relay stops delivery of events still waiting for capacity.
+    let relay = runtime.block_on(async { ProgressRelay::start(events, || true, publish) });
+    let callback = relay.callback();
+    for content in ["queued", "blocked"] {
+        callback(TranslateStreamEvent::Delta {
+            content: content.into(),
+        });
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !receiver.is_full() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    drop(relay);
+    // The relay owns the only remaining event sender, so a closed receiver
+    // marks the point where the aborted forwarder has actually stopped.
+    while !receiver.is_closed() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(
+        matches!(receiver.try_recv().unwrap(), RuntimeEvent::Chat { event: TranslateStreamEvent::Delta { content }, .. } if content == "queued")
+    );
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
 fn final_pin_snapshot_bypasses_full_command_and_event_queues() {
     let directory = tempfile::tempdir().unwrap();
     let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());

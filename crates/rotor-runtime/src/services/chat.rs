@@ -20,12 +20,15 @@ impl Services {
         *task = Some((
             id,
             self.runtime().spawn(async move {
-                let progress = events.clone();
-                let result = engine::chat_with_config(&config, &messages, move |event| {
-                    let _ = progress.send_blocking(RuntimeEvent::Chat { id, event });
-                })
-                .await
-                .map_err(|error| config.redact_error(error.to_string()));
+                let relay = ProgressRelay::start(
+                    events.clone(),
+                    || true,
+                    move |event| RuntimeEvent::Chat { id, event },
+                );
+                let result = engine::chat_with_config(&config, &messages, relay.callback())
+                    .await
+                    .map_err(|error| config.redact_error(error.to_string()));
+                relay.finish().await;
                 let _ = events.send(RuntimeEvent::ChatFinished { id, result }).await;
             }),
         ));
