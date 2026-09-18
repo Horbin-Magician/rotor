@@ -172,6 +172,12 @@ impl DirectoryTree {
     }
 }
 
+/// Snapshot lengths are sixteen-bit; an oversized name must fail the write
+/// rather than be silently truncated into an unreadable snapshot.
+fn index_length(length: usize) -> io::Result<u16> {
+    u16::try_from(length).map_err(|_| cache::invalid("Index name too long"))
+}
+
 fn path_component_names(path: &Path) -> Vec<String> {
     let mut names = Vec::new();
     let mut pending_prefix = None;
@@ -481,20 +487,20 @@ impl FileMap {
                     continue;
                 }
                 writer.write_all(&remap[node.parent_id as usize].to_be_bytes())?;
-                writer.write_all(&(node.name.len() as u16).to_be_bytes())?;
+                writer.write_all(&index_length(node.name.len())?.to_be_bytes())?;
                 writer.write_all(node.name.as_bytes())?;
             }
 
             writer.write_all(&(self.main_set.len() as u32).to_be_bytes())?;
             for file in self.iter() {
                 writer.write_all(&remap[file.parent_id as usize].to_be_bytes())?;
-                writer.write_all(&(file.file_name.len() as u16).to_be_bytes())?;
+                writer.write_all(&index_length(file.file_name.len())?.to_be_bytes())?;
                 writer.write_all(file.file_name.as_bytes())?;
 
                 let aliases = file.aliases.as_deref().unwrap_or(&[]);
-                writer.write_all(&(aliases.len() as u16).to_be_bytes())?;
+                writer.write_all(&index_length(aliases.len())?.to_be_bytes())?;
                 for alias in aliases {
-                    writer.write_all(&(alias.len() as u16).to_be_bytes())?;
+                    writer.write_all(&index_length(alias.len())?.to_be_bytes())?;
                     writer.write_all(alias.as_bytes())?;
                 }
             }
@@ -735,6 +741,26 @@ mod tests {
         );
 
         let _ = fs::remove_file(index_path);
+    }
+
+    #[test]
+    fn oversized_names_fail_to_save_instead_of_truncating() {
+        let index = super::super::release_tests::IndexFile::new();
+        let mut file_map = FileMap::new();
+        file_map.insert("short.txt".into(), "synthetic".into());
+        file_map.save(index.path()).unwrap();
+
+        file_map.insert("x".repeat(u16::MAX as usize + 1), "synthetic".into());
+        let error = file_map.save(index.path()).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        // The failed write leaves the previous snapshot readable.
+        let mut restored = FileMap::new();
+        restored.read(index.path()).unwrap();
+        assert_eq!(search_names(&restored, "short"), vec!["short.txt"]);
+
+        let mut file_map = FileMap::new();
+        file_map.insert("file.txt".into(), "y".repeat(u16::MAX as usize + 1));
+        assert!(file_map.save(index.path()).is_err());
     }
 
     #[test]

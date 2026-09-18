@@ -16,6 +16,9 @@ use super::{cache, metadata_modified_at, SearchCursor, SearchPage, VolumeIndexSt
 
 const EVENT_CAPACITY: usize = 1024;
 const MAX_EVENT_PATHS: usize = 128;
+/// A busy volume can overflow the event queue while a recovery scan runs.
+/// Drain the queue and rescan this many times before reporting the refresh failed.
+const MAX_RECOVERY_RESCANS: usize = 2;
 
 #[derive(Debug, Clone, Copy)]
 enum FileAction {
@@ -435,21 +438,22 @@ impl Volume {
         }
         self.start_watching()
             .map_err(|error| io::Error::other(error.to_string()))?;
-        self.handle_file_events_with_cancel(cancel)?;
-        if self.rescan_required.load(Ordering::Acquire) {
-            if let Err(error) = self.build_index_with_cancel(cancel) {
-                self.rescan_required.store(true, Ordering::Release);
-                return Err(error);
+        for rescan in 0..=MAX_RECOVERY_RESCANS {
+            self.handle_file_events_with_cancel(cancel)?;
+            if !self.rescan_required.load(Ordering::Acquire) {
+                return Ok(());
             }
+            if rescan == MAX_RECOVERY_RESCANS {
+                break;
+            }
+            // A failed scan already flags the rescan and releases the index.
+            self.build_index_with_cancel(cancel)?;
             self.serialization_read_with_cancel(cancel)
                 .map_err(|error| io::Error::other(error.to_string()))?;
-            if self.rescan_required.load(Ordering::Acquire) {
-                return Err(io::Error::other(
-                    "Filesystem changed too quickly during recovery scan; retry refresh",
-                ));
-            }
         }
-        Ok(())
+        Err(io::Error::other(
+            "Filesystem changed too quickly during recovery scans; retry refresh",
+        ))
     }
 
     // serializate file_map to reduce memory usage
@@ -569,8 +573,15 @@ fn enqueue_event(
             && !excluded.is_excluded_path(path)
             && !has_named_component(path, &["cache", "caches"])
     });
-    if !event.paths.is_empty() && sender.try_send(Ok(event)).is_err() {
-        rescan.store(true, Ordering::Release);
+    if event.paths.is_empty() {
+        return;
+    }
+    match sender.try_send(Ok(event)) {
+        Ok(()) => {}
+        Err(mpsc::TrySendError::Full(_)) => rescan.store(true, Ordering::Release),
+        // A replaced watcher may still deliver in-flight callbacks; the new
+        // watcher and its scan already cover them.
+        Err(mpsc::TrySendError::Disconnected(_)) => {}
     }
 }
 
@@ -776,6 +787,47 @@ mod event_tests {
         }
         assert!(rescan.load(Ordering::Acquire));
         assert_eq!(rx.try_iter().count(), 2);
+    }
+
+    #[test]
+    fn stale_watcher_callbacks_do_not_request_rescan() {
+        let (tx, rx) = mpsc::sync_channel(2);
+        drop(rx);
+        let rescan = AtomicBool::new(false);
+        enqueue_event(
+            &tx,
+            &rescan,
+            &ExcludedDirs::default(),
+            Ok(
+                Event::new(EventKind::Create(notify::event::CreateKind::File))
+                    .add_path("/tmp/visible".into()),
+            ),
+        );
+        assert!(!rescan.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn requested_rescan_recovers_and_clears_the_flag() {
+        let temp = tempfile::Builder::new()
+            .prefix("rotor-rescan-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path().join("files");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("first.txt"), b"fixture").unwrap();
+        let mut volume = Volume::new(root.to_string_lossy().into_owned());
+        volume.cache_path = temp.path().join("cache.idx");
+        volume.update_index().unwrap();
+
+        fs::write(root.join("second.txt"), b"fixture").unwrap();
+        volume.rescan_required.store(true, Ordering::Release);
+        volume.update_index().unwrap();
+        assert!(!volume.rescan_required.load(Ordering::Acquire));
+        let page = volume
+            .find("second".into(), None, 20, Arc::new(AtomicBool::new(false)))
+            .unwrap();
+        assert_eq!(page.items.len(), 1);
+        volume.stop_watching();
     }
 
     #[test]
