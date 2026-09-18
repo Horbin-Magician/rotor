@@ -253,6 +253,70 @@ fn automatic_shortcut_save_is_not_complete_until_the_ui_confirms_the_transaction
 }
 
 #[test]
+fn unanswered_shortcut_preparation_times_out_and_still_writes_in_order() {
+    use super::settings_worker::COORDINATION_TIMEOUT;
+    let (_directory, _config, services, events) = setup();
+    services.coordinate_shortcuts(true);
+    let id = services
+        .save_settings_coalesced(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
+        .unwrap();
+    let later = services.save_settings(patch("after")).unwrap();
+    let receive = || {
+        services.runtime().block_on(async {
+            tokio::time::timeout(COORDINATION_TIMEOUT + Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        })
+    };
+    let RuntimeEvent::SettingsCoordination(SettingsCoordination::Prepare {
+        id: received,
+        reply: unanswered,
+        ..
+    }) = receive()
+    else {
+        panic!("expected shortcut preparation");
+    };
+    assert_eq!(received, id);
+    // The shell keeps the preparation pending without answering.
+    let started = std::time::Instant::now();
+    let RuntimeEvent::SettingsCoordination(SettingsCoordination::Finish {
+        id: received,
+        committed,
+        reply,
+    }) = receive()
+    else {
+        panic!("expected completion after the preparation timeout");
+    };
+    assert!(started.elapsed() >= COORDINATION_TIMEOUT - Duration::from_millis(100));
+    assert_eq!(received, id);
+    assert!(committed);
+    reply.send(Ok(())).unwrap();
+    match receive() {
+        RuntimeEvent::SettingsSaved {
+            id: received,
+            result,
+        } => {
+            assert_eq!(received, id);
+            assert_eq!(result.unwrap()["shortcut_search"], "Ctrl+Shift+X");
+        }
+        _ => panic!("expected save receipt despite the silent shell"),
+    }
+    match receive() {
+        RuntimeEvent::SettingsSaved {
+            id: received,
+            result,
+        } => {
+            assert_eq!(received, later);
+            assert_eq!(result.unwrap()["fixture_value"], "after");
+        }
+        _ => panic!("expected the later write to follow"),
+    }
+    // A late answer is harmless.
+    assert!(unanswered.send(Ok(())).is_err());
+}
+
+#[test]
 fn local_shortcut_validation_is_atomic_and_allows_explicit_disabling() {
     let (_directory, _config, services, events) = setup();
     let before = services.settings();

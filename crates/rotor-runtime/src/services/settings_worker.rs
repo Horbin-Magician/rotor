@@ -2,11 +2,16 @@
 use super::{lock, OperationId, RuntimeEvent};
 use async_channel::{Receiver, Sender};
 use rotor_common::{Config, ConfigService};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex, Weak,
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, Weak,
+    },
+    time::Duration,
 };
 use tokio::sync::oneshot;
+
+pub(super) const COORDINATION_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(super) enum SettingsCommand {
     Save {
@@ -115,9 +120,7 @@ pub(super) async fn settings_loop(
                         .await
                         .is_ok()
                     {
-                        response
-                            .await
-                            .unwrap_or_else(|_| Err("Shortcut coordinator stopped".into()))
+                        await_coordination(response, "preparation").await
                     } else {
                         Err("Shortcut coordinator is unavailable".into())
                     };
@@ -158,9 +161,7 @@ pub(super) async fn settings_loop(
                         .await
                         .is_ok()
                     {
-                        response
-                            .await
-                            .unwrap_or_else(|_| Err("Shortcut coordinator stopped".into()))
+                        await_coordination(response, "completion").await
                     } else {
                         Err("Shortcut coordinator is unavailable".into())
                     };
@@ -179,6 +180,23 @@ pub(super) async fn settings_loop(
                 let _ = sender.send(());
             }
             SettingsCommand::Coalesced(_) => unreachable!("coalesced write was resolved above"),
+        }
+    }
+}
+
+/// An unresponsive shell must not stall every later accepted write, so after
+/// the timeout the write proceeds as if the shell had not coordinated it.
+async fn await_coordination(
+    response: oneshot::Receiver<Result<(), String>>,
+    stage: &str,
+) -> Result<(), String> {
+    match tokio::time::timeout(COORDINATION_TIMEOUT, response).await {
+        Ok(reply) => reply.unwrap_or_else(|_| Err("Shortcut coordinator stopped".into())),
+        Err(_) => {
+            log::warn!(
+                "Shortcut coordinator did not answer {stage} within {COORDINATION_TIMEOUT:?}; continuing without it"
+            );
+            Ok(())
         }
     }
 }
