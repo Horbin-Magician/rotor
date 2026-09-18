@@ -164,7 +164,7 @@ fn image_to_scaled_gray(
     let dst_width = src_width.div_ceil(scale_factor);
     let dst_height = src_height.div_ceil(scale_factor);
 
-    let mut gray_data = vec![0u8; (dst_width * dst_height) as usize];
+    let mut gray_data = vec![0u8; dst_width as usize * dst_height as usize];
     let src_width_usize = src_width as usize;
     let scale_factor_usize = scale_factor as usize;
 
@@ -306,14 +306,14 @@ fn find_bounding_boxes(
     cancelled: &impl Fn() -> bool,
 ) -> Result<Vec<(u32, u32, u32, u32)>, String> {
     let (width, height) = img.dimensions();
-    let mut visited = vec![false; (width * height) as usize];
+    let mut visited = vec![false; width as usize * height as usize];
     let mut boxes = Vec::new();
     let img_data = img.as_raw();
 
     for y in 0..height {
         check_cancelled(cancelled)?;
         for x in 0..width {
-            let idx = (y * width + x) as usize;
+            let idx = y as usize * width as usize + x as usize;
             if img_data[idx] > 64 && !visited[idx] {
                 if let Some(rect) = flood_fill_bbox(
                     img_data,

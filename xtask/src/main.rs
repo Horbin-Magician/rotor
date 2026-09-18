@@ -18,9 +18,15 @@ fn root() -> PathBuf {
         .to_path_buf()
 }
 fn version() -> Result<String> {
-    let cargo: toml::Value = fs::read_to_string(root().join("Cargo.toml"))?.parse()?;
-    let version = cargo["workspace"]["package"]["version"]
-        .as_str()
+    workspace_version(&fs::read_to_string(root().join("Cargo.toml"))?)
+}
+fn workspace_version(cargo: &str) -> Result<String> {
+    let cargo: toml::Value = cargo.parse()?;
+    let version = cargo
+        .get("workspace")
+        .and_then(|workspace| workspace.get("package"))
+        .and_then(|package| package.get("version"))
+        .and_then(toml::Value::as_str)
         .ok_or("missing workspace version")?
         .to_string();
     semver::Version::parse(&version)?;
@@ -123,13 +129,20 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
     let parsed = semver::Version::parse(&version)?;
     let mac_version = format!("{}.{}.{}", parsed.major, parsed.minor, parsed.patch);
     let mut config: toml::Value = fs::read_to_string(root().join("native/app.toml"))?.parse()?;
-    config["product_name"] = info.product_name.clone().into();
-    config["identifier"] = info.identifier.clone().into();
-    config["data_directory"] = info.profile_directory.clone().into();
-    config
+    let table = config
         .as_table_mut()
-        .unwrap()
-        .insert("production".into(), production.into());
+        .ok_or("native/app.toml is not a table")?;
+    table.insert("product_name".into(), info.product_name.clone().into());
+    table.insert("identifier".into(), info.identifier.clone().into());
+    table.insert(
+        "data_directory".into(),
+        info.profile_directory.clone().into(),
+    );
+    table.insert("production".into(), production.into());
+    let minimum_macos = config
+        .get("minimum_macos")
+        .and_then(toml::Value::as_str)
+        .ok_or("missing minimum_macos")?;
     fs::create_dir(directory)?;
     let (executable_dir, resource_dir) = if cfg!(target_os = "macos") {
         let contents = directory.join(format!("{}.app/Contents", info.product_name));
@@ -147,12 +160,7 @@ fn stage(directory: &Path, production: bool) -> Result<()> {
             ("CFBundleVersion", &mac_version),
             ("RotorVersion", &version),
             ("CFBundleIconFile", "icon.icns"),
-            (
-                "LSMinimumSystemVersion",
-                config["minimum_macos"]
-                    .as_str()
-                    .ok_or("missing minimum_macos")?,
-            ),
+            ("LSMinimumSystemVersion", minimum_macos),
         ] {
             dictionary.insert(key.into(), plist::Value::String(value.into()));
         }
@@ -334,6 +342,20 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_workspace_version_is_an_error_not_a_panic() {
+        for cargo in ["", "[workspace]\n", "[workspace.package]\nname = 'x'\n"] {
+            assert_eq!(
+                workspace_version(cargo).unwrap_err().to_string(),
+                "missing workspace version"
+            );
+        }
+        assert!(workspace_version("[workspace.package]\nversion = 'x'\n").is_err());
+        assert_eq!(
+            workspace_version("[workspace.package]\nversion = '3.1.0'\n").unwrap(),
+            "3.1.0"
+        );
+    }
     #[test]
     fn manifests_detect_modified_missing_and_extra_resources() {
         let directory = tempfile::tempdir().unwrap();
