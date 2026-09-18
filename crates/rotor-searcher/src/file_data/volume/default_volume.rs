@@ -357,10 +357,7 @@ impl Volume {
             sys_time.elapsed().unwrap_or_default().as_millis()
         );
 
-        if let Err(e) = self.start_watching() {
-            log::error!("{} Failed to start file watching: {:?}", self.drive, e);
-        }
-
+        // The watcher was already restarted before the walk started.
         self.loaded = true;
         let result = self.serialization_write();
         self.release_index_without_save();

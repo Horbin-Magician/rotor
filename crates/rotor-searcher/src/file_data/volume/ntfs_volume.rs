@@ -1,13 +1,11 @@
 use super::super::excluded_dirs::ExcludedDirs;
+use super::cache::check_cancel;
 use super::ntfs_file_map::FileMap;
 use super::{cache, metadata_modified_at, usn, SearchCursor, SearchPage, VolumeIndexStatus};
 use std::error::Error;
 use std::ffi::CString;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use std::{fs, io};
+use std::io;
+use std::sync::{atomic::AtomicBool, Arc};
 use windows::Win32::{
     Foundation,
     Storage::FileSystem,
@@ -30,16 +28,6 @@ fn os_error(error: windows::core::Error) -> io::Error {
 }
 fn is_journal_inactive(error: &io::Error) -> bool {
     error.raw_os_error() == Some(Foundation::ERROR_JOURNAL_NOT_ACTIVE.0 as i32)
-}
-fn check_cancel(cancel: Option<&AtomicBool>) -> io::Result<()> {
-    if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
-        Err(io::Error::new(
-            io::ErrorKind::Interrupted,
-            "Index operation cancelled",
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 pub struct Volume {
@@ -197,8 +185,9 @@ impl Volume {
     }
 
     /// Startup can reuse a verified snapshot; an explicit rebuild still enumerates MFT.
+    /// The caller labels the volume, so this refresh leaves the error unprefixed.
     pub fn initialize_index(&mut self, cancel: &AtomicBool) -> io::Result<()> {
-        let result = self.update_index_with_cancel(Some(cancel)).and_then(|_| {
+        let result = self.refresh_index(Some(cancel)).and_then(|_| {
             check_cancel(Some(cancel))?;
             self.release_index()
         });
@@ -325,11 +314,18 @@ impl Volume {
     }
 
     pub fn update_index_with_cancel(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
+        self.refresh_index(cancel)
+            .map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", self.drive)))
+    }
+
+    /// Refresh the index, dropping it on failure. The error is not labelled with
+    /// the drive: callers that report it unlabelled add the prefix themselves.
+    fn refresh_index(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
         let result = self.update_index_inner(cancel);
         if result.is_err() {
             self.clear_index();
         }
-        result.map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", self.drive)))
+        result
     }
 
     fn update_index_inner(&mut self, cancel: Option<&AtomicBool>) -> io::Result<()> {
@@ -470,9 +466,7 @@ impl Volume {
             if self.file_map.is_empty() {
                 return Ok(());
             }
-            if let Some(directory) = path.parent() {
-                fs::create_dir_all(directory)?;
-            }
+            // `cache::write` creates the parent directory before writing.
             self.file_map.save(&path.to_string_lossy())?;
             self.saved_item_count = self.file_map.len();
             Ok(())
@@ -506,6 +500,7 @@ impl Volume {
 mod tests {
     use super::super::release_tests::IndexFile;
     use super::*;
+    use std::fs;
 
     fn synthetic_volume() -> Volume {
         // Construct directly to avoid configuration/profile reads and drive I/O.

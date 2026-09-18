@@ -79,21 +79,6 @@ pub enum FileState {
 
 pub(crate) type SharedFileState = Arc<Mutex<FileState>>;
 
-impl FileState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            FileState::Unavailable => "unavailable",
-            FileState::Unbuild => "unbuilt",
-            FileState::Building => "building",
-            FileState::Released => "released",
-            FileState::Loading => "loading",
-            FileState::Ready => "ready",
-            FileState::Partial => "partial",
-            FileState::Error => "error",
-        }
-    }
-}
-
 /// Cancellation (Release, Init or Shutdown pre-empting the work) is not a
 /// failure: interrupted volumes already dropped their index, so nothing was
 /// loaded and the follow-up command sees a released index rather than an error.
@@ -636,8 +621,8 @@ impl FileData {
     /// Checkpoint and drop every volume index. With a timeout, volumes that
     /// have not finished by the deadline are abandoned rather than awaited.
     fn release_index_within(&mut self, timeout: Option<Duration>) -> bool {
-        self.update_valid_vols();
-
+        // Only the existing volume packs are released; re-enumerating drives here
+        // would block on network volumes without changing what gets checkpointed.
         self.reset_search_results();
         self.loaded = false;
         let (result_sender, result_receiver) = mpsc::channel();
@@ -864,7 +849,6 @@ mod tests {
                         file_path: "fixture/file".into(),
                         file_name: "file".into(),
                         rank: 0,
-                        icon: None,
                         alias: None,
                     }],
                     cursor: None,
