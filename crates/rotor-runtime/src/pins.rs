@@ -28,7 +28,6 @@ pub enum PinEvent {
     },
     Restored {
         id: OperationId,
-        reveal: bool,
         result: Result<RestoredPins, String>,
     },
     Created {
@@ -68,8 +67,6 @@ pub(crate) enum PinCommand {
     },
     Restore {
         id: OperationId,
-        include_hidden: bool,
-        excluded_ids: Vec<u32>,
     },
     Create {
         id: OperationId,
@@ -100,11 +97,8 @@ impl PinCommand {
                 id: *id,
                 result: Err(error),
             },
-            Self::Restore {
-                id, include_hidden, ..
-            } => PinEvent::Restored {
+            Self::Restore { id } => PinEvent::Restored {
                 id: *id,
-                reveal: *include_hidden,
                 result: Err(error),
             },
             Self::Create { id, .. } | Self::CreateFromCapture { id, .. } => PinEvent::Created {
@@ -125,7 +119,6 @@ impl PinCommand {
             #[cfg(test)]
             Self::Panic { id } => PinEvent::Restored {
                 id: *id,
-                reveal: false,
                 result: Err(error),
             },
         }
@@ -304,15 +297,10 @@ fn execute(store: &mut Result<PinStore, String>, command: PinCommand) -> PinEven
                 export_frame(store, pin_id, &image, target)
             })(),
         },
-        PinCommand::Restore {
+        PinCommand::Restore { id } => PinEvent::Restored {
             id,
-            include_hidden,
-            excluded_ids,
-        } => PinEvent::Restored {
-            id,
-            reveal: include_hidden,
             result: store.as_ref().map_err(Clone::clone).map(|store| {
-                let (pins, warnings) = store.load_pins_for_restore(include_hidden, &excluded_ids);
+                let (pins, warnings) = store.load_pins();
                 RestoredPins { pins, warnings }
             }),
         },

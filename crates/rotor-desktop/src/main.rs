@@ -875,7 +875,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                                             capture::report(error, cx);
                                         }
                                     }
-                                    Command::ShowPins => pins::show_all(cx),
                                     Command::Shortcut { .. } | Command::RecordedShortcut { .. } => {
                                         unreachable!("shortcut was resolved before dispatch")
                                     }

@@ -15,8 +15,8 @@ pub use capture::{
     prepare_image, prepare_image_cancellable,
 };
 pub use pin::{
-    PinActivation, PinBounds, PinBoundsSetter, PinCursorReader, PinInit, PinPointerCapture,
-    PinPositionReader, PinView,
+    PinActivation, PinBounds, PinBoundsSetter, PinCursorReader, PinInit, PinMinimizedReader,
+    PinPointerCapture, PinPositionReader, PinView,
 };
 pub use searcher::SearchView;
 pub use settings::{SettingsView, settings_title};

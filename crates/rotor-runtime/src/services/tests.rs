@@ -89,7 +89,7 @@ fn ocr_queue_is_bounded_isolated_and_skips_cancelled_work() {
 }
 
 #[test]
-fn hidden_pin_restore_is_explicit_preserves_ids_and_does_not_rewrite_records() {
+fn minimized_pin_restore_preserves_ids_and_does_not_rewrite_records() {
     let directory = tempfile::tempdir().unwrap();
     let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
     let mut config = pin_config();
@@ -115,25 +115,22 @@ fn hidden_pin_restore_is_explicit_preserves_ids_and_does_not_rewrite_records() {
     assert_eq!(id, created_id);
     let record_path = directory.path().join("pins/record.toml");
     let record = std::fs::read(&record_path).unwrap();
-    for (request, expected_reveal, expected_count) in [
-        (services.restore_pins().unwrap(), false, 0),
-        (services.restore_hidden_pins(Vec::new()).unwrap(), true, 1),
-        (services.restore_hidden_pins(vec![pin.id]).unwrap(), true, 0),
-    ] {
-        let RuntimeEvent::Pin(crate::PinEvent::Restored {
-            id,
-            reveal,
-            result: Ok(restored),
-        }) = receive()
-        else {
-            panic!("expected restored pins");
-        };
-        assert_eq!(id, request);
-        assert_eq!(reveal, expected_reveal);
-        assert_eq!(restored.pins.len(), expected_count);
-        assert!(restored.warnings.is_empty());
-        assert_eq!(std::fs::read(&record_path).unwrap(), record);
-    }
+    // Minimizing a pin is a window state, so restoring serves it like any
+    // other pin and leaves its record untouched.
+    let request = services.restore_pins().unwrap();
+    let RuntimeEvent::Pin(crate::PinEvent::Restored {
+        id,
+        result: Ok(restored),
+    }) = receive()
+    else {
+        panic!("expected restored pins");
+    };
+    assert_eq!(id, request);
+    assert_eq!(restored.pins.len(), 1);
+    assert_eq!(restored.pins[0].id, pin.id);
+    assert!(restored.pins[0].config.minimized);
+    assert!(restored.warnings.is_empty());
+    assert_eq!(std::fs::read(&record_path).unwrap(), record);
 }
 
 #[test]
@@ -590,8 +587,6 @@ fn final_pin_snapshot_bypasses_full_command_and_event_queues() {
                     .sender
                     .send(PinCommand::Restore {
                         id: next_operation(),
-                        include_hidden: false,
-                        excluded_ids: Vec::new(),
                     })
                     .await
                     .unwrap();

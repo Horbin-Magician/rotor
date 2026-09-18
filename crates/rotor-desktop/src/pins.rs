@@ -38,12 +38,10 @@ pub struct PinWindows {
     next: u64,
     deferred: Vec<DeferredPin>,
     restoring: Option<Task<()>>,
-    reveal_request: Option<OperationId>,
 }
 pub fn stop(cx: &mut App) {
     let state = cx.global_mut::<ShellState>();
     state.pins.restoring = None;
-    state.pins.reveal_request = None;
     state.pins.deferred.clear();
 }
 fn activate_pin(window: &mut Window) -> Result<(), String> {
@@ -75,38 +73,6 @@ pub fn final_records(cx: &App) -> Vec<(u32, ShotterConfig)> {
                 .and_then(|view| view.read(cx).shutdown_record())
         })
         .collect()
-}
-pub fn show_all(cx: &mut App) {
-    drain_deferred(cx);
-    if cx
-        .global::<ShellState>()
-        .capture
-        .session
-        .generation()
-        .is_some()
-    {
-        return;
-    }
-    for (handle, view) in views(cx) {
-        let _ = handle.update(cx, |_, window, cx| {
-            let _ = crate::capture::show(window);
-            let _ = view.update(cx, |view, cx| view.reveal(window, cx));
-        });
-    }
-    if cx.global::<ShellState>().pins.reveal_request.is_none() {
-        let excluded_ids = views(cx)
-            .into_iter()
-            .filter_map(|(_, view)| view.upgrade().and_then(|view| view.read(cx).persisted_id()))
-            .collect();
-        match cx
-            .global::<ShellState>()
-            .services
-            .restore_hidden_pins(excluded_ids)
-        {
-            Ok(id) => cx.global_mut::<ShellState>().pins.reveal_request = Some(id),
-            Err(error) => crate::capture::report(error, cx),
-        }
-    }
 }
 pub fn from_capture(
     image: Arc<image::RgbaImage>,
@@ -144,12 +110,7 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
             pin.complete_creation(*id, result);
         }
     }
-    if let RuntimeEvent::Pin(PinEvent::Restored { id, reveal, result }) = event {
-        let id = *id;
-        let reveal = *reveal;
-        if reveal && cx.global::<ShellState>().pins.reveal_request != Some(id) {
-            return;
-        }
+    if let RuntimeEvent::Pin(PinEvent::Restored { result, .. }) = event {
         match result {
             Ok(restored) => {
                 log::info!(
@@ -168,60 +129,44 @@ pub fn handle_event(event: &RuntimeEvent, cx: &mut App) {
                             let monitors = rotor_runtime::current_monitor_configs()
                                 .map_err(|error| error.to_string())?;
                             let mut images = Vec::new();
-                            for mut pin in pins {
-                                if reveal {
-                                    pin.config.minimized = false;
-                                }
+                            for pin in pins {
                                 images.push(DeferredPin {
                                     image: rotor_ui::prepare_image(pin.image)?,
                                     config: pin.config,
                                     id: Some(pin.id),
                                     pending: None,
                                     error: None,
-                                    activate: reveal,
+                                    activate: false,
                                 });
                             }
                             Ok::<_, String>((monitors, images))
                         })
                         .await;
-                    cx.update(|cx| {
-                        if reveal {
-                            if cx.global::<ShellState>().pins.reveal_request != Some(id) {
-                                return;
+                    cx.update(|cx| match prepared {
+                        Ok((monitors, images)) => {
+                            log::info!(
+                                "Prepared {} restored pins across {} displays",
+                                images.len(),
+                                monitors.len()
+                            );
+                            if cx
+                                .global::<ShellState>()
+                                .capture
+                                .session
+                                .generation()
+                                .is_none()
+                            {
+                                cx.global_mut::<ShellState>().monitors = monitors;
                             }
-                            cx.global_mut::<ShellState>().pins.reveal_request = None;
+                            cx.global_mut::<ShellState>().pins.deferred.extend(images);
+                            drain_deferred(cx);
                         }
-                        match prepared {
-                            Ok((monitors, images)) => {
-                                log::info!(
-                                    "Prepared {} restored pins across {} displays",
-                                    images.len(),
-                                    monitors.len()
-                                );
-                                if cx
-                                    .global::<ShellState>()
-                                    .capture
-                                    .session
-                                    .generation()
-                                    .is_none()
-                                {
-                                    cx.global_mut::<ShellState>().monitors = monitors;
-                                }
-                                cx.global_mut::<ShellState>().pins.deferred.extend(images);
-                                drain_deferred(cx);
-                            }
-                            Err(error) => crate::capture::report(error, cx),
-                        }
+                        Err(error) => crate::capture::report(error, cx),
                     });
                 });
                 cx.global_mut::<ShellState>().pins.restoring = Some(task);
             }
-            Err(error) => {
-                if reveal {
-                    cx.global_mut::<ShellState>().pins.reveal_request = None;
-                }
-                crate::capture::report(error.clone(), cx);
-            }
+            Err(error) => crate::capture::report(error.clone(), cx),
         }
     }
     for (handle, view) in views(cx) {
@@ -263,6 +208,8 @@ pub fn drain_deferred(cx: &mut App) {
                 });
             }
             Ok((handle, _)) => {
+                // enable_pin_taskbar/enable_pin_minimization already gave the
+                // window a taskbar or Dock entry to be restored from.
                 let _ = handle.update(cx, |_, window, _| window.minimize_window());
             }
             Err(error) => crate::capture::report(error, cx),

@@ -24,7 +24,6 @@ pub enum Command {
     ShowSearch,
     SelectText,
     Capture,
-    ShowPins,
     Quit,
     Shortcut {
         key: u32,
@@ -36,14 +35,13 @@ pub enum Command {
         generation: u64,
     },
 }
-const CONTROLS: [(u8, Command); 7] = [
+const CONTROLS: [(u8, Command); 6] = [
     (1, Command::Quit),
     (2, Command::Capture),
-    (4, Command::ShowPins),
-    (8, Command::ShowSearch),
-    (16, Command::ShowTranslator),
-    (32, Command::SelectText),
-    (64, Command::ShowSettings),
+    (4, Command::ShowSearch),
+    (8, Command::ShowTranslator),
+    (16, Command::SelectText),
+    (32, Command::ShowSettings),
 ];
 
 #[derive(Clone)]

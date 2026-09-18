@@ -208,18 +208,6 @@ impl PinView {
         rotor_runtime::pin_source_crop(&self.record, self.image.width(), self.image.height())
             .unwrap_or((0, 0, 0, 0))
     }
-    pub fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.record.minimized = false;
-        self.dirty = true;
-        self.flush(cx);
-        self.activate(window);
-        if let Some(input) = self.canvas.editor.clone() {
-            input.update(cx, |input, cx| input.focus(window, cx));
-        } else {
-            self.focus.focus(window, cx);
-        }
-        cx.notify();
-    }
     fn activate(&self, window: &mut Window) {
         if let Err(error) = (self.activate)(window) {
             log::warn!("Could not activate pin: {error}");
@@ -488,6 +476,8 @@ impl PinView {
         })
         .detach();
     }
+    /// Minimize the pin the way the desktop minimizes a window: it leaves a
+    /// restorable entry behind and comes back in that state on the next start.
     fn minimize(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy() {
             return;

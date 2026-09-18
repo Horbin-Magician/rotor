@@ -447,25 +447,9 @@ impl Services {
     }
 
     pub fn restore_pins(&self) -> Result<OperationId, String> {
-        self.restore_pins_matching(false, Vec::new())
-    }
-
-    pub fn restore_hidden_pins(&self, excluded_ids: Vec<u32>) -> Result<OperationId, String> {
-        self.restore_pins_matching(true, excluded_ids)
-    }
-
-    fn restore_pins_matching(
-        &self,
-        include_hidden: bool,
-        excluded_ids: Vec<u32>,
-    ) -> Result<OperationId, String> {
         self.ensure_running()?;
         let id = next_operation();
-        self.pins.submit(PinCommand::Restore {
-            id,
-            include_hidden,
-            excluded_ids,
-        })?;
+        self.pins.submit(PinCommand::Restore { id })?;
         Ok(id)
     }
     pub fn create_pin(
