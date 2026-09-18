@@ -52,7 +52,7 @@ impl SearchView {
                 return;
             }
             if !self.results.items.is_empty() {
-                self.open(false, false, window, cx);
+                self.open(false, false, cx);
                 return;
             }
             // Only a completed, empty search may automatically send user text.

@@ -163,7 +163,7 @@ impl SearchView {
         }
         cx.notify();
     }
-    fn open(&mut self, folder: bool, admin: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn open(&mut self, folder: bool, admin: bool, cx: &mut Context<Self>) {
         if self.opening.is_some() || self.results.replacing {
             return;
         }
@@ -175,11 +175,10 @@ impl SearchView {
         } else {
             item.file_path.clone()
         };
+        // Keep the window until FileOpened arrives: a failure must stay
+        // visible here, and success closes the window in handle_event.
         match self.services.open_file(path, admin) {
-            Ok(id) => {
-                self.opening = Some(id);
-                window.remove_window();
-            }
+            Ok(id) => self.opening = Some(id),
             Err(error) => self.message = error,
         }
         cx.notify();
@@ -474,10 +473,10 @@ impl SearchView {
                                             .disabled(
                                                 self.opening.is_some() || self.results.replacing,
                                             )
-                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                            .on_click(cx.listener(move |this, _, _, cx| {
                                                 cx.stop_propagation();
                                                 this.results.selected = index;
-                                                this.open(false, true, window, cx);
+                                                this.open(false, true, cx);
                                             })),
                                     )
                                 })
@@ -497,10 +496,10 @@ impl SearchView {
                                             "Open folder"
                                         })
                                         .disabled(self.opening.is_some() || self.results.replacing)
-                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                        .on_click(cx.listener(move |this, _, _, cx| {
                                             cx.stop_propagation();
                                             this.results.selected = index;
-                                            this.open(true, false, window, cx);
+                                            this.open(true, false, cx);
                                         })),
                                 )
                                 .with_animation(
@@ -513,9 +512,9 @@ impl SearchView {
                                 ),
                         )
                     })
-                    .on_click(cx.listener(move |this, _, window, cx| {
+                    .on_click(cx.listener(move |this, _, _, cx| {
                         this.results.selected = index;
-                        this.open(false, false, window, cx);
+                        this.open(false, false, cx);
                     }))
                     .into_any_element()
             })
@@ -744,7 +743,63 @@ fn search_height(count: usize) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{result_label, search_height};
+    use super::{SearchView, result_label, search_height};
+    use gpui_kit::component::Root;
+    use gpui_kit::{AppContext, TestAppContext};
+    use rotor_runtime::{OperationId, RuntimeEvent, ServiceOptions, Services};
+    use std::sync::{Arc, Mutex};
+
+    #[gpui::test]
+    fn failed_open_keeps_the_window_and_shows_the_error(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = Services::new(
+            Arc::new(Mutex::new(
+                rotor_common::ConfigService::load_from(directory.path()).unwrap(),
+            )),
+            None,
+            ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        let services = Arc::new(services);
+        cx.update(gpui_kit::component::init);
+        let mut view = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let search = cx.new(|cx| SearchView::new(services.clone(), window, cx));
+            view = Some(search.clone());
+            Root::new(search, window, cx)
+        });
+        let view = view.unwrap();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.opening = Some(OperationId(4));
+                view.message.clear();
+                view.handle_event(
+                    &RuntimeEvent::FileOpened {
+                        id: OperationId(3),
+                        result: Err("stale".into()),
+                    },
+                    window,
+                    cx,
+                );
+                assert_eq!(view.opening, Some(OperationId(4)));
+                assert!(view.message.is_empty());
+                view.handle_event(
+                    &RuntimeEvent::FileOpened {
+                        id: OperationId(4),
+                        result: Err("access denied".into()),
+                    },
+                    window,
+                    cx,
+                );
+                assert!(view.opening.is_none());
+                assert_eq!(view.message, "access denied");
+            });
+        });
+        // The window still exists and renders the failure.
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        view.read_with(cx, |view, _| assert_eq!(view.message, "access denied"));
+    }
 
     #[test]
     fn empty_search_collapses_and_results_grow_to_seven_rows() {
