@@ -3,7 +3,7 @@
 use crate::shotter_record::ShotterConfig;
 use image::{ImageEncoder, RgbaImage};
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     io::{BufWriter, Write},
     path::{Path, PathBuf},
     sync::Arc,
@@ -200,32 +200,27 @@ impl PinStore {
 
     pub fn create(&mut self, image: &RgbaImage, config: ShotterConfig) -> Result<u32, String> {
         validate(&config, image.width(), image.height())?;
-        fs::create_dir_all(self.root.join("images")).map_err(|error| error.to_string())?;
-        let (id, path, mut file) = loop {
+        let (id, path) = loop {
             let id = self.next_id;
             self.next_id = self
                 .next_id
                 .checked_add(1)
                 .ok_or("Pin ID space exhausted")?;
             let path = self.image_path(id);
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            match options.open(&path) {
-                Ok(file) => break (id, path, file),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            // Never replace an existing image, even one orphaned by a crash.
+            match fs::symlink_metadata(&path) {
+                Ok(_) => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break (id, path),
                 Err(error) => return Err(error.to_string()),
             }
         };
-        // Encode directly to the new file: noisy screenshots need not retain
-        // another image-sized compressed Vec. Flush and sync still precede
-        // metadata publication, and any failure removes this uncommitted file.
-        let write = (|| {
-            let mut writer = BufWriter::new(&mut file);
+        // Encode directly into a same-directory temporary file that is renamed
+        // to `{id}.png` only after flush and sync: noisy screenshots need not
+        // retain another image-sized compressed Vec, a crash cannot leave a
+        // truncated image at the final path (so its ID stays reusable), and
+        // metadata publication still follows PNG completion.
+        let write = rotor_common::persistence::atomic_write_private_with(&path, |file| {
+            let mut writer = BufWriter::new(file);
             image::codecs::png::PngEncoder::new(&mut writer)
                 .write_image(
                     image.as_raw(),
@@ -233,14 +228,10 @@ impl PinStore {
                     image.height(),
                     image::ExtendedColorType::Rgba8,
                 )
-                .map_err(|error| error.to_string())?;
-            writer.flush().map_err(|error| error.to_string())?;
-            writer
-                .get_ref()
-                .sync_all()
-                .map_err(|error| error.to_string())
-        })();
-        drop(file);
+                .map_err(std::io::Error::other)?;
+            writer.flush()
+        })
+        .map_err(|error| error.to_string());
         let result = write.and_then(|_| {
             let mut candidate = self.document.clone();
             table(&mut candidate, &["pins"])?.insert(
@@ -487,6 +478,30 @@ mod tests {
         assert!(store.create(&RgbaImage::new(2, 3), config()).is_err());
         assert!(store.load_pins().0.is_empty());
         assert_eq!(fs::read_dir(store.root.join("images")).unwrap().count(), 0);
+    }
+    #[test]
+    fn orphan_images_are_never_replaced_and_no_temporary_files_remain() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = PinStore::load_from(directory.path()).unwrap();
+        let images = store.root.join("images");
+        fs::create_dir_all(&images).unwrap();
+        // A crash after an old-style direct write may leave an unreferenced,
+        // possibly truncated image; it is skipped, not overwritten or deleted.
+        let orphan = store.image_path(store.next_id);
+        fs::write(&orphan, b"truncated").unwrap();
+        let id = store.create(&RgbaImage::new(2, 3), config()).unwrap();
+        assert_ne!(store.image_path(id), orphan);
+        assert_eq!(fs::read(&orphan).unwrap(), b"truncated");
+        assert_eq!(
+            image::open(store.image_path(id)).unwrap().to_rgba8(),
+            RgbaImage::new(2, 3)
+        );
+        let names: Vec<String> = fs::read_dir(&images)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert!(names.iter().all(|name| name.ends_with(".png")), "{names:?}");
     }
     #[test]
     fn corrupt_metadata_is_not_overwritten() {
