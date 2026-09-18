@@ -1,9 +1,10 @@
+use crate::services::lock;
 use crate::RuntimeEvent;
 use async_channel::Sender;
 use rotor_updater::{CancellationToken, DownloadProgress, Release};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex},
 };
 use tokio::runtime::Handle;
 
@@ -60,9 +61,6 @@ pub(crate) struct UpdateService {
     cancellation: Mutex<CancellationToken>,
     shutdown: CancellationToken,
     directory: PathBuf,
-}
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|p| p.into_inner())
 }
 fn publish(
     state: &Mutex<UpdateSnapshot>,

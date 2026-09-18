@@ -179,7 +179,6 @@ pub struct Services {
     ocr_serial: Arc<Semaphore>,
     canvas_fonts: Arc<Mutex<Option<Arc<rotor_canvas::Renderer>>>>,
     coordinate_shortcuts: Arc<AtomicBool>,
-    development_shortcuts: AtomicBool,
     shortcut_recording: Arc<crate::shortcuts::ShortcutRecording>,
     startup_warning: Option<String>,
     data_directory: std::path::PathBuf,
@@ -267,7 +266,6 @@ impl Services {
                 ocr_serial: Arc::new(Semaphore::new(1)),
                 canvas_fonts: Arc::new(Mutex::new(None)),
                 coordinate_shortcuts,
-                development_shortcuts: AtomicBool::new(true),
                 shortcut_recording: Arc::new(crate::shortcuts::ShortcutRecording::default()),
                 startup_warning,
                 data_directory,
@@ -348,7 +346,6 @@ impl Services {
                     ocr_loaded: rotor_screenshot::img_util::ocr_cache_loaded(),
                 })
             },
-            None,
             |id, result| RuntimeEvent::Overview { id, result },
         )
     }
@@ -359,20 +356,17 @@ impl Services {
                 rotor_platform::startup::set_enabled(enabled, &executable, &args)?;
                 rotor_platform::startup::enabled(&executable, &args)
             },
-            None,
             |id, result| RuntimeEvent::StartupChanged { id, result },
         )
     }
     pub fn open_url(&self, url: String) -> Result<OperationId, String> {
         self.spawn_job(
             move || rotor_platform::desktop::open_url(&url),
-            None,
             |id, result| RuntimeEvent::FileOpened { id, result },
         )
     }
-    pub fn coordinate_shortcuts(&self, development: bool) {
-        self.development_shortcuts
-            .store(development, Ordering::Release);
+    /// Let the shell take part in shortcut prepare/finish handshakes.
+    pub fn coordinate_shortcuts(&self) {
         self.coordinate_shortcuts.store(true, Ordering::Release);
     }
     pub fn shortcut_recording_flag(&self) -> Arc<crate::shortcuts::ShortcutRecording> {
@@ -406,7 +400,6 @@ impl Services {
             .ok_or("Quick action is missing or disabled")?;
         self.spawn_job(
             move || crate::quick::run_command(&action.command).map_err(|error| error.to_string()),
-            None,
             move |id, result| RuntimeEvent::QuickFinished {
                 id,
                 action_id,
@@ -650,7 +643,6 @@ impl Services {
             .index_status_reader();
         self.spawn_job(
             move || Ok(reader.index_status()),
-            None,
             |id, result| RuntimeEvent::IndexStatus { id, result },
         )
     }
@@ -665,7 +657,6 @@ impl Services {
                     worker_cancelled.load(Ordering::Acquire)
                 })
             },
-            None,
             |id, result| RuntimeEvent::SelectionFinished { id, result },
         )?;
         if let Some(previous) = selection.replace(cancelled) {
@@ -690,7 +681,6 @@ impl Services {
                 }
                 .map_err(|error| error.to_string())
             },
-            None,
             |id, result| RuntimeEvent::FileOpened { id, result },
         )
     }
@@ -730,7 +720,7 @@ impl Services {
         Ok(id)
     }
 
-    pub fn cancel_translation(&self) {
+    fn cancel_translation(&self) {
         let mut task = lock(&self.translation);
         self.translation_id
             .store(next_operation().0, Ordering::Release);
@@ -761,14 +751,11 @@ impl Services {
     ) -> Result<OperationId, String> {
         self.ensure_running()?;
         let id = next_operation();
-        self.capture_worker.submit(
-            CaptureRequest {
-                id,
-                settle,
-                submitted: started,
-            },
-            &self.capture_id,
-        )?;
+        self.capture_worker.submit(CaptureRequest {
+            id,
+            settle,
+            submitted: started,
+        })?;
         Ok(id)
     }
 
@@ -908,12 +895,7 @@ impl Services {
         Ok(id)
     }
 
-    fn spawn_job<T, F, E>(
-        &self,
-        work: F,
-        current: Option<Arc<AtomicU64>>,
-        event: E,
-    ) -> Result<OperationId, String>
+    fn spawn_job<T, F, E>(&self, work: F, event: E) -> Result<OperationId, String>
     where
         T: Send + 'static,
         F: FnOnce() -> Result<T, String> + Send + 'static,
@@ -927,9 +909,6 @@ impl Services {
             .try_acquire_owned()
             .map_err(|_| "background work queue is busy".to_string())?;
         let id = next_operation();
-        if let Some(current) = &current {
-            current.store(id.0, Ordering::Release);
-        }
         let events = self.events.clone();
         let stopped = self.stopped.clone();
         let task = self.runtime().spawn(async move {
@@ -941,12 +920,7 @@ impl Services {
                 .await
                 .map_err(|error| error.to_string())
                 .and_then(|result| result);
-            if current
-                .as_ref()
-                .is_none_or(|current| current.load(Ordering::Acquire) == id.0)
-            {
-                let _ = events.send(event(id, result)).await;
-            }
+            let _ = events.send(event(id, result)).await;
         });
         tasks.retain(|task| !task.is_finished());
         tasks.push(task);
@@ -1023,7 +997,7 @@ impl Drop for Services {
     }
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())

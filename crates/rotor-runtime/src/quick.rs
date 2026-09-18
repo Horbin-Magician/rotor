@@ -70,9 +70,7 @@ pub fn normalize_actions(actions: Vec<QuickAction>) -> Result<Vec<QuickAction>, 
     Ok(normalized)
 }
 
-pub fn parse_shortcuts(
-    actions: &[QuickAction],
-) -> Result<Vec<(String, Shortcut)>, QuickActionError> {
+fn parse_shortcuts(actions: &[QuickAction]) -> Result<Vec<(String, Shortcut)>, QuickActionError> {
     let mut shortcut_ids = HashSet::new();
     let mut shortcuts = Vec::new();
 

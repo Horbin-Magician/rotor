@@ -672,7 +672,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 None => warning,
             });
         }
-        app_services.coordinate_shortcuts(development_shortcuts);
+        app_services.coordinate_shortcuts();
         cx.set_global(ShellState {
             windows: HashMap::new(),
             config,

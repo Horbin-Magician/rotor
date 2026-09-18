@@ -17,6 +17,9 @@ struct Pending {
 
 pub(super) struct CaptureWorker {
     pending: Arc<(Mutex<Pending>, Condvar)>,
+    /// The generation the worker thread also reads, so a submitted request and
+    /// the acceptance check can never disagree about which identity is current.
+    current: Arc<AtomicU64>,
 }
 
 impl CaptureWorker {
@@ -57,6 +60,7 @@ impl CaptureWorker {
     {
         let pending = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
         let queue = pending.clone();
+        let submitted = current.clone();
         std::thread::Builder::new().name("rotor-capture".into()).spawn(move || {
             let mut capture = initialize();
             loop {
@@ -79,15 +83,18 @@ impl CaptureWorker {
                 }
             }
         }).map_err(|error| error.to_string())?;
-        Ok(Self { pending })
+        Ok(Self {
+            pending,
+            current: submitted,
+        })
     }
 
-    pub fn submit(&self, request: CaptureRequest, current: &AtomicU64) -> Result<(), String> {
+    pub fn submit(&self, request: CaptureRequest) -> Result<(), String> {
         let mut pending = lock(&self.pending.0);
         if pending.stopped {
             return Err("Screenshot worker is stopped".into());
         }
-        current.store(request.id.0, Ordering::Release);
+        self.current.store(request.id.0, Ordering::Release);
         // Only the newest request waits behind an in-flight OS capture.
         pending.request = Some(request);
         self.pending.1.notify_one();
@@ -122,32 +129,27 @@ fn capture_monitors(
         rotor_platform::overlay::settle_desktop()?;
     }
     mark("desktop_settled");
-    capture_with_preparation(
-        request,
-        events,
-        || monitor::current_configs().map_err(|error| error.to_string()),
-        |before| {
-            let (images, windows) = pool.capture_with(
-                &before,
-                || current.load(Ordering::Acquire) != request.id.0,
-                || {
-                    let windows =
-                        rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
-                            log::warn!("Capture window rectangles: {error}");
-                            Vec::new()
-                        });
-                    mark("window_rectangles");
-                    windows
-                },
-            )?;
-            let monitors = before
-                .into_iter()
-                .zip(images)
-                .map(|(monitor, image)| CapturedMonitor { monitor, image })
-                .collect();
-            Ok(CaptureBundle { monitors, windows })
-        },
-    )
+    capture_with_preparation(request, events, monitor::current_configs, |before| {
+        let (images, windows) = pool.capture_with(
+            &before,
+            || current.load(Ordering::Acquire) != request.id.0,
+            || {
+                let windows =
+                    rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
+                        log::warn!("Capture window rectangles: {error}");
+                        Vec::new()
+                    });
+                mark("window_rectangles");
+                windows
+            },
+        )?;
+        let monitors = before
+            .into_iter()
+            .zip(images)
+            .map(|(monitor, image)| CapturedMonitor { monitor, image })
+            .collect();
+        Ok(CaptureBundle { monitors, windows })
+    })
 }
 
 /// Publish preparation before starting the pixel read, without waiting for the
@@ -217,10 +219,9 @@ mod tests {
     fn preparation_overlaps_capture_and_superseded_results_are_not_published() {
         let (events, received) = async_channel::bounded(4);
         let preparation_events = events.clone();
-        let current = Arc::new(AtomicU64::new(0));
         let (started, starts) = std::sync::mpsc::channel();
         let (release, wait) = std::sync::mpsc::channel();
-        let worker = CaptureWorker::start(events, current.clone(), move |request| {
+        let worker = CaptureWorker::start(events, Arc::new(AtomicU64::new(0)), move |request| {
             capture_with_preparation(
                 request,
                 &preparation_events,
@@ -238,7 +239,7 @@ mod tests {
             settle: false,
             submitted: Instant::now(),
         };
-        worker.submit(request(1), &current).unwrap();
+        worker.submit(request(1)).unwrap();
         assert_eq!(
             starts.recv_timeout(Duration::from_secs(5)).unwrap(),
             OperationId(1)
@@ -251,8 +252,8 @@ mod tests {
                 if monitors == vec![monitor()]
         ));
         assert!(received.is_empty());
-        worker.submit(request(2), &current).unwrap();
-        worker.submit(request(3), &current).unwrap();
+        worker.submit(request(2)).unwrap();
+        worker.submit(request(3)).unwrap();
         release.send(()).unwrap();
         assert_eq!(
             starts.recv_timeout(Duration::from_secs(5)).unwrap(),
@@ -281,7 +282,7 @@ mod tests {
             }
         ));
         worker.stop();
-        assert!(worker.submit(request(4), &current).is_err());
+        assert!(worker.submit(request(4)).is_err());
     }
 
     #[test]

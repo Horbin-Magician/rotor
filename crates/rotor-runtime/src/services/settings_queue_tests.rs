@@ -200,7 +200,7 @@ fn a_full_queue_can_still_replace_its_automatic_tail() {
 #[test]
 fn automatic_shortcut_save_is_not_complete_until_the_ui_confirms_the_transaction() {
     let (_directory, _config, services, events) = setup();
-    services.coordinate_shortcuts(true);
+    services.coordinate_shortcuts();
     let old = services.settings()["shortcut_search"].clone();
     let id = services
         .save_settings_coalesced(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
@@ -256,7 +256,7 @@ fn automatic_shortcut_save_is_not_complete_until_the_ui_confirms_the_transaction
 fn unanswered_shortcut_preparation_times_out_and_still_writes_in_order() {
     use super::settings_worker::COORDINATION_TIMEOUT;
     let (_directory, _config, services, events) = setup();
-    services.coordinate_shortcuts(true);
+    services.coordinate_shortcuts();
     let id = services
         .save_settings_coalesced(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
         .unwrap();
@@ -386,7 +386,7 @@ fn locked_config_rolls_back_an_automatic_batch_and_allows_retry_after_unlock() {
             .open(&path)
             .unwrap(),
     );
-    services.coordinate_shortcuts(true);
+    services.coordinate_shortcuts();
     let mut failed_id = None;
     for should_commit in [false, true] {
         if should_commit {

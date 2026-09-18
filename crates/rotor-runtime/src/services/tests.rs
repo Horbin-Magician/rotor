@@ -618,7 +618,7 @@ fn failed_settings_write_requests_shortcut_rollback() {
     let directory = tempfile::tempdir().unwrap();
     let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
     let before = services.settings();
-    services.coordinate_shortcuts(true);
+    services.coordinate_shortcuts();
     std::fs::create_dir(directory.path().join("config.toml")).unwrap();
     let id = services
         .save_settings(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
@@ -663,7 +663,7 @@ fn failed_settings_write_requests_shortcut_rollback() {
 fn shortcut_prepare_rejection_does_not_touch_disk() {
     let directory = tempfile::tempdir().unwrap();
     let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
-    services.coordinate_shortcuts(true);
+    services.coordinate_shortcuts();
     services
         .save_settings(vec![("shortcut_search".into(), "Ctrl+Shift+X".into())])
         .unwrap();
