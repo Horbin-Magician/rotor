@@ -2,11 +2,11 @@ use super::MonitorConfig;
 use windows::{
     core::{BOOL, PCWSTR},
     Win32::{
-        Foundation::{LPARAM, POINT, RECT},
+        Foundation::{LPARAM, RECT},
         Graphics::Gdi::{
             CreateDCW, DeleteDC, EnumDisplayMonitors, EnumDisplaySettingsW, GetDeviceCaps,
-            GetMonitorInfoW, MonitorFromPoint, DESKTOPHORZRES, DEVMODEW, ENUM_CURRENT_SETTINGS,
-            HDC, HMONITOR, HORZRES, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONULL,
+            GetMonitorInfoW, DESKTOPHORZRES, DEVMODEW, ENUM_CURRENT_SETTINGS, HDC, HMONITOR,
+            HORZRES, MONITORINFO, MONITORINFOEXW,
         },
         UI::HiDpi::{
             GetDpiForMonitor, GetProcessDpiAwareness, MDT_EFFECTIVE_DPI, PROCESS_DPI_UNAWARE,
@@ -15,6 +15,21 @@ use windows::{
 };
 
 pub(super) fn current_configs() -> Result<Vec<MonitorConfig>, String> {
+    monitor_handles()?.into_iter().map(config).collect()
+}
+
+pub(super) fn config_for_capture(expected: &MonitorConfig) -> Result<MonitorConfig, String> {
+    // Match the handle identity recorded by current_configs. The stored origin
+    // is in physical pixels, which MonitorFromPoint misreads before the process
+    // is DPI aware (diagnostics), so do not resolve the monitor by position.
+    let monitor = monitor_handles()?
+        .into_iter()
+        .find(|monitor| monitor.0 as usize as u32 == expected.id)
+        .ok_or("Captured monitor is unavailable")?;
+    config(monitor)
+}
+
+fn monitor_handles() -> Result<Vec<HMONITOR>, String> {
     unsafe extern "system" fn collect(
         monitor: HMONITOR,
         _: HDC,
@@ -36,23 +51,7 @@ pub(super) fn current_configs() -> Result<Vec<MonitorConfig>, String> {
         .ok()
         .map_err(|error| error.to_string())?;
     }
-    handles.into_iter().map(config).collect()
-}
-
-pub(super) fn config_for_capture(expected: &MonitorConfig) -> Result<MonitorConfig, String> {
-    let monitor = unsafe {
-        MonitorFromPoint(
-            POINT {
-                x: expected.x,
-                y: expected.y,
-            },
-            MONITOR_DEFAULTTONULL,
-        )
-    };
-    if monitor.is_invalid() {
-        return Err("Captured monitor is unavailable".into());
-    }
-    config(monitor)
+    Ok(handles)
 }
 
 fn config(monitor: HMONITOR) -> Result<MonitorConfig, String> {
