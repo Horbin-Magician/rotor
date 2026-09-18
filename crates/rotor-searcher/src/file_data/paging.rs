@@ -101,7 +101,6 @@ mod tests {
                             file_path: format!("{index}/{offset}"),
                             path: String::new(),
                             file_name: String::new(),
-                            icon: None,
                             alias: None,
                         })
                         .collect();

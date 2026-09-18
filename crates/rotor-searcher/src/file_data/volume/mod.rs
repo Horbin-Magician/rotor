@@ -39,7 +39,6 @@ pub struct SearchResultItem {
     pub file_path: String,
     pub file_name: String,
     pub rank: i8,
-    pub icon: Option<std::sync::Arc<image::RgbaImage>>,
     pub alias: Option<String>,
 }
 

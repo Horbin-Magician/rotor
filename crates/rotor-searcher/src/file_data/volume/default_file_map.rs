@@ -442,7 +442,6 @@ impl FileMap {
                     file_path,
                     file_name: file.file_name.to_string(),
                     rank: file.rank,
-                    icon: None,
                     alias: file_alias,
                 });
 

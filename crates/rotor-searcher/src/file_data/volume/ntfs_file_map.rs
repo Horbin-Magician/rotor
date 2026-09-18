@@ -135,7 +135,6 @@ impl FileMap {
                         file_path: full_path,
                         file_name: file.file_name.to_string(),
                         rank: file.rank,
-                        icon: None,
                         alias: None,
                     });
                     find_num += 1;
