@@ -359,7 +359,7 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
         match result {
             Ok(selected) => {
                 if let Err(error) = show_translator(cx) {
-                    eprintln!("Translator: {error}");
+                    log::error!("Translator: {error}");
                     return;
                 }
                 if let Some((handle, view)) = cx
@@ -381,7 +381,7 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
             Err(error) => {
                 cx.global_mut::<ShellState>().system.warning = Some(error);
                 if let Err(error) = show_settings(cx) {
-                    eprintln!("Selection: {error}");
+                    log::error!("Selection: {error}");
                 }
             }
         }
@@ -426,7 +426,7 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
         if language_changed || theme_changed {
             let state = cx.global_mut::<ShellState>();
             if let Err(error) = state.system.update_menu(state.commands.clone(), config) {
-                eprintln!("Tray menu: {error}");
+                log::error!("Tray menu: {error}");
             }
         }
         if language_changed {
@@ -567,7 +567,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some(path) => ResourceLocator::from_root(std::path::Path::new(&path)),
         None => ResourceLocator::for_current_process(),
     }
-    .map_err(|error| eprintln!("OCR resources: {error}"))
+    .map_err(|error| log::warn!("OCR resources: {error}"))
     .ok();
     #[cfg(target_os = "windows")]
     if !args.iter().any(|arg| arg == "--no-elevate") && !rotor_platform::desktop::is_elevated() {
@@ -653,7 +653,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         ) {
             Ok(system) => system,
             Err(error) => {
-                eprintln!("System services: {error}");
+                log::error!("System services: {error}");
                 startup_failed.set(true);
                 cx.quit();
                 return;
@@ -817,7 +817,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                                                 .services
                                                 .run_quick_action(id)
                                             {
-                                                eprintln!("Quick action: {error}");
+                                                log::error!("Quick action: {error}");
                                             }
                                             return;
                                         }
@@ -844,18 +844,18 @@ fn run() -> Result<(), Box<dyn Error>> {
                                 match command {
                                     Command::ShowSettings => {
                                         if let Err(error) = show_settings(cx) {
-                                            eprintln!("Settings: {error}");
+                                            log::error!("Settings: {error}");
                                         }
                                     }
                                     Command::Quit => request_quit(cx),
                                     Command::ShowTranslator => {
                                         if let Err(error) = show_translator(cx) {
-                                            eprintln!("Translator: {error}");
+                                            log::error!("Translator: {error}");
                                         }
                                     }
                                     Command::ShowSearch => {
                                         if let Err(error) = show_search(cx) {
-                                            eprintln!("Search: {error}");
+                                            log::error!("Search: {error}");
                                         }
                                     }
                                     Command::SelectText => {

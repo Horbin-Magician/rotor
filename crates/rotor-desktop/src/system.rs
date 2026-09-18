@@ -73,7 +73,7 @@ impl CommandBus {
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             if queued.len() == 32 {
-                eprintln!("Shortcut dispatch queue is full");
+                log::warn!("Shortcut dispatch queue is full");
                 return;
             }
             queued.push_back(command);

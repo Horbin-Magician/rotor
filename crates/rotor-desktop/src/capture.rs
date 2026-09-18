@@ -25,7 +25,7 @@ pub struct CaptureState {
     cursor_confinement: Option<(u64, u32, rotor_platform::cursor::CursorConfinement)>,
 }
 pub fn report(error: String, cx: &mut App) {
-    eprintln!("Capture: {error}");
+    log::warn!("Capture: {error}");
     cx.global_mut::<ShellState>().system.warning = Some(error);
     if cx
         .global::<ShellState>()
@@ -457,7 +457,7 @@ fn start_detection(session: u64, focus_id: Option<u32>, cx: &mut App) {
                             });
                         }
                     }
-                    Err(error) => eprintln!("Capture rectangle detection: {error}"),
+                    Err(error) => log::warn!("Capture rectangle detection: {error}"),
                 }
                 true
             });
