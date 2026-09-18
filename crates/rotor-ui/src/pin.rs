@@ -161,6 +161,29 @@ impl PinView {
             None => label.into(),
         }
     }
+    /// The status or error text shown in the toolbar panel, if any.
+    fn status_message(&self) -> Option<String> {
+        if !self.message.is_empty() {
+            Some(self.message.clone())
+        } else {
+            self.ocr.error.clone()
+        }
+    }
+    /// Status line appended to the sliding toolbar panels. The panel is an
+    /// absolute overlay, so the message never resizes the pinned content.
+    fn status_element(&self) -> Option<Div> {
+        self.status_message().map(|message| {
+            div()
+                .w_full()
+                .px(px(4.))
+                .pb(px(2.))
+                .text_size(px(12.))
+                .line_height(px(16.))
+                .text_center()
+                .text_color(rgb(0xf3b8b8))
+                .child(message)
+        })
+    }
     fn busy(&self) -> bool {
         self.pending_create.is_some()
             || self.pending_finish.is_some()
@@ -216,6 +239,18 @@ impl PinView {
         if self.busy() || self.record.minimized || self.crop_drag.is_some() {
             return;
         }
+        self.sample_position(window, cx);
+        if self.dirty {
+            self.save_task = Some(cx.spawn_in(window, async move |view, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(200))
+                    .await;
+                let _ = view.update(cx, |view, cx| view.flush(cx));
+            }));
+        }
+    }
+    /// Copies the live window placement into the record without scheduling a flush.
+    fn sample_position(&mut self, window: &Window, cx: &mut Context<Self>) {
         if let Some((x, y)) = (self.position)(window) {
             let offset_x = x as i64 - self.record.monitor_pos.0 as i64 - self.record.rect.0 as i64;
             let offset_y = y as i64 - self.record.monitor_pos.1 as i64 - self.record.rect.1 as i64;
@@ -232,14 +267,6 @@ impl PinView {
                 self.record.offset = (x, y);
                 self.dirty = true;
             }
-        }
-        if self.dirty {
-            self.save_task = Some(cx.spawn_in(window, async move |view, cx| {
-                cx.background_executor()
-                    .timer(Duration::from_millis(200))
-                    .await;
-                let _ = view.update(cx, |view, cx| view.flush(cx));
-            }));
         }
     }
     pub fn flush(&mut self, cx: &mut Context<Self>) {
@@ -527,8 +554,13 @@ impl PinView {
                         window.set_window_title(&pin_title(&self.settings, self.id));
                         self.message.clear();
                         // The window may have clamped its placement/zoom while
-                        // creation was pending. Persist that accepted geometry
-                        // after creation, preserving the persistence queue order.
+                        // creation was pending, and record_position skipped
+                        // those moves while busy. Re-sample the accepted
+                        // geometry before persisting it after creation,
+                        // preserving the persistence queue order.
+                        if !self.record.minimized && self.crop_drag.is_none() {
+                            self.sample_position(window, cx);
+                        }
                         self.persist_geometry(cx);
                     }
                     Err(error) => {
@@ -643,7 +675,8 @@ impl Render for PinView {
                 root.child(
                     toolbar::Slide::new(
                         toolbar::panel("pin-annotation-toolbar", annotation_width, window)
-                            .child(self.canvas_tools(cx)),
+                            .child(self.canvas_tools(cx))
+                            .children(self.status_element()),
                     )
                     .with_spring(
                         "pin-annotation-toolbar-slide",
@@ -847,6 +880,20 @@ mod creation_tests {
                 assert!(pin.pending_create.is_none());
                 assert!(!pin.busy());
                 assert!(pin.message.contains("synthetic disk failure"));
+                assert!(
+                    pin.status_message()
+                        .is_some_and(|message| message.contains("synthetic disk failure"))
+                );
+                pin.ocr.error = Some("recognition failed".into());
+                assert!(
+                    pin.status_message()
+                        .is_some_and(|message| message.contains("synthetic disk failure"))
+                );
+                let message = std::mem::take(&mut pin.message);
+                assert_eq!(pin.status_message().as_deref(), Some("recognition failed"));
+                pin.ocr.error = None;
+                assert!(pin.status_message().is_none());
+                pin.message = message;
                 assert_eq!(
                     &pin.image.render.as_bytes(0).unwrap()[..4],
                     &[60, 40, 20, 128]
@@ -855,5 +902,83 @@ mod creation_tests {
             })
         });
         cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+
+    #[gpui::test]
+    fn created_pin_persists_the_placement_accepted_while_pending(cx: &mut TestAppContext) {
+        use rotor_runtime::StoredPin;
+        use std::cell::Cell;
+        let profile = tempfile::tempdir().unwrap();
+        let (services, _events) = Services::new(
+            Arc::new(std::sync::Mutex::new(
+                rotor_common::ConfigService::load_from(profile.path()).unwrap(),
+            )),
+            None,
+            rotor_runtime::ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        cx.update(gpui_kit::component::init);
+        let placement = Rc::new(Cell::new((0, 0)));
+        let position = placement.clone();
+        let image = Arc::new(image::RgbaImage::new(100, 80));
+        let config = ShotterConfig {
+            annotations: Vec::new(),
+            monitor_pos: (0, 0),
+            monitor_size: (100, 80),
+            rect: (0, 0, 100, 80),
+            image_rect: (0, 0, 100, 80),
+            offset: (0, 0),
+            zoom_factor: 100,
+            mask_label: "synthetic".into(),
+            minimized: false,
+        };
+        let stored = config.clone();
+        let (pin, cx) = cx.add_window_view(|window, cx| {
+            window.resize(size(px(100.), px(80.)));
+            PinView::new(
+                Arc::new(services),
+                PinInit {
+                    image: crate::prepare_image(image.clone()).unwrap(),
+                    config,
+                    id: None,
+                    pending: Some(OperationId(9)),
+                    error: None,
+                    position: Rc::new(move |_| Some(position.get())),
+                    minimized: Rc::new(|_| None),
+                    activate: Rc::new(|_| Ok(())),
+                    content_scale: 1.,
+                    bounds: Rc::new(|_, _| Ok(())),
+                    pointer: Rc::new(|_, _| Ok(())),
+                    cursor: Rc::new(|_| Some((0., 0.))),
+                },
+                window,
+                cx,
+            )
+        });
+        // The shell clamps the window while creation is still pending; the
+        // busy guard skips that move, so creation must re-sample it.
+        placement.set((30, 40));
+        cx.update(|window, cx| {
+            pin.update(cx, |pin, cx| {
+                pin.record_position(window, cx);
+                assert_eq!(pin.record.offset, (0, 0));
+                pin.handle_event(
+                    &RuntimeEvent::Pin(PinEvent::Created {
+                        id: OperationId(9),
+                        result: Ok(StoredPin {
+                            id: 3,
+                            config: stored,
+                            image,
+                        }),
+                    }),
+                    window,
+                    cx,
+                );
+                assert_eq!(pin.persisted_id(), Some(3));
+                assert_eq!(pin.record.offset, (30, 40));
+                assert!(pin.pending_update.is_some());
+                assert!(!pin.dirty);
+            })
+        });
     }
 }

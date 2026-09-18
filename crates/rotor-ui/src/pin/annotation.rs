@@ -208,9 +208,8 @@ impl PinView {
         let changed = self.canvas.document.undo();
         if changed {
             let next_crop = self.canvas.document.scene().crop;
-            if next_crop != before_crop
-                && let Err(error) = self.apply_crop(next_crop, window, cx)
-            {
+            let crop_changed = next_crop != before_crop;
+            if crop_changed && let Err(error) = self.apply_crop(next_crop, window, cx) {
                 self.canvas.document.redo();
                 self.message = error;
                 cx.notify();
@@ -218,7 +217,11 @@ impl PinView {
             }
             self.canvas.error = None;
             self.ensure_canvas(window, cx);
-            self.persist_geometry(cx);
+            // apply_crop already re-sampled the position and flushed the
+            // undone record; a second flush would send a duplicate update.
+            if !crop_changed {
+                self.persist_geometry(cx);
+            }
             cx.notify();
         }
     }

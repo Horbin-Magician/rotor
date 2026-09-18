@@ -169,7 +169,9 @@ impl PinView {
                     })),
             );
         }
-        toolbar::panel("pin-toolbar", px(width), window).child(row)
+        toolbar::panel("pin-toolbar", px(width), window)
+            .child(row)
+            .children(self.status_element())
     }
 }
 
