@@ -109,9 +109,14 @@ impl UpdateService {
             state.release = None;
         }
         state.revision += 1;
-        let _ = self
+        // Synchronous under the state lock; the completion event is awaited.
+        if self
             .events
-            .try_send(RuntimeEvent::Update(Arc::new(state.clone())));
+            .try_send(RuntimeEvent::Update(Arc::new(state.clone())))
+            .is_err()
+        {
+            log::warn!("Update phase event dropped: event queue is full or closed");
+        }
         Ok(cancellation.clone())
     }
     pub fn check(&self) -> Result<(), String> {
@@ -183,9 +188,13 @@ impl UpdateService {
             state.phase = UpdatePhase::Installing;
             state.error = None;
             state.revision += 1;
-            let _ = self
+            if self
                 .events
-                .try_send(RuntimeEvent::Update(Arc::new(state.clone())));
+                .try_send(RuntimeEvent::Update(Arc::new(state.clone())))
+                .is_err()
+            {
+                log::warn!("Update phase event dropped: event queue is full or closed");
+            }
             (path, release)
         };
         let state = self.state.clone();

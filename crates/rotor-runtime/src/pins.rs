@@ -86,6 +86,11 @@ pub(crate) enum PinCommand {
         pin_id: u32,
     },
     Flush(oneshot::Sender<()>),
+    /// Test fixture: panics inside the persistence step.
+    #[cfg(test)]
+    Panic {
+        id: OperationId,
+    },
 }
 
 impl PinCommand {
@@ -117,8 +122,21 @@ impl PinCommand {
                 result: Err(error),
             },
             Self::Flush(_) => unreachable!("flush does not execute disk work"),
+            #[cfg(test)]
+            Self::Panic { id } => PinEvent::Restored {
+                id: *id,
+                reveal: false,
+                result: Err(error),
+            },
         }
     }
+}
+
+async fn load_store(directory: PathBuf) -> Result<PinStore, String> {
+    tokio::task::spawn_blocking(move || PinStore::load_from(&directory))
+        .await
+        .map_err(|error| error.to_string())
+        .and_then(|result| result)
 }
 
 pub(crate) struct PinService {
@@ -151,10 +169,7 @@ async fn run(
     events: Sender<RuntimeEvent>,
     final_updates: Arc<Mutex<Vec<(u32, ShotterConfig)>>>,
 ) {
-    let mut store = tokio::task::spawn_blocking(move || PinStore::load_from(&directory))
-        .await
-        .map_err(|error| error.to_string())
-        .and_then(|result| result);
+    let mut store = load_store(directory.clone()).await;
     while let Ok(command) = commands.recv().await {
         if let PinCommand::Flush(reply) = command {
             let _ = reply.send(());
@@ -171,7 +186,15 @@ async fn run(
             Err(error) => {
                 log::error!("Pin persistence worker failed: {error}");
                 let _ = events.send(RuntimeEvent::Pin(failure)).await;
-                store = Err(format!("Pin persistence worker failed: {error}"));
+                // The store was lost with the failed step; reload it from disk
+                // so one panic does not disable pins for the whole session.
+                store = load_store(directory.clone()).await.map_err(|reload| {
+                    format!("Pin persistence worker failed: {error}; reload failed: {reload}")
+                });
+                match &store {
+                    Ok(_) => log::warn!("Pin store reloaded after a persistence failure"),
+                    Err(error) => log::error!("{error}"),
+                }
                 continue;
             }
         };
@@ -327,5 +350,7 @@ fn execute(store: &mut Result<PinStore, String>, command: PinCommand) -> PinEven
                 .and_then(|store| store.delete(pin_id)),
         },
         PinCommand::Flush(_) => unreachable!("flush is a queue barrier handled before disk work"),
+        #[cfg(test)]
+        PinCommand::Panic { .. } => panic!("fixture pin persistence panic"),
     }
 }

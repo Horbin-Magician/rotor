@@ -162,7 +162,12 @@ pub fn run_command(command: &str) -> Result<(), Box<dyn Error>> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        Command::new("sh").args(["-lc", command]).spawn()?;
+        let mut child = Command::new("sh").args(["-lc", command]).spawn()?;
+        // Reap the shell off the caller's thread so a finished action does not
+        // linger as a zombie process.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
     }
 
     Ok(())
