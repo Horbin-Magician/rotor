@@ -89,10 +89,6 @@ impl CapturePixels for RgbaImage {
         )
     }
 }
-pub fn detect_pixels(image: &impl CapturePixels) -> Result<Vec<(u32, u32, u32, u32)>, String> {
-    detect_pixels_cancellable(image, || false)
-}
-
 pub fn detect_pixels_cancellable(
     image: &impl CapturePixels,
     cancelled: impl Fn() -> bool,
@@ -108,7 +104,7 @@ pub fn detect_pixels_cancellable(
     let scale_factor = calculate_optimal_scale_factor(original_width, original_height);
     let gray = image_to_scaled_gray(bytes, original_width, original_height, format, scale_factor);
     check_cancelled(&cancelled)?;
-    let edge_image = canny_edge_detection(&gray, 10.0, 30.0);
+    let edge_image = sobel_edge_mask(&gray, 10.0);
     check_cancelled(&cancelled)?;
 
     let morph_size = cmp::max(1, 4 / scale_factor) as u8;
@@ -192,14 +188,16 @@ fn image_to_scaled_gray(
     })
 }
 
-fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32) -> GrayImage {
+/// Sobel gradient magnitude thresholded into a binary edge mask. This is not
+/// Canny: there is no non-maximum suppression and no hysteresis linking, so a
+/// second (high) threshold would only relabel pixels the mask already keeps.
+fn sobel_edge_mask(img: &GrayImage, threshold: f32) -> GrayImage {
     let (width, height) = img.dimensions();
     let mut result = GrayImage::new(width, height);
     let img_data = img.as_raw();
     let res_data = result.as_mut();
 
-    let high_sq = (high_threshold * high_threshold) as i32;
-    let low_sq = (low_threshold * low_threshold) as i32;
+    let threshold_sq = (threshold * threshold) as i32;
     let width_usize = width as usize;
     res_data
         .par_chunks_mut(width_usize)
@@ -230,13 +228,7 @@ fn canny_edge_detection(img: &GrayImage, low_threshold: f32, high_threshold: f32
 
                         let mag_sq = gx * gx + gy * gy;
 
-                        *pixel = if mag_sq > high_sq {
-                            255
-                        } else if mag_sq > low_sq {
-                            128
-                        } else {
-                            0
-                        };
+                        *pixel = if mag_sq > threshold_sq { 255 } else { 0 };
                     }
                 }
             }
@@ -484,13 +476,6 @@ impl TextLine {
     }
 }
 
-pub fn img2text(
-    model_path: &Path,
-    img: &DynamicImage,
-) -> Result<Vec<TextResult>, Box<dyn std::error::Error>> {
-    img2text_cancellable(model_path, img, || false)
-}
-
 pub fn img2text_cancellable(
     model_path: &Path,
     img: &DynamicImage,
@@ -505,9 +490,6 @@ pub fn img2text_cancellable(
             cache.pipeline = Some(build_ocr_pipeline(model_path)?);
         }
 
-        // Model loading may take time. Even a cancelled first request must
-        // schedule release of the newly loaded pipeline.
-        cache.last_used = Some(Instant::now());
         let result = if cancelled() {
             None
         } else {
@@ -519,6 +501,9 @@ pub fn img2text_cancellable(
                     .predict(vec![img.to_rgb8()]),
             )
         };
+        // Model loading may take time. Even a cancelled first request must
+        // schedule release of the newly loaded pipeline, so this is recorded
+        // whether or not inference actually ran.
         cache.last_used = Some(Instant::now());
         result
     };
@@ -1042,8 +1027,9 @@ mod tests {
             assert_eq!(expected.get_pixel(0, 0).0, [22]);
         }
         assert_eq!(
-            detect_pixels(&rgba).unwrap(),
-            detect_pixels(&Pixels(bgra, 123, 107, PixelFormat::Bgra)).unwrap()
+            detect_pixels_cancellable(&rgba, || false).unwrap(),
+            detect_pixels_cancellable(&Pixels(bgra, 123, 107, PixelFormat::Bgra), || false)
+                .unwrap()
         );
     }
 
@@ -1055,7 +1041,11 @@ mod tests {
             (1, 1, vec![0; 8]),
             (u32::MAX, u32::MAX, vec![]),
         ] {
-            assert!(detect_pixels(&Pixels(bytes, width, height, PixelFormat::Bgra)).is_err());
+            assert!(detect_pixels_cancellable(
+                &Pixels(bytes, width, height, PixelFormat::Bgra),
+                || { false }
+            )
+            .is_err());
         }
     }
 
