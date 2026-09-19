@@ -135,7 +135,6 @@ fn synthetic_pin(
             image::Rgba([40 + (x / 4) as u8, 80 + (y / 4) as u8, 200, 255])
         }
     });
-    #[cfg(target_os = "macos")]
     rotor_platform::overlay::enable_pin_minimization(
         HasWindowHandle::window_handle(window).unwrap(),
     )

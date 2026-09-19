@@ -1,10 +1,20 @@
+//! File launching, bundle metadata and icon helpers shared by search and the shell.
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "windows")]
+mod windows;
+
+#[cfg(target_os = "macos")]
+use macos as native;
+#[cfg(target_os = "windows")]
+use windows as native;
+
 use file_icon_provider::get_file_icon;
 use image::RgbaImage;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 
 pub fn get_app_trans_names(app_path: &Path) -> Result<HashMap<String, String>, Box<dyn Error>> {
@@ -54,65 +64,15 @@ pub fn open_file(file_path: String) -> Result<(), Box<dyn Error>> {
     if !path.exists() {
         return Err(format!("File does not exist: {}", file_path).into());
     }
-
-    #[cfg(target_os = "windows")]
-    {
-        let trimmed_path = file_path.trim_end_matches(&['/', '\\'][..]);
-        std::process::Command::new("explorer.exe")
-            .arg(trimmed_path)
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
-            .spawn()?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(&file_path).spawn()?;
-    }
-
-    Ok(())
+    native::open_file(&file_path)
 }
 
 pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
-    #[cfg(target_os = "windows")]
-    {
-        let path = Path::new(&file_path);
-        if !path.exists() {
-            return Err(format!("File does not exist: {}", file_path).into());
-        }
-
-        use windows::core::{w, PCWSTR};
-        use windows::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
-        if file_path.contains('\0') {
-            return Err("File path contains a null character".into());
-        }
-        let path: Vec<u16> = file_path.encode_utf16().chain(Some(0)).collect();
-        // Pass the path as data, never as a PowerShell program. Apostrophes and
-        // other valid filename characters must not become command syntax.
-        let result = unsafe {
-            ShellExecuteW(
-                None,
-                w!("runas"),
-                PCWSTR(path.as_ptr()),
-                PCWSTR::null(),
-                PCWSTR::null(),
-                SW_SHOWNORMAL,
-            )
-        };
-        if result.0 as isize <= 32 {
-            return Err(format!(
-                "Windows could not open the file as administrator (code {})",
-                result.0 as isize
-            )
-            .into());
-        }
-        Ok(())
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path).into());
     }
-
-    #[cfg(target_os = "macos")]
-    {
-        log::info!("macOS does not support elevated open; opening normally instead");
-        open_file(file_path)
-    }
+    native::open_file_as_admin(&file_path)
 }
 
 /// Native RGBA pixels; callers can share them without PNG/Base64 round trips.

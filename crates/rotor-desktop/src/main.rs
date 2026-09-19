@@ -277,7 +277,6 @@ fn show_search(cx: &mut App) -> Result<(), String> {
     }
     let services = cx.global::<ShellState>().services.clone();
     cx.open_window(placement::search_options(cx), |window, cx| {
-        #[cfg(target_os = "macos")]
         if let Err(error) = raw_window_handle::HasWindowHandle::window_handle(window)
             .map_err(|error| error.to_string())
             .and_then(rotor_platform::overlay::configure_text_entry_panel)

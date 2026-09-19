@@ -392,7 +392,6 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                 ..Default::default()
             },
             |window, cx| {
-                #[cfg(target_os = "macos")]
                 if let Err(error) = HasWindowHandle::window_handle(window)
                     .map_err(|error| error.to_string())
                     .and_then(rotor_platform::overlay::enable_pin_minimization)
