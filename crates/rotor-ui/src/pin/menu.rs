@@ -83,9 +83,9 @@ impl PinView {
     }
 
     fn command_disabled(&self, command: Command) -> bool {
-        let export_disabled = self.busy() || !self.canvas.ready() || self.crop_drag.is_some();
+        let export_disabled = self.busy() || !self.can_request_export() || self.mode.is_cropping();
         match command {
-            Command::Ocr => self.ocr.loading() || (!self.ocr.active && export_disabled),
+            Command::Ocr => self.mode.ocr_loading() || (!self.mode.is_ocr() && export_disabled),
             Command::Minimize | Command::Close => self.busy(),
             _ => export_disabled,
         }
@@ -161,8 +161,8 @@ impl PinView {
                 toolbar::button(id, glyph, cx)
                     .accessibility_label(label.clone())
                     .tooltip(label)
-                    .selected(matches!(command, Command::Ocr) && self.ocr.active)
-                    .loading(matches!(command, Command::Ocr) && self.ocr.loading())
+                    .selected(matches!(command, Command::Ocr) && self.mode.is_ocr())
+                    .loading(matches!(command, Command::Ocr) && self.mode.ocr_loading())
                     .disabled(self.command_disabled(command))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.run_command(command, window, cx)
@@ -256,7 +256,7 @@ mod tests {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.update(|window, cx| window.dispatch_action(Box::new(super::Annotate), cx));
         cx.run_until_parked();
-        pin.read_with(cx, |pin, _| assert!(pin.canvas.editing()));
+        pin.read_with(cx, |pin, _| assert!(pin.mode.is_annotating()));
         pin.update(cx, |pin, _| pin.dialog = true);
         cx.update(|window, cx| window.dispatch_action(Box::new(super::Minimize), cx));
         cx.run_until_parked();
