@@ -12,3 +12,6 @@ __pycache__/
 *.suo
 *.sln
 *.sw?
+
+# Agent worktrees created by Claude Code
+/.claude/worktrees/
