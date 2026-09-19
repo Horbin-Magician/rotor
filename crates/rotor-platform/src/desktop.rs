@@ -112,6 +112,19 @@ pub fn show_startup_error(message: &str) {
     }
 }
 
+/// Keep the OS from blocking this process in a modal error dialog when a
+/// corrupt executable or missing file is encountered. Intended for the
+/// unattended recovery launcher, which reports failures itself.
+#[cfg(target_os = "windows")]
+pub fn suppress_error_dialogs() {
+    use windows::Win32::System::Diagnostics::Debug::{
+        SetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SEM_NOOPENFILEERRORBOX,
+    };
+    unsafe {
+        SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn is_elevated() -> bool {
     is_root::is_root()

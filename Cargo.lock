@@ -6563,8 +6563,6 @@ dependencies = [
  "rotor-updater",
  "tempfile",
  "tray-icon",
- "windows 0.61.3",
- "winreg",
 ]
 
 [[package]]
@@ -6675,7 +6673,6 @@ dependencies = [
  "rotor-common",
  "rotor-runtime",
  "tempfile",
- "windows 0.61.3",
 ]
 
 [[package]]

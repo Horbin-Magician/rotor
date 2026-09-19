@@ -48,4 +48,7 @@ windows = { workspace = true, features = [
   "Win32_System_DataExchange",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Shell",
+  "Win32_UI_Controls",
+  "Win32_UI_Accessibility",
+  "Win32_System_Diagnostics_Debug",
 ] }

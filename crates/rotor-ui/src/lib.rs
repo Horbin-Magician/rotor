@@ -6,8 +6,6 @@ mod searcher;
 mod settings;
 mod shortcut;
 mod translator;
-#[cfg(target_os = "windows")]
-mod tray_menu;
 mod visual;
 pub use assets::UiAssets;
 pub use capture::{
@@ -21,6 +19,4 @@ pub use pin::{
 pub use searcher::SearchView;
 pub use settings::{SettingsView, settings_title};
 pub use translator::TranslatorView;
-#[cfg(target_os = "windows")]
-pub use tray_menu::NativeMenuPainter;
-pub use visual::configure_theme;
+pub use visual::{Palette, configure_theme, surface_palette};

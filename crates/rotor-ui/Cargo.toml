@@ -19,6 +19,3 @@ rotor-canvas.workspace = true
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows = { workspace = true, features = ["Win32_UI_Controls", "Win32_UI_Accessibility", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }

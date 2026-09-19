@@ -569,13 +569,7 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
             else {
                 return;
             };
-            #[cfg(target_os = "macos")]
-            let offset = (
-                (frame.monitor.x as f64 * (frame.monitor.scale_factor as f64 - 1.)).round() as i32,
-                (frame.monitor.y as f64 * (frame.monitor.scale_factor as f64 - 1.)).round() as i32,
-            );
-            #[cfg(not(target_os = "macos"))]
-            let offset = (0, 0);
+            let offset = rotor_platform::monitor::pixel_origin_offset(&frame.monitor);
             let config = ShotterConfig {
                 annotations: Vec::new(),
                 monitor_pos: (frame.monitor.x, frame.monitor.y),
