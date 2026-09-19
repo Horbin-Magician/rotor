@@ -16,11 +16,7 @@ pub struct NativeMenu {
 
 impl NativeMenu {
     pub fn new(menu: Menu, config: &rotor_common::Config) -> Result<Self, String> {
-        let forced_dark = match config.get("theme").map(String::as_str) {
-            Some("1") => Some(false),
-            Some("2") => Some(true),
-            _ => None,
-        };
+        let forced_dark = rotor_common::Settings::theme(config).forced_dark();
         let native = OwnerDrawnMenu::new(
             menu.hpopupmenu(),
             MenuAppearance {

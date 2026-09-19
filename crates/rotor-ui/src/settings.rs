@@ -10,7 +10,7 @@ use gpui_kit::{
     prelude::*,
     *,
 };
-use rotor_common::Config;
+use rotor_common::{Config, Settings, TranslatorEngine};
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, SearchIndexStatus, Services};
 use std::sync::Arc;
 mod action_change;
@@ -805,11 +805,7 @@ impl Render for SettingsView {
                     self.t("翻译服务", "Translation service"),
                     cx,
                 ));
-                if self
-                    .config
-                    .get("translator_engine")
-                    .is_some_and(|value| matches!(value.as_str(), "ai" | "deepseek"))
-                {
+                if self.config.translator_engine() == TranslatorEngine::Ai {
                     content = content.child(appearance::caption(
                         self.t(
                             "AI 翻译的密钥、模型与服务地址在「AI 服务商」中统一设置。",
@@ -818,11 +814,7 @@ impl Render for SettingsView {
                         cx,
                     ));
                 }
-                if self
-                    .config
-                    .get("translator_engine")
-                    .is_some_and(|value| value == "custom")
-                {
+                if self.config.translator_engine() == TranslatorEngine::Custom {
                     content = content.child(appearance::caption(self.t(
                         "当前仍使用已保存的旧版 URL 翻译引擎；选择 AI 翻译后将使用全局 AI 服务。",
                         "The saved legacy URL engine is still active. Select AI translation to use the global AI service."

@@ -16,7 +16,9 @@ use gpui_kit::{
     component::{Root, Theme, ThemeMode},
     *,
 };
-use rotor_common::{AppConfig, Config, ConfigService, ResourceLocator, file_path};
+use rotor_common::{
+    AppConfig, Config, ConfigService, ResourceLocator, Settings, file_path, settings::keys,
+};
 use rotor_platform::single_instance::{Instance, InstanceGuard};
 use rotor_runtime::{OperationId, RuntimeEvent, ServiceOptions, Services};
 use std::{cell::Cell, collections::HashMap, error::Error, path::PathBuf, rc::Rc, sync::Arc};
@@ -113,11 +115,16 @@ pub(crate) fn publish_warning(message: String, cx: &mut App) {
 }
 
 fn apply_theme(config: &Config, cx: &mut App) {
-    match config.get("theme").map(String::as_str) {
-        Some("1") => Theme::change(ThemeMode::Light, None, cx),
-        Some("2") => Theme::change(ThemeMode::Dark, None, cx),
-        _ => Theme::sync_system_appearance(None, cx),
+    match config.theme() {
+        rotor_common::Theme::Light => Theme::change(ThemeMode::Light, None, cx),
+        rotor_common::Theme::Dark => Theme::change(ThemeMode::Dark, None, cx),
+        rotor_common::Theme::System => Theme::sync_system_appearance(None, cx),
     }
+}
+
+/// Windows that follow the system re-sync when the OS appearance changes.
+fn follows_system_theme(cx: &App) -> bool {
+    cx.global::<ShellState>().config.theme() == rotor_common::Theme::System
 }
 
 fn show_settings(cx: &mut App) -> Result<(), String> {
@@ -166,13 +173,7 @@ fn show_settings(cx: &mut App) -> Result<(), String> {
     };
     cx.open_window(options, |window, cx| {
         let appearance = window.observe_window_appearance(|window, cx| {
-            if !matches!(
-                cx.global::<ShellState>()
-                    .config
-                    .get("theme")
-                    .map(String::as_str),
-                Some("1" | "2")
-            ) {
+            if follows_system_theme(cx) {
                 Theme::sync_system_appearance(Some(window), cx);
             }
         });
@@ -236,13 +237,7 @@ fn show_translator(cx: &mut App) -> Result<(), String> {
         placement::utility_options(size(px(392.), px(420.)), cx),
         |window, cx| {
             let appearance = window.observe_window_appearance(|window, cx| {
-                if !matches!(
-                    cx.global::<ShellState>()
-                        .config
-                        .get("theme")
-                        .map(String::as_str),
-                    Some("1" | "2")
-                ) {
+                if follows_system_theme(cx) {
                     Theme::sync_system_appearance(Some(window), cx);
                 }
             });
@@ -290,13 +285,7 @@ fn show_search(cx: &mut App) -> Result<(), String> {
             log::warn!("Failed to configure search panel level: {error}");
         }
         let appearance = window.observe_window_appearance(|window, cx| {
-            if !matches!(
-                cx.global::<ShellState>()
-                    .config
-                    .get("theme")
-                    .map(String::as_str),
-                Some("1" | "2")
-            ) {
+            if follows_system_theme(cx) {
                 Theme::sync_system_appearance(Some(window), cx);
             }
         });
@@ -404,11 +393,13 @@ fn handle_event(event: RuntimeEvent, cx: &mut App) {
         result: Ok(config), ..
     } = &event
     {
-        let theme_changed = cx.global::<ShellState>().config.get("theme") != config.get("theme");
-        let language_changed =
-            cx.global::<ShellState>().config.get("language") != config.get("language");
-        let exclusions_changed = cx.global::<ShellState>().config.get("search_excluded_dirs")
-            != config.get("search_excluded_dirs");
+        let theme_changed = cx.global::<ShellState>().config.theme() != config.theme();
+        let language_changed = cx.global::<ShellState>().config.language() != config.language();
+        let exclusions_changed = cx
+            .global::<ShellState>()
+            .config
+            .get(keys::SEARCH_EXCLUDED_DIRS)
+            != config.get(keys::SEARCH_EXCLUDED_DIRS);
         cx.global_mut::<ShellState>().config = config.clone();
         if exclusions_changed {
             let services = cx.global::<ShellState>().services.clone();
@@ -493,7 +484,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             Some(path) => ResourceLocator::from_root(std::path::Path::new(&path))?,
             None => ResourceLocator::for_current_process()?,
         };
-        resources.verify_native_resources()?;
+        resources.verify_native_resources(&rotor_runtime::OCR_MODEL_FILES)?;
         println!(
             "Native resources verified at {}",
             resources.root().display()

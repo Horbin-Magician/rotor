@@ -5,7 +5,7 @@ impl Services {
     pub fn test_ai_provider(&self, draft: Config) -> Result<OperationId, String> {
         self.ensure_running()?;
         let mut config = EngineConfig::from_config(&draft);
-        config.engine = "ai".into();
+        config.engine = rotor_common::TranslatorEngine::Ai;
         config.target_lang = "en".into();
         let events = self.events.clone();
         let runtime = self.runtime();

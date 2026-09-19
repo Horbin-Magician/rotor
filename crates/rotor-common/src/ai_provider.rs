@@ -1,5 +1,5 @@
 //! Global AI provider settings shared by features, independent of the UI.
-use crate::Config;
+use crate::{settings::keys, AiProtocol, Config};
 
 pub const PROVIDERS: &[&str] = &["deepseek", "openai", "anthropic", "custom"];
 
@@ -16,11 +16,11 @@ pub fn default_base_url(provider: &str) -> &'static str {
 /// An explicitly saved empty key must never revive a legacy credential.
 pub fn apply_defaults(config: &mut Config) {
     config
-        .entry("ai_provider".into())
+        .entry(keys::AI_PROVIDER.into())
         .or_insert_with(|| "deepseek".into());
     config
-        .entry("ai_custom_protocol".into())
-        .or_insert_with(|| "openai".into());
+        .entry(keys::AI_CUSTOM_PROTOCOL.into())
+        .or_insert_with(|| AiProtocol::OpenAi.as_value().into());
     for provider in PROVIDERS {
         for (suffix, default) in [
             ("base_url", default_base_url(provider).to_owned()),
@@ -58,7 +58,8 @@ pub fn apply_defaults(config: &mut Config) {
 #[derive(Clone)]
 pub struct AiProviderConfig {
     pub provider: String,
-    pub protocol: String,
+    /// `None` when a custom provider names a protocol this build cannot speak.
+    pub protocol: Option<AiProtocol>,
     pub base_url: String,
     pub api_key: String,
     pub model: String,
@@ -69,7 +70,7 @@ impl AiProviderConfig {
     pub fn from_config(config: &Config) -> Self {
         let mut config = config.clone();
         apply_defaults(&mut config);
-        let provider = config["ai_provider"].clone();
+        let provider = config[keys::AI_PROVIDER].clone();
         let value = |suffix| {
             config
                 .get(&format!("ai_{provider}_{suffix}"))
@@ -78,11 +79,11 @@ impl AiProviderConfig {
         };
         Self {
             protocol: if provider == "custom" {
-                config["ai_custom_protocol"].clone()
+                AiProtocol::from_value(&config[keys::AI_CUSTOM_PROTOCOL])
             } else if provider == "anthropic" {
-                "anthropic".into()
+                Some(AiProtocol::Anthropic)
             } else {
-                "openai".into()
+                Some(AiProtocol::OpenAi)
             },
             base_url: value("base_url"),
             api_key: value("api_key"),
