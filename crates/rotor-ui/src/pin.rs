@@ -9,7 +9,7 @@ use gpui_kit::{
     prelude::*,
     *,
 };
-use rotor_common::Config;
+use rotor_common::{Config, Settings};
 use rotor_runtime::{
     OperationId, PinEvent, PinExportTarget, RuntimeEvent, Services, ShotterConfig,
 };
@@ -269,11 +269,7 @@ impl PinView {
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
-        if rotor_common::i18n::language_for_config(&self.settings) == "zh-CN" {
-            zh
-        } else {
-            en
-        }
+        self.settings.locale().pick(zh, en)
     }
     fn shortcut_hint(&self, label: &'static str, key: &str) -> String {
         match self.settings.get(key).filter(|key| !key.is_empty()) {
@@ -628,7 +624,7 @@ impl PinView {
         .clamp(5.min(maximum), maximum) as u32;
         self.record.zoom_factor = factor;
         self.dirty = true;
-        let scale = factor as f32 / 100. / self.content_scale;
+        let scale = rotor_canvas::pin_scale(factor, self.content_scale as f64) as f32;
         window.resize(size(
             px((width as f32 * scale).round().max(1.)),
             px((height as f32 * scale).round().max(1.)),
@@ -724,11 +720,7 @@ impl PinView {
     }
 }
 fn pin_title(config: &Config, id: Option<u32>) -> String {
-    let label = if rotor_common::i18n::language_for_config(config) == "zh-CN" {
-        "贴图"
-    } else {
-        "Pinned image"
-    };
+    let label = config.locale().pick("贴图", "Pinned image");
     match id {
         Some(id) => format!("Rotor · {label} {id}"),
         None => format!("Rotor · {label}"),

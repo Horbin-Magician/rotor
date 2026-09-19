@@ -40,11 +40,7 @@ pub fn settings_title(config: &Config) -> &'static str {
     }
 }
 fn text(config: &Config, zh: &'static str, en: &'static str) -> &'static str {
-    if rotor_common::i18n::language_for_config(config) == "zh-CN" {
-        zh
-    } else {
-        en
-    }
+    config.locale().pick(zh, en)
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {

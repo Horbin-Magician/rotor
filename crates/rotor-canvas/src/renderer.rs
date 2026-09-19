@@ -1,4 +1,4 @@
-use crate::{arrow_outline, Annotation, Color, ImageRect, ImageSize, Scene, FONT_FAMILY};
+use crate::{Annotation, Color, ImageRect, ImageSize, Outline, Scene, FONT_FAMILY};
 use image::{GenericImageView, Rgba, RgbaImage};
 use resvg::{
     tiny_skia::{ColorU8, FilterQuality, Pixmap, PixmapPaint, Transform},
@@ -180,6 +180,16 @@ fn resize_crop(
     }))
 }
 
+fn path_data(svg: &mut String, points: &[crate::ImagePoint], closed: bool) {
+    for (index, point) in points.iter().enumerate() {
+        let command = if index == 0 { "M" } else { " L" };
+        write!(svg, "{command}{:.4},{:.4}", point.x, point.y).unwrap();
+    }
+    if closed {
+        svg.push_str(" Z");
+    }
+}
+
 fn paint(color: Color) -> (String, f64) {
     let [r, g, b, a] = color.0;
     (format!("#{r:02x}{g:02x}{b:02x}"), a as f64 / 255.)
@@ -208,44 +218,45 @@ fn svg(scene: &Scene, font_family: &str) -> String {
     let font_family = escaped(font_family);
     let mut svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">", scene.size.width, scene.size.height, scene.size.width, scene.size.height);
     for annotation in &scene.annotations {
-        match annotation {
-            Annotation::Pen { points, style } => {
-                let (color, opacity) = paint(style.color);
-                if points.iter().all(|point| point == &points[0]) {
-                    write!(svg, "<circle cx=\"{:.4}\" cy=\"{:.4}\" r=\"{:.4}\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\"/>", points[0].x, points[0].y, style.width / 2.).unwrap();
-                } else {
-                    write!(svg, "<path d=\"M{:.4},{:.4}", points[0].x, points[0].y).unwrap();
-                    for point in &points[1..] {
-                        write!(svg, " L{:.4},{:.4}", point.x, point.y).unwrap();
-                    }
-                    write!(svg, "\" fill=\"none\" stroke=\"{color}\" stroke-opacity=\"{opacity:.8}\" stroke-width=\"{:.4}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>", style.width).unwrap();
-                }
+        if let Annotation::Text {
+            origin,
+            text,
+            font_size,
+            color,
+        } = annotation
+        {
+            let (color, opacity) = paint(*color);
+            for (line, text) in text.lines().enumerate() {
+                write!(svg, "<text x=\"{:.4}\" y=\"{:.4}\" font-family=\"{font_family}\" font-size=\"{font_size:.4}\" dominant-baseline=\"text-before-edge\" xml:space=\"preserve\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\">{}</text>", origin.x, origin.y + line as f64 * font_size * 1.25, escaped(text)).unwrap();
             }
-            Annotation::Rectangle { start, end, style } => {
-                let (color, opacity) = paint(style.color);
-                write!(svg, "<rect x=\"{:.4}\" y=\"{:.4}\" width=\"{:.4}\" height=\"{:.4}\" fill=\"none\" stroke=\"{color}\" stroke-opacity=\"{opacity:.8}\" stroke-width=\"{:.4}\"/>", start.x.min(end.x), start.y.min(end.y), (start.x-end.x).abs(), (start.y-end.y).abs(), style.width).unwrap();
+            continue;
+        }
+        let Some((outline, color)) = annotation.outline() else {
+            continue;
+        };
+        let (color, opacity) = paint(color);
+        match outline {
+            Outline::Dot { center, radius } => {
+                write!(svg, "<circle cx=\"{:.4}\" cy=\"{:.4}\" r=\"{radius:.4}\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\"/>", center.x, center.y).unwrap();
             }
-            Annotation::Arrow { start, end, style } => {
-                let (color, opacity) = paint(style.color);
-                let outline = arrow_outline(*start, *end, style.width);
-                if let Some(tip) = outline.first() {
-                    write!(svg, "<path d=\"M{:.4},{:.4}", tip.x, tip.y).unwrap();
-                    for point in &outline[1..] {
-                        write!(svg, " L{:.4},{:.4}", point.x, point.y).unwrap();
-                    }
-                    write!(svg, " Z\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\"/>").unwrap();
-                }
-            }
-            Annotation::Text {
-                origin,
-                text,
-                font_size,
-                color,
+            Outline::Stroke {
+                points,
+                width,
+                closed,
+                rounded,
             } => {
-                let (color, opacity) = paint(*color);
-                for (line, text) in text.lines().enumerate() {
-                    write!(svg, "<text x=\"{:.4}\" y=\"{:.4}\" font-family=\"{font_family}\" font-size=\"{font_size:.4}\" dominant-baseline=\"text-before-edge\" xml:space=\"preserve\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\">{}</text>", origin.x, origin.y + line as f64 * font_size * 1.25, escaped(text)).unwrap();
+                svg.push_str("<path d=\"");
+                path_data(&mut svg, &points, closed);
+                write!(svg, "\" fill=\"none\" stroke=\"{color}\" stroke-opacity=\"{opacity:.8}\" stroke-width=\"{width:.4}\"").unwrap();
+                if rounded {
+                    svg.push_str(" stroke-linecap=\"round\" stroke-linejoin=\"round\"");
                 }
+                svg.push_str("/>");
+            }
+            Outline::Fill(points) => {
+                svg.push_str("<path d=\"");
+                path_data(&mut svg, &points, true);
+                write!(svg, "\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\"/>").unwrap();
             }
         }
     }

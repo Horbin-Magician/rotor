@@ -10,6 +10,7 @@ use gpui_kit::{
     prelude::*,
     *,
 };
+use rotor_common::Settings;
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, Services};
 use std::{collections::HashMap, ops::Range, sync::Arc, time::Duration};
 
@@ -45,6 +46,9 @@ pub struct SearchView {
     pointer: Option<Point<Pixels>>,
     blur_task: Option<Task<()>>,
     resize_pending: bool,
+    /// Snapshot of the interface language. Render paths must not lock and
+    /// clone the shared configuration on every frame.
+    chinese: bool,
     _input_events: Subscription,
     _activation: Subscription,
 }
@@ -54,7 +58,9 @@ impl SearchView {
             cx.bind_keys([KeyBinding::new("tab", ToggleAi, Some("RotorSearch"))]);
             cx.set_global(SearchKeybindings);
         }
-        window.set_window_title(search_title(&services.settings()));
+        let settings = services.settings();
+        window.set_window_title(search_title(&settings));
+        let chinese = is_chinese(&settings);
         services.update_search();
         let initial = services.search(String::new());
         let index_state = if initial.is_ok() {
@@ -119,6 +125,7 @@ impl SearchView {
             pointer: None,
             blur_task: None,
             resize_pending: false,
+            chinese,
             _input_events: input_events,
             _activation: activation,
         }
@@ -252,6 +259,7 @@ impl SearchView {
             RuntimeEvent::SettingsSaved {
                 result: Ok(config), ..
             } => {
+                self.chinese = is_chinese(config);
                 window.set_window_title(if self.ai_mode {
                     "Rotor · AI"
                 } else {
@@ -339,7 +347,7 @@ impl SearchView {
                 }
             });
         }
-        let chinese = rotor_common::i18n::language_for_config(&self.services.settings()) == "zh-CN";
+        let chinese = self.chinese;
         let dark = cx.theme().is_dark();
         let selected_color = rgb(if dark { 0x14212a } else { 0xe9f4fe });
         let foreground = rgb(if dark { 0xf6f6f6 } else { 0x121212 });
@@ -524,7 +532,7 @@ impl SearchView {
 impl Render for SearchView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.schedule_resize_after_render(window, cx);
-        let chinese = rotor_common::i18n::language_for_config(&self.services.settings()) == "zh-CN";
+        let chinese = self.chinese;
         let weak = cx.weak_entity();
         let count = self.results.items.len();
         let dark = cx.theme().is_dark();
@@ -709,8 +717,12 @@ impl Render for SearchView {
     }
 }
 
+fn is_chinese(config: &rotor_common::Config) -> bool {
+    config.locale().is_chinese()
+}
+
 fn search_title(config: &rotor_common::Config) -> &'static str {
-    if rotor_common::i18n::language_for_config(config) == "zh-CN" {
+    if is_chinese(config) {
         "Rotor · 文件搜索"
     } else {
         "Rotor · File search"

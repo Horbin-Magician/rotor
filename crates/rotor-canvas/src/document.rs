@@ -89,6 +89,89 @@ impl Annotation {
     }
 }
 
+/// Resolution-independent geometry of a non-text annotation in image space.
+///
+/// Both the on-screen path tessellation and the SVG export consume this, so
+/// the rules that make them agree (a stationary pen stroke is a dot, pens use
+/// round caps and joins, rectangles are sharp closed strokes, arrows are one
+/// filled silhouette) are decided exactly once.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Outline {
+    Dot {
+        center: ImagePoint,
+        radius: f64,
+    },
+    Stroke {
+        points: Vec<ImagePoint>,
+        width: f64,
+        closed: bool,
+        /// Round caps and joins; otherwise butt caps and miter joins.
+        rounded: bool,
+    },
+    Fill(Vec<ImagePoint>),
+}
+
+impl Annotation {
+    /// `None` for text, which is laid out by a text system rather than traced.
+    pub fn outline(&self) -> Option<(Outline, Color)> {
+        match self {
+            Self::Pen { points, style } => {
+                let first = *points.first()?;
+                let outline = if points.iter().all(|point| *point == first) {
+                    Outline::Dot {
+                        center: first,
+                        radius: style.width / 2.,
+                    }
+                } else {
+                    Outline::Stroke {
+                        points: points.clone(),
+                        width: style.width,
+                        closed: false,
+                        rounded: true,
+                    }
+                };
+                Some((outline, style.color))
+            }
+            Self::Rectangle { start, end, style } => Some((
+                Outline::Stroke {
+                    points: vec![
+                        *start,
+                        ImagePoint {
+                            x: end.x,
+                            y: start.y,
+                        },
+                        *end,
+                        ImagePoint {
+                            x: start.x,
+                            y: end.y,
+                        },
+                    ],
+                    width: style.width,
+                    closed: true,
+                    rounded: false,
+                },
+                style.color,
+            )),
+            Self::Arrow { start, end, style } => {
+                let outline = arrow_outline(*start, *end, style.width);
+                (!outline.is_empty()).then_some((Outline::Fill(outline), style.color))
+            }
+            Self::Text { .. } => None,
+        }
+    }
+}
+
+/// Logical (window) pixels per source pixel for a pin at `zoom_percent`.
+/// `content_scale` is the display scale the pixels were captured at.
+pub fn pin_scale(zoom_percent: u32, content_scale: f64) -> f64 {
+    f64::from(zoom_percent) / 100. / content_scale
+}
+
+/// Physical pixels per source pixel on a window with `window_scale`.
+pub fn pin_physical_scale(zoom_percent: u32, content_scale: f64, window_scale: f64) -> f64 {
+    pin_scale(zoom_percent, content_scale) * window_scale
+}
+
 /// One filled silhouette shared by the live overlay and exported pixels.
 /// The shaft ends at the head's shoulders, so no rounded stroke protrudes at the tip.
 pub fn arrow_outline(start: ImagePoint, end: ImagePoint, width: f64) -> Vec<ImagePoint> {
@@ -297,6 +380,72 @@ impl ViewTransform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outlines_apply_the_shared_shape_rules() {
+        let style = StrokeStyle {
+            color: Color::RED,
+            width: 4.,
+        };
+        let p = |x, y| ImagePoint { x, y };
+        assert_eq!(
+            Annotation::Pen {
+                points: vec![p(3., 3.), p(3., 3.)],
+                style,
+            }
+            .outline(),
+            Some((
+                Outline::Dot {
+                    center: p(3., 3.),
+                    radius: 2.
+                },
+                Color::RED
+            ))
+        );
+        assert!(matches!(
+            Annotation::Pen { points: vec![p(0., 0.), p(5., 5.)], style }.outline(),
+            Some((Outline::Stroke { closed: false, rounded: true, width, .. }, _)) if width == 4.
+        ));
+        let rectangle = Annotation::Rectangle {
+            start: p(10., 20.),
+            end: p(0., 5.),
+            style,
+        };
+        match rectangle.outline() {
+            Some((
+                Outline::Stroke {
+                    points,
+                    closed: true,
+                    rounded: false,
+                    ..
+                },
+                _,
+            )) => assert_eq!(points, vec![p(10., 20.), p(0., 20.), p(0., 5.), p(10., 5.)]),
+            other => panic!("unexpected rectangle outline: {other:?}"),
+        }
+        assert!(matches!(
+            Annotation::Arrow { start: p(0., 0.), end: p(30., 0.), style }.outline(),
+            Some((Outline::Fill(points), _)) if points.len() > 3
+        ));
+        assert!(Annotation::Arrow {
+            start: p(1., 1.),
+            end: p(1., 1.),
+            style
+        }
+        .outline()
+        .is_none());
+        assert!(Annotation::Text {
+            origin: p(0., 0.),
+            text: "x".into(),
+            font_size: 12.,
+            color: Color::RED,
+        }
+        .outline()
+        .is_none());
+        assert_eq!(pin_scale(150, 2.), 0.75);
+        assert_eq!(pin_physical_scale(150, 2., 2.), 1.5);
+    }
+
     #[test]
     fn arrows_have_a_single_tip_and_proportional_short_heads() {
         for length in [0.1, 3., 100.] {

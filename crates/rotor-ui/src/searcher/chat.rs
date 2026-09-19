@@ -143,7 +143,7 @@ impl SearchView {
     }
 
     pub(super) fn render_chat(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let chinese = rotor_common::i18n::language_for_config(&self.services.settings()) == "zh-CN";
+        let chinese = self.chinese;
         let dark = cx.theme().is_dark();
         let assistant_background = rgb(if dark { 0x1c1c1c } else { 0xf5f5f5 });
         let user_background = rgb(if dark { 0x14212a } else { 0xe9f4fe });

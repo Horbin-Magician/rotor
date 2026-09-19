@@ -134,6 +134,8 @@ impl AiProtocol {
 /// Typed accessors for a configuration snapshot.
 pub trait Settings {
     fn language(&self) -> Language;
+    /// The interface language after resolving "follow the system".
+    fn locale(&self) -> crate::i18n::Locale;
     fn theme(&self) -> Theme;
     fn translator_engine(&self) -> TranslatorEngine;
     /// The stored text for `key`, or an empty string when absent.
@@ -143,6 +145,10 @@ pub trait Settings {
 impl Settings for Config {
     fn language(&self) -> Language {
         Language::from_value(self.get(keys::LANGUAGE).map(String::as_str))
+    }
+
+    fn locale(&self) -> crate::i18n::Locale {
+        crate::i18n::Locale::from_config(self)
     }
 
     fn theme(&self) -> Theme {

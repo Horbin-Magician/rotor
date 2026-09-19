@@ -1,6 +1,7 @@
 use crate::{ShellState, WindowRole, WindowSlot, WindowView};
 use gpui_kit::{component::Root, *};
 use raw_window_handle::HasWindowHandle;
+use rotor_common::Settings;
 use rotor_runtime::{CaptureBundle, NativeSession, OperationId, ShotterConfig};
 use rotor_ui::{MaskAction, PreparedCapture};
 use std::{
@@ -121,8 +122,7 @@ fn create_mask_window(
         .into_iter()
         .find(|display| u64::from(display.id()) as u32 == monitor.id)
         .ok_or("Captured display is no longer available")?;
-    let chinese =
-        rotor_common::i18n::language_for_config(&cx.global::<ShellState>().config) == "zh-CN";
+    let locale = cx.global::<ShellState>().config.locale();
     let frame = PreparedCapture::placeholder(monitor.clone());
     let handle = cx
         .open_window(
@@ -140,7 +140,7 @@ fn create_mask_window(
             },
             |window, cx| {
                 let view = cx.new(|cx| {
-                    rotor_ui::MaskView::new(0, frame, Rc::new(mask_action), chinese, window, cx)
+                    rotor_ui::MaskView::new(0, frame, Rc::new(mask_action), locale, window, cx)
                 });
                 cx.global_mut::<ShellState>().windows.insert(
                     role,
@@ -311,8 +311,7 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
         return Ok(());
     }
     cx.global_mut::<ShellState>().monitors = monitors;
-    let chinese =
-        rotor_common::i18n::language_for_config(&cx.global::<ShellState>().config) == "zh-CN";
+    let locale = cx.global::<ShellState>().config.locale();
     let (cursor_display, cursor) = crate::placement::cursor_display(cx);
     let focus_id = cursor_display
         .as_ref()
@@ -347,7 +346,7 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
         handle
             .update(cx, |_, window, cx| {
                 view.update(cx, |view, cx| {
-                    view.reset(session, frame, chinese, cx);
+                    view.reset(session, frame, locale, cx);
                     if Some(monitor) == focus_id
                         && let Some(cursor) = cursor
                     {

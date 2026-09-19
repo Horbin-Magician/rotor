@@ -1,7 +1,8 @@
 use super::*;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use rotor_canvas::{
-    Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, StrokeStyle, ViewTransform,
+    Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, Outline, StrokeStyle,
+    ViewTransform,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,7 +168,7 @@ impl PinView {
         }
     }
     fn canvas_scale(&self) -> f64 {
-        self.record.zoom_factor as f64 / 100. / self.content_scale as f64
+        rotor_canvas::pin_scale(self.record.zoom_factor, self.content_scale as f64)
     }
     fn transform(&self) -> ViewTransform {
         let (x, y, width, height) = self.crop();
@@ -873,97 +874,75 @@ fn paint_paths(
     }
 }
 
+/// Tessellate the shared [`Outline`] in document coordinates. The shape rules
+/// live in rotor-canvas so the export renders the same geometry.
 fn annotation_paths(annotation: &Annotation) -> Vec<(gpui::Path<Pixels>, Color)> {
     let mut paths = Vec::new();
-    let point = |point: ImagePoint| Some(gpui_kit::point(px(point.x as f32), px(point.y as f32)));
-    let (points, style, closed) = match annotation {
-        Annotation::Pen { points, style } => (points.clone(), *style, false),
-        Annotation::Rectangle { start, end, style } => (
-            vec![
-                *start,
-                ImagePoint {
-                    x: end.x,
-                    y: start.y,
-                },
-                *end,
-                ImagePoint {
-                    x: start.x,
-                    y: end.y,
-                },
-                *start,
-            ],
-            *style,
-            true,
-        ),
-        Annotation::Arrow { start, end, style } => {
-            let outline = rotor_canvas::arrow_outline(*start, *end, style.width);
-            if outline.is_empty() {
-                return paths;
-            }
-            let mut fill = PathBuilder::fill();
-            for (index, position) in outline.into_iter().enumerate() {
-                let position = point(position).unwrap();
-                if index == 0 {
-                    fill.move_to(position);
-                } else {
-                    fill.line_to(position);
-                }
-            }
-            fill.close();
-            if let Ok(path) = fill.build() {
-                paths.push((path, style.color));
-            }
-            return paths;
-        }
-        Annotation::Text { .. } => return paths,
-    };
-    let width = style.width;
-    if !closed && points.iter().all(|point| point == &points[0]) {
-        let center = point(points[0]).unwrap();
-        let radius = px(width as f32 / 2.);
-        let mut circle = PathBuilder::fill();
-        circle.move_to(center + gpui_kit::point(radius, px(0.)));
-        circle.arc_to(
-            gpui_kit::point(radius, radius),
-            px(0.),
-            false,
-            true,
-            center - gpui_kit::point(radius, px(0.)),
-        );
-        circle.arc_to(
-            gpui_kit::point(radius, radius),
-            px(0.),
-            false,
-            true,
-            center + gpui_kit::point(radius, px(0.)),
-        );
-        circle.close();
-        if let Ok(path) = circle.build() {
-            paths.push((path, style.color));
-        }
+    let Some((outline, color)) = annotation.outline() else {
         return paths;
-    }
-    let mut options = gpui::StrokeOptions::default().with_line_width(width as f32);
-    if !closed {
-        options = options.with_line_cap(lyon::path::LineCap::Round);
-    }
-    if matches!(annotation, Annotation::Pen { .. }) {
-        options = options.with_line_join(lyon::path::LineJoin::Round);
-    }
-    let mut path =
-        PathBuilder::stroke(px(width as f32)).with_style(gpui::PathStyle::Stroke(options));
-    for (index, position) in points.into_iter().filter_map(point).enumerate() {
-        if index == 0 {
-            path.move_to(position);
-        } else {
-            path.line_to(position);
+    };
+    let point = |point: ImagePoint| gpui_kit::point(px(point.x as f32), px(point.y as f32));
+    let trace = |builder: &mut PathBuilder, points: &[ImagePoint]| {
+        for (index, position) in points.iter().enumerate() {
+            if index == 0 {
+                builder.move_to(point(*position));
+            } else {
+                builder.line_to(point(*position));
+            }
         }
-    }
-    if closed {
-        path.close();
-    }
-    if let Ok(path) = path.build() {
-        paths.push((path, style.color));
+    };
+    let built = match outline {
+        Outline::Dot { center, radius } => {
+            let center = point(center);
+            let radius = px(radius as f32);
+            let mut circle = PathBuilder::fill();
+            circle.move_to(center + gpui_kit::point(radius, px(0.)));
+            circle.arc_to(
+                gpui_kit::point(radius, radius),
+                px(0.),
+                false,
+                true,
+                center - gpui_kit::point(radius, px(0.)),
+            );
+            circle.arc_to(
+                gpui_kit::point(radius, radius),
+                px(0.),
+                false,
+                true,
+                center + gpui_kit::point(radius, px(0.)),
+            );
+            circle.close();
+            circle.build()
+        }
+        Outline::Stroke {
+            points,
+            width,
+            closed,
+            rounded,
+        } => {
+            let mut options = gpui::StrokeOptions::default().with_line_width(width as f32);
+            if rounded {
+                options = options
+                    .with_line_cap(lyon::path::LineCap::Round)
+                    .with_line_join(lyon::path::LineJoin::Round);
+            }
+            let mut path =
+                PathBuilder::stroke(px(width as f32)).with_style(gpui::PathStyle::Stroke(options));
+            trace(&mut path, &points);
+            if closed {
+                path.close();
+            }
+            path.build()
+        }
+        Outline::Fill(points) => {
+            let mut fill = PathBuilder::fill();
+            trace(&mut fill, &points);
+            fill.close();
+            fill.build()
+        }
+    };
+    if let Ok(path) = built {
+        paths.push((path, color));
     }
     paths
 }

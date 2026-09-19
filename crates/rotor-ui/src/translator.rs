@@ -7,7 +7,7 @@ use gpui_kit::{
     prelude::*,
     *,
 };
-use rotor_common::Config;
+use rotor_common::{Config, Settings};
 use rotor_runtime::{OperationId, RuntimeEvent, Services, TranslateStreamEvent};
 use std::sync::Arc;
 
@@ -72,11 +72,7 @@ impl TranslatorView {
         view
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
-        if rotor_common::i18n::language_for_config(&self.config) == "zh-CN" {
-            zh
-        } else {
-            en
-        }
+        self.config.locale().pick(zh, en)
     }
     fn cancel(&mut self) {
         if let Some(id) = self.active.take() {

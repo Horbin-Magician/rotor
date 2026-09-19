@@ -1,5 +1,6 @@
 use async_channel::{Receiver, Sender};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
+use rotor_common::Settings;
 use rotor_runtime::{
     OperationId,
     shortcuts::{
@@ -363,7 +364,7 @@ impl SystemServices {
         config: &rotor_common::Config,
     ) -> Result<(), String> {
         let menu = Menu::new();
-        let chinese = rotor_common::i18n::language_for_config(config) == "zh-CN";
+        let chinese = config.locale().is_chinese();
         let items: Vec<_> = [
             ("设置", "Settings", Command::ShowSettings),
             ("退出", "Quit", Command::Quit),

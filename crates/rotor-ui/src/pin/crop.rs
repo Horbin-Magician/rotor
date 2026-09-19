@@ -196,9 +196,7 @@ impl PinView {
             pointer,
             bounds,
             scale: window.scale_factor(),
-            ratio: window.scale_factor() as f64 / self.content_scale as f64
-                * self.record.zoom_factor as f64
-                / 100.,
+            ratio: self.physical_scale(window),
             record: self.record.clone(),
             pending: None,
             frame_token: Rc::new(()),
@@ -206,6 +204,15 @@ impl PinView {
         cx.notify();
         true
     }
+    /// Physical pixels per source pixel at the current zoom.
+    fn physical_scale(&self, window: &Window) -> f64 {
+        rotor_canvas::pin_physical_scale(
+            self.record.zoom_factor,
+            self.content_scale as f64,
+            window.scale_factor() as f64,
+        )
+    }
+
     pub(super) fn move_crop(
         &mut self,
         _local: Point<Pixels>,
@@ -299,8 +306,7 @@ impl PinView {
     ) -> Result<(), String> {
         // Quantize only in physical pixels, retaining sub-point crop sizes on
         // HiDPI displays instead of snapping twice at different resolutions.
-        let factor = self.record.zoom_factor as f64 / 100. / self.content_scale as f64
-            * window.scale_factor() as f64;
+        let factor = self.physical_scale(window);
         let width = (crop.width as f64 * factor).round().max(1.);
         let height = (crop.height as f64 * factor).round().max(1.);
         if width > 8192.
@@ -353,9 +359,7 @@ impl PinView {
             .current_bounds(window)
             .ok_or("Pin window position is unavailable")?;
         let (x, y, _, _) = self.crop();
-        let ratio = window.scale_factor() as f64 / self.content_scale as f64
-            * self.record.zoom_factor as f64
-            / 100.;
+        let ratio = self.physical_scale(window);
         self.apply_crop_at(
             crop,
             current.x as f64 + (crop.x as f64 - x as f64) * ratio,
