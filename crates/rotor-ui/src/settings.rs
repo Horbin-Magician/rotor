@@ -1,3 +1,4 @@
+use closing::{CloseDecision, CloseTarget};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon, IconName, WindowExt,
@@ -19,6 +20,7 @@ mod ai_provider;
 mod appearance;
 mod automatic;
 mod autosave;
+mod closing;
 mod controls;
 mod general;
 mod logo;
@@ -58,11 +60,6 @@ struct Field {
     label: (&'static str, &'static str),
     state: Entity<InputState>,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CloseTarget {
-    Window,
-    Application,
-}
 pub struct SettingsView {
     ai_test: ai_provider::ConfigurationTest,
     update: Arc<rotor_runtime::UpdateSnapshot>,
@@ -80,8 +77,7 @@ pub struct SettingsView {
     _field_observers: Vec<Subscription>,
     composition_check: Option<Task<()>>,
     action_save: Option<Task<()>>,
-    close_request: Option<CloseTarget>,
-    last_close_target: CloseTarget,
+    closing: closing::CloseIntent,
     manual_failed: bool,
     choosing_path: bool,
     message: String,
@@ -395,8 +391,7 @@ impl SettingsView {
             _field_observers: field_observers,
             composition_check: None,
             action_save: None,
-            close_request: None,
-            last_close_target: CloseTarget::Window,
+            closing: closing::CloseIntent::default(),
             manual_failed: false,
             choosing_path: false,
             message,
@@ -514,7 +509,7 @@ impl SettingsView {
         cx.notify();
     }
     fn save(&mut self, changes: Vec<(String, String)>, cx: &mut Context<Self>) {
-        if self.pending.is_some() || self.close_request.is_some() {
+        if self.pending.is_some() || self.closing.is_pending() {
             return;
         }
         let keys = changes.iter().map(|(key, _)| key.clone()).collect();
@@ -552,7 +547,7 @@ impl SettingsView {
     }
 
     fn choose_save_directory(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.choosing_path || self.pending.is_some() || self.close_request.is_some() {
+        if self.choosing_path || self.pending.is_some() || self.closing.is_pending() {
             return;
         }
         self.choosing_path = true;
@@ -693,8 +688,8 @@ impl Render for SettingsView {
             if selected {
                 indicator_target = row_top;
             }
-            let highlighted = selected
-                || (self.close_request.is_none() && self.navigation_hover == Some(*section));
+            let highlighted =
+                selected || (!self.closing.is_pending() && self.navigation_hover == Some(*section));
             let (value, running) = self.navigation_highlights[index].sample(
                 if highlighted { 1. } else { 0. },
                 now,
@@ -1019,7 +1014,7 @@ impl Render for SettingsView {
                                                                 .text_size(px(14.)),
                                                             self.t(zh, en),
                                                             selected,
-                                                            self.close_request.is_some(),
+                                                            self.closing.is_pending(),
                                                             highlights[index],
                                                             cx,
                                                         )
@@ -1110,7 +1105,7 @@ impl Render for SettingsView {
                                             .rounded_none(),
                                         cx,
                                     )
-                                    .disabled(self.close_request.is_some())
+                                    .disabled(self.closing.is_pending())
                                     .on_click(cx.listener(
                                         |this, _, window, cx| this.request_close(window, cx),
                                     )),

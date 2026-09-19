@@ -256,7 +256,7 @@ impl SettingsView {
         }
     }
     fn schedule_action_save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.close_request.is_some() {
+        if self.closing.is_pending() {
             return;
         }
         self.action_save = Some(cx.spawn_in(window, async move |view, cx| {
@@ -265,7 +265,7 @@ impl SettingsView {
                 .await;
             let _ = view.update_in(cx, |this, window, cx| {
                 // Closing drains this draft after the in-flight receipt arrives.
-                if this.close_request.is_some() {
+                if this.closing.is_pending() {
                     return;
                 }
                 this.action_save = None;

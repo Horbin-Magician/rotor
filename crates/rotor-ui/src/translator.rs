@@ -532,3 +532,134 @@ impl Render for TranslatorView {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::TranslatorView;
+    use gpui_kit::TestAppContext;
+    use rotor_runtime::{
+        OperationId, RuntimeEvent, ServiceOptions, Services, TranslateResult, TranslateStreamEvent,
+    };
+    use std::sync::{Arc, Mutex};
+
+    fn services() -> (Arc<Services>, tempfile::TempDir) {
+        let profile = tempfile::tempdir().unwrap();
+        let config = rotor_common::ConfigService::load_from(profile.path()).unwrap();
+        let (services, _events) = Services::new(
+            Arc::new(Mutex::new(config)),
+            None,
+            ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        (Arc::new(services), profile)
+    }
+
+    fn delta(id: OperationId, content: &str) -> RuntimeEvent {
+        RuntimeEvent::Translation {
+            id,
+            event: TranslateStreamEvent::Delta {
+                content: content.into(),
+            },
+        }
+    }
+
+    fn finished(id: OperationId, translated: &str) -> RuntimeEvent {
+        RuntimeEvent::TranslationFinished {
+            id,
+            result: Ok(TranslateResult {
+                text: String::new(),
+                translated: translated.into(),
+                from: "en".into(),
+                to: "zh-CN".into(),
+            }),
+        }
+    }
+
+    #[gpui::test]
+    fn streamed_text_accumulates_only_for_the_active_request(cx: &mut TestAppContext) {
+        let (services, _profile) = services();
+        cx.update(gpui_kit::component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| TranslatorView::new(services, window, cx));
+        let first = view.update_in(cx, |view, window, cx| {
+            view.translate_text("hello".into(), Some("restore".into()), window, cx);
+            view.active.expect("selection translation starts a request")
+        });
+        view.update_in(cx, |view, window, cx| {
+            assert!(view.selection_mode);
+            assert_eq!(view.warning, "restore");
+            view.handle_event(
+                &RuntimeEvent::Translation {
+                    id: first,
+                    event: TranslateStreamEvent::Started {
+                        text: "hello".into(),
+                        from: "en".into(),
+                        to: "zh-CN".into(),
+                    },
+                },
+                window,
+                cx,
+            );
+            view.handle_event(&delta(first, "你"), window, cx);
+            view.handle_event(&delta(OperationId(first.0 + 1000), "IGNORED"), window, cx);
+            view.handle_event(&delta(first, "好"), window, cx);
+            assert_eq!(view.translated, "你好");
+            assert_eq!(
+                view.languages,
+                Some(("en".to_string(), "zh-CN".to_string()))
+            );
+        });
+
+        // A newer request supersedes the first; its late events are dropped.
+        let second = view.update_in(cx, |view, window, cx| {
+            view.translate_text("again".into(), None, window, cx);
+            view.active.unwrap()
+        });
+        assert_ne!(first, second);
+        view.update_in(cx, |view, window, cx| {
+            assert!(view.translated.is_empty());
+            assert!(view.warning.is_empty());
+            view.handle_event(&delta(first, "stale"), window, cx);
+            view.handle_event(&finished(first, "stale"), window, cx);
+            assert!(view.translated.is_empty());
+            assert_eq!(view.active, Some(second));
+            view.handle_event(&finished(second, "再次"), window, cx);
+            assert_eq!(view.translated, "再次");
+            assert_eq!(view.active, None);
+            assert!(view.message.is_empty());
+        });
+    }
+
+    #[gpui::test]
+    fn failures_keep_partial_text_and_begin_input_resets(cx: &mut TestAppContext) {
+        let (services, _profile) = services();
+        cx.update(gpui_kit::component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| TranslatorView::new(services, window, cx));
+        let id = view.update_in(cx, |view, window, cx| {
+            view.translate_text("text".into(), None, window, cx);
+            view.active.unwrap()
+        });
+        view.update_in(cx, |view, window, cx| {
+            view.handle_event(&delta(id, "partial"), window, cx);
+            view.handle_event(
+                &RuntimeEvent::TranslationFinished {
+                    id,
+                    result: Err("network down".into()),
+                },
+                window,
+                cx,
+            );
+            assert_eq!(view.message, "network down");
+            assert_eq!(view.translated, "partial");
+            assert_eq!(view.active, None);
+            // Blank input never starts a request.
+            view.input
+                .update(cx, |input, cx| input.set_value("   ", window, cx));
+            view.submit(window, cx);
+            assert_eq!(view.active, None);
+            view.begin_input(window, cx);
+            assert!(!view.selection_mode);
+            assert!(view.translated.is_empty() && view.message.is_empty());
+            assert!(view.input.read(cx).value().is_empty());
+        });
+    }
+}
