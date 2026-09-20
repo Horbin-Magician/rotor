@@ -424,7 +424,7 @@ impl SettingsView {
             }),
             navigation_indicator: motion::Transition::new(0., 240),
             logo_hover: false,
-            logo_glow: motion::Transition::new(0., 220),
+            logo_glow: motion::Transition::new(0., 280),
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
