@@ -7,40 +7,28 @@ impl Services {
         let mut config = EngineConfig::from_config(&draft);
         config.engine = "ai".into();
         config.target_lang = "en".into();
-        let id = next_operation();
-        let mut task = lock(&self.ai_test);
-        self.ensure_running()?;
-        if let Some((_, previous)) = task.take() {
-            previous.abort();
-        }
         let events = self.events.clone();
-        *task = Some((
-            id,
-            self.runtime().spawn(async move {
-                // Exercise authentication, model access and the complete streaming
-                // protocol with a small fixed input, never user text.
-                let result = engine::translate_with_config(&config, "你好", |_| {})
-                    .await
-                    .map(|_| ())
-                    .map_err(|error| config.redact_error(error.to_string()));
-                let _ = events
-                    .send(RuntimeEvent::AiProviderTested { id, result })
-                    .await;
-            }),
-        ));
-        Ok(id)
+        let runtime = self.runtime();
+        self.ai_test.begin(
+            || self.ensure_running(),
+            move |id, _| {
+                runtime.spawn(async move {
+                    // Exercise authentication, model access and the complete streaming
+                    // protocol with a small fixed input, never user text.
+                    let result = engine::translate_with_config(&config, "你好", |_| {})
+                        .await
+                        .map(|_| ())
+                        .map_err(|error| config.redact_error(error.to_string()));
+                    let _ = events
+                        .send(RuntimeEvent::AiProviderTested { id, result })
+                        .await;
+                })
+            },
+        )
     }
 
     pub fn cancel_ai_provider_test(&self, id: Option<OperationId>) {
-        let mut task = lock(&self.ai_test);
-        if task
-            .as_ref()
-            .is_some_and(|(current, _)| id.is_none_or(|id| id == *current))
-        {
-            if let Some((_, task)) = task.take() {
-                task.abort();
-            }
-        }
+        self.ai_test.cancel(id);
     }
 }
 

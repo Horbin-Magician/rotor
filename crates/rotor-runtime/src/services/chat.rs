@@ -10,41 +10,29 @@ impl Services {
             return Err("Enter a message first".into());
         }
         let config = EngineConfig::from_config(&self.settings());
-        let id = next_operation();
-        let mut task = lock(&self.chat);
-        self.ensure_running()?;
-        if let Some((_, previous)) = task.take() {
-            previous.abort();
-        }
         let events = self.events.clone();
-        *task = Some((
-            id,
-            self.runtime().spawn(async move {
-                let relay = ProgressRelay::start(
-                    events.clone(),
-                    || true,
-                    move |event| RuntimeEvent::Chat { id, event },
-                );
-                let result = engine::chat_with_config(&config, &messages, relay.callback())
-                    .await
-                    .map_err(|error| config.redact_error(error.to_string()));
-                relay.finish().await;
-                let _ = events.send(RuntimeEvent::ChatFinished { id, result }).await;
-            }),
-        ));
-        Ok(id)
+        let runtime = self.runtime();
+        self.chat.begin(
+            || self.ensure_running(),
+            move |id, _| {
+                runtime.spawn(async move {
+                    let relay = ProgressRelay::start(
+                        events.clone(),
+                        || true,
+                        move |event| RuntimeEvent::Chat { id, event },
+                    );
+                    let result = engine::chat_with_config(&config, &messages, relay.callback())
+                        .await
+                        .map_err(|error| config.redact_error(error.to_string()));
+                    relay.finish().await;
+                    let _ = events.send(RuntimeEvent::ChatFinished { id, result }).await;
+                })
+            },
+        )
     }
 
     pub fn cancel_chat(&self, id: Option<OperationId>) {
-        let mut task = lock(&self.chat);
-        if task
-            .as_ref()
-            .is_some_and(|(current, _)| id.is_none_or(|id| id == *current))
-        {
-            if let Some((_, task)) = task.take() {
-                task.abort();
-            }
-        }
+        self.chat.cancel(id);
     }
 }
 

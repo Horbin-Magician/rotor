@@ -37,6 +37,8 @@ mod chat;
 pub use rotor_translator::engine::ChatMessage;
 mod capture_worker;
 use capture_worker::{CaptureRequest, CaptureWorker};
+mod flight;
+use flight::{Latest, SingleFlight};
 
 const EVENT_CAPACITY: usize = 64;
 const SETTINGS_CAPACITY: usize = 16;
@@ -166,12 +168,13 @@ pub struct Services {
     settings_worker: Option<JoinHandle<()>>,
     pins: PinService,
     searcher: Option<Searcher>,
-    chat: Mutex<Option<(OperationId, JoinHandle<()>)>>,
-    ai_test: Mutex<Option<(OperationId, JoinHandle<()>)>>,
-    translation: Mutex<Option<JoinHandle<()>>>,
-    translation_id: Arc<AtomicU64>,
+    chat: SingleFlight,
+    ai_test: SingleFlight,
+    translation: SingleFlight,
+    /// Selection capture blocks inside the OS; it is cancelled cooperatively
+    /// through a flag the blocking call polls, not by aborting a task.
     selection: Mutex<Option<Arc<AtomicBool>>>,
-    capture_id: Arc<AtomicU64>,
+    capture_id: Latest,
     capture_worker: CaptureWorker,
     background: Mutex<Vec<JoinHandle<()>>>,
     slots: Arc<Semaphore>,
@@ -204,7 +207,7 @@ impl Services {
             .build()
             .map_err(|error| error.to_string())?;
         let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
-        let capture_id = Arc::new(AtomicU64::new(0));
+        let capture_id = Latest::default();
         let capture_worker = CaptureWorker::new(events.clone(), capture_id.clone())?;
         let (settings, settings_receiver) = async_channel::bounded(SETTINGS_CAPACITY);
         let data_directory = lock(&config)
@@ -253,10 +256,9 @@ impl Services {
                 settings_worker: Some(settings_worker),
                 pins,
                 searcher,
-                chat: Mutex::new(None),
-                ai_test: Mutex::new(None),
-                translation: Mutex::new(None),
-                translation_id: Arc::new(AtomicU64::new(0)),
+                chat: SingleFlight::default(),
+                ai_test: SingleFlight::default(),
+                translation: SingleFlight::default(),
                 selection: Mutex::new(None),
                 capture_id,
                 capture_worker,
@@ -675,53 +677,38 @@ impl Services {
             return Err("translation text is empty".into());
         }
         let config = EngineConfig::from_config(&self.settings());
-        let id = next_operation();
-        let mut previous = lock(&self.translation);
-        self.ensure_running()?;
-        self.translation_id.store(id.0, Ordering::Release);
-        if let Some(task) = previous.take() {
-            task.abort();
-        }
-        let current = self.translation_id.clone();
         let events = self.events.clone();
-        *previous = Some(self.runtime().spawn(async move {
-            let progress_id = current.clone();
-            let relay = ProgressRelay::start(
-                events.clone(),
-                move || progress_id.load(Ordering::Acquire) == id.0,
-                move |event| RuntimeEvent::Translation { id, event },
-            );
-            let result = engine::translate_with_config(&config, &text, relay.callback())
-                .await
-                .map_err(|error| config.redact_error(error.to_string()));
-            relay.finish().await;
-            if current.load(Ordering::Acquire) == id.0 {
-                let _ = events
-                    .send(RuntimeEvent::TranslationFinished { id, result })
-                    .await;
-            }
-        }));
-        Ok(id)
+        let runtime = self.runtime();
+        self.translation.begin(
+            || self.ensure_running(),
+            move |id, current| {
+                runtime.spawn(async move {
+                    let progress_id = current.clone();
+                    let relay = ProgressRelay::start(
+                        events.clone(),
+                        move || progress_id.is_current(id),
+                        move |event| RuntimeEvent::Translation { id, event },
+                    );
+                    let result = engine::translate_with_config(&config, &text, relay.callback())
+                        .await
+                        .map_err(|error| config.redact_error(error.to_string()));
+                    relay.finish().await;
+                    if current.is_current(id) {
+                        let _ = events
+                            .send(RuntimeEvent::TranslationFinished { id, result })
+                            .await;
+                    }
+                })
+            },
+        )
     }
 
     fn cancel_translation(&self) {
-        let mut task = lock(&self.translation);
-        self.translation_id
-            .store(next_operation().0, Ordering::Release);
-        if let Some(task) = task.take() {
-            task.abort();
-        }
+        self.translation.cancel(None);
     }
 
     pub fn cancel_translation_request(&self, id: OperationId) {
-        let mut task = lock(&self.translation);
-        if self.translation_id.load(Ordering::Acquire) == id.0 {
-            self.translation_id
-                .store(next_operation().0, Ordering::Release);
-            if let Some(task) = task.take() {
-                task.abort();
-            }
-        }
+        self.translation.cancel(Some(id));
     }
 
     pub fn capture(&self) -> Result<OperationId, String> {
@@ -761,7 +748,7 @@ impl Services {
             .spawn_blocking(move || {
                 let _permit = permit;
                 Ok(img_util::detect_pixels_cancellable(image.as_ref(), || {
-                    current.load(Ordering::Acquire) != session.0
+                    !current.is_current(session)
                 })?
                 .into_iter()
                 .map(|(x, y, width, height)| rotor_canvas::ImageRect {
@@ -776,8 +763,9 @@ impl Services {
             .map_err(|error| error.to_string())?
     }
 
+    /// An in-flight OS capture cannot be interrupted; its result is dropped.
     pub fn cancel_capture(&self) {
-        self.capture_id.store(next_operation().0, Ordering::Release);
+        self.capture_id.invalidate();
     }
 
     pub fn recognize_text(
