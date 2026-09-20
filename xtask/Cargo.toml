@@ -5,15 +5,14 @@ edition = "2021"
 publish = false
 
 [dependencies]
-serde_json = { version = "1", features = ["preserve_order"] }
-toml = "0.8"
-sha2 = "0.10"
+serde_json = { workspace = true, features = ["preserve_order"] }
+toml.workspace = true
+sha2.workspace = true
 rotor-common.workspace = true
 rotor-updater.workspace = true
 minisign = "=0.9.1"
-semver = "1"
+semver.workspace = true
 toml_edit = "=0.22.27"
-url = "2.5"
-plist = "=1.9.0"
-
-tempfile = "=3.27.0"
+url.workspace = true
+plist.workspace = true
+tempfile.workspace = true
