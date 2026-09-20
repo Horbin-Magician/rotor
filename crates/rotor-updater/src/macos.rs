@@ -49,12 +49,9 @@ fn validate_arguments(arguments: &[String]) -> Result<()> {
         return Err("Update restart requires an absolute profile directory".into());
     }
     if arguments.iter().any(|argument| argument.contains('\0'))
-        || arguments[2..].iter().any(|argument| {
-            !matches!(
-                argument.as_str(),
-                "--no-index" | "--no-hotkeys" | "--production-shortcuts" | "--no-elevate"
-            )
-        })
+        || arguments[2..]
+            .iter()
+            .any(|argument| !rotor_common::startup_flags::is_runtime_flag(argument))
     {
         return Err("Unsupported update restart arguments".into());
     }
@@ -115,17 +112,7 @@ pub fn launch_handoff(
             .ok_or("Profile path is not Unicode")?
             .into(),
     ];
-    arguments.extend(
-        flags
-            .iter()
-            .filter(|flag| {
-                matches!(
-                    flag.as_str(),
-                    "--no-index" | "--no-hotkeys" | "--production-shortcuts" | "--no-elevate"
-                )
-            })
-            .cloned(),
-    );
+    arguments.extend(rotor_common::startup_flags::runtime_flags(flags));
     validate_arguments(&arguments)?;
     let root = tempfile::Builder::new()
         .prefix("handoff-")

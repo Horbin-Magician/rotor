@@ -5,6 +5,7 @@ pub mod i18n;
 pub mod persistence;
 pub mod resources;
 pub mod settings;
+pub mod startup_flags;
 
 pub use config::AppConfig as ConfigService;
 pub use config::{AppConfig, Config, DEFAULT_QUICK_ACTIONS};

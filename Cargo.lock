@@ -6685,6 +6685,7 @@ dependencies = [
  "minisign-verify",
  "plist",
  "reqwest",
+ "rotor-common",
  "rustls",
  "semver",
  "serde",

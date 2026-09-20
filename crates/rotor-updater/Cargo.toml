@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 minisign-verify = "=0.2.5"
+rotor-common.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 rustls.workspace = true
 semver.workspace = true

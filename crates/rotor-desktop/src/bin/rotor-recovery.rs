@@ -51,13 +51,12 @@ mod windows {
                     profile = Some(std::path::PathBuf::from(&value));
                     forwarded.extend([argument, value]);
                 }
-                Some(
-                    "--no-elevate"
-                    | "--no-index"
-                    | "--no-hotkeys"
-                    | "--production-shortcuts"
-                    | "--background",
-                ) => forwarded.push(argument),
+                Some(flag)
+                    if rotor_common::startup_flags::is_runtime_flag(flag)
+                        || flag == "--background" =>
+                {
+                    forwarded.push(argument)
+                }
                 _ => return Err("Unsupported recovery launcher argument".into()),
             }
         }
