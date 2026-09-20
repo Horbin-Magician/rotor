@@ -384,7 +384,8 @@ impl SearchView {
                     }))
                     .child(
                         div()
-                            .w(px(if icon.is_some() { 54. } else { 20. }))
+                            // Reserve the icon slot while its image is loading.
+                            .w(px(54.))
                             .h_full()
                             .flex_shrink_0()
                             .flex()
