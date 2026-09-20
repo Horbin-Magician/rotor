@@ -2,12 +2,14 @@
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
+#[cfg(test)]
+use std::fs;
+use std::io;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc,
 };
 use std::time::SystemTime;
-use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
 
 use super::super::excluded_dirs::ExcludedDirs;
@@ -23,6 +25,9 @@ const MAX_RECOVERY_RESCANS: usize = 2;
 #[derive(Debug, Clone, Copy)]
 enum FileAction {
     Insert,
+    /// Production reconciles removals through `remove_subtrees`; only the
+    /// event-level tests drive explicit removals.
+    #[cfg_attr(not(test), allow(dead_code))]
     Remove,
 }
 
