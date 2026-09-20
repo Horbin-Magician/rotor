@@ -56,8 +56,8 @@ pub fn disable_window_animation(handle: WindowHandle<'_>) -> Result<(), String> 
     native::disable_window_animation(handle)
 }
 
-/// Keep capture overlays rectangular even when DWM rounds ordinary windows.
-/// Windows only; a no-op on macOS.
+/// Keep overlays rectangular: disable DWM rounding on Windows and remove
+/// AppKit's titled decoration on macOS while preserving client geometry.
 pub fn disable_window_rounding(handle: WindowHandle<'_>) -> Result<(), String> {
     native::disable_window_rounding(handle)
 }
@@ -245,6 +245,15 @@ fn resize_content_anchor(previous: (f64, f64), next: (i32, i32)) -> (bool, bool)
         (previous.0 - next.0 as f64).abs() > 0.25,
         (previous.1 - next.1 as f64).abs() > 0.25,
     )
+}
+
+/// Live client rectangle in the coordinate space used by `set_client_bounds`.
+/// On macOS all windows use the caller's scale, including across displays.
+pub fn client_bounds(handle: WindowHandle<'_>, scale: f32) -> Result<(i32, i32, u32, u32), String> {
+    if !scale.is_finite() || scale <= 0. {
+        return Err("Invalid window scale".into());
+    }
+    native::client_bounds(handle, scale)
 }
 
 #[cfg(test)]

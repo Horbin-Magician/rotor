@@ -5,7 +5,9 @@ fn main() {
     use objc2_app_kit::{NSApplication, NSBackingStoreType, NSPanel, NSWindowStyleMask};
     use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
     use raw_window_handle::{AppKitWindowHandle, RawWindowHandle, WindowHandle};
-    use rotor_platform::overlay::{enable_pin_minimization, window_minimized};
+    use rotor_platform::overlay::{
+        client_bounds, disable_window_rounding, enable_pin_minimization, window_minimized,
+    };
 
     let main = MainThreadMarker::new().expect("Run on the main thread");
     let application = NSApplication::sharedApplication(main);
@@ -32,8 +34,20 @@ fn main() {
     assert_eq!(window_minimized(handle), None);
     enable_pin_minimization(handle).unwrap();
     assert_eq!(panel.styleMask(), style | NSWindowStyleMask::Miniaturizable);
+    let bounds = client_bounds(handle, 2.).unwrap();
+    for _ in 0..2 {
+        disable_window_rounding(handle).unwrap();
+        assert_eq!(
+            panel.styleMask(),
+            NSWindowStyleMask::NonactivatingPanel | NSWindowStyleMask::Miniaturizable,
+        );
+        assert_eq!(client_bounds(handle, 2.).unwrap(), bounds);
+    }
     enable_pin_minimization(handle).unwrap();
-    assert_eq!(panel.styleMask(), style | NSWindowStyleMask::Miniaturizable);
+    assert_eq!(
+        panel.styleMask(),
+        NSWindowStyleMask::NonactivatingPanel | NSWindowStyleMask::Miniaturizable
+    );
     for kind in [
         objc2_app_kit::NSWindowButton::NSWindowCloseButton,
         objc2_app_kit::NSWindowButton::NSWindowMiniaturizeButton,
@@ -70,7 +84,7 @@ fn main() {
     settle();
     assert_eq!(window_minimized(handle), Some(false));
     panel.orderOut(None);
-    println!("Synthetic pin minimization and restoration passed");
+    println!("Synthetic square pin geometry, minimization and restoration passed");
 }
 
 #[cfg(target_os = "macos")]

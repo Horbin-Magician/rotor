@@ -517,6 +517,26 @@ mod selection_frame_tests {
     }
 }
 
+pub(super) fn client_bounds(
+    handle: WindowHandle<'_>,
+    _scale: f32,
+) -> Result<(i32, i32, u32, u32), String> {
+    use windows::Win32::{Foundation::RECT, UI::WindowsAndMessaging::GetClientRect};
+    let (x, y) = client_origin(handle)?;
+    let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+        return Err("Expected a Windows window".into());
+    };
+    let mut rect = RECT::default();
+    unsafe { GetClientRect(HWND(raw.hwnd.get() as *mut _), &mut rect) }
+        .map_err(|error| error.to_string())?;
+    Ok((
+        x,
+        y,
+        (rect.right - rect.left) as u32,
+        (rect.bottom - rect.top) as u32,
+    ))
+}
+
 #[cfg(test)]
 mod repaint_tests {
     use super::*;

@@ -31,6 +31,8 @@ pub struct PinBounds {
     pub width: u32,
     pub height: u32,
 }
+/// Resolves a move against other live pins in the desktop shell.
+pub type PinMoveSnap = Rc<dyn Fn(&Window, PinBounds, &mut App) -> PinBounds>;
 pub type PinBoundsSetter = Rc<dyn Fn(&Window, PinBounds) -> Result<(), String>>;
 pub type PinPointerCapture = Rc<dyn Fn(&Window, bool) -> Result<(), String>>;
 /// Activate through the shell without replacing the pin's current geometry.
@@ -46,6 +48,7 @@ pub struct PinInit {
     pub minimized: PinMinimizedReader,
     pub content_scale: f32,
     pub bounds: PinBoundsSetter,
+    pub snap_move: PinMoveSnap,
     pub pointer: PinPointerCapture,
     pub cursor: PinCursorReader,
 }
@@ -205,6 +208,7 @@ pub struct PinView {
     selection_toolbar: annotation::SelectionTools,
     content_scale: f32,
     bounds: PinBoundsSetter,
+    snap_move: PinMoveSnap,
     pointer: PinPointerCapture,
     cursor: PinCursorReader,
     pointer_owned: bool,
@@ -262,6 +266,7 @@ impl PinView {
             selection_toolbar: Default::default(),
             content_scale: init.content_scale,
             bounds: init.bounds,
+            snap_move: init.snap_move,
             pointer: init.pointer,
             cursor: init.cursor,
             pointer_owned: false,
@@ -996,6 +1001,7 @@ mod mode_tests {
                     minimized: Rc::new(|_| None),
                     activate: Rc::new(|_| Ok(())),
                     content_scale: 1.,
+                    snap_move: Rc::new(|_, bounds, _| bounds),
                     bounds: Rc::new(|_, _| Ok(())),
                     pointer: Rc::new(|_, _| Ok(())),
                     cursor: Rc::new(|_| Some((0., 0.))),
@@ -1106,6 +1112,7 @@ mod creation_tests {
                     minimized: Rc::new(|_| None),
                     activate: Rc::new(|_| Ok(())),
                     content_scale: 1.,
+                    snap_move: Rc::new(|_, bounds, _| bounds),
                     bounds: Rc::new(|_, _| Ok(())),
                     pointer: Rc::new(|_, _| Ok(())),
                     cursor: Rc::new(|_| Some((0., 0.))),
@@ -1211,6 +1218,7 @@ mod creation_tests {
                     minimized: Rc::new(|_| None),
                     activate: Rc::new(|_| Ok(())),
                     content_scale: 1.,
+                    snap_move: Rc::new(|_, bounds, _| bounds),
                     bounds: Rc::new(|_, _| Ok(())),
                     pointer: Rc::new(|_, _| Ok(())),
                     cursor: Rc::new(|_| Some((0., 0.))),
