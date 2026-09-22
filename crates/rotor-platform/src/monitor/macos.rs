@@ -63,7 +63,7 @@ fn config_from_bounds(
     {
         return Err("Invalid display bounds".into());
     }
-    let (width, height) = (width as u32, height as u32);
+    let width = width as u32;
     // Keep Quartz desktop points separate from native capture pixels. Using
     // the mode's pixel width preserves Retina and scaled-display semantics.
     let scale_factor = pixel_width as f32 / width as f32;

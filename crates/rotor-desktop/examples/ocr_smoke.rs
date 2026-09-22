@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => root.join("assets"),
     };
     let resources = ResourceLocator::from_root(&resource_root)?;
-    resources.verify_native_resources()?;
+    resources.verify_native_resources(&rotor_runtime::OCR_MODEL_FILES)?;
     let profile = root.join("target/ocr-smoke");
     std::fs::create_dir_all(&profile)?;
     let source = image::RgbaImage::from_pixel(900, 220, image::Rgba([255, 255, 255, 255]));

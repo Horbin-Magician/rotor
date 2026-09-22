@@ -49,12 +49,9 @@ fn validate_arguments(arguments: &[String]) -> Result<()> {
         return Err("Update restart requires an absolute profile directory".into());
     }
     if arguments.iter().any(|argument| argument.contains('\0'))
-        || arguments[2..].iter().any(|argument| {
-            !matches!(
-                argument.as_str(),
-                "--no-index" | "--no-hotkeys" | "--production-shortcuts" | "--no-elevate"
-            )
-        })
+        || arguments[2..]
+            .iter()
+            .any(|argument| !rotor_common::startup_flags::is_runtime_flag(argument))
     {
         return Err("Unsupported update restart arguments".into());
     }
@@ -115,17 +112,7 @@ pub fn launch_handoff(
             .ok_or("Profile path is not Unicode")?
             .into(),
     ];
-    arguments.extend(
-        flags
-            .iter()
-            .filter(|flag| {
-                matches!(
-                    flag.as_str(),
-                    "--no-index" | "--no-hotkeys" | "--production-shortcuts" | "--no-elevate"
-                )
-            })
-            .cloned(),
-    );
+    arguments.extend(rotor_common::startup_flags::runtime_flags(flags));
     validate_arguments(&arguments)?;
     let root = tempfile::Builder::new()
         .prefix("handoff-")
@@ -307,20 +294,89 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn receipts_are_bounded_and_report_only_their_error_field() {
+        let temp = tempfile::tempdir().unwrap();
+        let receipt = temp.path().join("result.json");
+        fs::write(
+            &receipt,
+            br#"{"version":"3.1.0","success":false,"error":"disk full"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            handoff_error(&receipt).unwrap().as_deref(),
+            Some("disk full")
+        );
+        fs::write(
+            &receipt,
+            br#"{"version":"3.1.0","success":true,"error":null}"#,
+        )
+        .unwrap();
+        assert_eq!(handoff_error(&receipt).unwrap(), None);
+        fs::write(&receipt, b"not json").unwrap();
+        assert!(handoff_error(&receipt).is_err());
+        fs::write(&receipt, vec![b' '; 1024 * 1024 + 1]).unwrap();
+        assert!(handoff_error(&receipt).is_err());
+        assert!(handoff_error(&temp.path().join("missing.json")).is_err());
+    }
+
+    #[test]
+    fn helper_rejects_bad_jobs_before_touching_any_bundle() {
+        let temp = tempfile::tempdir().unwrap();
+        let job = temp.path().join("job.json");
+        // Files written for the handoff are created exclusively, never truncated.
+        write_new(&job, b"{").unwrap();
+        assert!(write_new(&job, b"replacement").is_err());
+        assert_eq!(fs::read(&job).unwrap(), b"{");
+        assert!(run_helper(&job).is_err());
+
+        let invalid = Job {
+            archive: temp.path().join("update.tar.gz"),
+            signature: "sig".into(),
+            version: "9.9.9".into(),
+            parent: 1,
+            arguments: vec!["--data-dir".into(), "relative".into()],
+        };
+        fs::write(&job, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        assert_eq!(
+            run_helper(&job).unwrap_err(),
+            "Update restart requires an absolute profile directory"
+        );
+        fs::write(&job, vec![b'{'; 1024 * 1024 + 1]).unwrap();
+        assert_eq!(run_helper(&job).unwrap_err(), "Update job is too large");
+        // No receipt or ready marker is written for a rejected job.
+        assert!(!temp.path().join("result.json").exists());
+        assert!(!temp.path().join("ready").exists());
+        // A test binary is not a packaged app, so a valid job stops at the
+        // bundle check without installing anything.
+        let valid = Job {
+            arguments: vec![
+                "--data-dir".into(),
+                "/tmp/profile".into(),
+                "--no-index".into(),
+            ],
+            ..invalid
+        };
+        fs::write(&job, serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert!(run_helper(&job).unwrap_err().contains("packaged Rotor app"));
+    }
+
     #[test]
     fn restart_arguments_cannot_invoke_another_helper() {
-        assert!(super::validate_arguments(&[
+        assert!(validate_arguments(&[
             "--data-dir".into(),
             "/Users/me/Rotor Data".into(),
             "--no-index".into()
         ])
         .is_ok());
-        assert!(super::validate_arguments(&[
+        assert!(validate_arguments(&[
             "--data-dir".into(),
             "/tmp/profile".into(),
             "--apply-update".into()
         ])
         .is_err());
-        assert!(super::validate_arguments(&["--data-dir".into(), "relative".into()]).is_err());
+        assert!(validate_arguments(&["--data-dir".into(), "relative".into()]).is_err());
     }
 }

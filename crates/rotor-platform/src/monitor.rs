@@ -24,6 +24,22 @@ pub struct MonitorConfig {
     pub scale_factor: f32,
 }
 
+/// Offset between a monitor's desktop origin and the origin of its captured
+/// pixels. macOS reports origins in points while captures are in physical
+/// pixels, so a scaled display's pixel origin moves by `origin * (scale - 1)`.
+/// Windows origins are already physical pixels.
+pub fn pixel_origin_offset(config: &MonitorConfig) -> (i32, i32) {
+    if cfg!(target_os = "macos") {
+        let scale = f64::from(config.scale_factor) - 1.;
+        (
+            (f64::from(config.x) * scale).round() as i32,
+            (f64::from(config.y) * scale).round() as i32,
+        )
+    } else {
+        (0, 0)
+    }
+}
+
 pub fn current_configs() -> Result<Vec<MonitorConfig>, String> {
     native::current_configs()
 }

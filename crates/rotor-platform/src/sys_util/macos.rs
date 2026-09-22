@@ -1,4 +1,4 @@
-use super::WindowRect;
+use super::{MemoryUsage, PermissionStatus, WindowRect};
 use core_foundation::{
     array::CFArray,
     base::{CFType, TCFType},
@@ -11,7 +11,80 @@ use core_graphics::window::{
     kCGWindowListOptionOnScreenOnly,
 };
 
-pub(super) fn window_rectangles() -> Result<Vec<WindowRect>, String> {
+pub(super) fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
+    window_rectangles().map_err(Into::into)
+}
+
+pub(super) fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
+    use core_graphics::event::CGEvent;
+    use core_graphics::event_source::CGEventSource;
+    use core_graphics::event_source::CGEventSourceStateID;
+
+    // Create a CGEvent using a default event source to get the current cursor position
+    if let Ok(event_source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
+        if let Ok(event) = CGEvent::new(event_source) {
+            let location = event.location();
+            return Ok((location.x as i32, location.y as i32));
+        }
+    }
+    Err("Failed to get cursor position".into())
+}
+
+pub(super) fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
+    let mut task_info = std::mem::MaybeUninit::<libc::proc_taskinfo>::uninit();
+    let info_size = std::mem::size_of::<libc::proc_taskinfo>() as i32;
+    let result = unsafe {
+        libc::proc_pidinfo(
+            std::process::id() as i32,
+            libc::PROC_PIDTASKINFO,
+            0,
+            task_info.as_mut_ptr() as *mut libc::c_void,
+            info_size,
+        )
+    };
+
+    if result != info_size {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    let task_info = unsafe { task_info.assume_init() };
+    Ok(MemoryUsage {
+        resident_bytes: task_info.pti_resident_size,
+    })
+}
+
+pub(super) fn get_permission_statuses() -> Vec<PermissionStatus> {
+    vec![
+        PermissionStatus {
+            key: "accessibility".into(),
+            name: "Accessibility".into(),
+            granted: Some(crate::selection::accessibility_permission()),
+            detail: "Required for selection translation".into(),
+        },
+        PermissionStatus {
+            key: "screen_capture".to_string(),
+            name: "Screen Capture".to_string(),
+            granted: check_macos_screen_capture_permission(),
+            detail: "Required for screenshot capture".to_string(),
+        },
+        PermissionStatus {
+            key: "file_search".to_string(),
+            name: "File Search".to_string(),
+            granted: Some(true),
+            detail: "Uses the current user's readable folders".to_string(),
+        },
+    ]
+}
+
+fn check_macos_screen_capture_permission() -> Option<bool> {
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+    }
+
+    Some(unsafe { CGPreflightScreenCaptureAccess() })
+}
+
+fn window_rectangles() -> Result<Vec<WindowRect>, String> {
     let windows = copy_window_info(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID,

@@ -4,20 +4,20 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
-raw-window-handle = "=0.6.2"
+raw-window-handle.workspace = true
 arboard = "=3.6.1"
 getrandom = "0.4"
-serde_json = "1"
-url = "2.5"
+serde_json.workspace = true
+url.workspace = true
 encoding_rs = "0.8.35"
 file_icon_provider = "0.4.0"
 image.workspace = true
-log = "0.4.27"
-rotor-common = { path = "../rotor-common" }
-serde = { version = "1", features = ["derive"] }
+log.workspace = true
+rotor-common.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
-tempfile = "=3.27.0"
+tempfile.workspace = true
 
 [target."cfg(target_os = \"macos\")".dev-dependencies]
 objc2-app-kit = { version = "0.2.2", features = ["NSPanel"] }
@@ -25,17 +25,17 @@ objc2-foundation = { version = "=0.2.2", features = ["NSRunLoop", "NSDate"] }
 
 [target."cfg(target_os = \"macos\")".dependencies]
 objc2-foundation = { version = "=0.2.2", features = ["NSThread", "NSData"] }
-plist = "=1.9.0"
+plist.workspace = true
 core-graphics = "0.23"
 core-foundation = "0.9"
 objc2-app-kit = { version = "0.2.2", features = ["objc2-quartz-core", "NSButton", "NSControl", "NSPasteboard", "NSResponder", "NSView", "NSWindow", "NSApplication", "NSRunningApplication", "NSAlert", "NSImage"] }
-libc = "0.2.186"
+libc.workspace = true
 
 [target."cfg(target_os = \"windows\")".dependencies]
-winreg = "=0.55.0"
+winreg.workspace = true
 dunce = "=1.0.5"
 is-root = "0.1.3"
-windows = { version = "0.61.3", features = [
+windows = { workspace = true, features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_UI_Input_KeyboardAndMouse",
@@ -48,4 +48,7 @@ windows = { version = "0.61.3", features = [
   "Win32_System_DataExchange",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Shell",
+  "Win32_UI_Controls",
+  "Win32_UI_Accessibility",
+  "Win32_System_Diagnostics_Debug",
 ] }

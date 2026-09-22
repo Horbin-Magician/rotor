@@ -524,10 +524,21 @@ pub fn img2text_cancellable(
     Ok(merge_text_results(text_results))
 }
 
+/// Files under the resource root that the OCR pipeline loads. Resource
+/// verification checks this same list so the two cannot drift apart.
+pub const OCR_MODEL_FILES: [&str; 3] = [
+    "model/pp-ocrv6_tiny_det.onnx",
+    "model/pp-ocrv6_tiny_rec.onnx",
+    "model/ppocrv6_tiny_dict.txt",
+];
+
 fn build_ocr_pipeline(model_path: &Path) -> Result<OAROCR, Box<dyn std::error::Error>> {
-    let det_model_path = model_path.join("pp-ocrv6_tiny_det.onnx");
-    let rec_model_path = model_path.join("pp-ocrv6_tiny_rec.onnx");
-    let dict_path = model_path.join("ppocrv6_tiny_dict.txt");
+    // `model_path` is already the resolved `model` directory.
+    let file =
+        |index: usize| model_path.join(Path::new(OCR_MODEL_FILES[index]).file_name().unwrap());
+    let det_model_path = file(0);
+    let rec_model_path = file(1);
+    let dict_path = file(2);
     Ok(
         OAROCRBuilder::new(det_model_path, rec_model_path, dict_path)
             .image_batch_size(1)

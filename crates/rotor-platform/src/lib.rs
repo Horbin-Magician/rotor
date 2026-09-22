@@ -17,3 +17,5 @@ pub mod overlay;
 pub mod selection;
 pub mod single_instance;
 pub mod startup;
+#[cfg(target_os = "windows")]
+pub mod tray_menu;

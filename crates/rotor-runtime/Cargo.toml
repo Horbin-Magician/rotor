@@ -4,20 +4,20 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
-async-channel = "=2.5.0"
-global-hotkey = "=0.7.0"
+async-channel.workspace = true
+global-hotkey.workspace = true
 image.workspace = true
-log = "0.4.27"
-rotor-common = { path = "../rotor-common" }
-rotor-canvas = { path = "../rotor-canvas" }
+log.workspace = true
+rotor-common.workspace = true
+rotor-canvas.workspace = true
 rotor-updater.workspace = true
-rotor-platform = { path = "../rotor-platform" }
-rotor-screenshot = { path = "../rotor-screenshot" }
-rotor-searcher = { path = "../rotor-searcher" }
-rotor-translator = { path = "../rotor-translator" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
+rotor-platform.workspace = true
+rotor-screenshot.workspace = true
+rotor-searcher.workspace = true
+rotor-translator.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
 
 [dev-dependencies]
-tempfile = "=3.27.0"
+tempfile.workspace = true

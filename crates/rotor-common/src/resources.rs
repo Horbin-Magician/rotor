@@ -10,12 +10,10 @@ pub struct ResourceLocator {
 }
 
 impl ResourceLocator {
-    pub fn verify_native_resources(&self) -> io::Result<()> {
-        for name in [
-            "model/pp-ocrv6_tiny_det.onnx",
-            "model/pp-ocrv6_tiny_rec.onnx",
-            "model/ppocrv6_tiny_dict.txt",
-        ] {
+    /// Every `required` path must resolve to a non-empty file inside the root.
+    /// The list belongs to the feature that loads the files, not to this crate.
+    pub fn verify_native_resources(&self, required: &[&str]) -> io::Result<()> {
+        for name in required {
             let path = self.resolve(Path::new(name))?;
             let metadata = std::fs::metadata(path)?;
             if !metadata.is_file() || metadata.len() == 0 {

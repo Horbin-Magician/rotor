@@ -31,7 +31,9 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.ocr.active || self.canvas.editing() {
+        // A drag can only start from rest: OCR and annotation tools own the
+        // pointer, and a drag already in progress keeps its anchor.
+        if !self.mode.is_idle() {
             return false;
         }
         let Some(bounds) = self.current_bounds(window) else {
@@ -43,7 +45,7 @@ impl PinView {
         if !self.capture_native_pointer(window) {
             return false;
         }
-        self.move_drag = Some(MoveDrag { pointer, bounds });
+        self.mode = Mode::MovingWindow(MoveDrag { pointer, bounds });
         cx.notify();
         true
     }
@@ -54,7 +56,9 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(drag) = &self.move_drag else { return };
+        let Mode::MovingWindow(drag) = &self.mode else {
+            return;
+        };
         let Some(pointer) = self.screen_pointer(window) else {
             return;
         };
@@ -70,7 +74,7 @@ impl PinView {
     }
 
     pub(super) fn finish_move(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.move_drag.take().is_none() {
+        if self.mode.take_move().is_none() {
             return;
         }
         window.release_pointer();
@@ -81,18 +85,16 @@ impl PinView {
     }
 
     pub(super) fn committed_crop_record(&self) -> ShotterConfig {
-        let mut record = self
-            .crop_drag
-            .as_ref()
-            .map(|drag| &drag.record)
-            .unwrap_or(&self.record)
-            .clone();
+        let mut record = match &self.mode {
+            Mode::CroppingEdge(drag) => drag.record.clone(),
+            _ => self.record.clone(),
+        };
         record.annotations = self.canvas.export_scene().annotations;
         record
     }
     pub(super) fn crop_edges(&self, local: Point<Pixels>, window: &Window) -> CropEdges {
         let size = window.viewport_size();
-        if self.ocr.active || self.canvas.editing() {
+        if self.mode.is_ocr() || self.mode.is_annotating() {
             return CropEdges::default();
         }
         if size.width < px(24.) || size.height < px(24.) {
@@ -108,14 +110,11 @@ impl PinView {
         }
     }
     pub(super) fn crop_cursor(&self) -> CursorStyle {
-        if self.move_drag.is_some() {
-            return CursorStyle::ClosedHand;
-        }
-        let edges = self
-            .crop_drag
-            .as_ref()
-            .map(|drag| drag.edges)
-            .unwrap_or(self.crop_hover);
+        let edges = match &self.mode {
+            Mode::MovingWindow(_) => return CursorStyle::ClosedHand,
+            Mode::CroppingEdge(drag) => drag.edges,
+            _ => self.crop_hover,
+        };
         if (edges.left && edges.top) || (edges.right && edges.bottom) {
             CursorStyle::ResizeUpLeftDownRight
         } else if (edges.right && edges.top) || (edges.left && edges.bottom) {
@@ -169,7 +168,7 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.ocr.active || self.canvas.editing() {
+        if !self.mode.is_idle() {
             return false;
         }
         let edges = self.crop_edges(local, window);
@@ -186,7 +185,7 @@ impl PinView {
             return false;
         }
         let (x, y, width, height) = self.crop();
-        self.crop_drag = Some(CropDrag {
+        self.mode = Mode::CroppingEdge(CropDrag {
             start: ImageRect {
                 x,
                 y,
@@ -197,9 +196,7 @@ impl PinView {
             pointer,
             bounds,
             scale: window.scale_factor(),
-            ratio: window.scale_factor() as f64 / self.content_scale as f64
-                * self.record.zoom_factor as f64
-                / 100.,
+            ratio: self.physical_scale(window),
             record: self.record.clone(),
             pending: None,
             frame_token: Rc::new(()),
@@ -207,13 +204,22 @@ impl PinView {
         cx.notify();
         true
     }
+    /// Physical pixels per source pixel at the current zoom.
+    fn physical_scale(&self, window: &Window) -> f64 {
+        rotor_canvas::pin_physical_scale(
+            self.record.zoom_factor,
+            self.content_scale as f64,
+            window.scale_factor() as f64,
+        )
+    }
+
     pub(super) fn move_crop(
         &mut self,
         _local: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(drag) = &self.crop_drag else {
+        let Mode::CroppingEdge(drag) = &self.mode else {
             return;
         };
         if (window.scale_factor() - drag.scale).abs() > 0.01 {
@@ -242,7 +248,9 @@ impl PinView {
         };
         let x = drag.bounds.x as f64 + (crop.x as f64 - drag.start.x as f64) * drag.ratio;
         let y = drag.bounds.y as f64 + (crop.y as f64 - drag.start.y as f64) * drag.ratio;
-        let drag = self.crop_drag.as_mut().unwrap();
+        let Mode::CroppingEdge(drag) = &mut self.mode else {
+            unreachable!("crop drag checked above");
+        };
         let schedule = drag.pending.replace(CropUpdate { crop, x, y }).is_none();
         if schedule {
             let token = drag.frame_token.clone();
@@ -250,10 +258,8 @@ impl PinView {
             window.on_next_frame(move |window, cx| {
                 let _ = view.update(cx, |this, cx| {
                     // A released/cancelled drag must not resize a later drag.
-                    if this
-                        .crop_drag
-                        .as_ref()
-                        .is_some_and(|drag| Rc::ptr_eq(&drag.frame_token, &token))
+                    if let Mode::CroppingEdge(drag) = &this.mode
+                        && Rc::ptr_eq(&drag.frame_token, &token)
                     {
                         this.apply_pending_crop(window, cx);
                     }
@@ -263,14 +269,13 @@ impl PinView {
     }
 
     fn apply_pending_crop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(update) = self.crop_drag.as_mut().and_then(|drag| drag.pending.take()) else {
+        let Mode::CroppingEdge(drag) = &mut self.mode else {
             return;
         };
-        if self
-            .crop_drag
-            .as_ref()
-            .is_some_and(|drag| (window.scale_factor() - drag.scale).abs() > 0.01)
-        {
+        let Some(update) = drag.pending.take() else {
+            return;
+        };
+        if (window.scale_factor() - drag.scale).abs() > 0.01 {
             // A queued position was measured using the previous display scale.
             // Keep the last applied crop when crossing a DPI boundary.
             return;
@@ -301,8 +306,7 @@ impl PinView {
     ) -> Result<(), String> {
         // Quantize only in physical pixels, retaining sub-point crop sizes on
         // HiDPI displays instead of snapping twice at different resolutions.
-        let factor = self.record.zoom_factor as f64 / 100. / self.content_scale as f64
-            * window.scale_factor() as f64;
+        let factor = self.physical_scale(window);
         let width = (crop.width as f64 * factor).round().max(1.);
         let height = (crop.height as f64 * factor).round().max(1.);
         if width > 8192.
@@ -355,9 +359,7 @@ impl PinView {
             .current_bounds(window)
             .ok_or("Pin window position is unavailable")?;
         let (x, y, _, _) = self.crop();
-        let ratio = window.scale_factor() as f64 / self.content_scale as f64
-            * self.record.zoom_factor as f64
-            / 100.;
+        let ratio = self.physical_scale(window);
         self.apply_crop_at(
             crop,
             current.x as f64 + (crop.x as f64 - x as f64) * ratio,
@@ -373,7 +375,7 @@ impl PinView {
     pub(super) fn finish_crop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Mouse-up may precede the next frame: commit the latest queued position.
         self.apply_pending_crop(window, cx);
-        if self.crop_drag.take().is_none() {
+        if self.mode.take_crop().is_none() {
             return;
         }
         self.release_native_pointer(window);
@@ -392,7 +394,7 @@ impl PinView {
         cx.notify();
     }
     pub(super) fn cancel_crop(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let Some(drag) = self.crop_drag.take() else {
+        let Some(drag) = self.mode.take_crop() else {
             return false;
         };
         self.release_native_pointer(window);
@@ -433,7 +435,7 @@ fn sync_native_bounds(window: &mut Window, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::sync_native_bounds;
+    use super::{Mode, sync_native_bounds};
     use gpui_kit::{
         AppContext, Context, IntoElement, Pixels, Render, Size, Subscription, Window, div, point,
         px, size,
@@ -519,24 +521,25 @@ mod tests {
                 window.bounds_changed(cx);
                 pin.update(cx, |pin, cx| {
                     // OCR blocks geometry changes even when events bypass its text overlay.
-                    pin.ocr.active = true;
+                    pin.mode = Mode::Ocr(Default::default());
                     assert!(!pin.begin_move(point(px(100.), px(100.)), window, cx));
                     assert!(!pin.begin_crop(point(px(0.), px(100.)), window, cx));
                     assert!(!pin.crop_edges(point(px(0.), px(100.)), window).any());
-                    assert!(pin.move_drag.is_none());
-                    assert!(pin.crop_drag.is_none());
+                    assert!(pin.mode.is_ocr());
                     assert_eq!(calls.get(), 0);
                     pin.toggle_ocr(window, cx);
-                    assert!(!pin.ocr.active);
+                    assert!(pin.mode.is_idle());
                     assert!(pin.begin_move(point(px(100.), px(100.)), window, cx));
+                    assert!(pin.mode.is_moving());
                     pin.finish_move(window, cx);
                     pin.set_tool(super::super::annotation::Tool::Pen, window, cx);
-                    assert!(pin.canvas.editing());
+                    assert!(pin.mode.is_annotating());
                     assert!(!pin.begin_move(point(px(100.), px(100.)), window, cx));
                     assert!(!pin.begin_crop(point(px(0.), px(100.)), window, cx));
                     pin.cancel_editing(window, cx);
-                    assert!(!pin.canvas.editing());
+                    assert!(pin.mode.is_idle());
                     assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                    assert!(pin.mode.is_cropping());
                     let epoch = pin.canvas.content_revision();
                     for x in 1..=50 {
                         cursor.set((x as f64 * 2., 200.));

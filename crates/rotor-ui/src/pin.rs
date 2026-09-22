@@ -9,7 +9,7 @@ use gpui_kit::{
     prelude::*,
     *,
 };
-use rotor_common::Config;
+use rotor_common::{Config, Settings};
 use rotor_runtime::{
     OperationId, PinEvent, PinExportTarget, RuntimeEvent, Services, ShotterConfig,
 };
@@ -60,6 +60,125 @@ struct PendingFinish {
     // failed export's path.
     remember_directory: Option<String>,
 }
+/// The pin's exclusive interaction mode. A pin is in exactly one of these at
+/// a time; entering one always leaves the previous one, so a window drag, an
+/// edge crop, OCR text selection and annotation editing can never coexist.
+///
+/// Pending persistence/export work (`busy`) is deliberately not part of this
+/// enum: creation, deletion and exports run concurrently with every mode.
+#[derive(Default)]
+enum Mode {
+    #[default]
+    Idle,
+    /// The pointer drags the whole window.
+    MovingWindow(crop::MoveDrag),
+    /// The pointer drags a crop edge; the window follows the crop.
+    CroppingEdge(crop::CropDrag),
+    /// Recognized text covers the image; the overlay owns the pointer and keys.
+    Ocr(ocr::OcrSession),
+    /// An annotation tool is selected; strokes and text are drafted here.
+    Annotating(annotation::Editing),
+}
+impl Mode {
+    fn is_idle(&self) -> bool {
+        matches!(self, Mode::Idle)
+    }
+    fn is_moving(&self) -> bool {
+        matches!(self, Mode::MovingWindow(_))
+    }
+    fn is_cropping(&self) -> bool {
+        matches!(self, Mode::CroppingEdge(_))
+    }
+    fn is_ocr(&self) -> bool {
+        matches!(self, Mode::Ocr(_))
+    }
+    fn is_annotating(&self) -> bool {
+        matches!(self, Mode::Annotating(_))
+    }
+    fn ocr(&self) -> Option<&ocr::OcrSession> {
+        match self {
+            Mode::Ocr(session) => Some(session),
+            _ => None,
+        }
+    }
+    fn ocr_mut(&mut self) -> Option<&mut ocr::OcrSession> {
+        match self {
+            Mode::Ocr(session) => Some(session),
+            _ => None,
+        }
+    }
+    fn editing(&self) -> Option<&annotation::Editing> {
+        match self {
+            Mode::Annotating(editing) => Some(editing),
+            _ => None,
+        }
+    }
+    fn editing_mut(&mut self) -> Option<&mut annotation::Editing> {
+        match self {
+            Mode::Annotating(editing) => Some(editing),
+            _ => None,
+        }
+    }
+    fn text_editor(&self) -> Option<&annotation::TextEditor> {
+        self.editing().and_then(annotation::Editing::text_editor)
+    }
+    fn text_editor_mut(&mut self) -> Option<&mut annotation::TextEditor> {
+        self.editing_mut()
+            .and_then(annotation::Editing::text_editor_mut)
+    }
+    fn take_move(&mut self) -> Option<crop::MoveDrag> {
+        match std::mem::take(self) {
+            Mode::MovingWindow(drag) => Some(drag),
+            other => {
+                *self = other;
+                None
+            }
+        }
+    }
+    fn take_crop(&mut self) -> Option<crop::CropDrag> {
+        match std::mem::take(self) {
+            Mode::CroppingEdge(drag) => Some(drag),
+            other => {
+                *self = other;
+                None
+            }
+        }
+    }
+    fn take_ocr(&mut self) -> Option<ocr::OcrSession> {
+        match std::mem::take(self) {
+            Mode::Ocr(session) => Some(session),
+            other => {
+                *self = other;
+                None
+            }
+        }
+    }
+    /// The canvas hitbox holds the pointer: a window move, an edge crop or a
+    /// stroke being drawn. OCR selection drags belong to the OCR overlay.
+    fn canvas_drag(&self) -> bool {
+        match self {
+            Mode::MovingWindow(_) | Mode::CroppingEdge(_) => true,
+            Mode::Annotating(editing) => editing.stroke().is_some(),
+            Mode::Idle | Mode::Ocr(_) => false,
+        }
+    }
+    /// The window geometry follows the pointer, so zooming must wait.
+    fn drags_window(&self) -> bool {
+        matches!(self, Mode::MovingWindow(_) | Mode::CroppingEdge(_))
+    }
+    /// The mode owns keyboard and wheel input: pin shortcuts and zoom are
+    /// suppressed while OCR text or the annotation text editor is focused.
+    fn captures_input(&self) -> bool {
+        self.is_ocr() || self.text_editor().is_some()
+    }
+    /// Nothing is half-drawn, so the document may be exported or recognized.
+    fn can_export(&self) -> bool {
+        self.editing().is_none_or(|editing| !editing.has_draft())
+    }
+    fn ocr_loading(&self) -> bool {
+        self.ocr().is_some_and(ocr::OcrSession::loading)
+    }
+}
 pub struct PinView {
     services: Arc<Services>,
     settings: Config,
@@ -88,10 +207,12 @@ pub struct PinView {
     pointer: PinPointerCapture,
     cursor: PinCursorReader,
     pointer_owned: bool,
-    move_drag: Option<crop::MoveDrag>,
-    crop_drag: Option<crop::CropDrag>,
+    mode: Mode,
+    /// Hovered crop edges while idle; retained across drags for the cursor.
     crop_hover: rotor_canvas::CropEdges,
-    ocr: ocr::OcrState,
+    /// Bumped whenever OCR is cleared so results from an earlier session are
+    /// rejected even if a new session is started with the same signature.
+    ocr_revision: u64,
 }
 impl PinView {
     pub fn new(
@@ -142,18 +263,13 @@ impl PinView {
             pointer: init.pointer,
             cursor: init.cursor,
             pointer_owned: false,
-            move_drag: None,
-            crop_drag: None,
+            mode: Mode::Idle,
             crop_hover: Default::default(),
-            ocr: Default::default(),
+            ocr_revision: 0,
         }
     }
     fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
-        if rotor_common::i18n::language_for_config(&self.settings) == "zh-CN" {
-            zh
-        } else {
-            en
-        }
+        self.settings.locale().pick(zh, en)
     }
     fn shortcut_hint(&self, label: &'static str, key: &str) -> String {
         match self.settings.get(key).filter(|key| !key.is_empty()) {
@@ -166,7 +282,7 @@ impl PinView {
         if !self.message.is_empty() {
             Some(self.message.clone())
         } else {
-            self.ocr.error.clone()
+            self.mode.ocr().and_then(|session| session.error.clone())
         }
     }
     /// Status line appended to the sliding toolbar panels. The panel is an
@@ -190,7 +306,7 @@ impl PinView {
             || self.dialog
             || self.preparing_export
             || self.queued_export.is_some()
-            || self.ocr.loading()
+            || self.mode.ocr_loading()
     }
     pub fn config(&self) -> &ShotterConfig {
         &self.record
@@ -224,7 +340,7 @@ impl PinView {
     }
     fn record_position(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sync_minimized(window, cx);
-        if self.busy() || self.record.minimized || self.crop_drag.is_some() {
+        if self.busy() || self.record.minimized || self.mode.is_cropping() {
             return;
         }
         self.sample_position(window, cx);
@@ -258,7 +374,7 @@ impl PinView {
         }
     }
     pub fn flush(&mut self, cx: &mut Context<Self>) {
-        if !self.dirty || self.crop_drag.is_some() {
+        if !self.dirty || self.mode.is_cropping() {
             return;
         }
         if let Some(id) = self.id {
@@ -312,8 +428,8 @@ impl PinView {
             || self.dialog
             || self.preparing_export
             || self.queued_export.is_some()
-            || self.crop_drag.is_some()
-            || !self.canvas.can_request_export()
+            || self.mode.is_cropping()
+            || !self.can_request_export()
         {
             return;
         }
@@ -330,7 +446,7 @@ impl PinView {
         if self.queued_export.is_none() || self.pending_create.is_some() {
             return;
         }
-        if self.canvas.ready() {
+        if self.can_request_export() {
             let intent = self.queued_export.take().unwrap();
             self.finish_export_request(intent, window, cx);
         } else {
@@ -488,7 +604,7 @@ impl PinView {
         window.minimize_window();
     }
     fn zoom(&mut self, delta: f32, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() || delta == 0. || self.crop_drag.is_some() || self.move_drag.is_some() {
+        if self.busy() || delta == 0. || self.mode.drags_window() {
             return;
         }
         let step = self
@@ -508,7 +624,7 @@ impl PinView {
         .clamp(5.min(maximum), maximum) as u32;
         self.record.zoom_factor = factor;
         self.dirty = true;
-        let scale = factor as f32 / 100. / self.content_scale;
+        let scale = rotor_canvas::pin_scale(factor, self.content_scale as f64) as f32;
         window.resize(size(
             px((width as f32 * scale).round().max(1.)),
             px((height as f32 * scale).round().max(1.)),
@@ -548,7 +664,7 @@ impl PinView {
                         // those moves while busy. Re-sample the accepted
                         // geometry before persisting it after creation,
                         // preserving the persistence queue order.
-                        if !self.record.minimized && self.crop_drag.is_none() {
+                        if !self.record.minimized && !self.mode.is_cropping() {
                             self.sample_position(window, cx);
                         }
                         self.persist_geometry(cx);
@@ -604,11 +720,7 @@ impl PinView {
     }
 }
 fn pin_title(config: &Config, id: Option<u32>) -> String {
-    let label = if rotor_common::i18n::language_for_config(config) == "zh-CN" {
-        "贴图"
-    } else {
-        "Pinned image"
-    };
+    let label = config.locale().pick("贴图", "Pinned image");
     match id {
         Some(id) => format!("Rotor · {label} {id}"),
         None => format!("Rotor · {label}"),
@@ -636,7 +748,7 @@ impl Render for PinView {
         // Omit both panels immediately when even the overflow button cannot fit.
         let toolbar_fits =
             window.viewport_size().width >= px(51.) && window.viewport_size().height >= px(49.);
-        let editing = self.canvas.editing();
+        let editing = self.mode.is_annotating();
         let annotation_width = px(192.).min((window.viewport_size().width - px(16.)).max(px(0.)));
         div()
             .id("pin")
@@ -644,9 +756,11 @@ impl Render for PinView {
             .size_full()
             .overflow_hidden()
             .child(self.canvas_element(window, cx))
-            .when(self.ocr.active, |root| {
-                root.child(self.ocr_layer(window, cx))
-            })
+            .children(
+                self.mode
+                    .ocr()
+                    .map(|session| self.ocr_layer(session, window, cx)),
+            )
             .when(toolbar_fits, |root| {
                 root.child(
                     toolbar::Slide::new(self.pin_toolbar(window, cx)).with_spring(
@@ -702,7 +816,7 @@ impl Render for PinView {
                 )
             })
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
-                if this.canvas.editor.is_none() && !this.ocr.active {
+                if !this.mode.captures_input() {
                     this.zoom(event.delta.pixel_delta(px(16.)).y.as_f32(), window, cx);
                 }
                 cx.stop_propagation();
@@ -713,7 +827,7 @@ impl Render for PinView {
                 }
             }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if this.canvas.editor.is_some() || this.ocr.active {
+                if this.mode.captures_input() {
                     return;
                 }
                 if shortcut_matches(&event.keystroke, this.settings.get("shortcut_pinwin_save")) {
@@ -787,8 +901,115 @@ mod shortcut_tests {
 }
 
 #[cfg(test)]
+mod mode_tests {
+    use super::{Mode, PinInit, PinView, annotation::Tool};
+    use gpui_kit::{TestAppContext, point, px, size};
+    use rotor_runtime::{Services, ShotterConfig};
+    use std::{rc::Rc, sync::Arc};
+
+    #[gpui::test]
+    fn interaction_modes_are_exclusive_and_transitions_end_the_previous_one(
+        cx: &mut TestAppContext,
+    ) {
+        let profile = tempfile::tempdir().unwrap();
+        let (services, _events) = Services::new(
+            Arc::new(std::sync::Mutex::new(
+                rotor_common::ConfigService::load_from(profile.path()).unwrap(),
+            )),
+            None,
+            rotor_runtime::ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        cx.update(gpui_kit::component::init);
+        let (pin, cx) = cx.add_window_view(|window, cx| {
+            window.resize(size(px(400.), px(400.)));
+            PinView::new(
+                Arc::new(services),
+                PinInit {
+                    image: crate::prepare_image(Arc::new(image::RgbaImage::new(400, 400))).unwrap(),
+                    config: ShotterConfig {
+                        annotations: Vec::new(),
+                        monitor_pos: (0, 0),
+                        monitor_size: (400, 400),
+                        rect: (0, 0, 400, 400),
+                        image_rect: (0, 0, 400, 400),
+                        offset: (0, 0),
+                        zoom_factor: 100,
+                        mask_label: "synthetic".into(),
+                        minimized: false,
+                    },
+                    id: None,
+                    pending: None,
+                    error: None,
+                    position: Rc::new(|_| Some((0, 0))),
+                    minimized: Rc::new(|_| None),
+                    activate: Rc::new(|_| Ok(())),
+                    content_scale: 1.,
+                    bounds: Rc::new(|_, _| Ok(())),
+                    pointer: Rc::new(|_, _| Ok(())),
+                    cursor: Rc::new(|_| Some((0., 0.))),
+                },
+                window,
+                cx,
+            )
+        });
+        cx.update(|window, cx| {
+            pin.update(cx, |pin, cx| {
+                assert!(pin.mode.is_idle());
+                // Annotating -> OCR: starting OCR leaves the tool first.
+                pin.set_tool(Tool::Pen, window, cx);
+                assert!(pin.mode.is_annotating());
+                assert!(!pin.begin_move(point(px(100.), px(100.)), window, cx));
+                pin.start_ocr(window, cx);
+                assert!(pin.mode.is_ocr());
+                assert!(pin.mode.editing().is_none());
+                // OCR owns the pointer and keys: no drag, no tool, no zoom.
+                assert!(!pin.begin_move(point(px(100.), px(100.)), window, cx));
+                assert!(!pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                assert!(!pin.begin_mark(point(px(100.), px(100.)), window, cx));
+                assert!(pin.mode.captures_input());
+                assert!(pin.mode.is_ocr());
+                // A loading session ignores the toggle; clearing leaves it.
+                pin.toggle_ocr(window, cx);
+                assert!(pin.mode.is_ocr());
+                let revision = pin.ocr_revision;
+                pin.clear_ocr(window);
+                assert!(pin.mode.is_idle());
+                assert_eq!(pin.ocr_revision, revision + 1);
+                // Moving -> OCR finishes the move; cropping refuses OCR.
+                assert!(pin.begin_move(point(px(100.), px(100.)), window, cx));
+                assert!(pin.mode.is_moving());
+                assert!(!pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                pin.start_ocr(window, cx);
+                assert!(pin.mode.is_ocr());
+                pin.clear_ocr(window);
+                assert!(pin.begin_crop(point(px(0.), px(100.)), window, cx));
+                assert!(pin.mode.is_cropping());
+                pin.start_ocr(window, cx);
+                assert!(pin.mode.is_cropping());
+                assert!(!pin.begin_move(point(px(100.), px(100.)), window, cx));
+                // Selecting a tool cancels the crop; deactivation clears a drag.
+                pin.set_tool(Tool::Rectangle, window, cx);
+                assert!(pin.mode.is_annotating());
+                assert!(pin.begin_mark(point(px(100.), px(100.)), window, cx));
+                assert!(pin.mode.canvas_drag());
+                assert!(!pin.can_request_export());
+                pin.cancel_pointer(window, cx);
+                assert!(pin.mode.is_annotating());
+                assert!(!pin.mode.canvas_drag());
+                assert!(pin.can_request_export());
+                assert!(pin.cancel_editing(window, cx));
+                assert!(pin.mode.is_idle());
+                assert!(!pin.cancel_editing(window, cx));
+                assert!(matches!(std::mem::take(&mut pin.mode), Mode::Idle));
+            })
+        });
+    }
+}
+
+#[cfg(test)]
 mod creation_tests {
-    use super::{PinInit, PinView};
+    use super::{Mode, PinInit, PinView, ocr::OcrSession};
     use gpui_kit::{TestAppContext, px, size};
     use rotor_runtime::{OperationId, PinEvent, RuntimeEvent, Services, ShotterConfig};
     use std::{rc::Rc, sync::Arc};
@@ -844,7 +1065,7 @@ mod creation_tests {
         });
         cx.update(|window, cx| window.draw(cx).clear(cx));
         pin.read_with(cx, |pin, _| {
-            assert!(pin.canvas.ready());
+            assert!(pin.can_request_export());
             assert_eq!(pin.pending_create, Some(OperationId(9)));
             assert!(pin.persisted_id().is_none());
         });
@@ -874,21 +1095,23 @@ mod creation_tests {
                     pin.status_message()
                         .is_some_and(|message| message.contains("synthetic disk failure"))
                 );
-                pin.ocr.error = Some("recognition failed".into());
+                let mut session = OcrSession::default();
+                session.error = Some("recognition failed".into());
+                pin.mode = Mode::Ocr(session);
                 assert!(
                     pin.status_message()
                         .is_some_and(|message| message.contains("synthetic disk failure"))
                 );
                 let message = std::mem::take(&mut pin.message);
                 assert_eq!(pin.status_message().as_deref(), Some("recognition failed"));
-                pin.ocr.error = None;
+                pin.mode = Mode::Idle;
                 assert!(pin.status_message().is_none());
                 pin.message = message;
                 assert_eq!(
                     &pin.image.render.as_bytes(0).unwrap()[..4],
                     &[60, 40, 20, 128]
                 );
-                assert!(pin.canvas.can_request_export());
+                assert!(pin.can_request_export());
             })
         });
         cx.update(|window, cx| window.draw(cx).clear(cx));

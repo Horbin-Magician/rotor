@@ -19,11 +19,11 @@ pub(super) struct CaptureWorker {
     pending: Arc<(Mutex<Pending>, Condvar)>,
     /// The generation the worker thread also reads, so a submitted request and
     /// the acceptance check can never disagree about which identity is current.
-    current: Arc<AtomicU64>,
+    current: Latest,
 }
 
 impl CaptureWorker {
-    pub fn new(events: Sender<RuntimeEvent>, current: Arc<AtomicU64>) -> Result<Self, String> {
+    pub fn new(events: Sender<RuntimeEvent>, current: Latest) -> Result<Self, String> {
         let preparation_events = events.clone();
         let capture_current = current.clone();
         Self::start_initialized(events, current, move || {
@@ -44,7 +44,7 @@ impl CaptureWorker {
     #[cfg(test)]
     pub(super) fn start(
         events: Sender<RuntimeEvent>,
-        current: Arc<AtomicU64>,
+        current: Latest,
         capture: impl FnMut(CaptureRequest) -> Result<CaptureBundle, String> + Send + 'static,
     ) -> Result<Self, String> {
         Self::start_initialized(events, current, || capture)
@@ -52,7 +52,7 @@ impl CaptureWorker {
 
     fn start_initialized<F>(
         events: Sender<RuntimeEvent>,
-        current: Arc<AtomicU64>,
+        current: Latest,
         initialize: impl FnOnce() -> F + Send + 'static,
     ) -> Result<Self, String>
     where
@@ -73,12 +73,12 @@ impl CaptureWorker {
                     if pending.stopped { break; }
                     pending.request.take().unwrap()
                 };
-                if current.load(Ordering::Acquire) != request.id.0 { continue; }
+                if !current.is_current(request.id) { continue; }
                 log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage=worker_start elapsed_us={}",
                     request.id.0, request.submitted.elapsed().as_micros());
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| capture(request)))
                     .unwrap_or_else(|_| Err("Screenshot coordinator panicked".into()));
-                if current.load(Ordering::Acquire) == request.id.0 && !lock(&queue.0).stopped {
+                if current.is_current(request.id) && !lock(&queue.0).stopped {
                     let _ = events.send_blocking(RuntimeEvent::CaptureFinished { id: request.id, result });
                 }
             }
@@ -94,7 +94,7 @@ impl CaptureWorker {
         if pending.stopped {
             return Err("Screenshot worker is stopped".into());
         }
-        self.current.store(request.id.0, Ordering::Release);
+        self.current.claim(request.id);
         // Only the newest request waits behind an in-flight OS capture.
         pending.request = Some(request);
         self.pending.1.notify_one();
@@ -119,7 +119,7 @@ fn capture_monitors(
     pool: &mut monitor::CapturePool,
     request: CaptureRequest,
     events: &Sender<RuntimeEvent>,
-    current: &AtomicU64,
+    current: &Latest,
 ) -> Result<CaptureBundle, String> {
     let mark = |stage| {
         log::debug!(target: "rotor_capture_latency", "capture_latency id={} stage={} elapsed_us={}",
@@ -132,7 +132,7 @@ fn capture_monitors(
     capture_with_preparation(request, events, monitor::current_configs, |before| {
         let (images, windows) = pool.capture_with(
             &before,
-            || current.load(Ordering::Acquire) != request.id.0,
+            || !current.is_current(request.id),
             || {
                 let windows =
                     rotor_platform::sys_util::get_all_window_rect().unwrap_or_else(|error| {
@@ -221,7 +221,7 @@ mod tests {
         let preparation_events = events.clone();
         let (started, starts) = std::sync::mpsc::channel();
         let (release, wait) = std::sync::mpsc::channel();
-        let worker = CaptureWorker::start(events, Arc::new(AtomicU64::new(0)), move |request| {
+        let worker = CaptureWorker::start(events, Latest::default(), move |request| {
             capture_with_preparation(
                 request,
                 &preparation_events,

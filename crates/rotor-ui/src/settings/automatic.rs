@@ -4,7 +4,7 @@ use std::time::Duration;
 impl SettingsView {
     pub(super) fn controls_locked(&self) -> bool {
         self.pending.is_some()
-            || self.close_request.is_some()
+            || self.closing.is_pending()
             || matches!(
                 self.update.phase,
                 rotor_runtime::UpdatePhase::Installing | rotor_runtime::UpdatePhase::HandedOff
@@ -18,7 +18,7 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.close_request.is_some() {
+        if self.closing.is_pending() {
             return;
         }
         let (value, composing, focused) = if key == "search_excluded_dirs" {
@@ -86,7 +86,7 @@ impl SettingsView {
     fn check_composition_later(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.composition_check.is_some()
             || !self.autosave.has_composition()
-            || self.close_request.is_some()
+            || self.closing.is_pending()
         {
             return;
         }
@@ -166,16 +166,10 @@ impl SettingsView {
         self.begin_close(CloseTarget::Application, window, cx);
     }
     pub fn waiting_to_quit(&self) -> bool {
-        self.close_request == Some(CloseTarget::Application)
+        self.closing.waiting_to_quit()
     }
     fn begin_close(&mut self, target: CloseTarget, window: &mut Window, cx: &mut Context<Self>) {
-        // A later window-close event must not downgrade an application quit
-        // already waiting for its save receipts (including updater handoff).
-        let target = if self.close_request == Some(CloseTarget::Application) {
-            CloseTarget::Application
-        } else {
-            target
-        };
+        let target = self.closing.effective_target(target);
         self.recording = None;
         self.services.set_shortcut_recording(false);
         self.observe_all_fields(true, window, cx);
@@ -187,21 +181,20 @@ impl SettingsView {
             return;
         }
         self.flush_actions(window, cx);
-        self.close_request = Some(target);
-        self.last_close_target = target;
+        self.closing.begin(target);
         self.settle_close(window, cx);
         cx.notify();
     }
     pub(super) fn settle_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.close_request.is_some() && self.action_save.is_some() {
+        if self.closing.is_pending() && self.action_save.is_some() {
             if self.pending.is_some() {
                 return;
             }
-            self.close_request = None;
+            self.closing.clear();
             self.flush_actions(window, cx);
-            self.close_request = Some(self.last_close_target);
+            self.closing.resume();
             if self.action_save.is_some() {
-                self.close_request = None;
+                self.closing.clear();
                 self.manual_failed = true;
                 self.message = self
                     .t("请先完成输入法组字", "Finish composing text before closing")
@@ -212,28 +205,23 @@ impl SettingsView {
         let state = self
             .autosave
             .close_state(self.pending.is_some(), self.manual_failed);
-        if state == autosave::CloseState::Waiting {
-            return;
-        }
-        let Some(target) = self.close_request else {
-            return;
-        };
-        if state == autosave::CloseState::Failed {
-            self.close_request = None;
-            if self.message.is_empty() {
-                self.message = self
-                    .t(
-                        "仍有设置未保存，请重试或放弃后关闭",
-                        "Unsaved changes remain; retry or discard before closing",
-                    )
-                    .into();
+        match self.closing.decide(state) {
+            CloseDecision::Wait => {}
+            CloseDecision::Failed => {
+                // Keep the failed draft visible and allow explicit retry/discard.
+                self.closing.clear();
+                if self.message.is_empty() {
+                    self.message = self
+                        .t(
+                            "仍有设置未保存，请重试或放弃后关闭",
+                            "Unsaved changes remain; retry or discard before closing",
+                        )
+                        .into();
+                }
             }
-            return; // Keep the failed draft visible and allow explicit retry/discard.
-        }
-        // Keep observers blocked through blur/destruction notifications.
-        match target {
-            CloseTarget::Window => window.remove_window(),
-            CloseTarget::Application => cx.quit(),
+            // Keep observers blocked through blur/destruction notifications.
+            CloseDecision::Close(CloseTarget::Window) => window.remove_window(),
+            CloseDecision::Close(CloseTarget::Application) => cx.quit(),
         }
     }
     pub(super) fn discard_and_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -242,8 +230,8 @@ impl SettingsView {
         }
         // In particular, blur must not retry a draft the user just discarded.
         self.action_save = None;
-        self.close_request = Some(self.last_close_target);
-        match self.last_close_target {
+        self.closing.resume();
+        match self.closing.last() {
             CloseTarget::Window => window.remove_window(),
             CloseTarget::Application => cx.quit(),
         }

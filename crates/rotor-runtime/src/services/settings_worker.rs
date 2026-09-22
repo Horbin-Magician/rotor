@@ -1,7 +1,7 @@
 //! Ordered settings persistence and shortcut coordination.
 use super::{lock, OperationId, RuntimeEvent};
 use async_channel::{Receiver, Sender};
-use rotor_common::{Config, ConfigService};
+use rotor_common::{Config, ConfigService, Settings};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -206,7 +206,7 @@ pub(super) fn normalize_shortcut_changes(
     config: &Config,
 ) -> Result<(), String> {
     use std::str::FromStr;
-    let chinese = rotor_common::i18n::language_for_config(config) == "zh-CN";
+    let chinese = config.locale().is_chinese();
     for (key, value) in changes {
         let (zh, en) = match key.as_str() {
             "shortcut_search" => ("搜索快捷键", "Search shortcut"),

@@ -6536,7 +6536,6 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "sys-locale",
  "tempfile",
  "toml 0.8.23",
@@ -6564,8 +6563,6 @@ dependencies = [
  "rotor-updater",
  "tempfile",
  "tray-icon",
- "windows 0.61.3",
- "winreg",
 ]
 
 [[package]]
@@ -6677,7 +6674,6 @@ dependencies = [
  "rotor-runtime",
  "rotor-updater",
  "tempfile",
- "windows 0.61.3",
 ]
 
 [[package]]
@@ -6690,6 +6686,7 @@ dependencies = [
  "minisign-verify",
  "plist",
  "reqwest",
+ "rotor-common",
  "rustls",
  "semver",
  "serde",

@@ -1,16 +1,83 @@
 use super::*;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use rotor_canvas::{
-    Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, StrokeStyle, ViewTransform,
+    Annotation, Color, Document, ImagePoint, ImageRect, ImageSize, Outline, StrokeStyle,
+    ViewTransform,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Tool {
-    Move,
     Pen,
     Rectangle,
     Arrow,
     Text,
+}
+/// Annotation editing: the selected tool and whatever is being drafted with
+/// it. This is the payload of `Mode::Annotating`; when no tool is selected the
+/// pin is idle and the pointer moves or crops the window instead.
+pub(super) struct Editing {
+    tool: Tool,
+    draft: Draft,
+}
+enum Draft {
+    None,
+    /// A pen, rectangle or arrow being dragged; the canvas holds the pointer.
+    Stroke(Annotation),
+    /// An open text input; enter commits it and escape discards it.
+    Text(TextEditor),
+}
+pub(super) struct TextEditor {
+    pub(super) input: Entity<InputState>,
+    _events: Subscription,
+    origin: ImagePoint,
+    suppress_enter: bool,
+}
+impl Editing {
+    fn new(tool: Tool) -> Self {
+        Self {
+            tool,
+            draft: Draft::None,
+        }
+    }
+    pub(super) fn tool(&self) -> Tool {
+        self.tool
+    }
+    /// A stroke or text is half-drawn; exports and undo must wait.
+    pub(super) fn has_draft(&self) -> bool {
+        !matches!(self.draft, Draft::None)
+    }
+    pub(super) fn stroke(&self) -> Option<&Annotation> {
+        match &self.draft {
+            Draft::Stroke(annotation) => Some(annotation),
+            _ => None,
+        }
+    }
+    fn take_stroke(&mut self) -> Option<Annotation> {
+        match std::mem::replace(&mut self.draft, Draft::None) {
+            Draft::Stroke(annotation) => Some(annotation),
+            other => {
+                self.draft = other;
+                None
+            }
+        }
+    }
+    pub(super) fn text_editor(&self) -> Option<&TextEditor> {
+        match &self.draft {
+            Draft::Text(editor) => Some(editor),
+            _ => None,
+        }
+    }
+    pub(super) fn text_editor_mut(&mut self) -> Option<&mut TextEditor> {
+        match &mut self.draft {
+            Draft::Text(editor) => Some(editor),
+            _ => None,
+        }
+    }
+    fn close_text(&mut self) {
+        if matches!(self.draft, Draft::Text(_)) {
+            self.draft = Draft::None;
+        }
+    }
 }
 // Retain shaped text across pointer moves and unrelated window refreshes.
 #[derive(Clone)]
@@ -20,14 +87,10 @@ struct DisplayMark {
     paths: Vec<(gpui::Path<Pixels>, Color)>,
 }
 
+/// The annotation document and its retained display data. Editing state
+/// lives in `Mode::Annotating`, so this survives every mode change.
 pub(super) struct CanvasState {
     document: Document,
-    tool: Tool,
-    draft: Option<Annotation>,
-    pub(super) editor: Option<Entity<InputState>>,
-    editor_events: Option<Subscription>,
-    suppress_text_enter: bool,
-    editor_origin: ImagePoint,
     pub(super) error: Option<String>,
     display_key: Option<(u64, u64)>,
     display: Arc<Vec<Arc<DisplayMark>>>,
@@ -60,12 +123,6 @@ impl CanvasState {
         }
         Self {
             document,
-            tool: Tool::Move,
-            draft: None,
-            editor: None,
-            editor_events: None,
-            suppress_text_enter: false,
-            editor_origin: ImagePoint { x: 0., y: 0. },
             error: None,
             display_key: None,
             display: Arc::new(Vec::new()),
@@ -74,23 +131,24 @@ impl CanvasState {
     pub(super) fn export_scene(&self) -> rotor_canvas::Scene {
         self.document.scene().clone()
     }
-    pub(super) fn can_request_export(&self) -> bool {
-        self.draft.is_none() && self.editor.is_none()
-    }
-    pub(super) fn ready(&self) -> bool {
-        self.can_request_export()
-    }
-    pub(super) fn editing(&self) -> bool {
-        self.tool != Tool::Move || self.editor.is_some() || self.draft.is_some()
-    }
 }
 impl PinView {
+    /// Nothing is half-drawn, so the document may be exported or recognized.
+    pub(super) fn can_request_export(&self) -> bool {
+        self.mode.can_export()
+    }
+    /// The window lost the pointer: commit drags and discard a half-drawn stroke.
     pub(super) fn cancel_pointer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.finish_move(window, cx);
-        if self.crop_drag.is_some() {
+        if self.mode.is_cropping() {
             self.finish_crop(window, cx);
         }
-        if self.canvas.draft.take().is_some() {
+        if self
+            .mode
+            .editing_mut()
+            .and_then(Editing::take_stroke)
+            .is_some()
+        {
             cx.notify();
         }
         window.release_pointer();
@@ -110,7 +168,7 @@ impl PinView {
         }
     }
     fn canvas_scale(&self) -> f64 {
-        self.record.zoom_factor as f64 / 100. / self.content_scale as f64
+        rotor_canvas::pin_scale(self.record.zoom_factor, self.content_scale as f64)
     }
     fn transform(&self) -> ViewTransform {
         let (x, y, width, height) = self.crop();
@@ -131,11 +189,11 @@ impl PinView {
     }
     pub(super) fn ensure_canvas(&mut self, window: &mut Window, _: &mut Context<Self>) {
         let signature = (self.canvas.document.revision(), self.transform().crop);
-        if self
-            .ocr
-            .signature
-            .is_some_and(|previous| previous != signature)
-        {
+        if self.mode.ocr().is_some_and(|session| {
+            session
+                .signature
+                .is_some_and(|previous| previous != signature)
+        }) {
             self.clear_ocr(window);
         }
     }
@@ -150,33 +208,43 @@ impl PinView {
         });
     }
     pub(super) fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(input) = self.canvas.editor.clone() {
-            if self.canvas.tool == tool {
+        self.select_tool(Some(tool), window, cx);
+    }
+    pub(super) fn cancel_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.mode.is_annotating() {
+            return false;
+        }
+        self.select_tool(None, window, cx);
+        true
+    }
+    /// Enter annotation mode with `tool`, or leave it with `None`. Any drag in
+    /// progress ends first; an open text input is committed unless it is
+    /// still composing, in which case the current mode is kept.
+    fn select_tool(&mut self, tool: Option<Tool>, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(editing) = self.mode.editing()
+            && let Some(editor) = editing.text_editor()
+        {
+            if Some(editing.tool) == tool {
+                let input = editor.input.clone();
                 input.update(cx, |input, cx| input.focus(window, cx));
                 return;
             }
             self.finish_text(window, cx);
-            if self.canvas.editor.is_some() {
+            if self.mode.text_editor().is_some() {
                 return;
             }
         }
         self.finish_move(window, cx);
         self.cancel_crop(window, cx);
         self.crop_hover = Default::default();
-        self.canvas.tool = tool;
-        self.canvas.draft = None;
-        self.canvas.editor = None;
+        self.mode = match tool {
+            Some(tool) => Mode::Annotating(Editing::new(tool)),
+            None => Mode::Idle,
+        };
         self.focus.focus(window, cx);
         window.release_pointer();
         self.release_native_pointer(window);
         cx.notify();
-    }
-    pub(super) fn cancel_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if !self.canvas.editing() {
-            return false;
-        }
-        self.set_tool(Tool::Move, window, cx);
-        true
     }
     fn add_annotation(
         &mut self,
@@ -197,11 +265,7 @@ impl PinView {
         cx.notify();
     }
     fn undo_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy()
-            || self.canvas.editor.is_some()
-            || self.canvas.draft.is_some()
-            || self.crop_drag.is_some()
-        {
+        if self.busy() || !self.can_request_export() || self.mode.is_cropping() {
             return;
         }
         let before_crop = self.canvas.document.scene().crop;
@@ -225,24 +289,26 @@ impl PinView {
             cx.notify();
         }
     }
-    fn begin_mark(
+    pub(super) fn begin_mark(
         &mut self,
         point: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.ocr.active || self.busy() {
+        if self.mode.is_ocr() || self.busy() {
             return false;
         }
-        if self.canvas.editor.is_some() {
-            self.finish_text(window, cx);
-            return false;
-        }
-        if self.canvas.tool == Tool::Move {
+        let Some(editing) = self.mode.editing() else {
+            // Idle starts a crop or move; a drag in progress keeps its anchor.
             if self.crop_edges(point, window).any() {
                 return self.begin_crop(point, window, cx);
             }
             return self.begin_move(point, window, cx);
+        };
+        let (tool, has_editor) = (editing.tool, editing.text_editor().is_some());
+        if has_editor {
+            self.finish_text(window, cx);
+            return false;
         }
         let transform = self.transform();
         let Some(origin) = transform.to_image(ImagePoint {
@@ -257,29 +323,34 @@ impl PinView {
             width,
         };
         self.canvas.error = None;
-        if self.canvas.tool == Tool::Text {
-            let input = cx.new(|cx| InputState::new(window, cx));
-            self.canvas.suppress_text_enter = false;
-            self.canvas.editor_events =
-                Some(
-                    cx.subscribe_in(&input, window, |this, input, event, window, cx| {
-                        if matches!(event, InputEvent::PressEnter { .. })
-                            && this.canvas.editor.as_ref() == Some(input)
-                        {
-                            if !this.canvas.suppress_text_enter {
-                                this.finish_text(window, cx);
-                            }
-                            this.canvas.suppress_text_enter = false;
+        let annotation = match tool {
+            Tool::Text => {
+                let input = cx.new(|cx| InputState::new(window, cx));
+                let events = cx.subscribe_in(&input, window, |this, input, event, window, cx| {
+                    if matches!(event, InputEvent::PressEnter { .. })
+                        && let Some(editor) = this.mode.text_editor()
+                        && editor.input == *input
+                    {
+                        if !editor.suppress_enter {
+                            this.finish_text(window, cx);
                         }
-                    }),
-                );
-            input.update(cx, |input, cx| input.focus(window, cx));
-            self.canvas.editor = Some(input);
-            self.canvas.editor_origin = origin;
-            cx.notify();
-            return false;
-        }
-        self.canvas.draft = Some(match self.canvas.tool {
+                        if let Some(editor) = this.mode.text_editor_mut() {
+                            editor.suppress_enter = false;
+                        }
+                    }
+                });
+                input.update(cx, |input, cx| input.focus(window, cx));
+                if let Some(editing) = self.mode.editing_mut() {
+                    editing.draft = Draft::Text(TextEditor {
+                        input,
+                        _events: events,
+                        origin,
+                        suppress_enter: false,
+                    });
+                }
+                cx.notify();
+                return false;
+            }
             Tool::Pen => Annotation::Pen {
                 points: vec![origin],
                 style,
@@ -294,10 +365,14 @@ impl PinView {
                 end: origin,
                 style,
             },
-            _ => return false,
-        });
+        };
+        if let Some(editing) = self.mode.editing_mut() {
+            editing.draft = Draft::Stroke(annotation);
+        }
         if !self.capture_native_pointer(window) {
-            self.canvas.draft = None;
+            if let Some(editing) = self.mode.editing_mut() {
+                editing.draft = Draft::None;
+            }
             cx.notify();
             return false;
         }
@@ -305,21 +380,18 @@ impl PinView {
         true
     }
     fn move_mark(&mut self, point: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
-        if self.move_drag.is_some() {
-            self.move_pin(point, window, cx);
-            return;
-        }
-        if self.crop_drag.is_some() {
-            self.move_crop(point, window, cx);
-            return;
-        }
-        if self.canvas.tool == Tool::Move {
-            let edges = self.crop_edges(point, window);
-            if edges != self.crop_hover {
-                self.crop_hover = edges;
-                cx.notify();
+        match self.mode {
+            Mode::MovingWindow(_) => return self.move_pin(point, window, cx),
+            Mode::CroppingEdge(_) => return self.move_crop(point, window, cx),
+            Mode::Idle | Mode::Ocr(_) => {
+                let edges = self.crop_edges(point, window);
+                if edges != self.crop_hover {
+                    self.crop_hover = edges;
+                    cx.notify();
+                }
+                return;
             }
-            return;
+            Mode::Annotating(_) => {}
         }
         let transform = self.transform();
         let Some(mut point) = transform.to_image(ImagePoint {
@@ -336,27 +408,29 @@ impl PinView {
             transform.crop.y as f64,
             (transform.crop.y + transform.crop.height) as f64,
         );
-        match self.canvas.draft.as_mut() {
-            Some(Annotation::Pen { points, .. }) => {
+        match self.mode.editing_mut().map(|editing| &mut editing.draft) {
+            Some(Draft::Stroke(Annotation::Pen { points, .. })) => {
                 if points.len() < 65536 && points.last() != Some(&point) {
                     points.push(point);
                 }
             }
-            Some(Annotation::Rectangle { end, .. } | Annotation::Arrow { end, .. }) => *end = point,
+            Some(Draft::Stroke(
+                Annotation::Rectangle { end, .. } | Annotation::Arrow { end, .. },
+            )) => *end = point,
             _ => return,
         }
         cx.notify();
     }
     fn end_mark(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.move_drag.is_some() {
+        if self.mode.is_moving() {
             self.finish_move(window, cx);
             return;
         }
-        if self.crop_drag.is_some() {
+        if self.mode.is_cropping() {
             self.finish_crop(window, cx);
             return;
         }
-        let Some(annotation) = self.canvas.draft.take() else {
+        let Some(annotation) = self.mode.editing_mut().and_then(Editing::take_stroke) else {
             return;
         };
         window.release_pointer();
@@ -370,9 +444,10 @@ impl PinView {
         self.add_annotation(annotation, window, cx);
     }
     fn finish_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(input) = self.canvas.editor.clone() else {
+        let Some(editor) = self.mode.text_editor() else {
             return;
         };
+        let (input, origin) = (editor.input.clone(), editor.origin);
         if input.update(cx, |input, cx| {
             input.marked_text_range(window, cx).is_some()
         }) {
@@ -380,8 +455,7 @@ impl PinView {
         }
         let text = input.read(cx).value().to_string();
         if text.trim().is_empty() {
-            self.canvas.editor = None;
-            self.canvas.editor_events = None;
+            self.close_text_editor();
             self.focus.focus(window, cx);
             cx.notify();
             return;
@@ -389,7 +463,7 @@ impl PinView {
         let transform = self.transform();
         self.add_annotation(
             Annotation::Text {
-                origin: self.canvas.editor_origin,
+                origin,
                 text,
                 font_size: 16. * transform.crop.height as f64 / transform.height,
                 color: Color::RED,
@@ -398,14 +472,17 @@ impl PinView {
             cx,
         );
         if self.canvas.error.is_none() {
-            self.canvas.editor = None;
-            self.canvas.editor_events = None;
+            self.close_text_editor();
             self.focus.focus(window, cx);
         }
     }
+    fn close_text_editor(&mut self) {
+        if let Some(editing) = self.mode.editing_mut() {
+            editing.close_text();
+        }
+    }
     fn cancel_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.canvas.editor = None;
-        self.canvas.editor_events = None;
+        self.close_text_editor();
         self.canvas.error = None;
         self.focus.focus(window, cx);
         cx.notify();
@@ -416,17 +493,20 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.crop_drag.is_some() && event.keystroke.key == "escape" {
+        if self.mode.is_cropping() && event.keystroke.key == "escape" {
             self.cancel_crop(window, cx);
             cx.stop_propagation();
             return true;
         }
-        if let Some(input) = self.canvas.editor.clone() {
+        if let Some(editor) = self.mode.text_editor() {
+            let input = editor.input.clone();
             let composing = input.update(cx, |input, cx| {
                 input.marked_text_range(window, cx).is_some()
             });
-            if event.keystroke.key == "enter" {
-                self.canvas.suppress_text_enter = composing;
+            if event.keystroke.key == "enter"
+                && let Some(editor) = self.mode.text_editor_mut()
+            {
+                editor.suppress_enter = composing;
             }
             if event.keystroke.key == "escape" && !composing {
                 self.cancel_text(window, cx);
@@ -434,12 +514,12 @@ impl PinView {
             }
             return true;
         }
-        if event.keystroke.key == "escape" && self.canvas.editing() {
+        if event.keystroke.key == "escape" && self.mode.is_annotating() {
             self.cancel_editing(window, cx);
             cx.stop_propagation();
             return true;
         }
-        if is_canvas_undo(&event.keystroke, self.canvas.editing()) {
+        if is_canvas_undo(&event.keystroke, self.mode.is_annotating()) {
             self.undo_canvas(window, cx);
             cx.stop_propagation();
             return true;
@@ -447,7 +527,8 @@ impl PinView {
         false
     }
     pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let disabled = self.busy() || self.crop_drag.is_some();
+        let disabled = self.busy() || self.mode.is_cropping();
+        let selected = self.mode.editing().map(Editing::tool);
         div()
             .flex()
             .flex_wrap()
@@ -499,8 +580,8 @@ impl PinView {
                     toolbar::button(id, glyph, cx)
                         .accessibility_label(self.t(zh, en))
                         .tooltip(self.t(zh, en))
-                        .selected(self.canvas.tool == tool)
-                        .toggled(self.canvas.tool == tool)
+                        .selected(selected == Some(tool))
+                        .toggled(selected == Some(tool))
                         .disabled(disabled)
                         .on_click(
                             cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)),
@@ -515,7 +596,7 @@ impl PinView {
                     .disabled(
                         disabled
                             || !self.canvas.document.can_undo()
-                            || self.canvas.editor.is_some(),
+                            || self.mode.text_editor().is_some(),
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.undo_canvas(window, cx))),
             )
@@ -565,13 +646,12 @@ impl PinView {
         }
         let display = self.canvas.display.clone();
         let weak = cx.weak_entity();
-        let preview = self.canvas.draft.clone();
-        let dragging =
-            self.canvas.draft.is_some() || self.crop_drag.is_some() || self.move_drag.is_some();
-        let cursor = match self.canvas.tool {
-            Tool::Move => self.crop_cursor(),
-            Tool::Text => CursorStyle::IBeam,
-            _ => CursorStyle::Crosshair,
+        let preview = self.mode.editing().and_then(Editing::stroke).cloned();
+        let dragging = self.mode.canvas_drag();
+        let cursor = match self.mode.editing().map(Editing::tool) {
+            None => self.crop_cursor(),
+            Some(Tool::Text) => CursorStyle::IBeam,
+            Some(_) => CursorStyle::Crosshair,
         };
         layer = layer.child(
             canvas(
@@ -613,9 +693,7 @@ impl PinView {
                         {
                             let _ = move_view.update(cx, |this, cx| {
                                 if event.pressed_button != Some(MouseButton::Left)
-                                    && (this.move_drag.is_some()
-                                        || this.crop_drag.is_some()
-                                        || this.canvas.draft.is_some())
+                                    && this.mode.canvas_drag()
                                 {
                                     this.end_mark(window, cx);
                                     return;
@@ -627,7 +705,7 @@ impl PinView {
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
                             let _ = weak.update(cx, |this, cx| {
-                                if this.crop_drag.is_some() {
+                                if this.mode.is_cropping() {
                                     this.move_crop(event.position - bounds.origin, window, cx);
                                 }
                                 this.end_mark(window, cx);
@@ -639,9 +717,9 @@ impl PinView {
             .absolute()
             .size_full(),
         );
-        if let Some(input) = &self.canvas.editor {
+        if let Some(editor) = self.mode.text_editor() {
             let origin = transform
-                .to_view(self.canvas.editor_origin)
+                .to_view(editor.origin)
                 .unwrap_or(ImagePoint { x: 0., y: 0. });
             let (left, top, width, height) =
                 text_editor_bounds(origin, transform.width, transform.height);
@@ -656,7 +734,7 @@ impl PinView {
                     .text_size(px(16.))
                     .occlude()
                     .child(
-                        Input::new(input)
+                        Input::new(&editor.input)
                             .h(px(height as f32))
                             .aria_label(self.t("标注文字", "Annotation text")),
                     ),
@@ -796,97 +874,75 @@ fn paint_paths(
     }
 }
 
+/// Tessellate the shared [`Outline`] in document coordinates. The shape rules
+/// live in rotor-canvas so the export renders the same geometry.
 fn annotation_paths(annotation: &Annotation) -> Vec<(gpui::Path<Pixels>, Color)> {
     let mut paths = Vec::new();
-    let point = |point: ImagePoint| Some(gpui_kit::point(px(point.x as f32), px(point.y as f32)));
-    let (points, style, closed) = match annotation {
-        Annotation::Pen { points, style } => (points.clone(), *style, false),
-        Annotation::Rectangle { start, end, style } => (
-            vec![
-                *start,
-                ImagePoint {
-                    x: end.x,
-                    y: start.y,
-                },
-                *end,
-                ImagePoint {
-                    x: start.x,
-                    y: end.y,
-                },
-                *start,
-            ],
-            *style,
-            true,
-        ),
-        Annotation::Arrow { start, end, style } => {
-            let outline = rotor_canvas::arrow_outline(*start, *end, style.width);
-            if outline.is_empty() {
-                return paths;
-            }
-            let mut fill = PathBuilder::fill();
-            for (index, position) in outline.into_iter().enumerate() {
-                let position = point(position).unwrap();
-                if index == 0 {
-                    fill.move_to(position);
-                } else {
-                    fill.line_to(position);
-                }
-            }
-            fill.close();
-            if let Ok(path) = fill.build() {
-                paths.push((path, style.color));
-            }
-            return paths;
-        }
-        Annotation::Text { .. } => return paths,
-    };
-    let width = style.width;
-    if !closed && points.iter().all(|point| point == &points[0]) {
-        let center = point(points[0]).unwrap();
-        let radius = px(width as f32 / 2.);
-        let mut circle = PathBuilder::fill();
-        circle.move_to(center + gpui_kit::point(radius, px(0.)));
-        circle.arc_to(
-            gpui_kit::point(radius, radius),
-            px(0.),
-            false,
-            true,
-            center - gpui_kit::point(radius, px(0.)),
-        );
-        circle.arc_to(
-            gpui_kit::point(radius, radius),
-            px(0.),
-            false,
-            true,
-            center + gpui_kit::point(radius, px(0.)),
-        );
-        circle.close();
-        if let Ok(path) = circle.build() {
-            paths.push((path, style.color));
-        }
+    let Some((outline, color)) = annotation.outline() else {
         return paths;
-    }
-    let mut options = gpui::StrokeOptions::default().with_line_width(width as f32);
-    if !closed {
-        options = options.with_line_cap(lyon::path::LineCap::Round);
-    }
-    if matches!(annotation, Annotation::Pen { .. }) {
-        options = options.with_line_join(lyon::path::LineJoin::Round);
-    }
-    let mut path =
-        PathBuilder::stroke(px(width as f32)).with_style(gpui::PathStyle::Stroke(options));
-    for (index, position) in points.into_iter().filter_map(point).enumerate() {
-        if index == 0 {
-            path.move_to(position);
-        } else {
-            path.line_to(position);
+    };
+    let point = |point: ImagePoint| gpui_kit::point(px(point.x as f32), px(point.y as f32));
+    let trace = |builder: &mut PathBuilder, points: &[ImagePoint]| {
+        for (index, position) in points.iter().enumerate() {
+            if index == 0 {
+                builder.move_to(point(*position));
+            } else {
+                builder.line_to(point(*position));
+            }
         }
-    }
-    if closed {
-        path.close();
-    }
-    if let Ok(path) = path.build() {
-        paths.push((path, style.color));
+    };
+    let built = match outline {
+        Outline::Dot { center, radius } => {
+            let center = point(center);
+            let radius = px(radius as f32);
+            let mut circle = PathBuilder::fill();
+            circle.move_to(center + gpui_kit::point(radius, px(0.)));
+            circle.arc_to(
+                gpui_kit::point(radius, radius),
+                px(0.),
+                false,
+                true,
+                center - gpui_kit::point(radius, px(0.)),
+            );
+            circle.arc_to(
+                gpui_kit::point(radius, radius),
+                px(0.),
+                false,
+                true,
+                center + gpui_kit::point(radius, px(0.)),
+            );
+            circle.close();
+            circle.build()
+        }
+        Outline::Stroke {
+            points,
+            width,
+            closed,
+            rounded,
+        } => {
+            let mut options = gpui::StrokeOptions::default().with_line_width(width as f32);
+            if rounded {
+                options = options
+                    .with_line_cap(lyon::path::LineCap::Round)
+                    .with_line_join(lyon::path::LineJoin::Round);
+            }
+            let mut path =
+                PathBuilder::stroke(px(width as f32)).with_style(gpui::PathStyle::Stroke(options));
+            trace(&mut path, &points);
+            if closed {
+                path.close();
+            }
+            path.build()
+        }
+        Outline::Fill(points) => {
+            let mut fill = PathBuilder::fill();
+            trace(&mut fill, &points);
+            fill.close();
+            fill.build()
+        }
+    };
+    if let Ok(path) = built {
+        paths.push((path, color));
     }
     paths
 }
@@ -992,11 +1048,9 @@ mod tests {
                 color: Color::RED,
             })
             .unwrap();
-        assert!(state.ready());
         let snapshot = state.export_scene();
         assert_eq!(snapshot.annotations.len(), 1);
         assert!(state.document.undo());
-        assert!(state.ready());
         assert!(state.export_scene().annotations.is_empty());
         assert_eq!(snapshot.annotations.len(), 1);
         assert!(state.document.redo());
@@ -1025,7 +1079,6 @@ mod tests {
                 height: 3,
             })
             .unwrap();
-        assert!(state.ready());
         let scene = state.export_scene();
         let source = image::RgbaImage::new(4, 4);
         let rendered = rotor_canvas::Renderer::without_fonts()
@@ -1106,11 +1159,11 @@ mod tests {
                 pin.set_tool(Tool::Text, window, cx);
                 for text in ["中文 first", "second line"] {
                     pin.begin_mark(point(px(20.), px(20.)), window, cx);
-                    let editor = pin.canvas.editor.clone().unwrap();
+                    let editor = pin.mode.text_editor().unwrap().input.clone();
                     editor.update(cx, |input, cx| input.set_value(text, window, cx));
                     pin.finish_text(window, cx);
-                    assert!(pin.canvas.editor.is_none());
-                    assert!(pin.canvas.ready());
+                    assert!(pin.mode.text_editor().is_none());
+                    assert!(pin.can_request_export());
                     assert!(pin.canvas.error.is_none());
                     let previous = pin.canvas.display.first().cloned();
                     pin.canvas_element(window, cx);
@@ -1146,14 +1199,15 @@ mod tests {
                 pin.undo_canvas(window, cx);
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 1);
                 pin.begin_mark(point(px(30.), px(30.)), window, cx);
-                pin.canvas
-                    .editor
-                    .clone()
+                pin.mode
+                    .text_editor()
                     .unwrap()
+                    .input
+                    .clone()
                     .update(cx, |input, cx| input.set_value("switch", window, cx));
                 pin.set_tool(Tool::Pen, window, cx);
-                assert!(pin.canvas.tool == Tool::Pen);
-                assert!(pin.canvas.editor.is_none());
+                assert_eq!(pin.mode.editing().map(Editing::tool), Some(Tool::Pen));
+                assert!(pin.mode.text_editor().is_none());
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
                 pin.id = Some(42);
                 let (id, record) = pin.shutdown_record().unwrap();
@@ -1173,7 +1227,7 @@ mod tests {
         cx.run_until_parked();
         pin.read_with(cx, |pin, _| {
             assert!(pin.canvas.error.is_none());
-            assert!(pin.canvas.ready());
+            assert!(pin.can_request_export());
         });
     }
 }

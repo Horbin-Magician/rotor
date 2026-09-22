@@ -1,6 +1,7 @@
 use gpui_kit::{component::ActiveTheme, prelude::*, *};
 use image::RgbaImage;
 use rotor_canvas::{ImagePoint, ImageRect, ImageSize};
+use rotor_common::Locale;
 use rotor_runtime::{CaptureBundle, MonitorConfig};
 use std::{rc::Rc, sync::Arc};
 
@@ -263,7 +264,7 @@ pub struct MaskView {
     #[cfg(target_os = "windows")]
     _activation: Subscription,
     detected: Vec<ImageRect>,
-    chinese: bool,
+    locale: Locale,
     copied: bool,
     // reset() has no window; the next render applies the language/monitor title.
     title_stale: bool,
@@ -273,11 +274,11 @@ impl MaskView {
         session: u64,
         capture: Arc<PreparedCapture>,
         callback: MaskCallback,
-        chinese: bool,
+        locale: Locale,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        window.set_window_title(&mask_title(chinese, capture.monitor.id));
+        window.set_window_title(&mask_title(locale, capture.monitor.id));
         let focus = cx.focus_handle();
         let bounds =
             cx.observe_window_bounds(window, |this, window, cx| this.check_geometry(window, cx));
@@ -304,7 +305,7 @@ impl MaskView {
             #[cfg(target_os = "windows")]
             _activation: activation,
             detected: Vec::new(),
-            chinese,
+            locale,
             copied: false,
             title_stale: false,
         }
@@ -316,14 +317,14 @@ impl MaskView {
         &mut self,
         session: u64,
         capture: Arc<PreparedCapture>,
-        chinese: bool,
+        locale: Locale,
         cx: &mut Context<Self>,
     ) {
         self.session = session;
         self.active = true;
-        self.title_stale = self.chinese != chinese || self.capture.monitor.id != capture.monitor.id;
+        self.title_stale = self.locale != locale || self.capture.monitor.id != capture.monitor.id;
         self.capture = capture;
-        self.chinese = chinese;
+        self.locale = locale;
         self.armed = false;
         self.point = ImagePoint { x: 0., y: 0. };
         self.pointer_inside = false;
@@ -510,12 +511,8 @@ impl MaskView {
     }
 }
 
-fn mask_title(chinese: bool, monitor: u32) -> String {
-    format!(
-        "Rotor · {} {}",
-        if chinese { "截图" } else { "Capture" },
-        monitor
-    )
+fn mask_title(locale: Locale, monitor: u32) -> String {
+    format!("Rotor · {} {}", locale.pick("截图", "Capture"), monitor)
 }
 
 fn choose_rectangle(
@@ -565,7 +562,7 @@ const INSPECTOR_INFO_HEIGHT: f32 = INSPECTOR_HEIGHT - INSPECTOR_PREVIEW_SIZE - 2
 impl Render for MaskView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if std::mem::take(&mut self.title_stale) {
-            window.set_window_title(&mask_title(self.chinese, self.capture.monitor.id));
+            window.set_window_title(&mask_title(self.locale, self.capture.monitor.id));
         }
         if !self.active {
             return div().size_full().bg(rgb(0x000000)).into_any_element();
@@ -696,12 +693,12 @@ impl Render for MaskView {
                             .child(self.color()),
                     )
                     .child(if self.copied {
-                        if self.chinese {
+                        if self.locale.is_chinese() {
                             "颜色已复制"
                         } else {
                             "Color copied"
                         }
-                    } else if self.chinese {
+                    } else if self.locale.is_chinese() {
                         "复制颜色(C)"
                     } else {
                         "Copy color (C)"
@@ -826,7 +823,7 @@ mod tests {
                 7,
                 capture,
                 Rc::new(move |action, _, _| recorded.borrow_mut().push(action)),
-                false,
+                Locale::English,
                 window,
                 cx,
             )
@@ -902,7 +899,7 @@ mod tests {
                 7,
                 capture,
                 Rc::new(move |action, _, _| recorded.borrow_mut().push(action)),
-                false,
+                Locale::English,
                 window,
                 cx,
             )

@@ -701,11 +701,11 @@ fn capture_uses_its_own_worker_when_background_capacity_is_saturated() {
         .try_acquire_many_owned(BACKGROUND_LIMIT as u32)
         .unwrap();
     let id = services.capture().unwrap();
-    assert_eq!(services.capture_id.load(Ordering::Acquire), id.0);
+    assert!(services.capture_id.is_current(id));
     services.shutdown();
-    let cancelled = services.capture_id.load(Ordering::Acquire);
+    let cancelled = services.capture_id.current();
     assert!(services.capture().is_err());
-    assert_eq!(services.capture_id.load(Ordering::Acquire), cancelled);
+    assert_eq!(services.capture_id.current(), cancelled);
 }
 
 #[test]

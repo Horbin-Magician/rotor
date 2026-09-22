@@ -22,12 +22,15 @@ impl Selection {
         }
     }
 }
+/// Everything that exists only while the pin is in OCR mode: the pending
+/// render/recognition, the recognized rows and the hidden selection textbox.
+/// Leaving the mode drops it all; `PinView::ocr_revision` outlives sessions.
 #[derive(Default)]
-pub(super) struct OcrState {
+pub(super) struct OcrSession {
     cancellation: rotor_runtime::Cancellation,
-    pub(super) active: bool,
     pending: Option<OperationId>,
     render_task: Option<Task<()>>,
+    /// The pin's OCR revision when this session started.
     revision: u64,
     pub(super) signature: Option<(u64, ImageRect)>,
     size: Option<ImageSize>,
@@ -39,20 +42,17 @@ pub(super) struct OcrState {
     dragging: bool,
     pub(super) error: Option<String>,
 }
-impl OcrState {
+impl OcrSession {
     pub(super) fn loading(&self) -> bool {
         self.render_task.is_some() || self.pending.is_some()
     }
 
     fn accepts_render(&self, revision: u64, signature: (u64, ImageRect)) -> bool {
-        self.active && self.revision == revision && self.signature == Some(signature)
+        self.revision == revision && self.signature == Some(signature)
     }
 
     fn accepts(&self, id: OperationId, revision: u64, signature: (u64, ImageRect)) -> bool {
-        self.active
-            && self.pending == Some(id)
-            && self.revision == revision
-            && self.signature == Some(signature)
+        self.pending == Some(id) && self.revision == revision && self.signature == Some(signature)
     }
 }
 fn boundary(text: &str, byte: usize) -> usize {
@@ -82,15 +82,16 @@ fn text_position(rows: &[OcrTextResult], mut offset: usize) -> TextPosition {
     TextPosition { row: 0, byte: 0 }
 }
 impl PinView {
+    /// Leave OCR mode if it is active. The revision advances either way so a
+    /// result from any earlier session can never be accepted by a later one.
     pub(super) fn clear_ocr(&mut self, window: &mut Window) {
-        if self.ocr.dragging {
+        if let Some(session) = self.mode.take_ocr()
+            && session.dragging
+        {
             self.release_native_pointer(window);
             window.release_pointer();
         }
-        self.ocr = OcrState {
-            revision: self.ocr.revision.wrapping_add(1),
-            ..Default::default()
-        };
+        self.ocr_revision = self.ocr_revision.wrapping_add(1);
     }
     fn ocr_signature(&self) -> (u64, ImageRect) {
         let (x, y, width, height) = self.crop();
@@ -105,10 +106,10 @@ impl PinView {
         )
     }
     pub(super) fn toggle_ocr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.ocr.loading() {
+        if self.mode.ocr_loading() {
             return;
         }
-        if self.ocr.active {
+        if self.mode.is_ocr() {
             self.clear_ocr(window);
             self.focus.focus(window, cx);
             self.crop_hover = Default::default();
@@ -118,12 +119,16 @@ impl PinView {
         }
     }
     pub(super) fn start_ocr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() || !self.canvas.ready() || self.crop_drag.is_some() {
+        if self.busy() || !self.can_request_export() || self.mode.is_cropping() {
             return;
         }
         self.finish_move(window, cx);
         self.crop_hover = Default::default();
         self.cancel_editing(window, cx);
+        if self.mode.is_annotating() {
+            // A composing text annotation refused to close; do not cover it.
+            return;
+        }
         self.clear_ocr(window);
         let scene = self.canvas.export_scene();
         let output = ImageSize {
@@ -132,35 +137,45 @@ impl PinView {
         };
         let source = Arc::new(self.image.clone());
         let services = self.services.clone();
-        let revision = self.ocr.revision;
+        let revision = self.ocr_revision;
         let signature = self.ocr_signature();
-        self.ocr.active = true;
-        self.ocr.signature = Some(signature);
-        self.ocr.size = Some(output);
-        self.ocr.render_task = Some(cx.spawn_in(window, async move |view, cx| {
+        let render_task = cx.spawn_in(window, async move |view, cx| {
             // OCR consumes the same document as export, including floating annotations.
             let result = services.render_canvas(source, scene, output).await;
             let _ = view.update(cx, |this, cx| {
-                if !this.ocr.accepts_render(revision, signature)
-                    || this.ocr_signature() != signature
-                {
+                if this.ocr_signature() != signature {
                     return;
                 }
-                this.ocr.render_task = None;
+                let pin_id = this.id.unwrap_or(0);
+                let Some(session) = this
+                    .mode
+                    .ocr_mut()
+                    .filter(|session| session.accepts_render(revision, signature))
+                else {
+                    return;
+                };
+                session.render_task = None;
                 match result.and_then(|image| {
                     this.services.recognize_text_cancellable(
-                        this.id.unwrap_or(0),
+                        pin_id,
                         revision,
                         image,
-                        this.ocr.cancellation.flag(),
+                        session.cancellation.flag(),
                     )
                 }) {
-                    Ok(id) => this.ocr.pending = Some(id),
-                    Err(error) => this.ocr.error = Some(error),
+                    Ok(id) => session.pending = Some(id),
+                    Err(error) => session.error = Some(error),
                 }
                 cx.notify();
             });
-        }));
+        });
+        self.mode = Mode::Ocr(OcrSession {
+            revision,
+            signature: Some(signature),
+            size: Some(output),
+            render_task: Some(render_task),
+            ..Default::default()
+        });
         self.focus.focus(window, cx);
         cx.notify();
     }
@@ -179,14 +194,19 @@ impl PinView {
         else {
             return;
         };
-        if !self.ocr.accepts(*id, *revision, self.ocr_signature()) {
+        let signature = self.ocr_signature();
+        let Some(session) = self
+            .mode
+            .ocr_mut()
+            .filter(|session| session.accepts(*id, *revision, signature))
+        else {
             return;
-        }
-        self.ocr.pending = None;
+        };
+        session.pending = None;
         match result {
             Ok(results) => {
-                let size = self.ocr.size.unwrap();
-                self.ocr.rows = results
+                let size = session.size.unwrap();
+                session.rows = results
                     .iter()
                     .filter(|row| {
                         row.width > 0
@@ -199,8 +219,7 @@ impl PinView {
                     })
                     .cloned()
                     .collect();
-                self.ocr.lines = self
-                    .ocr
+                session.lines = session
                     .rows
                     .iter()
                     .map(|row| {
@@ -217,19 +236,18 @@ impl PinView {
                         )
                     })
                     .collect();
-                let text = self
-                    .ocr
+                let text = session
                     .rows
                     .iter()
                     .map(|row| row.text.as_str())
                     .collect::<Vec<_>>()
                     .join("\n");
                 let input = cx.new(|cx| TextareaState::new(window, cx).default_value(text));
-                self.ocr._input_observer = Some(cx.observe(&input, |_, _, cx| cx.notify()));
+                session._input_observer = Some(cx.observe(&input, |_, _, cx| cx.notify()));
                 input.update(cx, |input, cx| input.focus(window, cx));
-                self.ocr.input = Some(input);
+                session.input = Some(input);
             }
-            Err(error) => self.ocr.error = Some(error.clone()),
+            Err(error) => session.error = Some(error.clone()),
         }
         cx.notify();
     }
@@ -239,7 +257,7 @@ impl PinView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !self.ocr.active {
+        if !self.mode.is_ocr() {
             return false;
         }
         if event.keystroke.key == "escape" {
@@ -256,12 +274,12 @@ impl PinView {
         window: &Window,
         nearest: bool,
     ) -> Option<TextPosition> {
-        let size = self.ocr.size?;
+        let session = self.mode.ocr()?;
+        let size = session.size?;
         let viewport = window.viewport_size();
         let x = point.x.as_f32() * size.width as f32 / viewport.width.as_f32().max(1.);
         let y = point.y.as_f32() * size.height as f32 / viewport.height.as_f32().max(1.);
-        let row = self
-            .ocr
+        let row = session
             .rows
             .iter()
             .enumerate()
@@ -285,8 +303,8 @@ impl PinView {
                 distance(a).total_cmp(&distance(b))
             })
             .map(|(index, _)| index)?;
-        let result = &self.ocr.rows[row];
-        let line = &self.ocr.lines[row];
+        let result = &session.rows[row];
+        let line = &session.lines[row];
         let text_x = (x - result.left as f32) / result.width as f32 * line.width().as_f32();
         Some(TextPosition {
             row,
@@ -300,18 +318,23 @@ impl PinView {
         cx: &mut Context<Self>,
     ) -> bool {
         let Some(position) = self.ocr_position(event.position, window, false) else {
-            self.ocr.selection = None;
-            if let Some(input) = &self.ocr.input {
-                input.update(cx, |input, cx| input.set_selected_range(0..0, cx));
+            if let Some(session) = self.mode.ocr_mut() {
+                session.selection = None;
+                if let Some(input) = &session.input {
+                    input.update(cx, |input, cx| input.set_selected_range(0..0, cx));
+                }
             }
             cx.notify();
             return false;
         };
         self.activate(window);
-        if let Some(input) = &self.ocr.input {
+        let Some(session) = self.mode.ocr_mut() else {
+            return false;
+        };
+        if let Some(input) = &session.input {
             input.update(cx, |input, cx| input.focus(window, cx));
         }
-        self.ocr.selection = Some(if event.click_count >= 2 {
+        session.selection = Some(if event.click_count >= 2 {
             Selection {
                 anchor: TextPosition {
                     row: position.row,
@@ -319,7 +342,7 @@ impl PinView {
                 },
                 head: TextPosition {
                     row: position.row,
-                    byte: self.ocr.rows[position.row].text.len(),
+                    byte: session.rows[position.row].text.len(),
                 },
             }
         } else {
@@ -329,16 +352,22 @@ impl PinView {
             }
         });
         self.sync_ocr_selection(cx);
-        self.ocr.dragging = self.capture_native_pointer(window);
+        let dragging = self.capture_native_pointer(window);
+        if let Some(session) = self.mode.ocr_mut() {
+            session.dragging = dragging;
+        }
         cx.notify();
-        self.ocr.dragging
+        dragging
     }
     fn ocr_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.ocr.dragging {
+        if !self.mode.ocr().is_some_and(|session| session.dragging) {
             return;
         }
         if let Some(position) = self.ocr_position(event.position, window, true)
-            && let Some(selection) = self.ocr.selection.as_mut()
+            && let Some(selection) = self
+                .mode
+                .ocr_mut()
+                .and_then(|session| session.selection.as_mut())
         {
             selection.head = position;
             self.sync_ocr_selection(cx);
@@ -346,24 +375,31 @@ impl PinView {
         }
     }
     fn sync_ocr_selection(&self, cx: &mut Context<Self>) {
-        if let (Some(input), Some(selection)) = (&self.ocr.input, self.ocr.selection) {
+        if let Some(session) = self.mode.ocr()
+            && let (Some(input), Some(selection)) = (&session.input, session.selection)
+        {
             let (start, end) = selection.ordered();
-            let range = text_offset(&self.ocr.rows, start)..text_offset(&self.ocr.rows, end);
+            let range = text_offset(&session.rows, start)..text_offset(&session.rows, end);
             input.update(cx, |input, cx| input.set_selected_range(range, cx));
         }
     }
-    pub(super) fn ocr_layer(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let rows = self.ocr.rows.clone();
-        let lines = self.ocr.lines.clone();
-        let selection = self.ocr.input.as_ref().map(|input| {
+    pub(super) fn ocr_layer(
+        &self,
+        session: &OcrSession,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let rows = session.rows.clone();
+        let lines = session.lines.clone();
+        let selection = session.input.as_ref().map(|input| {
             let range = input.read(cx).selected_range();
             Selection {
                 anchor: text_position(&rows, range.start),
                 head: text_position(&rows, range.end),
             }
         });
-        let dragging = self.ocr.dragging;
-        let size = self.ocr.size.unwrap_or(ImageSize {
+        let dragging = session.dragging;
+        let size = session.size.unwrap_or(ImageSize {
             width: 1,
             height: 1,
         });
@@ -443,7 +479,9 @@ impl PinView {
                 window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                     if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
                         let _ = view.update(cx, |view, _| {
-                            view.ocr.dragging = false;
+                            if let Some(session) = view.mode.ocr_mut() {
+                                session.dragging = false;
+                            }
                             view.release_native_pointer(window);
                             window.release_pointer();
                         });
@@ -462,7 +500,7 @@ impl PinView {
             .top(px(0.))
             .left(px(0.))
             .size_full()
-            .when_some(self.ocr.input.as_ref(), |root, input| {
+            .when_some(session.input.as_ref(), |root, input| {
                 // Keep the control in the focus/action tree without painting its text.
                 root.child(
                     div()
@@ -479,7 +517,8 @@ impl PinView {
 
 #[cfg(test)]
 mod tests {
-    use super::{OcrState, TextPosition, text_offset, text_position};
+    use super::super::Mode;
+    use super::{OcrSession, TextPosition, text_offset, text_position};
     use gpui_kit::component::input::{Textarea, TextareaState};
     use gpui_kit::{
         Context, Entity, IntoElement, Render, TestAppContext, Window, div, prelude::*, px,
@@ -535,31 +574,33 @@ mod tests {
                 window,
                 cx,
             );
-            pin.ocr.active = true;
-            pin.ocr.size = Some(rotor_canvas::ImageSize {
-                width: 400,
-                height: 400,
-            });
-            pin.ocr.rows = vec![OcrTextResult {
-                left: 40,
-                top: 40,
-                width: 200,
-                height: 30,
-                text: "hello world".into(),
-            }];
-            pin.ocr.lines = vec![window.text_system().shape_line(
-                "hello world".into(),
-                px(18.),
-                &[gpui_kit::TextRun {
-                    len: 11,
-                    font: gpui_kit::font(rotor_canvas::FONT_FAMILY),
-                    ..Default::default()
-                }],
-                None,
-            )];
             let input = cx.new(|cx| TextareaState::new(window, cx).default_value("hello world"));
-            pin.ocr._input_observer = Some(cx.observe(&input, |_, _, cx| cx.notify()));
-            pin.ocr.input = Some(input);
+            pin.mode = Mode::Ocr(OcrSession {
+                size: Some(rotor_canvas::ImageSize {
+                    width: 400,
+                    height: 400,
+                }),
+                rows: vec![OcrTextResult {
+                    left: 40,
+                    top: 40,
+                    width: 200,
+                    height: 30,
+                    text: "hello world".into(),
+                }],
+                lines: vec![window.text_system().shape_line(
+                    "hello world".into(),
+                    px(18.),
+                    &[gpui_kit::TextRun {
+                        len: 11,
+                        font: gpui_kit::font(rotor_canvas::FONT_FAMILY),
+                        ..Default::default()
+                    }],
+                    None,
+                )],
+                _input_observer: Some(cx.observe(&input, |_, _, cx| cx.notify())),
+                input: Some(input),
+                ..Default::default()
+            });
             pin
         });
         cx.simulate_resize(size(px(400.), px(400.)));
@@ -571,7 +612,10 @@ mod tests {
             Default::default(),
         );
         pin.read_with(cx, |pin, _| {
-            assert!(pin.ocr.dragging, "mouse down must reach OCR overlay")
+            assert!(
+                pin.mode.ocr().unwrap().dragging,
+                "mouse down must reach OCR overlay"
+            )
         });
         cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_mouse_move(
@@ -585,9 +629,10 @@ mod tests {
             Default::default(),
         );
         pin.read_with(cx, |pin, cx| {
-            assert!(!pin.ocr.dragging);
+            let session = pin.mode.ocr().unwrap();
+            assert!(!session.dragging);
             assert_eq!(
-                pin.ocr.input.as_ref().unwrap().read(cx).selected_range(),
+                session.input.as_ref().unwrap().read(cx).selected_range(),
                 0..11
             );
         });
@@ -678,8 +723,7 @@ mod tests {
 
     #[test]
     fn loading_covers_render_and_recognition_and_clears_after_completion() {
-        let mut state = OcrState {
-            active: true,
+        let mut state = OcrSession {
             render_task: Some(gpui_kit::Task::ready(())),
             ..Default::default()
         };
@@ -691,7 +735,8 @@ mod tests {
         assert!(!state.loading());
         state.error = Some("recognition failed".into());
         assert!(!state.loading());
-        assert!(!OcrState::default().loading());
+        assert!(!OcrSession::default().loading());
+        assert!(!Mode::Idle.ocr_loading());
     }
 
     #[test]
@@ -702,8 +747,7 @@ mod tests {
             width: 100,
             height: 20,
         };
-        let state = OcrState {
-            active: true,
+        let state = OcrSession {
             pending: Some(OperationId(2)),
             revision: 7,
             signature: Some((3, crop)),
@@ -713,18 +757,27 @@ mod tests {
         assert!(state.accepts_render(7, (3, crop)));
         assert!(!state.accepts_render(6, (3, crop)));
         assert!(!state.accepts_render(7, (4, crop)));
-        assert!(!OcrState::default().accepts_render(7, (3, crop)));
-        let restarted = OcrState {
+        assert!(!OcrSession::default().accepts_render(7, (3, crop)));
+        let restarted = OcrSession {
             revision: 8,
             ..state
         };
         assert!(!restarted.accepts_render(7, (3, crop)));
-        let state = OcrState {
+        let state = OcrSession {
             revision: 7,
             ..restarted
         };
         assert!(!state.accepts(OperationId(1), 7, (3, crop)));
         assert!(!state.accepts(OperationId(2), 7, (4, crop)));
-        assert!(!OcrState::default().accepts(OperationId(2), 7, (3, crop)));
+        assert!(!OcrSession::default().accepts(OperationId(2), 7, (3, crop)));
+        // Leaving OCR mode drops the session, so nothing can accept afterwards.
+        let mut mode = Mode::Ocr(state);
+        assert!(
+            mode.ocr()
+                .is_some_and(|session| session.accepts(OperationId(2), 7, (3, crop)))
+        );
+        assert!(mode.take_ocr().is_some());
+        assert!(mode.is_idle());
+        assert!(mode.ocr().is_none());
     }
 }

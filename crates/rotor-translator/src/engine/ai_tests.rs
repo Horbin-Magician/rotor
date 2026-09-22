@@ -1,5 +1,5 @@
 use super::*;
-use rotor_common::{ai_provider::AiProviderConfig, Config};
+use rotor_common::{ai_provider::AiProviderConfig, AiProtocol, Config, TranslatorEngine};
 
 fn provider(name: &str) -> AiProviderConfig {
     AiProviderConfig::from_config(&Config::from([
@@ -41,8 +41,11 @@ fn provider_requests_use_correct_protocol_and_endpoint() {
 fn custom_endpoints_and_configuration_validation() {
     let mut ai = provider("custom");
     ai.api_key.clear();
-    for (protocol, path) in [("openai", "chat/completions"), ("anthropic", "messages")] {
-        ai.protocol = protocol.into();
+    for (protocol, path) in [
+        (AiProtocol::OpenAi, "chat/completions"),
+        (AiProtocol::Anthropic, "messages"),
+    ] {
+        ai.protocol = Some(protocol);
         for base in [
             "http://localhost:1234/v1/".to_owned(),
             format!("http://localhost:1234/v1/{path}"),
@@ -143,7 +146,7 @@ async fn ai_http_roundtrip_uses_provider_auth_and_streaming() {
             write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).unwrap();
         });
         let mut engine = EngineConfig::from_config(&Config::new());
-        engine.engine = "ai".into();
+        engine.engine = TranslatorEngine::Ai;
         engine.ai = ai;
         let events = std::sync::Mutex::new(Vec::new());
         let result =

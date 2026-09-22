@@ -1,34 +1,12 @@
-#[cfg(target_os = "windows")]
-mod win_imports {
-    pub use is_root::is_root;
-    pub use std::ffi::{CStr, CString};
-    pub use windows::Win32::Foundation;
-    pub use windows::Win32::Foundation::HWND;
-    pub use windows::Win32::Storage::FileSystem;
-    pub use windows::Win32::System::{ProcessStatus, Threading};
-}
-#[cfg(target_os = "windows")]
-use win_imports::*;
+use super::{MemoryUsage, PermissionStatus, WindowRect};
+use is_root::is_root;
+use std::ffi::{CStr, CString};
+use windows::Win32::Foundation;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Storage::FileSystem;
+use windows::Win32::System::{ProcessStatus, Threading};
 
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryUsage {
-    /// Private working set on Windows; total resident memory on macOS.
-    pub resident_bytes: u64,
-}
-
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PermissionStatus {
-    pub key: String,
-    pub name: String,
-    pub granted: Option<bool>,
-    pub detail: String,
-}
-
-// Check whether the disk represented by a drive letter is in ntfs format
-#[cfg(target_os = "windows")]
-pub fn is_ntfs(vol: char) -> bool {
+pub(super) fn is_ntfs(vol: char) -> bool {
     if let Ok(root_path_name) = CString::new(format!("{}:\\", vol)) {
         let mut volume_name_buffer = vec![0u8; Foundation::MAX_PATH as usize];
         let mut volume_serial_number: u32 = 0;
@@ -55,13 +33,10 @@ pub fn is_ntfs(vol: char) -> bool {
     false
 }
 
-pub type WindowRect = (i32, i32, i32, u32, u32);
-
 // On Windows, enumerate top-level windows directly so the rects cover the full
 // visible frame (title bar included) in physical pixels, and a single bad
 // window cannot fail the whole list.
-#[cfg(target_os = "windows")]
-pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
+pub(super) fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{LPARAM, RECT};
     use windows::Win32::Graphics::Dwm::{
@@ -150,71 +125,18 @@ pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Erro
     Ok(res)
 }
 
-#[cfg(target_os = "macos")]
-#[path = "sys_util/macos_windows.rs"]
-mod macos_windows;
+pub(super) fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
-#[cfg(target_os = "macos")]
-pub fn get_all_window_rect() -> Result<Vec<WindowRect>, Box<dyn std::error::Error>> {
-    macos_windows::window_rectangles().map_err(Into::into)
+    let mut point = POINT { x: 0, y: 0 };
+    unsafe {
+        GetCursorPos(&mut point)?;
+    }
+    Ok((point.x, point.y))
 }
 
-pub fn get_cursor_position() -> Result<(i32, i32), Box<dyn std::error::Error>> {
-    #[cfg(target_os = "macos")]
-    {
-        use core_graphics::event::CGEvent;
-        use core_graphics::event_source::CGEventSource;
-        use core_graphics::event_source::CGEventSourceStateID;
-
-        // Create a CGEvent using a default event source to get the current cursor position
-        if let Ok(event_source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
-            if let Ok(event) = CGEvent::new(event_source) {
-                let location = event.location();
-                return Ok((location.x as i32, location.y as i32));
-            }
-        }
-        Err("Failed to get cursor position".into())
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::POINT;
-        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-
-        let mut point = POINT { x: 0, y: 0 };
-        unsafe {
-            GetCursorPos(&mut point)?;
-        }
-        Ok((point.x, point.y))
-    }
-}
-
-#[cfg(target_os = "macos")]
-pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
-    let mut task_info = std::mem::MaybeUninit::<libc::proc_taskinfo>::uninit();
-    let info_size = std::mem::size_of::<libc::proc_taskinfo>() as i32;
-    let result = unsafe {
-        libc::proc_pidinfo(
-            std::process::id() as i32,
-            libc::PROC_PIDTASKINFO,
-            0,
-            task_info.as_mut_ptr() as *mut libc::c_void,
-            info_size,
-        )
-    };
-
-    if result != info_size {
-        return Err(std::io::Error::last_os_error().into());
-    }
-
-    let task_info = unsafe { task_info.assume_init() };
-    Ok(MemoryUsage {
-        resident_bytes: task_info.pti_resident_size,
-    })
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
+pub(super) fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
     let mut counters = ProcessStatus::PROCESS_MEMORY_COUNTERS_EX2 {
         cb: std::mem::size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS_EX2>() as u32,
         ..Default::default()
@@ -235,32 +157,7 @@ pub fn get_memory_usage() -> Result<MemoryUsage, Box<dyn std::error::Error>> {
     })
 }
 
-#[cfg(target_os = "macos")]
-pub fn get_permission_statuses() -> Vec<PermissionStatus> {
-    vec![
-        PermissionStatus {
-            key: "accessibility".into(),
-            name: "Accessibility".into(),
-            granted: Some(crate::selection::accessibility_permission()),
-            detail: "Required for selection translation".into(),
-        },
-        PermissionStatus {
-            key: "screen_capture".to_string(),
-            name: "Screen Capture".to_string(),
-            granted: check_macos_screen_capture_permission(),
-            detail: "Required for screenshot capture".to_string(),
-        },
-        PermissionStatus {
-            key: "file_search".to_string(),
-            name: "File Search".to_string(),
-            granted: Some(true),
-            detail: "Uses the current user's readable folders".to_string(),
-        },
-    ]
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_permission_statuses() -> Vec<PermissionStatus> {
+pub(super) fn get_permission_statuses() -> Vec<PermissionStatus> {
     vec![
         PermissionStatus {
             key: "administrator".to_string(),
@@ -283,16 +180,7 @@ pub fn get_permission_statuses() -> Vec<PermissionStatus> {
     ]
 }
 
-#[cfg(target_os = "macos")]
-fn check_macos_screen_capture_permission() -> Option<bool> {
-    extern "C" {
-        fn CGPreflightScreenCaptureAccess() -> bool;
-    }
-
-    Some(unsafe { CGPreflightScreenCaptureAccess() })
-}
-
-#[cfg(all(test, target_os = "windows"))]
+#[cfg(test)]
 mod tests {
     #[test]
     fn current_process_private_working_set_is_available() {

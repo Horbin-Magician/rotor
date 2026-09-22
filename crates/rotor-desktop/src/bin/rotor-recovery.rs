@@ -37,12 +37,7 @@ mod windows {
         // A corrupt executable can otherwise block CreateProcess in an OS error
         // dialog, preventing the independent recovery launcher from rolling back.
         // This process owns recovery and reports failures after rollback is tried.
-        unsafe {
-            use windows::Win32::System::Diagnostics::Debug::{
-                SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SEM_NOOPENFILEERRORBOX, SetErrorMode,
-            };
-            SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
-        }
+        rotor_platform::desktop::suppress_error_dialogs();
         let mut forwarded = Vec::new();
         let mut profile = None;
         let mut args = std::env::args_os().skip(1);
@@ -56,13 +51,12 @@ mod windows {
                     profile = Some(std::path::PathBuf::from(&value));
                     forwarded.extend([argument, value]);
                 }
-                Some(
-                    "--no-elevate"
-                    | "--no-index"
-                    | "--no-hotkeys"
-                    | "--production-shortcuts"
-                    | "--background",
-                ) => forwarded.push(argument),
+                Some(flag)
+                    if rotor_common::startup_flags::is_runtime_flag(flag)
+                        || flag == "--background" =>
+                {
+                    forwarded.push(argument)
+                }
                 _ => return Err("Unsupported recovery launcher argument".into()),
             }
         }

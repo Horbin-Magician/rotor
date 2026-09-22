@@ -6,8 +6,10 @@ use gpui_kit::{
 };
 use std::rc::Rc;
 
-/// Shared RGB values also used by the native tray menu without a GPUI context.
-pub(crate) struct Palette {
+/// Shared `0xRRGGBB` values. The desktop shell also hands them to the native
+/// tray menu, which has no GPUI context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Palette {
     pub background: u32,
     pub surface: u32,
     pub border: u32,
@@ -17,7 +19,7 @@ pub(crate) struct Palette {
     pub hover: u32,
 }
 
-pub(crate) fn surface_palette(dark: bool) -> Palette {
+pub fn surface_palette(dark: bool) -> Palette {
     if dark {
         Palette {
             background: 0x111111,

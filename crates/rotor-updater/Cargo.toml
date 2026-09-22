@@ -6,26 +6,27 @@ publish = false
 
 [dependencies]
 minisign-verify = "=0.2.5"
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "stream"] }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
-semver = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-futures-util = "0.3"
-tempfile = "=3.27.0"
-tokio = { version = "1", features = ["fs", "io-util", "time", "macros"] }
+rotor-common.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+rustls.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures-util.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "time", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-url = "2.5"
+url.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tar = "=0.4.46"
-flate2 = "=1.1.9"
-plist = "=1.9.0"
-libc = "=0.2.186"
+tar.workspace = true
+flate2.workspace = true
+plist.workspace = true
+libc.workspace = true
 
 [dev-dependencies]
 # Keep bundle and macOS handoff unit tests available on every host.
-tar = "=0.4.46"
-flate2 = "=1.1.9"
-plist = "=1.9.0"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tar.workspace = true
+flate2.workspace = true
+plist.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

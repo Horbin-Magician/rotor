@@ -182,6 +182,8 @@ mod tests {
         assert!(!excluded.is_excluded_path(Path::new("/Users/alice/Documents/Library")));
     }
 
+    // std::path only treats backslashes as separators on Windows.
+    #[cfg(target_os = "windows")]
     #[test]
     fn expands_home_with_windows_separators() {
         let excluded =
