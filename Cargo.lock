@@ -6675,6 +6675,7 @@ dependencies = [
  "rotor-canvas",
  "rotor-common",
  "rotor-runtime",
+ "rotor-updater",
  "tempfile",
  "windows 0.61.3",
 ]

@@ -70,6 +70,7 @@ enum CloseTarget {
 pub struct SettingsView {
     ai_test: ai_provider::ConfigurationTest,
     update: Arc<rotor_runtime::UpdateSnapshot>,
+    update_dialog_open: bool,
     config: Config,
     services: Arc<Services>,
     section: Section,
@@ -385,6 +386,7 @@ impl SettingsView {
         Self {
             ai_test: ai_provider::ConfigurationTest::default(),
             update: services.update_snapshot(),
+            update_dialog_open: false,
             config,
             services,
             section: Section::Overview,
@@ -440,7 +442,12 @@ impl SettingsView {
                 self.finish_ai_test(id, result, cx);
             }
             RuntimeEvent::Update(snapshot) if snapshot.revision >= self.update.revision => {
+                let available = snapshot.phase == rotor_runtime::UpdatePhase::Available
+                    && self.update.phase != rotor_runtime::UpdatePhase::Available;
                 self.update = snapshot;
+                if available {
+                    self.show_update_dialog(window, cx);
+                }
             }
             RuntimeEvent::Overview { id, result } if self.overview_request == Some(id) => {
                 self.overview_request = None;
@@ -1189,6 +1196,7 @@ impl Render for SettingsView {
                             .id(("settings-content", self.section as usize)),
                     ),
             )
+            .children(gpui_kit::component::Root::render_dialog_layer(window, cx))
     }
 }
 
