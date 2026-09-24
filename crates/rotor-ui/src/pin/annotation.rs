@@ -12,6 +12,7 @@ pub(super) enum Tool {
     Redaction,
     Arrow,
     Text,
+    Number,
 }
 /// Annotation editing: the selected tool and whatever is being drafted with
 /// it. This is the payload of `Mode::Annotating`; when no tool is selected the
@@ -339,6 +340,19 @@ impl PinView {
         };
         self.canvas.error = None;
         let annotation = match tool {
+            Tool::Number => {
+                self.add_annotation(
+                    Annotation::Number {
+                        origin,
+                        value: self.canvas.document.next_number(),
+                        font_size: 24. / self.canvas_scale(),
+                        color: Color::RED,
+                    },
+                    window,
+                    cx,
+                );
+                return false;
+            }
             Tool::Text => {
                 let input = cx.new(|cx| InputState::new(window, cx));
                 let events = cx.subscribe_in(&input, window, |this, input, event, window, cx| {
@@ -601,6 +615,13 @@ impl PinView {
                         "Arrow",
                     ),
                     (
+                        "canvas-number",
+                        Tool::Number,
+                        toolbar::Glyph::Text,
+                        "序号",
+                        "Number",
+                    ),
+                    (
                         "canvas-text",
                         Tool::Text,
                         toolbar::Glyph::Text,
@@ -677,7 +698,7 @@ impl PinView {
                     .enumerate()
                     .map(|(index, annotation)| {
                         if let Some(mark) = self.canvas.display.get(index)
-                            && (reuse || !matches!(annotation, Annotation::Text { .. }))
+                            && (reuse || annotation.text_content().is_none())
                             && mark.annotation == *annotation
                         {
                             return mark.clone();
@@ -802,13 +823,7 @@ fn text_editor_bounds(origin: ImagePoint, width: f64, height: f64) -> (f64, f64,
 
 impl DisplayMark {
     fn new(annotation: Annotation, scale: f64, window: &Window) -> Self {
-        let lines = if let Annotation::Text {
-            text,
-            font_size,
-            color,
-            ..
-        } = &annotation
-        {
+        let lines = if let Some((_, text, font_size, color)) = annotation.text_content() {
             text.lines()
                 .map(|text| {
                     let text: SharedString = text.to_owned().into();
@@ -843,12 +858,9 @@ impl DisplayMark {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if let Annotation::Text {
-            origin, font_size, ..
-        } = &self.annotation
-        {
+        if let Some((origin, _, font_size, _)) = self.annotation.text_content() {
             let scale = transform.height / transform.crop.height as f64;
-            if let Some(origin) = transform.to_view(*origin) {
+            if let Some(origin) = transform.to_view(origin) {
                 for (index, line) in self.lines.iter().enumerate() {
                     let position = offset
                         + point(
@@ -1282,6 +1294,14 @@ mod tests {
                 assert!(pin.mode.text_editor().is_none());
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
                 assert!(!pin.canvas.document.can_redo());
+                pin.set_tool(Tool::Number, window, cx);
+                pin.begin_mark(point(px(60.), px(60.)), window, cx);
+                assert_eq!(pin.canvas.document.next_number(), 2);
+                pin.undo_canvas(window, cx);
+                assert_eq!(pin.canvas.document.next_number(), 1);
+                pin.redo_canvas(window, cx);
+                assert_eq!(pin.canvas.document.next_number(), 2);
+                pin.undo_canvas(window, cx);
                 pin.id = Some(42);
                 let (id, record) = pin.shutdown_record().unwrap();
                 assert_eq!(id, 42);

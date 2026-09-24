@@ -23,6 +23,12 @@ pub struct StrokeStyle {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub enum Annotation {
+    Number {
+        origin: ImagePoint,
+        value: u32,
+        font_size: f64,
+        color: Color,
+    },
     /// Opaque black coverage, expanded to whole source pixels. Unlike a stroke
     /// this deliberately has no alpha or width control.
     Redaction { start: ImagePoint, end: ImagePoint },
@@ -49,6 +55,23 @@ pub enum Annotation {
 }
 
 impl Annotation {
+    pub fn text_content(&self) -> Option<(ImagePoint, std::borrow::Cow<'_, str>, f64, Color)> {
+        match self {
+            Self::Text {
+                origin,
+                text,
+                font_size,
+                color,
+            } => Some((*origin, text.as_str().into(), *font_size, *color)),
+            Self::Number {
+                origin,
+                value,
+                font_size,
+                color,
+            } => Some((*origin, format!("{value}.").into(), *font_size, *color)),
+            _ => None,
+        }
+    }
     fn validate(&self, size: ImageSize) -> Result<(), String> {
         let point = |point: &ImagePoint| {
             point.x.is_finite()
@@ -59,6 +82,17 @@ impl Annotation {
         let stroke =
             |style: &StrokeStyle| style.width.is_finite() && (0.01..=1024.).contains(&style.width);
         let valid = match self {
+            Self::Number {
+                origin,
+                value,
+                font_size,
+                ..
+            } => {
+                point(origin)
+                    && (1..=9999).contains(value)
+                    && font_size.is_finite()
+                    && (1.0..=2048.).contains(font_size)
+            }
             Self::Redaction { start, end } => {
                 point(start) && point(end) && start.x != end.x && start.y != end.y
             }
@@ -178,7 +212,7 @@ impl Annotation {
                 let outline = arrow_outline(*start, *end, style.width);
                 (!outline.is_empty()).then_some((Outline::Fill(outline), style.color))
             }
-            Self::Text { .. } => None,
+            Self::Text { .. } | Self::Number { .. } => None,
         }
     }
 }
@@ -245,7 +279,7 @@ impl Scene {
     pub fn has_text(&self) -> bool {
         self.annotations
             .iter()
-            .any(|mark| matches!(mark, Annotation::Text { .. }))
+            .any(|mark| matches!(mark, Annotation::Text { .. } | Annotation::Number { .. }))
     }
 }
 
@@ -284,6 +318,18 @@ impl Document {
     }
     pub fn scene(&self) -> &Scene {
         &self.scene
+    }
+    pub fn next_number(&self) -> u32 {
+        self.scene
+            .annotations
+            .iter()
+            .filter_map(|mark| match mark {
+                Annotation::Number { value, .. } => Some(*value),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1)
     }
     pub fn revision(&self) -> u64 {
         self.revision

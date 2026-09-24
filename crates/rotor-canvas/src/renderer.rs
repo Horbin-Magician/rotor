@@ -1,4 +1,6 @@
-use crate::{Annotation, Color, ImageRect, ImageSize, Outline, Scene, FONT_FAMILY};
+#[cfg(test)]
+use crate::Annotation;
+use crate::{Color, ImageRect, ImageSize, Outline, Scene, FONT_FAMILY};
 use image::{GenericImageView, Rgba, RgbaImage};
 use resvg::{
     tiny_skia::{ColorU8, FilterQuality, Pixmap, PixmapPaint, Transform},
@@ -218,14 +220,8 @@ fn svg(scene: &Scene, font_family: &str) -> String {
     let font_family = escaped(font_family);
     let mut svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">", scene.size.width, scene.size.height, scene.size.width, scene.size.height);
     for annotation in &scene.annotations {
-        if let Annotation::Text {
-            origin,
-            text,
-            font_size,
-            color,
-        } = annotation
-        {
-            let (color, opacity) = paint(*color);
+        if let Some((origin, text, font_size, color)) = annotation.text_content() {
+            let (color, opacity) = paint(color);
             for (line, text) in text.lines().enumerate() {
                 write!(svg, "<text x=\"{:.4}\" y=\"{:.4}\" font-family=\"{font_family}\" font-size=\"{font_size:.4}\" dominant-baseline=\"text-before-edge\" xml:space=\"preserve\" fill=\"{color}\" fill-opacity=\"{opacity:.8}\">{}</text>", origin.x, origin.y + line as f64 * font_size * 1.25, escaped(text)).unwrap();
             }
@@ -643,5 +639,61 @@ mod redaction_tests {
         assert_ne!(render(&doc), rendered);
         assert!(doc.redo());
         assert_eq!(render(&doc), rendered);
+    }
+}
+
+#[cfg(test)]
+mod number_tests {
+    use super::*;
+    #[test]
+    fn number_uses_the_same_system_text_pixels_after_serialization() {
+        let renderer = Renderer::with_system_fonts().unwrap();
+        let source = RgbaImage::new(100, 80);
+        let mut doc = crate::Document::new(
+            ImageSize {
+                width: 100,
+                height: 80,
+            },
+            ImageRect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+        )
+        .unwrap();
+        let number = Annotation::Number {
+            origin: crate::ImagePoint { x: 10., y: 10. },
+            value: 1,
+            font_size: 24.,
+            color: Color::RED,
+        };
+        doc.add(serde_json::from_str(&serde_json::to_string(&number).unwrap()).unwrap())
+            .unwrap();
+        assert_eq!(doc.next_number(), 2);
+        let pixels = renderer
+            .render(&source, doc.scene(), doc.scene().size)
+            .unwrap();
+        assert!(pixels.pixels().any(|pixel| pixel[3] > 0));
+        assert!(doc.undo());
+        assert_eq!(doc.next_number(), 1);
+        assert!(doc.redo());
+        assert_eq!(
+            renderer
+                .render(&source, doc.scene(), doc.scene().size)
+                .unwrap(),
+            pixels
+        );
+        let mut expected = doc.scene().clone();
+        expected.annotations[0] = Annotation::Text {
+            origin: crate::ImagePoint { x: 10., y: 10. },
+            text: "1.".into(),
+            font_size: 24.,
+            color: Color::RED,
+        };
+        assert_eq!(
+            renderer.render(&source, &expected, expected.size).unwrap(),
+            pixels
+        );
     }
 }
