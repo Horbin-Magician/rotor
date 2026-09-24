@@ -9,7 +9,7 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
+use super::search_match::{prepare_search_name, NameIndex, SearchAlias, SearchQuery};
 use super::{cache, read_string, read_u16, read_u32, read_u8, SearchResultItem};
 use rotor_platform::file_util;
 
@@ -255,6 +255,7 @@ impl Ord for FileView {
 }
 
 pub struct FileMap {
+    names: NameIndex,
     main_set: BTreeSet<FileView>,
     dir_tree: DirectoryTree,
 }
@@ -262,6 +263,7 @@ pub struct FileMap {
 impl FileMap {
     pub fn new() -> FileMap {
         FileMap {
+            names: NameIndex::default(),
             main_set: BTreeSet::new(),
             dir_tree: DirectoryTree::new(),
         }
@@ -308,7 +310,16 @@ impl FileMap {
     }
 
     fn insert_simple(&mut self, file: FileView) {
-        self.main_set.replace(file);
+        self.names.insert(&file.file_name);
+        for alias in file.aliases.as_deref().unwrap_or_default() {
+            self.names.insert(alias);
+        }
+        if let Some(old) = self.main_set.replace(file) {
+            self.names.remove(&old.file_name);
+            for alias in old.aliases.as_deref().unwrap_or_default() {
+                self.names.remove(alias);
+            }
+        }
     }
 
     #[cfg(test)]
@@ -342,8 +353,16 @@ impl FileMap {
                 }
                 descendants[id] |= descendants[node.parent_id as usize];
             }
-            self.main_set
-                .retain(|file| !descendants[file.parent_id as usize]);
+            self.main_set.retain(|file| {
+                if !descendants[file.parent_id as usize] {
+                    return true;
+                }
+                self.names.remove(&file.file_name);
+                for alias in file.aliases.as_deref().unwrap_or_default() {
+                    self.names.remove(alias);
+                }
+                false
+            });
         }
         for path in paths {
             cache::check_cancel(cancel)?;
@@ -396,7 +415,12 @@ impl FileMap {
             aliases: None,
             search_aliases: None,
         };
-        self.main_set.remove(&file);
+        if let Some(old) = self.main_set.take(&file) {
+            self.names.remove(&old.file_name);
+            for alias in old.aliases.as_deref().unwrap_or_default() {
+                self.names.remove(alias);
+            }
+        }
     }
 
     pub fn search(
@@ -411,7 +435,8 @@ impl FileMap {
         let mut next_cursor = cursor.cloned();
         // Resume within a relevance tier, ordered by the existing static rank.
         // Every tier spans the full index; buffering remains bounded by batch.
-        for tier in (0..=cursor.map_or(query.max_tier(), |c| (c.rank / 128) as u8)).rev() {
+        for tier in (0..=cursor.map_or(query.max_tier(&self.names), |c| (c.rank / 128) as u8)).rev()
+        {
             let bound = cursor
                 .filter(|c| c.rank / 128 == i16::from(tier))
                 .map(|c| FileView {
@@ -592,6 +617,7 @@ impl FileMap {
     }
 
     pub fn clear(&mut self) {
+        self.names.clear();
         self.main_set.clear();
         self.dir_tree.clear();
     }

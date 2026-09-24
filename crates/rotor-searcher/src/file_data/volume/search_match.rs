@@ -1,4 +1,47 @@
 use pinyin::ToPinyin;
+use std::collections::BTreeMap;
+
+/// Counts normalized names (including display aliases) so duplicate filenames
+/// in different directories survive removals. This is rebuilt with snapshots;
+/// it only skips impossible relevance tiers, never supplies result identities.
+#[derive(Default)]
+pub(super) struct NameIndex(BTreeMap<String, usize>);
+
+impl NameIndex {
+    pub fn insert(&mut self, name: &str) {
+        *self.0.entry(name.to_lowercase()).or_default() += 1;
+    }
+    pub fn remove(&mut self, name: &str) {
+        let key = name.to_lowercase();
+        if let Some(count) = self.0.get_mut(&key) {
+            *count -= 1;
+            if *count == 0 {
+                self.0.remove(&key);
+            }
+        }
+    }
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+    fn max_tier(&self, literal: &str) -> u8 {
+        if self.0.contains_key(literal) {
+            return 2;
+        }
+        if self
+            .0
+            .range::<str, _>((
+                std::ops::Bound::Included(literal),
+                std::ops::Bound::Unbounded,
+            ))
+            .next()
+            .is_some_and(|(name, _)| name.starts_with(literal))
+        {
+            1
+        } else {
+            0
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SearchAlias {
@@ -73,12 +116,10 @@ impl SearchQuery {
         (filter & self.filter) == self.filter
     }
 
-    pub fn max_tier(&self) -> u8 {
-        if self.literal.is_some() {
-            2
-        } else {
-            0
-        }
+    pub fn max_tier(&self, names: &NameIndex) -> u8 {
+        self.literal
+            .as_deref()
+            .map_or(0, |literal| names.max_tier(literal))
     }
 
     pub fn tier(&self, name: &str) -> u8 {
@@ -271,6 +312,27 @@ mod tests {
             prepared.aliases.as_deref(),
             prepared.filter,
         )
+    }
+
+    #[test]
+    fn name_index_preserves_duplicates_and_only_skips_impossible_tiers() {
+        let mut names = NameIndex::default();
+        for name in ["Report", "REPORT", "report.txt", "微信"] {
+            names.insert(name);
+        }
+        assert_eq!(SearchQuery::new("report").max_tier(&names), 2);
+        names.remove("REPORT");
+        assert_eq!(SearchQuery::new("report").max_tier(&names), 2);
+        names.remove("report");
+        assert_eq!(SearchQuery::new("report").max_tier(&names), 1);
+        names.remove("report.txt");
+        assert_eq!(SearchQuery::new("report").max_tier(&names), 0);
+        assert_eq!(SearchQuery::new("微").max_tier(&names), 1);
+        assert_eq!(SearchQuery::new("微信").max_tier(&names), 2);
+        assert_eq!(SearchQuery::new("wx").max_tier(&names), 0);
+        assert_eq!(SearchQuery::new("*").max_tier(&names), 0);
+        names.clear();
+        assert_eq!(SearchQuery::new("微信").max_tier(&names), 0);
     }
 
     #[test]

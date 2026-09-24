@@ -20,7 +20,7 @@
 - [x] 让评分参与整个查询与跨卷分页，避免仅重排当前页造成顺序不一致。
 - [ ] 使用合成查询集验证相关性、稳定分页、无重复结果及取消行为；对照查询延迟。
 
-进展：完整名称／前缀／普通匹配已进入全查询分页；新增 `目录/名称` 路径限定。路径加权、使用记录及 release 交互延迟验收仍未完成，调试构建存在扫描开销增加，见 [实施记录](doc/todo-implementation.md)。
+进展：完整名称／前缀／普通匹配已进入全查询分页；新增 `目录/名称` 路径限定。路径加权、使用记录及 release 交互延迟验收仍未完成，初版扫描回归已通过名称辅助索引缓解，但增加内存及构建成本，见 [实施记录](doc/todo-implementation.md)。
 
 参考：[搜索排名](crates/rotor-searcher/src/file_data/volume/ntfs_file_map.rs)、[匹配逻辑](crates/rotor-searcher/src/file_data/volume/search_match.rs)、[跨卷分页](crates/rotor-searcher/src/file_data/paging.rs)。
 

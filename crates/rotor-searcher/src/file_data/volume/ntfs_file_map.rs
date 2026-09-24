@@ -8,7 +8,7 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::excluded_dirs::ExcludedDirs;
-use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
+use super::search_match::{prepare_search_name, NameIndex, SearchAlias, SearchQuery};
 use super::{cache, read_i64, read_string, read_u16, read_u64, SearchResultItem};
 
 pub struct FileView {
@@ -26,6 +26,7 @@ pub struct FileKey {
 }
 
 pub struct FileMap {
+    names: NameIndex,
     pub start_usn: i64,
     pub journal_id: u64,
     main_map: BTreeMap<FileKey, FileView>,
@@ -35,6 +36,7 @@ pub struct FileMap {
 impl FileMap {
     pub fn new() -> FileMap {
         FileMap {
+            names: NameIndex::default(),
             start_usn: 0,
             journal_id: 0,
             main_map: BTreeMap::new(),
@@ -60,6 +62,11 @@ impl FileMap {
 
     // insert a file to the database by index and file struct
     fn insert_simple(&mut self, index: u64, file: FileView) {
+        if let Some(old) = self.get(&index) {
+            let name = old.file_name.clone();
+            self.names.remove(&name);
+        }
+        self.names.insert(&file.file_name);
         let key = FileKey {
             rank: file.rank,
             index,
@@ -82,7 +89,9 @@ impl FileMap {
                 rank: self.rank_map[index],
                 index: *index,
             };
-            self.main_map.remove(&file_key);
+            if let Some(file) = self.main_map.remove(&file_key) {
+                self.names.remove(&file.file_name);
+            }
             self.rank_map.remove(index);
         }
     }
@@ -101,7 +110,8 @@ impl FileMap {
         let mut next_cursor = cursor.cloned();
         // Resume within a relevance tier, ordered by the existing static rank.
         // Every tier spans the full index; buffering remains bounded by batch.
-        for tier in (0..=cursor.map_or(query.max_tier(), |c| (c.rank / 128) as u8)).rev() {
+        for tier in (0..=cursor.map_or(query.max_tier(&self.names), |c| (c.rank / 128) as u8)).rev()
+        {
             let bound = cursor
                 .filter(|c| c.rank / 128 == i16::from(tier))
                 .map(|c| FileKey {
@@ -224,6 +234,7 @@ impl FileMap {
     }
 
     pub fn clear(&mut self) {
+        self.names.clear();
         self.main_map.clear();
         // Only whole-index release uses this path. Keep start_usn for reload,
         // but relinquish the hash table allocation instead of retaining it.
@@ -477,7 +488,7 @@ mod release_tests {
             "definitely-missing",
         ] {
             let mut times = Vec::new();
-            for _ in 0..11 {
+            for _ in 0..30 {
                 let start = Instant::now();
                 let mut cursor = None;
                 for _ in 0..5 {
@@ -498,10 +509,11 @@ mod release_tests {
                 }
                 times.push(start.elapsed().as_secs_f64() * 1000.);
             }
+            println!("ntfs_query query={query:?} samples_ms={times:?}");
             times.sort_by(f64::total_cmp);
-            measurements.push((query, times[5]));
+            measurements.push((query, times[14], times[28]));
         }
-        println!("ntfs_workload entries=250001 build_ms={build_ms:.2} save_ms={save_ms:.2} load_ms={load_ms:.2} commit_delta_bytes={} file_view_bytes={} queries_5_pages_median_ms={measurements:?}", loaded.saturating_sub(baseline), std::mem::size_of::<FileView>());
+        println!("ntfs_workload entries=250001 build_ms={build_ms:.2} save_ms={save_ms:.2} load_ms={load_ms:.2} commit_delta_bytes={} file_view_bytes={} queries_5_pages_p50_p95_ms={measurements:?}", loaded.saturating_sub(baseline), std::mem::size_of::<FileView>());
     }
 
     #[test]
