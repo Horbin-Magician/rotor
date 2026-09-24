@@ -42,12 +42,22 @@ pub(super) struct SearchQuery {
     filter: u32,
     parts: Vec<String>,
     scratch: String,
+    literal: Option<String>,
+    path: Option<String>,
 }
 
 impl SearchQuery {
     pub fn new(query: &str) -> Self {
-        let lower = query.to_lowercase();
+        let normalized = query.replace('\\', "/").to_lowercase();
+        let (path, name) = normalized
+            .rsplit_once('/')
+            .map_or((None, normalized.as_str()), |(path, name)| {
+                (Some(path.to_owned()), name)
+            });
+        let lower = name.to_owned();
         Self {
+            literal: (!lower.is_empty() && !lower.contains('*')).then(|| lower.clone()),
+            path,
             filter: make_filter(&lower),
             parts: lower
                 .split('*')
@@ -56,6 +66,59 @@ impl SearchQuery {
                 .collect(),
             scratch: String::new(),
         }
+    }
+
+    /// Empty and wildcard queries retain the static index order.
+    pub fn may_match(&self, filter: u32) -> bool {
+        (filter & self.filter) == self.filter
+    }
+
+    pub fn max_tier(&self) -> u8 {
+        if self.literal.is_some() {
+            2
+        } else {
+            0
+        }
+    }
+
+    pub fn tier(&self, name: &str) -> u8 {
+        let Some(literal) = &self.literal else {
+            return 0;
+        };
+        if name.is_ascii() {
+            return if name.eq_ignore_ascii_case(literal) {
+                2
+            } else if name
+                .get(..literal.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(literal))
+            {
+                1
+            } else {
+                0
+            };
+        }
+        let name = name.to_lowercase();
+        if name == *literal {
+            2
+        } else if name.starts_with(literal) {
+            1
+        } else {
+            0
+        }
+    }
+
+    pub fn matches_path(&self, path: &str) -> bool {
+        self.path.as_ref().is_none_or(|query| {
+            let path = path.replace('\\', "/").to_lowercase();
+            matches_parts(
+                &path,
+                &query
+                    .split('*')
+                    .filter(|part| !part.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>(),
+            )
+        })
     }
 
     fn matches(&mut self, name: &str) -> bool {
@@ -76,7 +139,7 @@ impl SearchQuery {
         search_aliases: Option<&[SearchAlias]>,
         filter: u32,
     ) -> Option<Option<String>> {
-        if (filter & self.filter) != self.filter {
+        if !self.may_match(filter) {
             return None;
         }
         if self.matches(file_name) {

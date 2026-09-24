@@ -96,60 +96,76 @@ impl FileMap {
         cancel: &AtomicBool,
         excluded_dirs: &ExcludedDirs,
     ) -> Option<SearchPage> {
-        let mut result = Vec::new();
-        let mut find_num = 0;
-        let mut next_cursor = cursor.cloned();
-        let mut exhausted = true;
         let mut query = SearchQuery::new(query);
-
-        let bound = cursor.map(|cursor| FileKey {
-            rank: cursor.rank,
-            index: cursor.id,
-        });
-        let range = (Unbounded, bound.as_ref().map_or(Unbounded, Excluded));
-        for (key, file) in self.main_map.range::<FileKey, _>(range).rev() {
-            if cancel.load(Ordering::Relaxed) {
-                return None;
-            }
-            next_cursor = Some(SearchCursor {
-                rank: key.rank,
-                id: key.index,
-                name: String::new(),
-            });
-            if query
-                .match_name(
-                    &file.file_name,
-                    None,
-                    file.search_aliases.as_deref(),
-                    file.filter,
-                )
-                .is_some()
-            {
-                if let Some(path) = self.get_path(&file.parent_index) {
-                    let full_path = format!("{}{}", path, file.file_name);
-                    if excluded_dirs.is_excluded_path(std::path::Path::new(&full_path)) {
-                        continue;
-                    }
-                    result.push(SearchResultItem {
-                        path,
-                        file_path: full_path,
-                        file_name: file.file_name.to_string(),
-                        rank: file.rank,
-                        alias: None,
+        let mut result = Vec::new();
+        let mut next_cursor = cursor.cloned();
+        // Resume within a relevance tier, ordered by the existing static rank.
+        // Every tier spans the full index; buffering remains bounded by batch.
+        for tier in (0..=cursor.map_or(query.max_tier(), |c| (c.rank / 128) as u8)).rev() {
+            let bound = cursor
+                .filter(|c| c.rank / 128 == i16::from(tier))
+                .map(|c| FileKey {
+                    rank: (c.rank % 128) as i8,
+                    index: c.id,
+                });
+            let range = (Unbounded, bound.as_ref().map_or(Unbounded, Excluded));
+            for (key, file) in self.main_map.range::<FileKey, _>(range).rev() {
+                if cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
+                if !query.may_match(file.filter) || query.tier(&file.file_name) != tier {
+                    continue;
+                }
+                if query
+                    .match_name(
+                        &file.file_name,
+                        None,
+                        file.search_aliases.as_deref(),
+                        file.filter,
+                    )
+                    .is_none()
+                {
+                    continue;
+                }
+                let Some(path) = self.get_path(&file.parent_index) else {
+                    continue;
+                };
+                if !query.matches_path(&path) {
+                    continue;
+                }
+                let full_path = format!("{}{}", path, file.file_name);
+                if excluded_dirs.is_excluded_path(std::path::Path::new(&full_path)) {
+                    continue;
+                }
+                let rank = i16::from(tier) * 128 + i16::from(file.rank);
+                next_cursor = Some(SearchCursor {
+                    rank,
+                    id: key.index,
+                    name: String::new(),
+                });
+                result.push(SearchResultItem {
+                    path,
+                    file_path: full_path,
+                    file_name: file.file_name.to_string(),
+                    rank,
+                    alias: None,
+                });
+                if result.len() >= usize::from(batch.max(1)) {
+                    return Some(SearchPage {
+                        items: result,
+                        cursor: next_cursor,
+                        exhausted: false,
                     });
-                    find_num += 1;
-                    if find_num >= batch {
-                        exhausted = false;
-                        break;
-                    }
                 }
             }
         }
-
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
         Some(SearchPage {
             items: result,
             cursor: next_cursor,
-            exhausted,
+            exhausted: true,
         })
     }
 
@@ -301,7 +317,7 @@ mod release_tests {
         }
     }
 
-    fn pages(map: &FileMap, batch: u8) -> Vec<(String, i8)> {
+    fn pages(map: &FileMap, batch: u8) -> Vec<(String, i16)> {
         let mut cursor = None;
         let mut items = Vec::new();
         loop {

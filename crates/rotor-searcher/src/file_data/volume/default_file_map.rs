@@ -406,62 +406,74 @@ impl FileMap {
         batch: u8,
         cancel: &AtomicBool,
     ) -> Option<SearchPage> {
-        let mut result = Vec::new();
-        let mut find_num = 0;
-        let mut next_cursor = cursor.cloned();
-        let mut exhausted = true;
         let mut query = SearchQuery::new(query);
-
-        let bound = cursor.map(|cursor| FileView {
-            rank: cursor.rank,
-            parent_id: cursor.id as DirId,
-            file_name: cursor.name.clone().into_boxed_str(),
-            filter: 0,
-            aliases: None,
-            search_aliases: None,
-        });
-        let range = (Unbounded, bound.as_ref().map_or(Unbounded, Excluded));
-        for file in self.main_set.range::<FileView, _>(range).rev() {
-            if cancel.load(Ordering::Relaxed) {
-                return None;
-            }
-
-            if let Some(file_alias) = query.match_name(
-                &file.file_name,
-                file.aliases.as_deref(),
-                file.search_aliases.as_deref(),
-                file.filter,
-            ) {
+        let mut result = Vec::new();
+        let mut next_cursor = cursor.cloned();
+        // Resume within a relevance tier, ordered by the existing static rank.
+        // Every tier spans the full index; buffering remains bounded by batch.
+        for tier in (0..=cursor.map_or(query.max_tier(), |c| (c.rank / 128) as u8)).rev() {
+            let bound = cursor
+                .filter(|c| c.rank / 128 == i16::from(tier))
+                .map(|c| FileView {
+                    rank: (c.rank % 128) as i8,
+                    parent_id: c.id as DirId,
+                    file_name: c.name.clone().into_boxed_str(),
+                    filter: 0,
+                    aliases: None,
+                    search_aliases: None,
+                });
+            let range = (Unbounded, bound.as_ref().map_or(Unbounded, Excluded));
+            for file in self.main_set.range::<FileView, _>(range).rev() {
+                if cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
+                let Some(alias) = query.match_name(
+                    &file.file_name,
+                    file.aliases.as_deref(),
+                    file.search_aliases.as_deref(),
+                    file.filter,
+                ) else {
+                    continue;
+                };
+                if query.tier(alias.as_deref().unwrap_or(&file.file_name)) != tier {
+                    continue;
+                }
                 let Some((path, file_path)) = self.result_paths(file.parent_id, &file.file_name)
                 else {
                     continue;
                 };
-
+                if !query.matches_path(&path) {
+                    continue;
+                }
+                let rank = i16::from(tier) * 128 + i16::from(file.rank);
+                next_cursor = Some(SearchCursor {
+                    rank,
+                    id: file.parent_id as u64,
+                    name: file.file_name.to_string(),
+                });
                 result.push(SearchResultItem {
                     path,
                     file_path,
                     file_name: file.file_name.to_string(),
-                    rank: file.rank,
-                    alias: file_alias,
+                    rank,
+                    alias,
                 });
-
-                find_num += 1;
-                if find_num >= batch {
-                    next_cursor = Some(SearchCursor {
-                        rank: file.rank,
-                        id: file.parent_id as u64,
-                        name: file.file_name.to_string(),
+                if result.len() >= usize::from(batch.max(1)) {
+                    return Some(SearchPage {
+                        items: result,
+                        cursor: next_cursor,
+                        exhausted: false,
                     });
-                    exhausted = false;
-                    break;
                 }
             }
         }
-
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
         Some(SearchPage {
             items: result,
             cursor: next_cursor,
-            exhausted,
+            exhausted: true,
         })
     }
 
@@ -792,7 +804,7 @@ mod tests {
         }
     }
 
-    fn pages(map: &FileMap, batch: u8) -> Vec<(String, i8)> {
+    fn pages(map: &FileMap, batch: u8) -> Vec<(String, i16)> {
         let mut cursor = None;
         let mut items = Vec::new();
         loop {

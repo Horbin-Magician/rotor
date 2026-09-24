@@ -22,7 +22,7 @@ mod usn;
 /// so a cancelled worker cannot advance the next accepted request's position.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchCursor {
-    pub rank: i8,
+    pub rank: i16,
     pub id: u64,
     pub name: String,
 }
@@ -38,7 +38,7 @@ pub struct SearchResultItem {
     pub path: String,
     pub file_path: String,
     pub file_name: String,
-    pub rank: i8,
+    pub rank: i16,
     pub alias: Option<String>,
 }
 

@@ -135,3 +135,100 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, target_os = "windows"))]
+mod relevance_tests {
+    use super::*;
+    use crate::file_data::{
+        excluded_dirs::ExcludedDirs,
+        volume::{default_file_map, ntfs_file_map},
+    };
+    use std::{collections::HashSet, sync::atomic::AtomicBool};
+
+    #[test]
+    fn real_backends_merge_relevance_across_tiers_and_page_sizes() {
+        let mut ntfs = ntfs_file_map::FileMap::new();
+        let mut portable = default_file_map::FileMap::new();
+        ntfs.insert(1, "X:".into(), 0);
+        ntfs.insert(2, "docs".into(), 1);
+        ntfs.insert(3, "other".into(), 1);
+        for (offset, name) in [
+            "report",
+            "REPORT",
+            "report-2026.txt",
+            "a-report.lnk",
+            "report.exe",
+            "报告.txt",
+        ]
+        .iter()
+        .enumerate()
+        {
+            ntfs.insert(offset as u64 + 4, (*name).into(), 2);
+            portable.insert((*name).into(), "Y:/docs".into());
+        }
+        ntfs.insert(20, "report".into(), 3);
+        portable.insert("report".into(), "Y:/other".into());
+        let cancel = AtomicBool::new(false);
+        let excluded = ExcludedDirs::default();
+        for (query, count) in [
+            ("report", 12),
+            ("docs/report", 10),
+            ("docs\\report", 10),
+            ("bao", 2),
+            ("*report*", 12),
+            ("missing", 0),
+        ] {
+            let mut reference = None;
+            for batch in [1, 2, 7, 255] {
+                let mut pages = MergePages::new(2);
+                let mut results = Vec::new();
+                loop {
+                    // The portable worker completes first; volume order still wins ties.
+                    if pages.needs_page(1) {
+                        pages.accept(
+                            1,
+                            portable.search(query, pages.cursor(1).as_ref(), batch, &cancel),
+                        );
+                    }
+                    if pages.needs_page(0) {
+                        pages.accept(
+                            0,
+                            ntfs.search(query, pages.cursor(0).as_ref(), batch, &cancel, &excluded),
+                        );
+                    }
+                    let Some(item) = pages.pop_best() else {
+                        break;
+                    };
+                    results.push((item.rank, item.file_path));
+                    assert!(results.len() <= 14, "pagination did not terminate");
+                }
+                assert_eq!(results.len(), count, "{query}");
+                assert!(results.windows(2).all(|pair| pair[0].0 >= pair[1].0));
+                assert_eq!(
+                    results
+                        .iter()
+                        .map(|row| &row.1)
+                        .collect::<HashSet<_>>()
+                        .len(),
+                    count
+                );
+                if let Some(reference) = &reference {
+                    assert_eq!(&results, reference);
+                } else {
+                    reference = Some(results);
+                }
+            }
+            if query == "report" {
+                let rows = reference.unwrap();
+                assert!(rows[..6].iter().all(|row| row.0 >= 256));
+                assert!(rows[6..10].iter().all(|row| row.0 >= 128 && row.0 < 256));
+                assert!(rows[10..].iter().all(|row| row.0 < 128));
+            }
+        }
+        let cancelled = AtomicBool::new(true);
+        assert!(ntfs
+            .search("report", None, 1, &cancelled, &excluded)
+            .is_none());
+        assert!(portable.search("report", None, 1, &cancelled).is_none());
+    }
+}
