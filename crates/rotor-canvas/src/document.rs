@@ -309,11 +309,15 @@ impl Scene {
 #[derive(Clone, Debug)]
 enum Undo {
     Added,
+    Replaced(usize, Annotation),
+    Removed(usize, Annotation),
     Crop(ImageRect),
 }
 #[derive(Clone, Debug)]
 enum Redo {
     Add(Annotation),
+    Replace(usize, Annotation),
+    Remove(usize),
     Crop(ImageRect),
 }
 
@@ -377,6 +381,32 @@ impl Document {
         self.changed();
         Ok(())
     }
+    pub fn replace(&mut self, index: usize, annotation: Annotation) -> Result<bool, String> {
+        annotation.validate(self.scene.size)?;
+        let previous = self
+            .scene
+            .annotations
+            .get_mut(index)
+            .ok_or("Annotation no longer exists")?;
+        if *previous == annotation {
+            return Ok(false);
+        }
+        let previous = std::mem::replace(previous, annotation);
+        self.undo.push(Undo::Replaced(index, previous));
+        self.redo.clear();
+        self.changed();
+        Ok(true)
+    }
+    pub fn remove(&mut self, index: usize) -> Result<(), String> {
+        if index >= self.scene.annotations.len() {
+            return Err("Annotation no longer exists".into());
+        }
+        let previous = self.scene.annotations.remove(index);
+        self.undo.push(Undo::Removed(index, previous));
+        self.redo.clear();
+        self.changed();
+        Ok(())
+    }
     pub fn set_crop(&mut self, crop: ImageRect) -> Result<bool, String> {
         if crop.clipped(self.scene.size) != Some(crop) {
             return Err("Crop is outside the source image".into());
@@ -395,6 +425,14 @@ impl Document {
             return false;
         };
         match change {
+            Undo::Replaced(index, previous) => {
+                let next = std::mem::replace(&mut self.scene.annotations[index], previous);
+                self.redo.push(Redo::Replace(index, next));
+            }
+            Undo::Removed(index, previous) => {
+                self.scene.annotations.insert(index, previous);
+                self.redo.push(Redo::Remove(index));
+            }
             Undo::Added => self.redo.push(Redo::Add(
                 self.scene
                     .annotations
@@ -414,6 +452,14 @@ impl Document {
             return false;
         };
         match change {
+            Redo::Replace(index, next) => {
+                let previous = std::mem::replace(&mut self.scene.annotations[index], next);
+                self.undo.push(Undo::Replaced(index, previous));
+            }
+            Redo::Remove(index) => {
+                let previous = self.scene.annotations.remove(index);
+                self.undo.push(Undo::Removed(index, previous));
+            }
             Redo::Add(annotation) => {
                 self.scene.annotations.push(annotation);
                 self.undo.push(Undo::Added);

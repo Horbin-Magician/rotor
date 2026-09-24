@@ -7,6 +7,7 @@ use rotor_canvas::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Tool {
+    Select,
     Pen,
     Rectangle,
     Redaction,
@@ -21,6 +22,8 @@ pub(super) enum Tool {
 pub(super) struct Editing {
     tool: Tool,
     draft: Draft,
+    selected: Option<usize>,
+    move_anchor: Option<ImagePoint>,
 }
 enum Draft {
     None,
@@ -34,12 +37,15 @@ pub(super) struct TextEditor {
     _events: Subscription,
     origin: ImagePoint,
     suppress_enter: bool,
+    replace_index: Option<usize>,
 }
 impl Editing {
     fn new(tool: Tool) -> Self {
         Self {
             tool,
             draft: Draft::None,
+            selected: None,
+            move_anchor: None,
         }
     }
     pub(super) fn tool(&self) -> Tool {
@@ -284,6 +290,9 @@ impl PinView {
             self.canvas.document.undo()
         };
         if changed {
+            if let Some(editing) = self.mode.editing_mut() {
+                editing.selected = None;
+            }
             let next_crop = self.canvas.document.scene().crop;
             let crop_changed = next_crop != before_crop;
             if crop_changed && let Err(error) = self.apply_crop(next_crop, window, cx) {
@@ -341,6 +350,24 @@ impl PinView {
         };
         self.canvas.error = None;
         let annotation = match tool {
+            Tool::Select => {
+                let selected = self
+                    .canvas
+                    .document
+                    .scene()
+                    .annotations
+                    .iter()
+                    .rposition(|mark| mark.hit_test(origin, 3. / self.canvas_scale()));
+                if let Some(editing) = self.mode.editing_mut() {
+                    editing.selected = selected;
+                    editing.move_anchor = Some(origin);
+                }
+                let Some(index) = selected else {
+                    cx.notify();
+                    return false;
+                };
+                self.canvas.document.scene().annotations[index].clone()
+            }
             Tool::Number => {
                 self.add_annotation(
                     Annotation::Number {
@@ -376,6 +403,7 @@ impl PinView {
                         _events: events,
                         origin,
                         suppress_enter: false,
+                        replace_index: None,
                     });
                 }
                 cx.notify();
@@ -452,6 +480,19 @@ impl PinView {
             transform.crop.y as f64,
             (transform.crop.y + transform.crop.height) as f64,
         );
+        if let Some(editing) = self.mode.editing()
+            && editing.tool == Tool::Select
+        {
+            if let (Some(index), Some(anchor), Some(_)) =
+                (editing.selected, editing.move_anchor, editing.stroke())
+                && let Some(original) = self.canvas.document.scene().annotations.get(index)
+            {
+                let next = original.translated(point.x - anchor.x, point.y - anchor.y);
+                self.mode.editing_mut().unwrap().draft = Draft::Stroke(next);
+                cx.notify();
+            }
+            return;
+        }
         match self.mode.editing_mut().map(|editing| &mut editing.draft) {
             Some(Draft::Stroke(Annotation::Pen { points, .. })) => {
                 if points.len() < 65536 && points.last() != Some(&point) {
@@ -488,13 +529,109 @@ impl PinView {
             cx.notify();
             return;
         }
-        self.add_annotation(annotation, window, cx);
+        if let Some(index) = self
+            .mode
+            .editing()
+            .filter(|editing| editing.tool == Tool::Select)
+            .and_then(|editing| editing.selected)
+        {
+            self.replace_annotation(index, annotation, window, cx);
+        } else {
+            self.add_annotation(annotation, window, cx);
+        }
+    }
+    fn replace_annotation(
+        &mut self,
+        index: usize,
+        annotation: Annotation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.canvas.document.replace(index, annotation) {
+            Ok(changed) => {
+                self.canvas.error = None;
+                if changed {
+                    self.ensure_canvas(window, cx);
+                    self.persist_geometry(cx);
+                }
+            }
+            Err(error) => self.canvas.error = Some(error),
+        }
+        cx.notify();
+    }
+    fn edit_selected(
+        &mut self,
+        change: impl FnOnce(&Annotation) -> Annotation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy() || !self.can_request_export() {
+            return;
+        }
+        let Some(index) = self.mode.editing().and_then(|editing| editing.selected) else {
+            return;
+        };
+        if let Some(original) = self.canvas.document.scene().annotations.get(index) {
+            let next = change(original);
+            self.replace_annotation(index, next, window, cx);
+        }
+    }
+    fn delete_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy() || !self.can_request_export() {
+            return;
+        }
+        let Some(index) = self
+            .mode
+            .editing_mut()
+            .and_then(|editing| editing.selected.take())
+        else {
+            return;
+        };
+        match self.canvas.document.remove(index) {
+            Ok(()) => {
+                self.canvas.error = None;
+                self.ensure_canvas(window, cx);
+                self.persist_geometry(cx);
+            }
+            Err(error) => self.canvas.error = Some(error),
+        }
+        cx.notify();
+    }
+    fn edit_selected_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy() || !self.can_request_export() {
+            return;
+        }
+        let Some(index) = self.mode.editing().and_then(|editing| editing.selected) else {
+            return;
+        };
+        let Some(Annotation::Text { origin, text, .. }) =
+            self.canvas.document.scene().annotations.get(index)
+        else {
+            return;
+        };
+        let (origin, text) = (*origin, text.clone());
+        let Some(position) = self.transform().to_view(origin) else {
+            return;
+        };
+        self.set_tool(Tool::Text, window, cx);
+        self.begin_mark(
+            point(px(position.x as f32), px(position.y as f32)),
+            window,
+            cx,
+        );
+        if let Some(editor) = self.mode.text_editor_mut() {
+            editor.replace_index = Some(index);
+            editor
+                .input
+                .update(cx, |input, cx| input.set_value(text, window, cx));
+        }
     }
     fn finish_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(editor) = self.mode.text_editor() else {
             return;
         };
-        let (input, origin) = (editor.input.clone(), editor.origin);
+        let (input, origin, replace_index) =
+            (editor.input.clone(), editor.origin, editor.replace_index);
         if input.update(cx, |input, cx| {
             input.marked_text_range(window, cx).is_some()
         }) {
@@ -508,16 +645,33 @@ impl PinView {
             return;
         }
         let transform = self.transform();
-        self.add_annotation(
-            Annotation::Text {
+        let (origin, font_size, color) = replace_index
+            .and_then(|index| self.canvas.document.scene().annotations.get(index))
+            .and_then(|mark| match mark {
+                Annotation::Text {
+                    origin,
+                    font_size,
+                    color,
+                    ..
+                } => Some((*origin, *font_size, *color)),
+                _ => None,
+            })
+            .unwrap_or((
                 origin,
-                text,
-                font_size: 16. * transform.crop.height as f64 / transform.height,
-                color: Color::RED,
-            },
-            window,
-            cx,
-        );
+                16. * transform.crop.height as f64 / transform.height,
+                Color::RED,
+            ));
+        let annotation = Annotation::Text {
+            origin,
+            text,
+            font_size,
+            color,
+        };
+        if let Some(index) = replace_index {
+            self.replace_annotation(index, annotation, window, cx);
+        } else {
+            self.add_annotation(annotation, window, cx);
+        }
         if self.canvas.error.is_none() {
             self.close_text_editor();
             self.focus.focus(window, cx);
@@ -566,6 +720,31 @@ impl PinView {
             cx.stop_propagation();
             return true;
         }
+        if self
+            .mode
+            .editing()
+            .is_some_and(|editing| editing.tool == Tool::Select)
+            && !event.keystroke.modifiers.control
+            && !event.keystroke.modifiers.platform
+            && !event.keystroke.modifiers.alt
+        {
+            let step = if event.keystroke.modifiers.shift {
+                10.
+            } else {
+                1.
+            };
+            match event.keystroke.key.as_str() {
+                "delete" | "backspace" => self.delete_selected(window, cx),
+                "enter" => self.edit_selected_text(window, cx),
+                "left" => self.edit_selected(|mark| mark.translated(-step, 0.), window, cx),
+                "right" => self.edit_selected(|mark| mark.translated(step, 0.), window, cx),
+                "up" => self.edit_selected(|mark| mark.translated(0., -step), window, cx),
+                "down" => self.edit_selected(|mark| mark.translated(0., step), window, cx),
+                _ => return false,
+            }
+            cx.stop_propagation();
+            return true;
+        }
         if is_canvas_undo(&event.keystroke, self.mode.is_annotating()) {
             self.undo_canvas(window, cx);
             cx.stop_propagation();
@@ -581,6 +760,13 @@ impl PinView {
     pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let disabled = self.busy() || self.mode.is_cropping();
         let selected = self.mode.editing().map(Editing::tool);
+        let edit_disabled = disabled
+            || !self.can_request_export()
+            || self
+                .mode
+                .editing()
+                .and_then(|editing| editing.selected)
+                .is_none();
         div()
             .flex()
             .flex_wrap()
@@ -598,6 +784,13 @@ impl PinView {
             .child(toolbar::separator())
             .children(
                 [
+                    (
+                        "canvas-select",
+                        Tool::Select,
+                        toolbar::Glyph::Arrow,
+                        "选择 / 移动",
+                        "Select / move",
+                    ),
                     (
                         "canvas-pen",
                         Tool::Pen,
@@ -660,6 +853,51 @@ impl PinView {
                             cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)),
                         )
                 }),
+            )
+            .child(toolbar::separator())
+            .children(
+                [("canvas-smaller", "−", -2.), ("canvas-larger", "+", 2.)]
+                    .into_iter()
+                    .map(|(id, label, delta)| {
+                        gpui_kit::component::button::Button::new(id)
+                            .label(label)
+                            .disabled(edit_disabled)
+                            .tooltip(self.t("修改选中标注大小", "Resize selected annotation"))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.edit_selected(|mark| mark.resized(delta), window, cx)
+                            }))
+                    }),
+            )
+            .children(
+                [
+                    ("mark-red", Color::RED, "红", "Red"),
+                    ("mark-blue", Color([0, 128, 255, 255]), "蓝", "Blue"),
+                    ("mark-green", Color([0, 180, 80, 255]), "绿", "Green"),
+                    ("mark-black", Color([0, 0, 0, 255]), "黑", "Black"),
+                ]
+                .into_iter()
+                .map(|(id, color, zh, en)| {
+                    gpui_kit::component::button::Button::new(id)
+                        .label(self.t(zh, en))
+                        .disabled(edit_disabled)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.edit_selected(|mark| mark.recolored(color), window, cx)
+                        }))
+                }),
+            )
+            .child(
+                toolbar::button("canvas-edit-text", toolbar::Glyph::Text, cx)
+                    .disabled(edit_disabled)
+                    .tooltip(self.t("修改文字 (Enter)", "Edit text (Enter)"))
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.edit_selected_text(window, cx)),
+                    ),
+            )
+            .child(
+                toolbar::button("canvas-delete", toolbar::Glyph::Close, cx)
+                    .disabled(edit_disabled)
+                    .tooltip(self.t("删除选中标注", "Delete selected annotation"))
+                    .on_click(cx.listener(|this, _, window, cx| this.delete_selected(window, cx))),
             )
             .child(toolbar::separator())
             .child(
@@ -736,6 +974,27 @@ impl PinView {
         let display = self.canvas.display.clone();
         let weak = cx.weak_entity();
         let preview = self.mode.editing().and_then(Editing::stroke).cloned();
+        let selection = self.mode.editing().and_then(|editing| editing.selected);
+        let moving = selection.is_some() && preview.is_some();
+        let moved_preview = moving
+            .then(|| DisplayMark::new(preview.clone().unwrap(), scale_y, window, &self.image));
+        let selection_outline = preview
+            .as_ref()
+            .filter(|_| moving)
+            .or_else(|| {
+                selection.and_then(|index| self.canvas.document.scene().annotations.get(index))
+            })
+            .map(|mark| {
+                let (start, end) = mark.bounds();
+                Annotation::Rectangle {
+                    start,
+                    end,
+                    style: StrokeStyle {
+                        color: Color([40, 150, 255, 255]),
+                        width: 1. / scale_y,
+                    },
+                }
+            });
         let dragging = self.mode.canvas_drag();
         let cursor = match self.mode.editing().map(Editing::tool) {
             None => self.crop_cursor(),
@@ -750,11 +1009,19 @@ impl PinView {
                     if dragging {
                         window.capture_pointer(hitbox.id);
                     }
-                    for mark in display.iter() {
+                    for (index, mark) in display.iter().enumerate() {
+                        if moving && selection == Some(index) {
+                            continue;
+                        }
                         mark.paint(transform, bounds.origin, window, cx);
                     }
-                    if let Some(annotation) = &preview {
+                    if let Some(mark) = &moved_preview {
+                        mark.paint(transform, bounds.origin, window, cx);
+                    } else if let Some(annotation) = &preview {
                         paint_preview(annotation, transform, bounds.origin, window);
+                    }
+                    if let Some(outline) = &selection_outline {
+                        paint_preview(outline, transform, bounds.origin, window);
                     }
                     let down_view = weak.clone();
                     let down_hitbox = hitbox.clone();
@@ -1375,6 +1642,30 @@ mod tests {
                 ));
                 assert_eq!(pin.canvas.display.last().unwrap().paths.len(), 16);
                 pin.undo_canvas(window, cx);
+                let original=pin.canvas.export_scene().annotations;
+                pin.set_tool(Tool::Select,window,cx);
+                assert!(pin.begin_mark(point(px(35.),px(35.)),window,cx));
+                pin.move_mark(point(px(55.),px(45.)),window,cx);
+                assert!(!pin.can_request_export());
+                assert_eq!(pin.canvas.export_scene().annotations,original);
+                pin.end_mark(window,cx);
+                assert!(pin.can_request_export());
+                assert_ne!(pin.canvas.export_scene().annotations,original);
+                pin.edit_selected(|mark|mark.resized(2.),window,cx);
+                pin.edit_selected(|mark|mark.recolored(Color([0,128,255,255])),window,cx);
+                pin.edit_selected_text(window,cx);
+                let input=pin.mode.text_editor().unwrap().input.clone();
+                input.update(cx,|input,cx| input.set_value("edited",window,cx));
+                pin.finish_text(window,cx);
+                assert!(matches!(&pin.canvas.document.scene().annotations[1], Annotation::Text {text,font_size,color,..}
+                    if text=="edited" && *font_size==18. && *color==Color([0,128,255,255])));
+                pin.set_tool(Tool::Select,window,cx);
+                assert!(pin.begin_mark(point(px(55.),px(45.)),window,cx));
+                pin.end_mark(window,cx);
+                pin.delete_selected(window,cx);
+                assert_eq!(pin.canvas.document.scene().annotations.len(),1);
+                for _ in 0..5 {pin.undo_canvas(window,cx);}
+                assert_eq!(pin.canvas.export_scene().annotations,original);
                 pin.id = Some(42);
                 let (id, record) = pin.shutdown_record().unwrap();
                 assert_eq!(id, 42);

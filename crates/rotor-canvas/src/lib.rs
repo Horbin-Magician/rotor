@@ -3,6 +3,7 @@
 
 mod crop;
 mod document;
+mod edit;
 mod mosaic;
 mod renderer;
 pub use crop::{resize_crop, CropEdges};

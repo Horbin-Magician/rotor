@@ -1,5 +1,6 @@
 //! Synthetic native configuration and pin persistence roundtrip.
 //! Does not capture the desktop or open any windows.
+use rotor_canvas::{Annotation, Color, ImagePoint};
 use rotor_common::ConfigService;
 use rotor_screenshot::{
     pin_store::{source_crop, PinStore},
@@ -35,10 +36,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("keep me")
     );
     let mut store = PinStore::load_from(&native)?;
+    let annotations = vec![
+        Annotation::Redaction {
+            start: ImagePoint { x: 0., y: 0. },
+            end: ImagePoint { x: 2., y: 2. },
+        },
+        Annotation::Number {
+            origin: ImagePoint { x: 2., y: 2. },
+            value: 1,
+            font_size: 2.,
+            color: Color::RED,
+        },
+        Annotation::Mosaic {
+            start: ImagePoint { x: 4., y: 4. },
+            end: ImagePoint { x: 8., y: 8. },
+            block_size: 4,
+        },
+    ];
     let id = store.create(
         &image,
         ShotterConfig {
-            annotations: Vec::new(),
+            annotations: annotations.clone(),
             monitor_pos: (-1920, 0),
             monitor_size: (1920, 1080),
             rect: (102, 201, 4, 6),
@@ -53,6 +71,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(pins.len(), 1);
     let mut config = pins[0].config.clone();
+    assert_eq!(config.annotations, annotations);
+    config.annotations[1] = config.annotations[1]
+        .translated(1., 0.)
+        .recolored(Color([0, 128, 255, 255]));
+    let edited_annotations = config.annotations.clone();
     assert_eq!(source_crop(&config, 8, 8)?, (2, 1, 4, 6));
     config.zoom_factor = 200;
     config.offset = (-1750, 60);
@@ -74,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let (pins, warnings) = PinStore::load_from(&native)?.load_pins();
     assert!(warnings.is_empty());
+    assert_eq!(pins[0].config.annotations, edited_annotations);
     assert_eq!(pins[0].config.zoom_factor, 200);
     assert_eq!(pins[0].config.offset, (-1750, 60));
     println!(
