@@ -275,27 +275,33 @@ pub(crate) fn show_search(cx: &mut App) -> Result<(), String> {
         return Ok(());
     }
     let services = cx.global::<ShellState>().services.clone();
-    cx.open_window(placement::search_options(cx), |window, cx| {
-        if let Err(error) = raw_window_handle::HasWindowHandle::window_handle(window)
-            .map_err(|error| error.to_string())
-            .and_then(rotor_platform::overlay::configure_text_entry_panel)
-        {
-            log::warn!("Failed to configure search panel level: {error}");
-        }
-        let appearance = window.observe_window_appearance(|window, cx| {
-            if follows_system_theme(cx) {
-                Theme::sync_system_appearance(Some(window), cx);
+    let handle = cx
+        .open_window(placement::search_options(cx), |window, cx| {
+            if let Err(error) = raw_window_handle::HasWindowHandle::window_handle(window)
+                .map_err(|error| error.to_string())
+                .and_then(rotor_platform::overlay::configure_text_entry_panel)
+            {
+                log::warn!("Failed to configure search panel level: {error}");
             }
-        });
-        let view = cx.new(|cx| rotor_ui::SearchView::new(services, window, cx));
-        cx.global_mut::<ShellState>().register(
-            WindowRole::Search,
-            window,
-            WindowView::Search(view.downgrade()),
-            Some(appearance),
-        );
-        cx.new(|cx| Root::new(view, window, cx))
-    })
-    .map_err(|error| error.to_string())?;
+            let appearance = window.observe_window_appearance(|window, cx| {
+                if follows_system_theme(cx) {
+                    Theme::sync_system_appearance(Some(window), cx);
+                }
+            });
+            let view = cx.new(|cx| rotor_ui::SearchView::new(services, window, cx));
+            cx.global_mut::<ShellState>().register(
+                WindowRole::Search,
+                window,
+                WindowView::Search(view.downgrade()),
+                Some(appearance),
+            );
+            cx.new(|cx| Root::new(view, window, cx))
+        })
+        .map_err(|error| error.to_string())?;
+    // Focusing the input only selects GPUI's keyboard target. A newly shown
+    // native window can still leave the foreground application holding focus.
+    handle
+        .update(cx, |_, window, _| window.activate_window())
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
