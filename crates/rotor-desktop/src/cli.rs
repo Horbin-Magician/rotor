@@ -52,6 +52,7 @@ impl Arguments {
     }
 
     /// True when the arguments after the executable are exactly `expected`.
+    #[warn(dead_code)]
     pub(crate) fn is_exactly(&self, expected: &[&str]) -> bool {
         self.values.len() == expected.len() + 1 && self.values[1..] == expected[..]
     }
