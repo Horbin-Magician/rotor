@@ -125,10 +125,24 @@ impl VolumePack {
                     let _ = task.result_sender.send((task.volume_index, None));
                     continue;
                 }
-                let result = worker_volume
+                let mut volume = worker_volume
                     .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .find(task.filename, task.cursor, task.batch, task.cancel);
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let first = task.cursor.is_none();
+                let mut result = volume.find(
+                    task.filename.clone(),
+                    task.cursor,
+                    task.batch,
+                    task.cancel.clone(),
+                );
+                if first {
+                    if let Some(page) = &mut result {
+                        match volume.promoted(&task.filename, &task.usage, &task.cancel) {
+                            Some(promoted) => page.promoted = promoted,
+                            None => result = None,
+                        }
+                    }
+                }
                 let _ = task.result_sender.send((task.volume_index, result));
             }
         });
@@ -142,6 +156,7 @@ impl VolumePack {
 }
 
 struct VolumeFindTask {
+    usage: Arc<crate::usage::UsageSnapshot>,
     volume_index: usize,
     cursor: Option<SearchCursor>,
     filename: String,
@@ -158,6 +173,7 @@ struct SearchTask {
 
 impl SearchTask {
     fn dispatch(
+        usage: Arc<crate::usage::UsageSnapshot>,
         volume_packs: &[VolumePack],
         pages: &mut MergePages,
         filename: String,
@@ -176,6 +192,7 @@ impl SearchTask {
                 continue;
             }
             let task = VolumeFindTask {
+                usage: usage.clone(),
                 volume_index,
                 cursor: pages.cursor(volume_index),
                 filename: filename.clone(),
@@ -205,6 +222,8 @@ impl SearchTask {
 }
 
 pub struct FileData {
+    pub(crate) usage: Option<Arc<crate::usage::UsageStore>>,
+    usage_snapshot: Arc<crate::usage::UsageSnapshot>,
     pub(crate) icons: Option<crate::icons::IconWorker>,
     pub(crate) snapshot: Arc<Mutex<SearchIndexStatus>>,
     work_cancel: Arc<AtomicBool>,
@@ -231,6 +250,8 @@ impl FileData {
         F: Fn(SearchBatch) + Send + 'static,
     {
         FileData {
+            usage: None,
+            usage_snapshot: Arc::default(),
             icons: None,
             snapshot: Arc::new(Mutex::new(SearchIndexStatus::empty())),
             work_cancel: Arc::new(AtomicBool::new(false)),
@@ -434,6 +455,12 @@ impl FileData {
             if let Some(icons) = &mut self.icons {
                 icons.reset();
             }
+            self.usage_snapshot = Arc::new(
+                self.usage
+                    .as_ref()
+                    .map(|usage| usage.snapshot())
+                    .unwrap_or_default(),
+            );
             self.finding_name = request.query.clone();
             self.pages = MergePages::new(self.volume_packs.len());
         }
@@ -445,8 +472,9 @@ impl FileData {
             if cancel.load(Ordering::Acquire) {
                 return self.interrupted_search(request, msg_reciever);
             }
-            if self.pages.needs_refill() {
+            while self.pages.needs_refill() {
                 let mut task = SearchTask::dispatch(
+                    self.usage_snapshot.clone(),
                     &self.volume_packs,
                     &mut self.pages,
                     request.query.clone(),
@@ -553,6 +581,7 @@ impl FileData {
         if let Some(icons) = &mut self.icons {
             icons.reset();
         }
+        self.usage_snapshot = Arc::default();
         self.finding_name.clear();
         self.pages = MergePages::default();
     }
@@ -844,6 +873,7 @@ mod tests {
             data.pages.accept(
                 0,
                 Some(SearchPage {
+                    promoted: Vec::new(),
                     items: vec![SearchResultItem {
                         path: "fixture".repeat(1024),
                         file_path: "fixture/file".into(),

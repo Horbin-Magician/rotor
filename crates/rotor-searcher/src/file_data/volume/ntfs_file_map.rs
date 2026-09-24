@@ -97,6 +97,63 @@ impl FileMap {
     }
 
     // search for files by query
+
+    pub fn promoted(
+        &self,
+        text: &str,
+        usage: &crate::usage::UsageSnapshot,
+        cancel: &AtomicBool,
+        excluded_dirs: &ExcludedDirs,
+    ) -> Option<Vec<SearchResultItem>> {
+        let mut result = Vec::new();
+        if usage.is_empty() {
+            return Some(result);
+        }
+        let mut query = SearchQuery::new(text);
+        for file in self.main_map.values() {
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
+            if !query.may_match(file.filter) || !usage.contains_name(&file.file_name) {
+                continue;
+            }
+            let Some(alias) = query.match_name(
+                &file.file_name,
+                None,
+                file.search_aliases.as_deref(),
+                file.filter,
+            ) else {
+                continue;
+            };
+            let Some(path) = self.get_path(&file.parent_index) else {
+                continue;
+            };
+            let file_path = format!("{}{}", path, file.file_name);
+            let bonus = usage.bonus(&file_path);
+            if bonus == 0 || !query.matches_path(&path) {
+                continue;
+            }
+            if excluded_dirs.is_excluded_path(std::path::Path::new(&file_path)) {
+                continue;
+            }
+            let tier = query.tier(alias.as_deref().unwrap_or(&file.file_name)) * 2
+                + query.path_tier(&path);
+            result.push(SearchResultItem {
+                path,
+                file_path,
+                file_name: file.file_name.to_string(),
+                rank: i16::from(tier) * 128 + i16::from(file.rank) + bonus,
+                alias,
+            });
+        }
+        result.sort_by(|a, b| {
+            b.rank
+                .cmp(&a.rank)
+                .then_with(|| a.file_path.cmp(&b.file_path))
+        });
+        Some(result)
+    }
+
     pub fn search(
         &self,
         query: &str,
@@ -166,6 +223,7 @@ impl FileMap {
                 });
                 if result.len() >= usize::from(batch.max(1)) {
                     return Some(SearchPage {
+                        promoted: Vec::new(),
                         items: result,
                         cursor: next_cursor,
                         exhausted: false,
@@ -177,6 +235,7 @@ impl FileMap {
             return None;
         }
         Some(SearchPage {
+            promoted: Vec::new(),
             items: result,
             cursor: next_cursor,
             exhausted: true,

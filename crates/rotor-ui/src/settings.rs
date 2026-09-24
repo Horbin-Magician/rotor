@@ -26,6 +26,7 @@ mod general;
 mod logo;
 mod motion;
 mod overview;
+mod search;
 #[cfg(test)]
 mod tests;
 mod updates;
@@ -94,6 +95,7 @@ pub struct SettingsView {
     overview_request: Option<OperationId>,
     overview_refresh_started: Option<std::time::Instant>,
     startup_request: Option<OperationId>,
+    usage_clear_request: Option<OperationId>,
     logo: logo::Logo,
     navigation_hover: Option<Section>,
     navigation_highlights: [motion::Transition; 7],
@@ -409,6 +411,7 @@ impl SettingsView {
             overview_request,
             overview_refresh_started: None,
             startup_request: None,
+            usage_clear_request: None,
             logo: logo::Logo::new(),
             navigation_hover: None,
             navigation_highlights: std::array::from_fn(|index| {
@@ -446,6 +449,20 @@ impl SettingsView {
                     Ok(overview) => self.overview = Some(overview),
                     Err(error) => self.message = error,
                 }
+            }
+            RuntimeEvent::SearchUsageCleared { id, result }
+                if self.usage_clear_request == Some(id) =>
+            {
+                self.usage_clear_request = None;
+                self.message = match result {
+                    Ok(()) => self
+                        .t(
+                            "使用记录已清空，下次搜索恢复默认排序",
+                            "Usage cleared. New searches use default ranking.",
+                        )
+                        .into(),
+                    Err(error) => error,
+                };
             }
             RuntimeEvent::StartupChanged { id, result } if self.startup_request == Some(id) => {
                 self.startup_request = None;
@@ -762,6 +779,7 @@ impl Render for SettingsView {
             }
             Section::Search => {
                 content = content
+                    .child(self.search_usage_panel(cx))
                     .child(
                         appearance::group(self.t("排除目录", "Excluded directories"), cx).child(
                             appearance::caption(

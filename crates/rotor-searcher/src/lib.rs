@@ -3,6 +3,7 @@ mod icons;
 mod latest;
 mod mailbox;
 mod request;
+pub mod usage;
 pub use file_data::FileState as IndexState;
 pub use request::{QueryId, SearchBatch, SearchIconBatch, SearchRequest, SearchUnavailable};
 
@@ -45,6 +46,7 @@ impl SearchIndexStatusReader {
 
 impl Searcher {
     pub fn new<F>(
+        usage: Arc<usage::UsageStore>,
         find_result_callback: F,
         icon_result_callback: impl Fn(SearchIconBatch) + Send + 'static,
         state_change_callback: Option<Box<dyn Fn(IndexState) + Send>>,
@@ -60,6 +62,7 @@ impl Searcher {
             state_change_callback,
             search_index_state.clone(),
         );
+        _file_data.usage = Some(usage);
         _file_data.icons = Some(icons::IconWorker::new(icon_result_callback));
         let snapshot = _file_data.snapshot.clone();
         FileData::event_loop(searcher_msg_receiver, _file_data);

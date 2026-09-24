@@ -202,7 +202,12 @@ impl SearchView {
         };
         // Keep the window until FileOpened arrives: a failure must stay
         // visible here, and success closes the window in handle_event.
-        match self.services.open_file(path, admin) {
+        let opened = if folder {
+            self.services.open_file(path, admin)
+        } else {
+            self.services.open_search_result(path, admin)
+        };
+        match opened {
             Ok(id) => self.opening = Some(id),
             Err(error) => self.message = error,
         }

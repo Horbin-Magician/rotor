@@ -28,6 +28,7 @@ pub struct SearchCursor {
 }
 
 pub struct SearchPage {
+    pub promoted: Vec<SearchResultItem>,
     pub items: Vec<SearchResultItem>,
     pub cursor: Option<SearchCursor>,
     pub exhausted: bool,

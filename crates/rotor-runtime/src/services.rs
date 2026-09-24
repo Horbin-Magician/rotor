@@ -102,6 +102,10 @@ pub enum RuntimeEvent {
         id: OperationId,
         result: Result<Config, String>,
     },
+    SearchUsageCleared {
+        id: OperationId,
+        result: Result<(), String>,
+    },
     FileOpened {
         id: OperationId,
         result: Result<(), String>,
@@ -168,6 +172,7 @@ pub struct Services {
     settings_worker: Option<JoinHandle<()>>,
     pins: PinService,
     searcher: Option<Searcher>,
+    search_usage: Arc<rotor_searcher::usage::UsageStore>,
     chat: SingleFlight,
     ai_test: SingleFlight,
     translation: SingleFlight,
@@ -224,11 +229,15 @@ impl Services {
             events.clone(),
             coordinate_shortcuts.clone(),
         ));
+        let search_usage = Arc::new(rotor_searcher::usage::UsageStore::new(
+            data_directory.clone(),
+        ));
         let searcher = options.index_files.then(|| {
             let results = events.clone();
             let icons = events.clone();
             let state_events = events.clone();
             Searcher::new(
+                search_usage.clone(),
                 move |batch| {
                     let _ = results.send_blocking(RuntimeEvent::Search(batch));
                 },
@@ -256,6 +265,7 @@ impl Services {
                 settings_worker: Some(settings_worker),
                 pins,
                 searcher,
+                search_usage,
                 chat: SingleFlight::default(),
                 ai_test: SingleFlight::default(),
                 translation: SingleFlight::default(),
@@ -655,6 +665,37 @@ impl Services {
         if let Some(cancelled) = lock(&self.selection).take() {
             cancelled.store(true, Ordering::Release);
         }
+    }
+
+    pub fn clear_search_usage(&self) -> Result<OperationId, String> {
+        let usage = self.search_usage.clone();
+        self.spawn_job(
+            move || usage.clear().map_err(|error| error.to_string()),
+            |id, result| RuntimeEvent::SearchUsageCleared { id, result },
+        )
+    }
+
+    /// Only result activation counts; revealing its parent or opening settings paths does not.
+    pub fn open_search_result(&self, path: String, as_admin: bool) -> Result<OperationId, String> {
+        let usage = self.search_usage.clone();
+        let epoch = usage.epoch();
+        self.spawn_job(
+            move || {
+                let result = if as_admin {
+                    rotor_platform::file_util::open_file_as_admin(path.clone())
+                } else {
+                    rotor_platform::file_util::open_file(path.clone())
+                }
+                .map_err(|error| error.to_string());
+                if result.is_ok() {
+                    if let Err(error) = usage.record_open(&path, epoch) {
+                        log::warn!("Cannot save search usage: {error}");
+                    }
+                }
+                result
+            },
+            |id, result| RuntimeEvent::FileOpened { id, result },
+        )
     }
 
     pub fn open_file(&self, path: String, as_admin: bool) -> Result<OperationId, String> {

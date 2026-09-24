@@ -296,6 +296,16 @@ impl Volume {
         result
     }
 
+    pub(crate) fn promoted(
+        &self,
+        query: &str,
+        usage: &crate::usage::UsageSnapshot,
+        cancel: &AtomicBool,
+    ) -> Option<Vec<super::SearchResultItem>> {
+        self.file_map
+            .promoted(query, usage, cancel, &self.excluded_dirs)
+    }
+
     pub fn find(
         &mut self,
         query: String,

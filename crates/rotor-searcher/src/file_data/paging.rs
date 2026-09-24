@@ -1,14 +1,16 @@
 use super::volume::{SearchCursor, SearchPage, SearchResultItem};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 #[derive(Default)]
 struct VolumePage {
+    promoted: VecDeque<SearchResultItem>,
+    promoted_paths: HashSet<String>,
     items: VecDeque<SearchResultItem>,
     cursor: Option<SearchCursor>,
     exhausted: bool,
 }
 
-/// Retain only unconsumed rows, at most one batch per volume. A volume must
+/// Retain one ordinary batch plus at most the bounded usage history per volume. A volume must
 /// have a head (or be exhausted) before selecting the globally highest rank.
 #[derive(Default)]
 pub(super) struct MergePages {
@@ -39,7 +41,19 @@ impl MergePages {
         match page {
             Some(page) => {
                 target.exhausted = page.exhausted || page.items.is_empty();
-                target.items = page.items.into();
+                if target.cursor.is_none() {
+                    target.promoted_paths = page
+                        .promoted
+                        .iter()
+                        .map(|item| item.file_path.clone())
+                        .collect();
+                    target.promoted = page.promoted.into();
+                }
+                target.items = page
+                    .items
+                    .into_iter()
+                    .filter(|item| !target.promoted_paths.contains(&item.file_path))
+                    .collect();
                 target.cursor = page.cursor;
             }
             None => target.exhausted = true,
@@ -60,14 +74,23 @@ impl MergePages {
             .iter()
             .all(|page| page.exhausted || !page.items.is_empty()));
         // Resolve equal ranks by stable volume order, independent of worker timing.
-        let best = self
+        let (index, promoted, _) = self
             .volumes
             .iter()
             .enumerate()
-            .filter_map(|(index, page)| page.items.front().map(|item| (index, item.rank)))
-            .max_by_key(|(index, rank)| (*rank, std::cmp::Reverse(*index)))?
-            .0;
-        self.volumes[best].items.pop_front()
+            .flat_map(|(index, page)| {
+                [(false, page.items.front()), (true, page.promoted.front())]
+                    .into_iter()
+                    .filter_map(move |(promoted, item)| {
+                        item.map(|item| (index, promoted, item.rank))
+                    })
+            })
+            .max_by_key(|(index, promoted, rank)| (*rank, std::cmp::Reverse(*index), *promoted))?;
+        if promoted {
+            self.volumes[index].promoted.pop_front()
+        } else {
+            self.volumes[index].items.pop_front()
+        }
     }
 
     #[cfg(test)]
@@ -108,6 +131,7 @@ mod tests {
                     pages.accept(
                         index,
                         Some(SearchPage {
+                            promoted: Vec::new(),
                             items,
                             cursor: None,
                             exhausted: end == source.len(),
@@ -144,6 +168,114 @@ mod relevance_tests {
         volume::{default_file_map, ntfs_file_map},
     };
     use std::{collections::HashSet, sync::atomic::AtomicBool};
+
+    #[test]
+    fn usage_promotes_later_pages_without_crossing_tiers_or_duplicating_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let usage = crate::usage::UsageStore::new(dir.path().into());
+        let mut ntfs = ntfs_file_map::FileMap::new();
+        ntfs.insert(1, "X:".into(), 0);
+        let mut portable = default_file_map::FileMap::new();
+        for (offset, name) in [
+            "query",
+            "query.exe",
+            "query-very-long-document.txt",
+            "a-query.txt",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ntfs.insert(offset as u64 + 2, name.into(), 1);
+            portable.insert(name.into(), "Y:/".into());
+        }
+        let cancel = AtomicBool::new(false);
+        let excluded = ExcludedDirs::default();
+        let baseline = [
+            ntfs.search("query", None, 100, &cancel, &excluded)
+                .unwrap()
+                .items,
+            portable.search("query", None, 100, &cancel).unwrap().items,
+        ];
+        for rows in &baseline {
+            for row in rows.iter().filter(|item| {
+                item.file_name == "query-very-long-document.txt" || item.file_name == "a-query.txt"
+            }) {
+                for _ in 0..64 {
+                    usage.record_open(&row.file_path, usage.epoch()).unwrap();
+                }
+            }
+        }
+        for batch in [1, 2, 20] {
+            let snapshot = usage.snapshot();
+            let mut pages = MergePages::new(2);
+            let mut actual = Vec::new();
+            loop {
+                while pages.needs_refill() {
+                    for index in 0..2 {
+                        if !pages.needs_page(index) {
+                            continue;
+                        }
+                        let cursor = pages.cursor(index);
+                        let mut page = if index == 0 {
+                            ntfs.search("query", cursor.as_ref(), batch, &cancel, &excluded)
+                                .unwrap()
+                        } else {
+                            portable
+                                .search("query", cursor.as_ref(), batch, &cancel)
+                                .unwrap()
+                        };
+                        if cursor.is_none() {
+                            page.promoted = if index == 0 {
+                                ntfs.promoted("query", &snapshot, &cancel, &excluded)
+                                    .unwrap()
+                            } else {
+                                portable.promoted("query", &snapshot, &cancel).unwrap()
+                            };
+                        }
+                        pages.accept(index, Some(page));
+                    }
+                }
+                let Some(item) = pages.pop_best() else {
+                    break;
+                };
+                actual.push(item);
+            }
+            assert_eq!(actual.len(), 8);
+            assert_eq!(
+                actual
+                    .iter()
+                    .map(|item| &item.file_path)
+                    .collect::<HashSet<_>>()
+                    .len(),
+                8
+            );
+            assert!(actual
+                .windows(2)
+                .all(|items| items[0].rank >= items[1].rank));
+            assert!(actual[..2].iter().all(|item| item.file_name == "query"));
+            assert!(actual[2..4]
+                .iter()
+                .all(|item| item.file_name == "query-very-long-document.txt"));
+            assert!(actual[6..]
+                .iter()
+                .all(|item| item.file_name == "a-query.txt"));
+        }
+        let frozen = usage.snapshot();
+        usage.clear().unwrap();
+        assert!(!frozen.is_empty());
+        assert!(ntfs
+            .promoted("query", &usage.snapshot(), &cancel, &excluded)
+            .unwrap()
+            .is_empty());
+        assert!(portable
+            .promoted("query", &usage.snapshot(), &cancel)
+            .unwrap()
+            .is_empty());
+        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(ntfs
+            .promoted("query", &frozen, &cancel, &excluded)
+            .is_none());
+    }
 
     #[test]
     fn direct_parent_qualifier_precedes_ancestor_across_backend_pages() {

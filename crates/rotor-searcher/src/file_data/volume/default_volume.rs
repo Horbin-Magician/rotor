@@ -370,6 +370,16 @@ impl Volume {
     }
 
     // searching
+    #[cfg(target_os = "macos")]
+    pub(crate) fn promoted(
+        &self,
+        query: &str,
+        usage: &crate::usage::UsageSnapshot,
+        cancel: &AtomicBool,
+    ) -> Option<Vec<super::SearchResultItem>> {
+        self.file_map.promoted(query, usage, cancel)
+    }
+
     pub fn find(
         &mut self,
         query: String,

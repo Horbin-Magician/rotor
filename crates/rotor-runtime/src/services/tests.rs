@@ -778,3 +778,25 @@ fn translation_uses_isolated_configuration_and_keeps_request_identity() {
     }
     server.join().unwrap();
 }
+
+#[test]
+fn clear_search_usage_reports_its_identity_and_preserves_other_profile_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let (services, events) = create(ConfigService::load_from(directory.path()).unwrap());
+    services
+        .search_usage
+        .record_open("synthetic.txt", services.search_usage.epoch())
+        .unwrap();
+    let unrelated = directory.path().join("synthetic-user-file");
+    std::fs::write(&unrelated, b"preserve").unwrap();
+    let request = services.clear_search_usage().unwrap();
+    services.runtime().block_on(async {
+        let event = tokio::time::timeout(Duration::from_secs(5), events.recv()).await.unwrap().unwrap();
+        assert!(matches!(event, RuntimeEvent::SearchUsageCleared { id, result: Ok(()) } if id == request));
+    });
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.path().join("search-usage.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved["records"], serde_json::json!({}));
+    assert_eq!(std::fs::read(unrelated).unwrap(), b"preserve");
+}

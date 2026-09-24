@@ -6643,6 +6643,8 @@ dependencies = [
  "pinyin",
  "rotor-common",
  "rotor-platform",
+ "serde",
+ "serde_json",
  "sha2 0.10.9",
  "tempfile",
  "walkdir",
