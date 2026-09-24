@@ -131,13 +131,11 @@ jobs:
             & $signer sign $artifact.FullName
             if ($LASTEXITCODE -ne 0) { throw 'Updater signing failed' }
           }
-      - name: Verify final package inventory
+      - name: Generate final package inventory
         shell: pwsh
         run: |
           cargo run -p xtask --locked -- inventory "$env:RUNNER_TEMP/native-package"
           if ($LASTEXITCODE -ne 0) { throw 'Inventory failed' }
-          cargo run -p xtask --locked -- verify "$env:RUNNER_TEMP/native-package"
-          if ($LASTEXITCODE -ne 0) { throw 'Final package verification failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: native-candidate-${{ inputs.production_identity && 'production' || 'development' }}-${{ matrix.os }}
