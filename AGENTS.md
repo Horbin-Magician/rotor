@@ -7,7 +7,7 @@ application workspace; `rotor-desktop` is the default target. All application an
 shared crates live in `crates/`, models/icons in `assets/`, packaging in
 `native/`, and release tooling in `xtask/`.
 
-Use `Cargo.toml`, `rust-toolchain.toml`, `.github/workflows/native-checks.yml`,
+Use `Cargo.toml`, `rust-toolchain.toml`, `.github/workflows/publish.yml`,
 and the relevant source/scripts to verify commands and requirements. Keep this
 file focused on durable working instructions, not historical test-pass claims.
 
@@ -67,7 +67,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
 Use checks appropriate to the change; the commands above are the workspace
-baseline. CI also runs these nonvisual integration checks:
+baseline. Run these nonvisual integration checks when relevant:
 
 ```powershell
 cargo run -p rotor-desktop --example ocr_smoke --release --locked -- --wait-idle
