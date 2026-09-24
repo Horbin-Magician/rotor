@@ -110,8 +110,12 @@ impl FileMap {
         let mut next_cursor = cursor.cloned();
         // Resume within a relevance tier, ordered by the existing static rank.
         // Every tier spans the full index; buffering remains bounded by batch.
-        for tier in (0..=cursor.map_or(query.max_tier(&self.names), |c| (c.rank / 128) as u8)).rev()
+        for tier in
+            (0..=cursor.map_or(query.max_rank_tier(&self.names), |c| (c.rank / 128) as u8)).rev()
         {
+            if !query.active_rank_tier(tier) {
+                continue;
+            }
             let bound = cursor
                 .filter(|c| c.rank / 128 == i16::from(tier))
                 .map(|c| FileKey {
@@ -123,7 +127,7 @@ impl FileMap {
                 if cancel.load(Ordering::Relaxed) {
                     return None;
                 }
-                if !query.may_match(file.filter) || query.tier(&file.file_name) != tier {
+                if !query.may_match(file.filter) || query.tier(&file.file_name) != tier / 2 {
                     continue;
                 }
                 if query
@@ -140,7 +144,7 @@ impl FileMap {
                 let Some(path) = self.get_path(&file.parent_index) else {
                     continue;
                 };
-                if !query.matches_path(&path) {
+                if !query.matches_path(&path) || query.path_tier(&path) != tier % 2 {
                     continue;
                 }
                 let full_path = format!("{}{}", path, file.file_name);

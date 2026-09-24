@@ -122,6 +122,30 @@ impl SearchQuery {
             .map_or(0, |literal| names.max_tier(literal))
     }
 
+    pub fn max_rank_tier(&self, names: &NameIndex) -> u8 {
+        self.max_tier(names) * 2 + u8::from(self.has_path_bonus())
+    }
+    pub fn active_rank_tier(&self, tier: u8) -> bool {
+        tier.is_multiple_of(2) || self.has_path_bonus()
+    }
+    fn has_path_bonus(&self) -> bool {
+        self.path
+            .as_ref()
+            .is_some_and(|path| !path.is_empty() && !path.contains('*'))
+    }
+    /// A path qualifier ending at the immediate parent ranks above an ancestor
+    /// or a partial directory match. Name relevance remains the primary key.
+    pub fn path_tier(&self, path: &str) -> u8 {
+        if !self.has_path_bonus() {
+            return 0;
+        }
+        let path = path.replace('\\', "/").to_lowercase();
+        let path = path.trim_end_matches('/');
+        u8::from(
+            path.strip_suffix(self.path.as_deref().unwrap())
+                .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/')),
+        )
+    }
     pub fn tier(&self, name: &str) -> u8 {
         let Some(literal) = &self.literal else {
             return 0;

@@ -146,6 +146,57 @@ mod relevance_tests {
     use std::{collections::HashSet, sync::atomic::AtomicBool};
 
     #[test]
+    fn direct_parent_qualifier_precedes_ancestor_across_backend_pages() {
+        let mut ntfs = ntfs_file_map::FileMap::new();
+        ntfs.insert(1, "X:".into(), 0);
+        ntfs.insert(2, "docs".into(), 1);
+        ntfs.insert(3, "nested".into(), 2);
+        ntfs.insert(4, "report.exe".into(), 3);
+        ntfs.insert(5, "report-long-name.txt".into(), 2);
+        let mut portable = default_file_map::FileMap::new();
+        portable.insert("report.exe".into(), "Y:/docs/nested".into());
+        portable.insert("report-long-name.txt".into(), "Y:/docs".into());
+        let cancel = AtomicBool::new(false);
+        let excluded = ExcludedDirs::default();
+        for batch in [1, 2, 20] {
+            let mut pages = MergePages::new(2);
+            let mut results = Vec::new();
+            loop {
+                if pages.needs_page(0) {
+                    pages.accept(
+                        0,
+                        ntfs.search(
+                            "docs/report",
+                            pages.cursor(0).as_ref(),
+                            batch,
+                            &cancel,
+                            &excluded,
+                        ),
+                    );
+                }
+                if pages.needs_page(1) {
+                    pages.accept(
+                        1,
+                        portable.search("docs/report", pages.cursor(1).as_ref(), batch, &cancel),
+                    );
+                }
+                let Some(item) = pages.pop_best() else {
+                    break;
+                };
+                results.push(item);
+                assert!(results.len() <= 4);
+            }
+            assert_eq!(results.len(), 4);
+            assert!(results[..2]
+                .iter()
+                .all(|item| item.file_name == "report-long-name.txt"));
+            assert!(results[2..]
+                .iter()
+                .all(|item| item.file_name == "report.exe"));
+        }
+    }
+
+    #[test]
     fn real_backends_merge_relevance_across_tiers_and_page_sizes() {
         let mut ntfs = ntfs_file_map::FileMap::new();
         let mut portable = default_file_map::FileMap::new();
@@ -220,9 +271,9 @@ mod relevance_tests {
             }
             if query == "report" {
                 let rows = reference.unwrap();
-                assert!(rows[..6].iter().all(|row| row.0 >= 256));
-                assert!(rows[6..10].iter().all(|row| row.0 >= 128 && row.0 < 256));
-                assert!(rows[10..].iter().all(|row| row.0 < 128));
+                assert!(rows[..6].iter().all(|row| row.0 >= 512));
+                assert!(rows[6..10].iter().all(|row| row.0 >= 256 && row.0 < 512));
+                assert!(rows[10..].iter().all(|row| row.0 < 256));
             }
         }
         let cancelled = AtomicBool::new(true);
