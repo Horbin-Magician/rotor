@@ -265,16 +265,30 @@ impl PinView {
         cx.notify();
     }
     fn undo_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.navigate_canvas_history(false, window, cx);
+    }
+    fn redo_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.navigate_canvas_history(true, window, cx);
+    }
+    fn navigate_canvas_history(&mut self, redo: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy() || !self.can_request_export() || self.mode.is_cropping() {
             return;
         }
         let before_crop = self.canvas.document.scene().crop;
-        let changed = self.canvas.document.undo();
+        let changed = if redo {
+            self.canvas.document.redo()
+        } else {
+            self.canvas.document.undo()
+        };
         if changed {
             let next_crop = self.canvas.document.scene().crop;
             let crop_changed = next_crop != before_crop;
             if crop_changed && let Err(error) = self.apply_crop(next_crop, window, cx) {
-                self.canvas.document.redo();
+                if redo {
+                    self.canvas.document.undo();
+                } else {
+                    self.canvas.document.redo();
+                }
                 self.message = error;
                 cx.notify();
                 return;
@@ -524,6 +538,11 @@ impl PinView {
             cx.stop_propagation();
             return true;
         }
+        if is_canvas_redo(&event.keystroke, self.mode.is_annotating()) {
+            self.redo_canvas(window, cx);
+            cx.stop_propagation();
+            return true;
+        }
         false
     }
     pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -599,6 +618,17 @@ impl PinView {
                             || self.mode.text_editor().is_some(),
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.undo_canvas(window, cx))),
+            )
+            .child(
+                toolbar::button("canvas-redo", toolbar::Glyph::Redo, cx)
+                    .accessibility_label(self.t("重做", "Redo"))
+                    .tooltip(self.t("重做", "Redo"))
+                    .disabled(
+                        disabled
+                            || !self.canvas.document.can_redo()
+                            || self.mode.text_editor().is_some(),
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| this.redo_canvas(window, cx))),
             )
     }
     pub(super) fn canvas_element(
@@ -955,6 +985,14 @@ fn is_canvas_undo(key: &Keystroke, editing: bool) -> bool {
         && !key.modifiers.alt
 }
 
+fn is_canvas_redo(key: &Keystroke, editing: bool) -> bool {
+    editing
+        && !key.modifiers.alt
+        && (key.modifiers.control || key.modifiers.platform)
+        && ((key.key.eq_ignore_ascii_case("z") && key.modifiers.shift)
+            || (key.key.eq_ignore_ascii_case("y") && key.modifiers.control && !key.modifiers.shift))
+}
+
 #[cfg(test)]
 mod tests {
     use super::CanvasState;
@@ -977,6 +1015,21 @@ mod tests {
                 .iter()
                 .all(|vertex| vertex.xy_position.x.as_f32() <= 65.)
         );
+    }
+
+    #[test]
+    fn redo_only_claims_editing_chords() {
+        for chord in ["ctrl-shift-z", "ctrl-y", "cmd-shift-z"] {
+            let key = gpui_kit::Keystroke::parse(chord).unwrap();
+            assert!(super::is_canvas_redo(&key, true), "{chord}");
+            assert!(!super::is_canvas_redo(&key, false));
+        }
+        for chord in ["ctrl-z", "ctrl-alt-y", "ctrl-shift-y", "y", "shift-z"] {
+            assert!(!super::is_canvas_redo(
+                &gpui_kit::Keystroke::parse(chord).unwrap(),
+                true
+            ));
+        }
     }
 
     #[test]
@@ -1198,6 +1251,11 @@ mod tests {
                 assert_eq!(display[1].lines.len(), 1);
                 pin.undo_canvas(window, cx);
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 1);
+                assert!(pin.canvas.document.can_redo());
+                pin.redo_canvas(window, cx);
+                assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
+                assert!(!pin.canvas.document.can_redo());
+                pin.undo_canvas(window, cx);
                 pin.begin_mark(point(px(30.), px(30.)), window, cx);
                 pin.mode
                     .text_editor()
@@ -1209,6 +1267,7 @@ mod tests {
                 assert_eq!(pin.mode.editing().map(Editing::tool), Some(Tool::Pen));
                 assert!(pin.mode.text_editor().is_none());
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
+                assert!(!pin.canvas.document.can_redo());
                 pin.id = Some(42);
                 let (id, record) = pin.shutdown_record().unwrap();
                 assert_eq!(id, 42);
