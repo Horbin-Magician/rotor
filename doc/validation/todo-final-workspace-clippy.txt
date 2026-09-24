@@ -1,0 +1,7 @@
+    Checking rotor-screenshot v3.0.2 (D:\Project\rotor\crates\rotor-screenshot)
+    Checking rotor-searcher v3.0.2 (D:\Project\rotor\crates\rotor-searcher)
+    Checking rotor-canvas v3.0.2 (D:\Project\rotor\crates\rotor-canvas)
+    Checking rotor-runtime v3.0.2 (D:\Project\rotor\crates\rotor-runtime)
+    Checking rotor-ui v3.0.2 (D:\Project\rotor\crates\rotor-ui)
+    Checking rotor-desktop v3.0.2 (D:\Project\rotor\crates\rotor-desktop)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.42s

@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-24",
+  "version": "3.0.2",
+  "source_commit": "f8421f450ca521082435783ec9f882a18d4cd4d0",
+  "product": "Rotor",
+  "identity": "development / synthetic fixtures; no production package built",
+  "platform": "Windows x86_64 MSVC",
+  "toolchain": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "checks": [
+    {
+      "command": "cargo test --workspace --locked",
+      "status": "passed",
+      "output": "todo-final-workspace-tests.txt"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "status": "passed",
+      "output": "todo-final-workspace-clippy.txt"
+    },
+    {
+      "command": "cargo check --workspace --locked",
+      "status": "passed"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "passed"
+    },
+    {
+      "command": "./.github/scripts/check-core-dependencies.ps1",
+      "status": "passed"
+    },
+    {
+      "command": "cargo run -p rotor-screenshot --example profile_roundtrip --locked -- target/todo-profile-roundtrip-20260924-edit",
+      "status": "passed",
+      "note": "Synthetic fixture only; source at committed annotation editing step."
+    }
+  ],
+  "performance_evidence": "windows-3.0.2-todo.json (earlier exact source commit; not a benchmark of later UI/path changes)",
+  "not_executed": [
+    "native GUI and actual clipboard paste",
+    "installation, UAC and native update recovery installation",
+    "macOS and multi-monitor/mixed scaling",
+    "production signing/notarization",
+    "real interactive and index-enabled performance",
+    "hosted CI"
+  ],
+  "remaining_implementation": [
+    "usage history ranking evaluation and clearing UI",
+    "macOS startup phase instrumentation and measurement",
+    "manual scrolling capture controller, stop/preview/confirm UI"
+  ],
+  "user_confirmed": "No additional real-machine test environment; leave machine acceptance pending. Manual scrolling of one window with preview before confirmation."
+}
