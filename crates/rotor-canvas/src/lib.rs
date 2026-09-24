@@ -3,12 +3,14 @@
 
 mod crop;
 mod document;
+mod mosaic;
 mod renderer;
 pub use crop::{resize_crop, CropEdges};
 pub use document::{
     arrow_outline, pin_physical_scale, pin_scale, Annotation, Color, Document, Outline, Scene,
     StrokeStyle, ViewTransform, FONT_FAMILY,
 };
+pub use mosaic::{mosaic_bounds, mosaic_tiles};
 pub use renderer::Renderer;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]

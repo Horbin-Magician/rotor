@@ -10,6 +10,7 @@ pub(super) enum Tool {
     Pen,
     Rectangle,
     Redaction,
+    Mosaic,
     Arrow,
     Text,
     Number,
@@ -384,6 +385,16 @@ impl PinView {
                 points: vec![origin],
                 style,
             },
+            Tool::Mosaic => Annotation::Mosaic {
+                start: origin,
+                end: origin,
+                block_size: self
+                    .image
+                    .width()
+                    .max(self.image.height())
+                    .div_ceil(128)
+                    .clamp(12, 1024),
+            },
             Tool::Redaction => Annotation::Redaction {
                 start: origin,
                 end: origin,
@@ -450,7 +461,8 @@ impl PinView {
             Some(Draft::Stroke(
                 Annotation::Rectangle { end, .. }
                 | Annotation::Arrow { end, .. }
-                | Annotation::Redaction { end, .. },
+                | Annotation::Redaction { end, .. }
+                | Annotation::Mosaic { end, .. },
             )) => *end = point,
             _ => return,
         }
@@ -470,7 +482,7 @@ impl PinView {
         };
         window.release_pointer();
         self.release_native_pointer(window);
-        if matches!(&annotation, Annotation::Rectangle { start, end, .. } | Annotation::Redaction { start, end } if start.x == end.x || start.y == end.y)
+        if matches!(&annotation, Annotation::Rectangle { start, end, .. } | Annotation::Redaction { start, end } | Annotation::Mosaic { start, end, .. } if start.x == end.x || start.y == end.y)
             || matches!(&annotation, Annotation::Arrow { start, end, .. } if start == end)
         {
             cx.notify();
@@ -601,6 +613,13 @@ impl PinView {
                         "Rectangle",
                     ),
                     (
+                        "canvas-mosaic",
+                        Tool::Mosaic,
+                        toolbar::Glyph::Rectangle,
+                        "马赛克",
+                        "Mosaic",
+                    ),
+                    (
                         "canvas-redaction",
                         Tool::Redaction,
                         toolbar::Glyph::Redaction,
@@ -703,7 +722,12 @@ impl PinView {
                         {
                             return mark.clone();
                         }
-                        Arc::new(DisplayMark::new(annotation.clone(), scale_y, window))
+                        Arc::new(DisplayMark::new(
+                            annotation.clone(),
+                            scale_y,
+                            window,
+                            &self.image,
+                        ))
                     })
                     .collect(),
             );
@@ -822,7 +846,7 @@ fn text_editor_bounds(origin: ImagePoint, width: f64, height: f64) -> (f64, f64,
 }
 
 impl DisplayMark {
-    fn new(annotation: Annotation, scale: f64, window: &Window) -> Self {
+    fn new(annotation: Annotation, scale: f64, window: &Window, image: &PreparedImage) -> Self {
         let lines = if let Some((_, text, font_size, color)) = annotation.text_content() {
             text.lines()
                 .map(|text| {
@@ -843,7 +867,42 @@ impl DisplayMark {
         } else {
             Vec::new()
         };
-        let paths = annotation_paths(&annotation);
+        let paths = if let Annotation::Mosaic {
+            start,
+            end,
+            block_size,
+        } = &annotation
+        {
+            let source = rotor_runtime::PixelView::new(image).expect("validated image pixels");
+            rotor_canvas::mosaic_tiles(&source, *start, *end, *block_size)
+                .into_iter()
+                .flat_map(|(rect, color)| {
+                    outline_paths(
+                        Outline::Fill(vec![
+                            ImagePoint {
+                                x: rect.x as f64,
+                                y: rect.y as f64,
+                            },
+                            ImagePoint {
+                                x: (rect.x + rect.width) as f64,
+                                y: rect.y as f64,
+                            },
+                            ImagePoint {
+                                x: (rect.x + rect.width) as f64,
+                                y: (rect.y + rect.height) as f64,
+                            },
+                            ImagePoint {
+                                x: rect.x as f64,
+                                y: (rect.y + rect.height) as f64,
+                            },
+                        ]),
+                        color,
+                    )
+                })
+                .collect()
+        } else {
+            annotation_paths(&annotation)
+        };
         Self {
             annotation,
             lines,
@@ -933,10 +992,13 @@ fn paint_paths(
 /// Tessellate the shared [`Outline`] in document coordinates. The shape rules
 /// live in rotor-canvas so the export renders the same geometry.
 fn annotation_paths(annotation: &Annotation) -> Vec<(gpui::Path<Pixels>, Color)> {
-    let mut paths = Vec::new();
     let Some((outline, color)) = annotation.outline() else {
-        return paths;
+        return Vec::new();
     };
+    outline_paths(outline, color)
+}
+fn outline_paths(outline: Outline, color: Color) -> Vec<(gpui::Path<Pixels>, Color)> {
+    let mut paths = Vec::new();
     let point = |point: ImagePoint| gpui_kit::point(px(point.x as f32), px(point.y as f32));
     let trace = |builder: &mut PathBuilder, points: &[ImagePoint]| {
         for (index, position) in points.iter().enumerate() {
@@ -1301,6 +1363,17 @@ mod tests {
                 assert_eq!(pin.canvas.document.next_number(), 1);
                 pin.redo_canvas(window, cx);
                 assert_eq!(pin.canvas.document.next_number(), 2);
+                pin.undo_canvas(window, cx);
+                pin.set_tool(Tool::Mosaic, window, cx);
+                assert!(pin.begin_mark(point(px(60.), px(60.)), window, cx));
+                pin.move_mark(point(px(100.), px(100.)), window, cx);
+                pin.end_mark(window, cx);
+                pin.canvas_element(window, cx);
+                assert!(matches!(
+                    pin.canvas.document.scene().annotations.last(),
+                    Some(Annotation::Mosaic { .. })
+                ));
+                assert_eq!(pin.canvas.display.last().unwrap().paths.len(), 16);
                 pin.undo_canvas(window, cx);
                 pin.id = Some(42);
                 let (id, record) = pin.shutdown_record().unwrap();

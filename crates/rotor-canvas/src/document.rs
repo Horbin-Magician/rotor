@@ -23,6 +23,11 @@ pub struct StrokeStyle {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub enum Annotation {
+    Mosaic {
+        start: ImagePoint,
+        end: ImagePoint,
+        block_size: u32,
+    },
     Number {
         origin: ImagePoint,
         value: u32,
@@ -82,6 +87,15 @@ impl Annotation {
         let stroke =
             |style: &StrokeStyle| style.width.is_finite() && (0.01..=1024.).contains(&style.width);
         let valid = match self {
+            Self::Mosaic {
+                start,
+                end,
+                block_size,
+            } => {
+                point(start)
+                    && point(end)
+                    && crate::mosaic_bounds(*start, *end, size, *block_size).is_some()
+            }
             Self::Number {
                 origin,
                 value,
@@ -155,6 +169,15 @@ impl Annotation {
     /// `None` for text, which is laid out by a text system rather than traced.
     pub fn outline(&self) -> Option<(Outline, Color)> {
         match self {
+            Self::Mosaic { start, end, .. } => Annotation::Rectangle {
+                start: *start,
+                end: *end,
+                style: StrokeStyle {
+                    color: Color::RED,
+                    width: 1.,
+                },
+            }
+            .outline(),
             Self::Redaction { start, end } => {
                 let (left, right) = (start.x.min(end.x).floor(), start.x.max(end.x).ceil());
                 let (top, bottom) = (start.y.min(end.y).floor(), start.y.max(end.y).ceil());

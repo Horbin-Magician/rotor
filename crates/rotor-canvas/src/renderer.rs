@@ -1,4 +1,3 @@
-#[cfg(test)]
 use crate::Annotation;
 use crate::{Color, ImageRect, ImageSize, Outline, Scene, FONT_FAMILY};
 use image::{GenericImageView, Rgba, RgbaImage};
@@ -90,7 +89,7 @@ impl Renderer {
             fontdb: self.fonts.clone(),
             ..Default::default()
         };
-        let tree = usvg::Tree::from_str(&svg(scene, &self.font_family), &options)
+        let tree = usvg::Tree::from_str(&svg(scene, &self.font_family, source), &options)
             .map_err(|error| error.to_string())?;
         let sx = output.width as f32 / scene.crop.width as f32;
         let sy = output.height as f32 / scene.crop.height as f32;
@@ -216,10 +215,31 @@ fn escaped(value: &str) -> String {
     }
     result
 }
-fn svg(scene: &Scene, font_family: &str) -> String {
+fn svg(
+    scene: &Scene,
+    font_family: &str,
+    source: &impl GenericImageView<Pixel = Rgba<u8>>,
+) -> String {
     let font_family = escaped(font_family);
     let mut svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">", scene.size.width, scene.size.height, scene.size.width, scene.size.height);
     for annotation in &scene.annotations {
+        if let Annotation::Mosaic {
+            start,
+            end,
+            block_size,
+        } = annotation
+        {
+            for (rect, color) in crate::mosaic_tiles(source, *start, *end, *block_size) {
+                let (color, _) = paint(color);
+                write!(
+                    svg,
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{color}\"/>",
+                    rect.x, rect.y, rect.width, rect.height
+                )
+                .unwrap();
+            }
+            continue;
+        }
         if let Some((origin, text, font_size, color)) = annotation.text_content() {
             let (color, opacity) = paint(color);
             for (line, text) in text.lines().enumerate() {
@@ -539,7 +559,11 @@ mod tests {
             font_size: 20.,
             color: Color::RED,
         });
-        let markup = svg(&scene, renderer.font_family());
+        let markup = svg(
+            &scene,
+            renderer.font_family(),
+            &RgbaImage::new(scene.size.width, scene.size.height),
+        );
         assert!(markup.contains(&format!("font-family=\"{}\"", escaped(&expected))));
         assert!(!markup.contains(FONT_FAMILY));
         let rendered = renderer
@@ -694,6 +718,86 @@ mod number_tests {
         assert_eq!(
             renderer.render(&source, &expected, expected.size).unwrap(),
             pixels
+        );
+    }
+}
+
+#[cfg(test)]
+mod mosaic_tests {
+    use super::*;
+    #[test]
+    fn mosaic_export_keeps_tiles_aligned_through_crop_png_and_restore() {
+        let source = RgbaImage::from_fn(12, 12, |x, y| Rgba([x as u8 * 10, y as u8 * 10, 80, 255]));
+        let mut doc = crate::Document::new(
+            ImageSize {
+                width: 12,
+                height: 12,
+            },
+            ImageRect {
+                x: 2,
+                y: 2,
+                width: 8,
+                height: 8,
+            },
+        )
+        .unwrap();
+        let mark = Annotation::Mosaic {
+            start: crate::ImagePoint { x: 1., y: 1. },
+            end: crate::ImagePoint { x: 9., y: 9. },
+            block_size: 4,
+        };
+        doc.add(serde_json::from_str(&serde_json::to_string(&mark).unwrap()).unwrap())
+            .unwrap();
+        let renderer = Renderer::without_fonts();
+        let result = renderer
+            .render(
+                &source,
+                doc.scene(),
+                ImageSize {
+                    width: 8,
+                    height: 8,
+                },
+            )
+            .unwrap();
+        for y in 0..8 {
+            for x in 0..8 {
+                let expected = if x < 7 && y < 7 {
+                    Rgba([
+                        if x < 3 { 30 } else { 70 },
+                        if y < 3 { 30 } else { 70 },
+                        80,
+                        255,
+                    ])
+                } else {
+                    *source.get_pixel(x + 2, y + 2)
+                };
+                assert_eq!(*result.get_pixel(x, y), expected, "{x},{y}");
+            }
+        }
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        result
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        assert_eq!(
+            image::load_from_memory(encoded.get_ref())
+                .unwrap()
+                .to_rgba8(),
+            result
+        );
+        assert!(doc.undo());
+        assert!(doc.redo());
+        assert_eq!(
+            renderer
+                .render(
+                    &source,
+                    doc.scene(),
+                    ImageSize {
+                        width: 8,
+                        height: 8
+                    }
+                )
+                .unwrap(),
+            result
         );
     }
 }

@@ -9,7 +9,7 @@ pub use pins::{PinEvent, PinExportTarget, RestoredPins};
 pub use quick::QuickAction;
 pub use rotor_screenshot::img_util::TextResult as OcrTextResult;
 pub use rotor_screenshot::img_util::{
-    ocr_cache_loaded, CapturePixels, PixelFormat, OCR_MODEL_FILES,
+    ocr_cache_loaded, CapturePixels, PixelFormat, PixelView, OCR_MODEL_FILES,
 };
 pub use rotor_screenshot::monitor::BgraCapture;
 pub use rotor_screenshot::monitor::{current_configs as current_monitor_configs, MonitorConfig};
