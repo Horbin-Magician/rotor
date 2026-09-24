@@ -245,6 +245,14 @@ pub(super) fn hide_window(handle: WindowHandle<'_>) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn window_visible(handle: WindowHandle<'_>) -> Result<bool, String> {
+    use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+    let RawWindowHandle::Win32(raw) = handle.as_raw() else {
+        return Err("Expected a Windows window handle".into());
+    };
+    Ok(unsafe { IsWindowVisible(HWND(raw.hwnd.get() as *mut _)).as_bool() })
+}
+
 pub(super) fn show_window(handle: WindowHandle<'_>) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOWNOACTIVATE};
     let RawWindowHandle::Win32(raw) = handle.as_raw() else {

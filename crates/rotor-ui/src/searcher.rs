@@ -12,7 +12,14 @@ use gpui_kit::{
 };
 use rotor_common::Settings;
 use rotor_runtime::{IndexState, OperationId, RuntimeEvent, Services};
-use std::{collections::HashMap, ops::Range, sync::Arc, time::Duration};
+use std::{
+    cell::Cell,
+    collections::HashMap,
+    ops::Range,
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 actions!(rotor_search, [ToggleAi]);
 struct SearchKeybindings;
@@ -23,6 +30,8 @@ const SEARCH_INPUT_LINE_HEIGHT: f32 = 28.;
 const SEARCH_ROW_HEIGHT: f32 = 60.;
 
 pub struct SearchView {
+    // Only allocated with performance logging enabled. Never contains query text.
+    timing: Option<(rotor_runtime::QueryId, Instant, Rc<Cell<bool>>)>,
     ai_mode: bool,
     conversation: Vec<rotor_runtime::ChatMessage>,
     chat_request: Option<OperationId>,
@@ -102,6 +111,7 @@ impl SearchView {
         });
         input.update(cx, |input, cx| input.focus(window, cx));
         Self {
+            timing: None,
             ai_mode: false,
             conversation: Vec::new(),
             chat_request: None,
@@ -155,8 +165,16 @@ impl SearchView {
             }
             self.scroll.scroll_to_item(0, ScrollStrategy::Top);
         }
+        let started = Instant::now();
+        if !append {
+            self.timing = None;
+        }
         match self.services.search_page(query.clone(), append) {
             Ok(id) if !query.trim().is_empty() => {
+                if !append && log::log_enabled!(target: "rotor_search_latency", log::Level::Debug) {
+                    log::debug!(target: "rotor_search_latency", "search_latency id={} stage=query_submitted elapsed_us=0", id.0);
+                    self.timing = Some((id, started, Rc::new(Cell::new(false))));
+                }
                 self.results.begin(id, query, append);
                 self.message.clear();
             }
@@ -216,6 +234,11 @@ impl SearchView {
             RuntimeEvent::Search(batch) => {
                 if !self.results.accept(batch) {
                     return;
+                }
+                if let Some((id, started, _)) = &self.timing
+                    && *id == batch.id
+                {
+                    log::debug!(target: "rotor_search_latency", "search_latency id={} stage=results_received elapsed_us={}", id.0, started.elapsed().as_micros());
                 }
                 if !batch.append {
                     self.hovered = None;
@@ -714,6 +737,21 @@ impl Render for SearchView {
                         }),
                 )
             })
+            .when_some(self.timing.clone(), |element, (id, started, painted)| {
+                let view = cx.weak_entity();
+                element.child(canvas(
+                    |_, _, _| (),
+                    move |_, _, _, cx| {
+                        // Last child: rows have entered CPU paint, not necessarily GPU presentation.
+                        if view.upgrade().is_some_and(|view| {
+                            let view = view.read(cx);
+                            !view.ai_mode && view.results.accepts_icons(id) && !view.results.replacing
+                        }) && !painted.replace(true) {
+                            log::debug!(target: "rotor_search_latency", "search_latency id={} stage=results_painted elapsed_us={}", id.0, started.elapsed().as_micros());
+                        }
+                    },
+                ).absolute().size_full())
+            })
             .into_any_element()
     }
 }
@@ -761,6 +799,66 @@ mod tests {
     use gpui_kit::{AppContext, TestAppContext};
     use rotor_runtime::{OperationId, RuntimeEvent, ServiceOptions, Services};
     use std::sync::{Arc, Mutex};
+
+    #[gpui::test]
+    fn timing_paint_waits_for_the_current_request(cx: &mut TestAppContext) {
+        use rotor_runtime::{QueryId, SearchBatch};
+        use std::{cell::Cell, rc::Rc, time::Instant};
+        let directory = tempfile::tempdir().unwrap();
+        let (services, _events) = Services::new(
+            Arc::new(Mutex::new(
+                rotor_common::ConfigService::load_from(directory.path()).unwrap(),
+            )),
+            None,
+            ServiceOptions { index_files: false },
+        )
+        .unwrap();
+        cx.update(gpui_kit::component::init);
+        let mut view = None;
+        let painted = Rc::new(Cell::new(false));
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let search = cx.new(|cx| SearchView::new(Arc::new(services), window, cx));
+            search.update(cx, |view, _| {
+                view.results.begin(QueryId(2), "fixture".into(), false);
+                view.timing = Some((QueryId(2), Instant::now(), painted.clone()));
+            });
+            view = Some(search.clone());
+            Root::new(search, window, cx)
+        });
+        let view = view.unwrap();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(!painted.get());
+        for (id, expected) in [(1, false), (2, true)] {
+            cx.update(|window, cx| {
+                view.update(cx, |view, cx| {
+                    view.handle_event(
+                        &RuntimeEvent::Search(SearchBatch {
+                            id: QueryId(id),
+                            query: "fixture".into(),
+                            items: vec![],
+                            append: false,
+                        }),
+                        window,
+                        cx,
+                    );
+                });
+                window.draw(cx).clear(cx);
+            });
+            assert_eq!(painted.get(), expected);
+        }
+        painted.set(false);
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.results.begin(QueryId(3), "next".into(), false);
+                cx.notify();
+            });
+            window.draw(cx).clear(cx);
+        });
+        assert!(
+            !painted.get(),
+            "replacement must not paint the previous request's timing"
+        );
+    }
 
     #[gpui::test]
     fn failed_open_keeps_the_window_and_shows_the_error(cx: &mut TestAppContext) {

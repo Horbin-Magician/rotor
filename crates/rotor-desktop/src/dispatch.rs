@@ -12,6 +12,14 @@ use rotor_common::{Settings, settings::keys};
 use rotor_runtime::RuntimeEvent;
 
 pub(crate) fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if let RuntimeEvent::IndexState(state) = &event {
+        match state {
+            rotor_runtime::IndexState::Ready => crate::logging::startup_mark("index_ready"),
+            rotor_runtime::IndexState::Partial => crate::logging::startup_mark("index_partial"),
+            rotor_runtime::IndexState::Error => crate::logging::startup_mark("index_error"),
+            _ => {}
+        }
+    }
     if matches!(&event, RuntimeEvent::Update(snapshot) if snapshot.phase == rotor_runtime::UpdatePhase::HandedOff)
     {
         request_quit(cx);

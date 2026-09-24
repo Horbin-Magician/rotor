@@ -311,6 +311,8 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
         return Ok(());
     }
     cx.global_mut::<ShellState>().monitors = monitors;
+    log::debug!(target: "rotor_capture_latency", "capture_latency id={session} stage=frames_ready monitors={} elapsed_us={}",
+        frames.len(), cx.global::<ShellState>().capture.started.map_or(0, |started| started.elapsed().as_micros()));
     let locale = cx.global::<ShellState>().config.locale();
     let (cursor_display, cursor) = crate::placement::cursor_display(cx);
     let focus_id = cursor_display
@@ -379,6 +381,13 @@ fn open_masks(session: u64, frames: Vec<Arc<PreparedCapture>>, cx: &mut App) -> 
                     mark(session, "mask_paint_returned", cx);
                     handle.update(cx, |_, window, cx| {
                         show(window)?;
+                        if log::log_enabled!(target: "rotor_capture_latency", log::Level::Debug)
+                            && HasWindowHandle::window_handle(window).ok()
+                                .and_then(|handle| rotor_platform::overlay::window_visible(handle).ok()) == Some(true)
+                        {
+                            log::debug!(target: "rotor_capture_latency", "capture_latency id={session} stage=mask_native_visible monitor={monitor} elapsed_us={}",
+                                cx.global::<ShellState>().capture.started.map_or(0, |started| started.elapsed().as_micros()));
+                        }
                         if Some(monitor) == focus_id {
                             activate_mask(window)?;
                         }

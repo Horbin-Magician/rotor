@@ -4,11 +4,24 @@ use std::{
     io::{BufWriter, Write},
     path::Path,
     sync::{
+        OnceLock,
         atomic::{AtomicUsize, Ordering},
         mpsc::{self, SyncSender},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+static STARTED: OnceLock<Instant> = OnceLock::new();
+
+pub fn start_clock() {
+    STARTED.get_or_init(Instant::now);
+}
+
+pub fn startup_mark(stage: &str) {
+    if let Some(started) = STARTED.get() {
+        log::debug!(target: "rotor_startup_latency", "startup_latency id=0 stage={stage} elapsed_us={}", started.elapsed().as_micros());
+    }
+}
 
 enum Message {
     Line(String),
@@ -34,7 +47,11 @@ impl FileLog {
 impl Log for FileLog {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         (metadata.level() <= Level::Info
-            || (self.capture_timing && metadata.target() == "rotor_capture_latency"))
+            || (self.capture_timing
+                && matches!(
+                    metadata.target(),
+                    "rotor_capture_latency" | "rotor_search_latency" | "rotor_startup_latency"
+                )))
             && metadata.target().starts_with("rotor")
     }
     fn log(&self, record: &Record<'_>) {
@@ -117,7 +134,9 @@ pub fn initialize(directory: &Path) -> Result<LogGuard, String> {
         .spawn(move || write_logs(file, receiver))
         .map_err(|error| error.to_string())?;
     let guard = LogGuard(sender.clone());
-    let capture_timing = std::env::var_os("ROTOR_CAPTURE_TIMING").is_some_and(|value| value == "1");
+    let capture_timing = ["ROTOR_CAPTURE_TIMING", "ROTOR_PERF_TIMING"]
+        .iter()
+        .any(|key| std::env::var_os(key).is_some_and(|value| value == "1"));
     log::set_boxed_logger(Box::new(FileLog::new(sender, capture_timing)))
         .map_err(|error| error.to_string())?;
     log::set_max_level(if capture_timing {
@@ -131,6 +150,29 @@ pub fn initialize(directory: &Path) -> Result<LogGuard, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn performance_logging_is_opt_in_and_target_limited() {
+        for enabled in [false, true] {
+            let (sender, _receiver) = mpsc::sync_channel(1);
+            let logger = FileLog::new(sender, enabled);
+            for target in [
+                "rotor_search_latency",
+                "rotor_capture_latency",
+                "rotor_startup_latency",
+                "rotor_other",
+            ] {
+                let metadata = Metadata::builder()
+                    .level(Level::Debug)
+                    .target(target)
+                    .build();
+                assert_eq!(
+                    logger.enabled(&metadata),
+                    enabled && target != "rotor_other"
+                );
+            }
+        }
+    }
 
     fn record(logger: &FileLog, text: &str) {
         logger.log(

@@ -48,7 +48,7 @@ impl Arguments {
 
     /// `--build-info` must be the only argument.
     pub(crate) fn is_build_info(&self) -> bool {
-        self.values.len() == 2 && self.values[1] == "--build-info"
+        self.is_exactly(&["--build-info"])
     }
 
     /// True when the arguments after the executable are exactly `expected`.

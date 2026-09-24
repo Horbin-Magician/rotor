@@ -28,6 +28,7 @@ use std::{cell::Cell, collections::HashMap, error::Error, path::PathBuf, rc::Rc,
 use system::{Command, CommandBus, SystemServices};
 
 fn run() -> Result<(), Box<dyn Error>> {
+    logging::start_clock();
     let args = cli::Arguments::from_env();
     if args.is_build_info() {
         println!("{}", rotor_common::native_app::build_info_json());
@@ -98,6 +99,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     };
     let _validated_config = ConfigService::load_from(&directory)?;
+    logging::startup_mark("profile_initialized");
     let resources = match args.value("--resource-dir")? {
         Some(path) => ResourceLocator::from_root(std::path::Path::new(&path)),
         None => ResourceLocator::for_current_process(),

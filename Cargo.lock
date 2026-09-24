@@ -6561,6 +6561,7 @@ dependencies = [
  "rotor-runtime",
  "rotor-ui",
  "rotor-updater",
+ "serde_json",
  "tempfile",
  "tray-icon",
 ]

@@ -112,6 +112,11 @@ pub fn show_window(handle: WindowHandle<'_>) -> Result<(), String> {
     native::show_window(handle)
 }
 
+/// Native visibility flag only; does not prove compositor presentation or scanout.
+pub fn window_visible(handle: WindowHandle<'_>) -> Result<bool, String> {
+    native::window_visible(handle)
+}
+
 #[cfg(target_os = "windows")]
 pub fn client_origin(handle: WindowHandle<'_>) -> Result<(i32, i32), String> {
     native::client_origin(handle)

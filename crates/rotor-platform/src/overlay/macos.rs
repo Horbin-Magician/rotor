@@ -207,6 +207,13 @@ pub(super) fn hide_window(handle: WindowHandle<'_>) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn window_visible(handle: WindowHandle<'_>) -> Result<bool, String> {
+    Ok(view(handle)?
+        .window()
+        .ok_or("View is not attached to a window")?
+        .isVisible())
+}
+
 pub(super) fn show_window(handle: WindowHandle<'_>) -> Result<(), String> {
     view(handle)?
         .window()
