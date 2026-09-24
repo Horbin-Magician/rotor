@@ -14,7 +14,6 @@ pub(super) enum Tool {
     Mosaic,
     Arrow,
     Text,
-    Number,
 }
 /// Annotation editing: the selected tool and whatever is being drafted with
 /// it. This is the payload of `Mode::Annotating`; when no tool is selected the
@@ -274,21 +273,12 @@ impl PinView {
         cx.notify();
     }
     fn undo_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.navigate_canvas_history(false, window, cx);
-    }
-    fn redo_canvas(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.navigate_canvas_history(true, window, cx);
-    }
-    fn navigate_canvas_history(&mut self, redo: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy() || !self.can_request_export() || self.mode.is_cropping() {
             return;
         }
         let before_crop = self.canvas.document.scene().crop;
-        let changed = if redo {
-            self.canvas.document.redo()
-        } else {
-            self.canvas.document.undo()
-        };
+        let before = self.canvas.document.clone();
+        let changed = self.canvas.document.undo();
         if changed {
             if let Some(editing) = self.mode.editing_mut() {
                 editing.selected = None;
@@ -296,11 +286,7 @@ impl PinView {
             let next_crop = self.canvas.document.scene().crop;
             let crop_changed = next_crop != before_crop;
             if crop_changed && let Err(error) = self.apply_crop(next_crop, window, cx) {
-                if redo {
-                    self.canvas.document.undo();
-                } else {
-                    self.canvas.document.redo();
-                }
+                self.canvas.document = before;
                 self.message = error;
                 cx.notify();
                 return;
@@ -367,19 +353,6 @@ impl PinView {
                     return false;
                 };
                 self.canvas.document.scene().annotations[index].clone()
-            }
-            Tool::Number => {
-                self.add_annotation(
-                    Annotation::Number {
-                        origin,
-                        value: self.canvas.document.next_number(),
-                        font_size: 24. / self.canvas_scale(),
-                        color: Color::RED,
-                    },
-                    window,
-                    cx,
-                );
-                return false;
             }
             Tool::Text => {
                 let input = cx.new(|cx| InputState::new(window, cx));
@@ -750,28 +723,21 @@ impl PinView {
             cx.stop_propagation();
             return true;
         }
-        if is_canvas_redo(&event.keystroke, self.mode.is_annotating()) {
-            self.redo_canvas(window, cx);
-            cx.stop_propagation();
-            return true;
-        }
         false
     }
     pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let disabled = self.busy() || self.mode.is_cropping();
         let selected = self.mode.editing().map(Editing::tool);
-        let edit_disabled = disabled
-            || !self.can_request_export()
-            || self
-                .mode
-                .editing()
-                .and_then(|editing| editing.selected)
-                .is_none();
-        div()
+        let selected_mark = self
+            .mode
+            .editing()
+            .and_then(|editing| editing.selected)
+            .and_then(|index| self.canvas.document.scene().annotations.get(index));
+        let edit_disabled = disabled || !self.can_request_export();
+        let tools = div()
             .flex()
-            .flex_wrap()
+            .flex_none()
             .items_center()
-            .justify_center()
             .gap(px(2.))
             .child(
                 toolbar::button("canvas-back", toolbar::Glyph::Back, cx)
@@ -787,7 +753,7 @@ impl PinView {
                     (
                         "canvas-select",
                         Tool::Select,
-                        toolbar::Glyph::Arrow,
+                        toolbar::Glyph::Select,
                         "选择 / 移动",
                         "Select / move",
                     ),
@@ -808,7 +774,7 @@ impl PinView {
                     (
                         "canvas-mosaic",
                         Tool::Mosaic,
-                        toolbar::Glyph::Rectangle,
+                        toolbar::Glyph::Mosaic,
                         "马赛克",
                         "Mosaic",
                     ),
@@ -825,13 +791,6 @@ impl PinView {
                         toolbar::Glyph::Arrow,
                         "箭头",
                         "Arrow",
-                    ),
-                    (
-                        "canvas-number",
-                        Tool::Number,
-                        toolbar::Glyph::Text,
-                        "序号",
-                        "Number",
                     ),
                     (
                         "canvas-text",
@@ -855,51 +814,6 @@ impl PinView {
                 }),
             )
             .child(toolbar::separator())
-            .children(
-                [("canvas-smaller", "−", -2.), ("canvas-larger", "+", 2.)]
-                    .into_iter()
-                    .map(|(id, label, delta)| {
-                        gpui_kit::component::button::Button::new(id)
-                            .label(label)
-                            .disabled(edit_disabled)
-                            .tooltip(self.t("修改选中标注大小", "Resize selected annotation"))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.edit_selected(|mark| mark.resized(delta), window, cx)
-                            }))
-                    }),
-            )
-            .children(
-                [
-                    ("mark-red", Color::RED, "红", "Red"),
-                    ("mark-blue", Color([0, 128, 255, 255]), "蓝", "Blue"),
-                    ("mark-green", Color([0, 180, 80, 255]), "绿", "Green"),
-                    ("mark-black", Color([0, 0, 0, 255]), "黑", "Black"),
-                ]
-                .into_iter()
-                .map(|(id, color, zh, en)| {
-                    gpui_kit::component::button::Button::new(id)
-                        .label(self.t(zh, en))
-                        .disabled(edit_disabled)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.edit_selected(|mark| mark.recolored(color), window, cx)
-                        }))
-                }),
-            )
-            .child(
-                toolbar::button("canvas-edit-text", toolbar::Glyph::Text, cx)
-                    .disabled(edit_disabled)
-                    .tooltip(self.t("修改文字 (Enter)", "Edit text (Enter)"))
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.edit_selected_text(window, cx)),
-                    ),
-            )
-            .child(
-                toolbar::button("canvas-delete", toolbar::Glyph::Close, cx)
-                    .disabled(edit_disabled)
-                    .tooltip(self.t("删除选中标注", "Delete selected annotation"))
-                    .on_click(cx.listener(|this, _, window, cx| this.delete_selected(window, cx))),
-            )
-            .child(toolbar::separator())
             .child(
                 toolbar::button("canvas-undo", toolbar::Glyph::Undo, cx)
                     .accessibility_label(self.t("撤回", "Undo"))
@@ -910,18 +824,109 @@ impl PinView {
                             || self.mode.text_editor().is_some(),
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.undo_canvas(window, cx))),
-            )
-            .child(
-                toolbar::button("canvas-redo", toolbar::Glyph::Redo, cx)
-                    .accessibility_label(self.t("重做", "Redo"))
-                    .tooltip(self.t("重做", "Redo"))
-                    .disabled(
-                        disabled
-                            || !self.canvas.document.can_redo()
-                            || self.mode.text_editor().is_some(),
+            );
+
+        div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .when_some(selected_mark, |column, mark| {
+                let can_recolor = !matches!(
+                    mark,
+                    Annotation::Redaction { .. } | Annotation::Mosaic { .. }
+                );
+                let can_edit_text = matches!(mark, Annotation::Text { .. });
+                let actions = div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(2.))
+                    .children(
+                        [
+                            (
+                                "canvas-smaller",
+                                toolbar::Glyph::Smaller,
+                                -2.,
+                                "缩小选中标注",
+                                "Shrink selected annotation",
+                            ),
+                            (
+                                "canvas-larger",
+                                toolbar::Glyph::Larger,
+                                2.,
+                                "放大选中标注",
+                                "Enlarge selected annotation",
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(id, glyph, delta, zh, en)| {
+                            toolbar::button(id, glyph, cx)
+                                .accessibility_label(self.t(zh, en))
+                                .disabled(edit_disabled)
+                                .tooltip(self.t(zh, en))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.edit_selected(|mark| mark.resized(delta), window, cx)
+                                }))
+                        }),
                     )
-                    .on_click(cx.listener(|this, _, window, cx| this.redo_canvas(window, cx))),
-            )
+                    .when(can_recolor, |row| {
+                        row.children(
+                            [
+                                ("mark-red", Color::RED, "红", "Red"),
+                                ("mark-blue", Color([0, 128, 255, 255]), "蓝", "Blue"),
+                                ("mark-green", Color([0, 180, 80, 255]), "绿", "Green"),
+                                ("mark-black", Color([0, 0, 0, 255]), "黑", "Black"),
+                            ]
+                            .into_iter()
+                            .map(|(id, color, zh, en)| {
+                                toolbar::color_button(id, rgba(u32::from_be_bytes(color.0)), cx)
+                                    .accessibility_label(self.t(zh, en))
+                                    .tooltip(self.t(zh, en))
+                                    .disabled(edit_disabled)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.edit_selected(|mark| mark.recolored(color), window, cx)
+                                    }))
+                            }),
+                        )
+                    })
+                    .when(can_edit_text, |row| {
+                        row.child(
+                            toolbar::button("canvas-edit-text", toolbar::Glyph::EditText, cx)
+                                .accessibility_label(self.t("修改文字", "Edit text"))
+                                .disabled(edit_disabled)
+                                .tooltip(self.t("修改文字 (Enter)", "Edit text (Enter)"))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.edit_selected_text(window, cx)
+                                })),
+                        )
+                    })
+                    .child(
+                        toolbar::button("canvas-delete", toolbar::Glyph::Delete, cx)
+                            .accessibility_label(
+                                self.t("删除选中标注", "Delete selected annotation"),
+                            )
+                            .disabled(edit_disabled)
+                            .tooltip(self.t("删除选中标注", "Delete selected annotation"))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.delete_selected(window, cx)),
+                            ),
+                    );
+                column.child(
+                    div()
+                        .flex_none()
+                        .overflow_hidden()
+                        .child(toolbar::scroll_row("canvas-selection-actions", actions))
+                        .with_animation(
+                            "canvas-selection-reveal",
+                            Animation::new(Duration::from_millis(160)),
+                            |row, progress| {
+                                let progress = 1. - (1. - progress).powi(3);
+                                row.h(px(29. * progress))
+                            },
+                        ),
+                )
+            })
+            .child(toolbar::scroll_row("canvas-main-tools", tools))
     }
     pub(super) fn canvas_element(
         &mut self,
@@ -1340,14 +1345,6 @@ fn is_canvas_undo(key: &Keystroke, editing: bool) -> bool {
         && !key.modifiers.alt
 }
 
-fn is_canvas_redo(key: &Keystroke, editing: bool) -> bool {
-    editing
-        && !key.modifiers.alt
-        && (key.modifiers.control || key.modifiers.platform)
-        && ((key.key.eq_ignore_ascii_case("z") && key.modifiers.shift)
-            || (key.key.eq_ignore_ascii_case("y") && key.modifiers.control && !key.modifiers.shift))
-}
-
 #[cfg(test)]
 mod tests {
     use super::CanvasState;
@@ -1370,21 +1367,6 @@ mod tests {
                 .iter()
                 .all(|vertex| vertex.xy_position.x.as_f32() <= 65.)
         );
-    }
-
-    #[test]
-    fn redo_only_claims_editing_chords() {
-        for chord in ["ctrl-shift-z", "ctrl-y", "cmd-shift-z"] {
-            let key = gpui_kit::Keystroke::parse(chord).unwrap();
-            assert!(super::is_canvas_redo(&key, true), "{chord}");
-            assert!(!super::is_canvas_redo(&key, false));
-        }
-        for chord in ["ctrl-z", "ctrl-alt-y", "ctrl-shift-y", "y", "shift-z"] {
-            assert!(!super::is_canvas_redo(
-                &gpui_kit::Keystroke::parse(chord).unwrap(),
-                true
-            ));
-        }
     }
 
     #[test]
@@ -1461,8 +1443,6 @@ mod tests {
         assert!(state.document.undo());
         assert!(state.export_scene().annotations.is_empty());
         assert_eq!(snapshot.annotations.len(), 1);
-        assert!(state.document.redo());
-        assert_eq!(state.export_scene().annotations, snapshot.annotations);
     }
 
     #[test]
@@ -1606,11 +1586,6 @@ mod tests {
                 assert_eq!(display[1].lines.len(), 1);
                 pin.undo_canvas(window, cx);
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 1);
-                assert!(pin.canvas.document.can_redo());
-                pin.redo_canvas(window, cx);
-                assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
-                assert!(!pin.canvas.document.can_redo());
-                pin.undo_canvas(window, cx);
                 pin.begin_mark(point(px(30.), px(30.)), window, cx);
                 pin.mode
                     .text_editor()
@@ -1622,15 +1597,6 @@ mod tests {
                 assert_eq!(pin.mode.editing().map(Editing::tool), Some(Tool::Pen));
                 assert!(pin.mode.text_editor().is_none());
                 assert_eq!(pin.canvas.export_scene().annotations.len(), 2);
-                assert!(!pin.canvas.document.can_redo());
-                pin.set_tool(Tool::Number, window, cx);
-                pin.begin_mark(point(px(60.), px(60.)), window, cx);
-                assert_eq!(pin.canvas.document.next_number(), 2);
-                pin.undo_canvas(window, cx);
-                assert_eq!(pin.canvas.document.next_number(), 1);
-                pin.redo_canvas(window, cx);
-                assert_eq!(pin.canvas.document.next_number(), 2);
-                pin.undo_canvas(window, cx);
                 pin.set_tool(Tool::Mosaic, window, cx);
                 assert!(pin.begin_mark(point(px(60.), px(60.)), window, cx));
                 pin.move_mark(point(px(100.), px(100.)), window, cx);

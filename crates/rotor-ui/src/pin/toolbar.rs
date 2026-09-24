@@ -11,11 +11,16 @@ use gpui_kit::{
 pub(super) enum Glyph {
     Back,
     Rectangle,
+    Select,
+    Mosaic,
     Redaction,
+    EditText,
+    Delete,
+    Smaller,
+    Larger,
     Arrow,
     Text,
     Undo,
-    Redo,
     Pen,
     Ocr,
     Minimize,
@@ -50,7 +55,58 @@ pub(super) fn separator() -> Div {
     div().flex_none().w(px(1.)).h(px(21.)).bg(rgba(0x8192a34d))
 }
 
+/// Keep tools on one line; narrow pins can scroll to every action.
+pub(super) fn scroll_row(id: &'static str, content: impl IntoElement) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .w_full()
+        .min_w(px(0.))
+        .h(px(25.))
+        .flex_none()
+        .overflow_x_scroll()
+        .child(content)
+}
+
 pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
+    base_button(id, cx).icon(
+        Icon::new(match glyph {
+            Glyph::Back => IconName::ChevronLeft,
+            Glyph::Rectangle => IconName::Square,
+            Glyph::Select => IconName::MousePointer2,
+            Glyph::Mosaic => IconName::Grid2x2,
+            Glyph::Redaction => IconName::PaintBucket,
+            Glyph::EditText => IconName::TextCursorInput,
+            Glyph::Delete => IconName::Trash,
+            Glyph::Smaller => IconName::Minus,
+            Glyph::Larger => IconName::Plus,
+            Glyph::Arrow => IconName::MoveUpRight,
+            Glyph::Text => IconName::Type,
+            Glyph::Undo => IconName::Undo2,
+            Glyph::Pen => IconName::Pencil,
+            Glyph::Ocr => IconName::ScanText,
+            Glyph::Minimize => IconName::WindowMinimize,
+            Glyph::Save => IconName::Download,
+            Glyph::Close => IconName::Close,
+            Glyph::Copy => IconName::Copy,
+            Glyph::More => IconName::Ellipsis,
+        })
+        .size(px(17.)),
+    )
+}
+
+pub(super) fn color_button(id: &'static str, color: Rgba, cx: &App) -> Button {
+    base_button(id, cx).child(
+        div()
+            .size(px(13.))
+            .rounded(px(3.))
+            .bg(color)
+            .border_1()
+            .border_color(rgb(0xb7c5d3)),
+    )
+}
+
+fn base_button(id: &'static str, cx: &App) -> Button {
     Button::new(id)
         .with_size(px(25.))
         .w(px(27.))
@@ -64,25 +120,6 @@ pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
                 .hover(rgba(0x4ba3e324).into())
                 .active(rgba(0xffffff30).into())
                 .shadow(false),
-        )
-        .icon(
-            Icon::new(match glyph {
-                Glyph::Back => IconName::ChevronLeft,
-                Glyph::Rectangle => IconName::Square,
-                Glyph::Redaction => IconName::Square,
-                Glyph::Arrow => IconName::MoveUpRight,
-                Glyph::Text => IconName::Type,
-                Glyph::Undo => IconName::Undo2,
-                Glyph::Redo => IconName::Redo2,
-                Glyph::Pen => IconName::Pencil,
-                Glyph::Ocr => IconName::ScanText,
-                Glyph::Minimize => IconName::WindowMinimize,
-                Glyph::Save => IconName::Download,
-                Glyph::Close => IconName::Close,
-                Glyph::Copy => IconName::Copy,
-                Glyph::More => IconName::Ellipsis,
-            })
-            .size(px(17.)),
         )
 }
 

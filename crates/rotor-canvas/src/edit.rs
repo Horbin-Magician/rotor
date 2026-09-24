@@ -41,7 +41,7 @@ impl Annotation {
             Self::Rectangle { start, end, style } => (*start, *end, style.width / 2.),
             Self::Arrow { start, end, style } => (*start, *end, style.width * 2.),
             Self::Redaction { start, end } | Self::Mosaic { start, end, .. } => (*start, *end, 0.),
-            Self::Text { .. } | Self::Number { .. } => unreachable!("text handled above"),
+            Self::Text { .. } => unreachable!("text handled above"),
         };
         let left = a.x.min(b.x) - padding;
         let top = a.y.min(b.y) - padding;
@@ -74,7 +74,7 @@ impl Annotation {
                 shift(start);
                 shift(end);
             }
-            Self::Text { origin, .. } | Self::Number { origin, .. } => shift(origin),
+            Self::Text { origin, .. } => shift(origin),
         }
         next
     }
@@ -84,9 +84,7 @@ impl Annotation {
             Self::Pen { style, .. } | Self::Rectangle { style, .. } | Self::Arrow { style, .. } => {
                 style.color = color
             }
-            Self::Text { color: current, .. } | Self::Number { color: current, .. } => {
-                *current = color
-            }
+            Self::Text { color: current, .. } => *current = color,
             Self::Redaction { .. } | Self::Mosaic { .. } => {}
         }
         next
@@ -97,9 +95,7 @@ impl Annotation {
             Self::Pen { style, .. } | Self::Rectangle { style, .. } | Self::Arrow { style, .. } => {
                 style.width = (style.width + delta).clamp(0.01, 1024.)
             }
-            Self::Text { font_size, .. } | Self::Number { font_size, .. } => {
-                *font_size = (*font_size + delta).clamp(1., 2048.)
-            }
+            Self::Text { font_size, .. } => *font_size = (*font_size + delta).clamp(1., 2048.),
             Self::Mosaic { block_size, .. } => {
                 *block_size = (*block_size as f64 + delta).clamp(4., 1024.) as u32
             }
@@ -153,8 +149,8 @@ mod tests {
         assert!(doc.undo());
         assert!(doc.undo());
         assert_eq!(doc.scene().annotations, before);
-        assert!(doc.redo());
-        assert!(doc.redo());
+        doc.replace(0, moved.clone()).unwrap();
+        doc.remove(1).unwrap();
         assert_eq!(doc.scene().annotations, vec![moved.clone()]);
         let revision = doc.revision();
         assert!(doc.replace(0, original.translated(f64::NAN, 0.)).is_err());
@@ -163,7 +159,7 @@ mod tests {
         assert!(!doc.replace(0, moved).unwrap());
         assert_eq!(doc.revision(), revision);
         assert!(doc.undo());
-        doc.replace(0, original).unwrap();
-        assert!(!doc.can_redo());
+        doc.replace(0, original.clone()).unwrap();
+        assert_eq!(doc.scene().annotations[0], original);
     }
 }

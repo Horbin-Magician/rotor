@@ -28,12 +28,6 @@ pub enum Annotation {
         end: ImagePoint,
         block_size: u32,
     },
-    Number {
-        origin: ImagePoint,
-        value: u32,
-        font_size: f64,
-        color: Color,
-    },
     /// Opaque black coverage, expanded to whole source pixels. Unlike a stroke
     /// this deliberately has no alpha or width control.
     Redaction { start: ImagePoint, end: ImagePoint },
@@ -68,12 +62,6 @@ impl Annotation {
                 font_size,
                 color,
             } => Some((*origin, text.as_str().into(), *font_size, *color)),
-            Self::Number {
-                origin,
-                value,
-                font_size,
-                color,
-            } => Some((*origin, format!("{value}.").into(), *font_size, *color)),
             _ => None,
         }
     }
@@ -95,17 +83,6 @@ impl Annotation {
                 point(start)
                     && point(end)
                     && crate::mosaic_bounds(*start, *end, size, *block_size).is_some()
-            }
-            Self::Number {
-                origin,
-                value,
-                font_size,
-                ..
-            } => {
-                point(origin)
-                    && (1..=9999).contains(value)
-                    && font_size.is_finite()
-                    && (1.0..=2048.).contains(font_size)
             }
             Self::Redaction { start, end } => {
                 point(start) && point(end) && start.x != end.x && start.y != end.y
@@ -235,7 +212,7 @@ impl Annotation {
                 let outline = arrow_outline(*start, *end, style.width);
                 (!outline.is_empty()).then_some((Outline::Fill(outline), style.color))
             }
-            Self::Text { .. } | Self::Number { .. } => None,
+            Self::Text { .. } => None,
         }
     }
 }
@@ -302,7 +279,7 @@ impl Scene {
     pub fn has_text(&self) -> bool {
         self.annotations
             .iter()
-            .any(|mark| matches!(mark, Annotation::Text { .. } | Annotation::Number { .. }))
+            .any(|mark| matches!(mark, Annotation::Text { .. }))
     }
 }
 
@@ -314,18 +291,9 @@ enum Undo {
     Crop(ImageRect),
 }
 #[derive(Clone, Debug)]
-enum Redo {
-    Add(Annotation),
-    Replace(usize, Annotation),
-    Remove(usize),
-    Crop(ImageRect),
-}
-
-#[derive(Clone, Debug)]
 pub struct Document {
     scene: Scene,
     undo: Vec<Undo>,
-    redo: Vec<Redo>,
     revision: u64,
 }
 impl Document {
@@ -339,33 +307,17 @@ impl Document {
         Ok(Self {
             scene,
             undo: Vec::new(),
-            redo: Vec::new(),
             revision: 0,
         })
     }
     pub fn scene(&self) -> &Scene {
         &self.scene
     }
-    pub fn next_number(&self) -> u32 {
-        self.scene
-            .annotations
-            .iter()
-            .filter_map(|mark| match mark {
-                Annotation::Number { value, .. } => Some(*value),
-                _ => None,
-            })
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1)
-    }
     pub fn revision(&self) -> u64 {
         self.revision
     }
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
-    }
-    pub fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
     }
     fn changed(&mut self) {
         self.revision = self.revision.wrapping_add(1);
@@ -377,7 +329,6 @@ impl Document {
         }
         self.scene.annotations.push(annotation);
         self.undo.push(Undo::Added);
-        self.redo.clear();
         self.changed();
         Ok(())
     }
@@ -393,7 +344,6 @@ impl Document {
         }
         let previous = std::mem::replace(previous, annotation);
         self.undo.push(Undo::Replaced(index, previous));
-        self.redo.clear();
         self.changed();
         Ok(true)
     }
@@ -403,7 +353,6 @@ impl Document {
         }
         let previous = self.scene.annotations.remove(index);
         self.undo.push(Undo::Removed(index, previous));
-        self.redo.clear();
         self.changed();
         Ok(())
     }
@@ -416,7 +365,6 @@ impl Document {
         }
         self.undo.push(Undo::Crop(self.scene.crop));
         self.scene.crop = crop;
-        self.redo.clear();
         self.changed();
         Ok(true)
     }
@@ -426,47 +374,19 @@ impl Document {
         };
         match change {
             Undo::Replaced(index, previous) => {
-                let next = std::mem::replace(&mut self.scene.annotations[index], previous);
-                self.redo.push(Redo::Replace(index, next));
+                self.scene.annotations[index] = previous;
             }
             Undo::Removed(index, previous) => {
                 self.scene.annotations.insert(index, previous);
-                self.redo.push(Redo::Remove(index));
             }
-            Undo::Added => self.redo.push(Redo::Add(
+            Undo::Added => {
                 self.scene
                     .annotations
                     .pop()
-                    .expect("undo tracks annotation additions"),
-            )),
+                    .expect("undo tracks annotation additions");
+            }
             Undo::Crop(previous) => {
-                self.redo.push(Redo::Crop(self.scene.crop));
                 self.scene.crop = previous;
-            }
-        }
-        self.changed();
-        true
-    }
-    pub fn redo(&mut self) -> bool {
-        let Some(change) = self.redo.pop() else {
-            return false;
-        };
-        match change {
-            Redo::Replace(index, next) => {
-                let previous = std::mem::replace(&mut self.scene.annotations[index], next);
-                self.undo.push(Undo::Replaced(index, previous));
-            }
-            Redo::Remove(index) => {
-                let previous = self.scene.annotations.remove(index);
-                self.undo.push(Undo::Removed(index, previous));
-            }
-            Redo::Add(annotation) => {
-                self.scene.annotations.push(annotation);
-                self.undo.push(Undo::Added);
-            }
-            Redo::Crop(next) => {
-                self.undo.push(Undo::Crop(self.scene.crop));
-                self.scene.crop = next;
             }
         }
         self.changed();
@@ -649,7 +569,7 @@ mod tests {
         assert!(!doc.can_undo());
     }
     #[test]
-    fn crop_and_annotation_undo_redo_preserve_order() {
+    fn crop_and_annotation_undo_preserve_order() {
         let mut doc = Document::new(
             ImageSize {
                 width: 100,
@@ -676,10 +596,8 @@ mod tests {
         assert_eq!(doc.scene().crop, full());
         assert!(doc.undo());
         assert!(doc.scene().annotations.is_empty());
-        assert!(doc.redo());
-        assert_eq!(doc.scene().annotations.len(), 1);
-        assert!(doc.redo());
-        assert_eq!(doc.scene().crop.width, 40);
+        assert!(!doc.undo());
+        assert_eq!(doc.scene().crop, full());
     }
     #[test]
     fn viewport_mapping_round_trips_fractional_zoom() {

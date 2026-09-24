@@ -8,6 +8,12 @@ gpui_kit::assets::icon_assets!(
         Pencil,
         Trash,
         Square,
+        MousePointer2,
+        Grid2x2,
+        PaintBucket,
+        TextCursorInput,
+        Minus,
+        Plus,
         MoveUpRight,
         Type,
         ScanText,
@@ -53,5 +59,42 @@ impl AssetSource for UiAssets {
         paths.sort();
         paths.dedup();
         Ok(paths)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui_kit::assets::IconName;
+
+    #[test]
+    fn annotation_toolbar_icons_load_from_application_assets() {
+        for icon in [
+            IconName::ChevronLeft,
+            IconName::Square,
+            IconName::MousePointer2,
+            IconName::Grid2x2,
+            IconName::PaintBucket,
+            IconName::TextCursorInput,
+            IconName::Trash,
+            IconName::Minus,
+            IconName::Plus,
+            IconName::MoveUpRight,
+            IconName::Type,
+            IconName::Undo2,
+            IconName::Pencil,
+        ] {
+            let path = icon.path();
+            let bytes = UiAssets
+                .load(&path)
+                .expect("icon resource should load")
+                .unwrap_or_else(|| panic!("missing toolbar icon: {path}"));
+            assert!(
+                std::str::from_utf8(&bytes)
+                    .expect("SVG should be UTF-8")
+                    .contains("<svg"),
+                "invalid toolbar icon: {path}"
+            );
+        }
     }
 }

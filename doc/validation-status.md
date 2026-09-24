@@ -1,5 +1,9 @@
 # Rotor 3.0.2 validation status
 
+Number annotations and redo were subsequently removed at the user's request.
+The evidence below describes the earlier implementation, not the current feature
+set; undo remains available.
+
 Current development/synthetic checks were run on Windows on 2026-09-24. See
 [machine-readable evidence](validation/windows-3.0.2-todo-final.json) for the exact
 source commit, full workspace test and strict Clippy logs, and skipped acceptance

@@ -749,7 +749,8 @@ impl Render for PinView {
         let toolbar_fits =
             window.viewport_size().width >= px(51.) && window.viewport_size().height >= px(49.);
         let editing = self.mode.is_annotating();
-        let annotation_width = px(192.).min((window.viewport_size().width - px(16.)).max(px(0.)));
+        // Nine 27px buttons, two separators, ten 2px gaps and 8px panel padding.
+        let annotation_width = px(273.).min((window.viewport_size().width - px(16.)).max(px(0.)));
         div()
             .id("pin")
             .track_focus(&self.focus)

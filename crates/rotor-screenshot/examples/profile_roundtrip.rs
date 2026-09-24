@@ -41,9 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             start: ImagePoint { x: 0., y: 0. },
             end: ImagePoint { x: 2., y: 2. },
         },
-        Annotation::Number {
+        Annotation::Text {
             origin: ImagePoint { x: 2., y: 2. },
-            value: 1,
+            text: "sample".into(),
             font_size: 2.,
             color: Color::RED,
         },
