@@ -1,4 +1,23 @@
-# Rotor 3.0.0 validation status
+# Rotor 3.0.2 validation status
+
+Current development/synthetic checks were run on Windows on 2026-09-24. See
+[machine-readable evidence](validation/windows-3.0.2-todo.json) for exact source
+commits, test logs, benchmark binary hash, and skipped acceptance categories.
+The full workspace tests and strict Clippy passed before the final search name
+index change; that change then passed all searcher tests, strict searcher Clippy,
+workspace compilation and formatting. No current installation, native GUI,
+macOS, signing or notarization acceptance is claimed.
+
+Search relevance/paging, redo controls and opaque redaction have automated
+coverage. The synthetic search benchmark records 30 samples per query; it does
+not measure native painting or end-to-end interaction. The name index reduces
+query scanning at the cost of additional memory and slower index construction.
+See [implementation notes](todo-implementation.md) for remaining work.
+
+The candidate packaging workflow now runs searcher and canvas regression tests
+on each selected platform. This configuration change has not been run in hosted CI.
+
+## Archived Rotor 3.0.0 results
 
 The archived results below used the former Rotor 3 / `rotor3` identity. They do
 not validate the current Rotor / `rotor` identity or `.rotor` profile path;

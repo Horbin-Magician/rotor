@@ -73,6 +73,8 @@ jobs:
           choco install nsis --version=3.11 --no-progress -y
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
       - run: cargo test -p xtask -p rotor-updater --locked
+      - name: Check search pagination and annotation exports
+        run: cargo test -p rotor-searcher -p rotor-canvas --locked
       - run: cargo test -p rotor-common --features production --locked
       - name: Build and stage selected identity
         shell: pwsh

@@ -1,0 +1,525 @@
+   Compiling rotor-common v3.0.2 (D:\Project\rotor\crates\rotor-common)
+   Compiling rotor-canvas v3.0.2 (D:\Project\rotor\crates\rotor-canvas)
+   Compiling rotor-platform v3.0.2 (D:\Project\rotor\crates\rotor-platform)
+   Compiling rotor-updater v3.0.2 (D:\Project\rotor\crates\rotor-updater)
+   Compiling rotor-translator v3.0.2 (D:\Project\rotor\crates\rotor-translator)
+   Compiling xtask v3.0.2 (D:\Project\rotor\xtask)
+   Compiling rotor-screenshot v3.0.2 (D:\Project\rotor\crates\rotor-screenshot)
+   Compiling rotor-searcher v3.0.2 (D:\Project\rotor\crates\rotor-searcher)
+   Compiling rotor-runtime v3.0.2 (D:\Project\rotor\crates\rotor-runtime)
+   Compiling rotor-ui v3.0.2 (D:\Project\rotor\crates\rotor-ui)
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\examples\inspect_pins.lib 和对象 D:\Project\rotor\target\debug\examples\inspect_pins.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-screenshot` (example "inspect_pins") generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\examples\profile_roundtrip.lib 和对象 D:\Project\rotor\target\debug\examples\profile_roundtrip.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-screenshot` (example "profile_roundtrip") generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\deps\rotor_screenshot-89e82fb532d5e8e3.lib 和对象 D:\Project\rotor\target\debug\deps\rotor_screenshot-89e82fb532d5e8e3.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-screenshot` (lib test) generated 1 warning
+   Compiling rotor-desktop v3.0.2 (D:\Project\rotor\crates\rotor-desktop)
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\deps\rotor_runtime-d021e038f06be90e.lib 和对象 D:\Project\rotor\target\debug\deps\rotor_runtime-d021e038f06be90e.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-runtime` (lib test) generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\examples\capture_pipeline_bench.lib 和对象 D:\Project\rotor\target\debug\examples\capture_pipeline_bench.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-desktop` (example "capture_pipeline_bench") generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\deps\rotor_desktop-a532568e23fbc602.lib 和对象 D:\Project\rotor\target\debug\deps\rotor_desktop-a532568e23fbc602.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\examples\display_info.lib 和对象 D:\Project\rotor\target\debug\examples\display_info.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-desktop` (bin "rotor-desktop" test) generated 1 warning
+warning: `rotor-desktop` (example "display_info") generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\examples\ocr_smoke.lib 和对象 D:\Project\rotor\target\debug\examples\ocr_smoke.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-desktop` (example "ocr_smoke") generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\examples\ui_gallery.lib 和对象 D:\Project\rotor\target\debug\examples\ui_gallery.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-desktop` (example "ui_gallery") generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\rotor\target\debug\deps\rotor_ui-e4f724d11b787cc0.lib 和对象 D:\Project\rotor\target\debug\deps\rotor_ui-e4f724d11b787cc0.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `rotor-ui` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.28s
+     Running unittests src\lib.rs (target\debug\deps\rotor_canvas-2cd2ec8f33df86c1.exe)
+
+running 18 tests
+test crop::tests::tiny_sources_do_not_expand_beyond_the_png_to_meet_minimum ... ok
+test crop::tests::every_edge_combination_stays_inside_source_and_preserves_opposite_edges ... ok
+test document::tests::invalid_edits_do_not_change_history_or_revision ... ok
+test document::tests::arrows_have_a_single_tip_and_proportional_short_heads ... ok
+test document::tests::crop_and_annotation_undo_redo_preserve_order ... ok
+test document::tests::outlines_apply_the_shared_shape_rules ... ok
+test document::tests::viewport_mapping_round_trips_fractional_zoom ... ok
+test renderer::tests::resizing_transparency_does_not_bleed_hidden_blue_into_red ... ok
+test renderer::tests::source_over_alpha_is_correct_and_outside_pixels_are_untouched ... ok
+test renderer::tests::unchanged_pixels_and_hidden_rgb_survive_unscaled_export ... ok
+test renderer::tests::arrow_tip_has_no_round_protrusion_or_double_opacity ... ok
+test tests::crop_is_clipped_without_overflow_or_empty_export ... ok
+test renderer::redaction_tests::opaque_redaction_removes_source_pixels_after_crop_png_and_history ... ok
+test renderer::tests::vectors_are_rasterized_at_export_resolution ... ok
+test tests::reversed_drag_keeps_fractional_dpi_source_pixels_and_clips_edges ... ok
+test renderer::tests::system_text_renders_and_markup_is_literal ... ok
+test renderer::tests::text_requests_the_resolved_fallback_family_when_preferred_is_missing ... ok
+test renderer::tests::cropped_scaled_text_and_arrow_survive_png_export ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_common-ab1ea02c793bf7ca.exe)
+
+running 18 tests
+test ai_provider::tests::legacy_defaults_preserve_unknown_fields_and_explicit_empty_credentials ... ok
+test config::tests::get_all_fills_missing_values_from_defaults ... ok
+test config::tests::get_all_user_values_override_defaults ... ok
+test file_path::tests::data_directory_cannot_change_after_its_first_use ... ok
+test file_path::tests::explicit_data_directory_never_falls_back_to_real_profile ... ok
+test startup_flags::tests::only_known_flags_are_forwarded ... ok
+test native_app::tests::build_identity_matches_the_selected_namespace ... ok
+test i18n::tests::explicit_language_choices_override_the_system_locale ... ok
+test settings::tests::stored_values_map_to_typed_settings_with_documented_fallbacks ... ok
+test config::tests::corrupt_configuration_is_not_overwritten_on_load ... ok
+test resources::tests::installed_layout_and_explicit_override_do_not_depend_on_cwd ... ok
+test config::tests::failed_replace_keeps_memory_and_cleans_temporary_file ... ok
+test config::tests::successful_transaction_preserves_unknown_keys_and_reloads ... ok
+test resources::tests::source_fallback_follows_app_identity_including_release_builds ... ok
+test resources::tests::macos_app_bundle_uses_contents_resources ... ok
+test resources::tests::deployed_assets_and_explicit_overrides_precede_source_fallback ... ok
+test config::tests::scalar_types_are_readable_and_only_written_keys_change_type ... ok
+test persistence::tests::successful_replacement_sweeps_only_other_processes_temporaries ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\main.rs (target\debug\deps\rotor_desktop-a532568e23fbc602.exe)
+
+running 12 tests
+test cli::tests::data_directory_resolution_never_silently_uses_the_real_profile ... ok
+test cli::tests::elevated_relaunch_pins_roots_and_forwards_the_rest_once ... ok
+test cli::tests::values_require_a_real_operand ... ok
+test logging::tests::dropped_lines_are_reported_with_the_next_accepted_line ... ok
+test logging::tests::performance_logging_is_opt_in_and_target_limited ... ok
+test pins::tests::deferred_pin_handles_early_creation_and_preserves_pixels_on_failure ... ok
+test placement::tests::search_fits_small_screens ... ok
+test placement::tests::search_is_centered_horizontally_and_anchored_above_center ... ok
+test system::tests::distinct_window_requests_survive_a_single_wakeup ... ok
+test system::tests::exit_is_not_lost_when_activation_wakeups_are_coalesced ... ok
+test system::tests::rollback_invalidates_old_events_and_keeps_only_registered_old_actions ... ok
+test system::tests::shortcut_payloads_keep_generation_and_order ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\rotor-recovery.rs (target\debug\deps\rotor_recovery-e2a57af6c8d91643.exe)
+
+running 2 tests
+test windows::tests::child_fixture ... ok
+
+running 1 test
+
+running 1 test
+
+running 1 test
+test windows::tests::child_fixture ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 1 test
+test windows::tests::independent_monitor_detects_exit_and_hang_and_accepts_readiness ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.89s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_platform-590ba910ec736df6.exe)
+
+running 26 tests
+test clipboard::tests::copy_of_identical_text_requires_a_new_sequence ... ok
+test clipboard::tests::non_text_copies_are_detected_by_the_sequence_alone ... ok
+test clipboard::tests::pre_cancelled_capture_never_accesses_the_clipboard ... ok
+test cursor::tests::confinement_uses_physical_bounds_including_negative_origins ... ok
+test capture::windows_capture::tests::synthetic_dib_capture_is_top_down_opaque_owned_and_reuses_resources ... ok
+test desktop::windows::tests::installer_switches_remain_outside_quotes ... ok
+test desktop::tests::external_link_handler_rejects_non_web_schemes_before_launch ... ok
+test monitor::windows::tests::monitor_geometry_keeps_handle_identity_and_physical_pixels ... ok
+test overlay::resize_content_tests::resizing_preserves_the_opposite_corner_in_physical_pixels ... ok
+test selection::tests::released_modifiers_can_copy_immediately ... ok
+test selection::tests::timeout_or_unreadable_modifiers_prevent_copy ... ok
+test startup::tests::quotes_spaces_embedded_quotes_and_trailing_backslashes ... ok
+test sys_util::windows::tests::current_process_private_working_set_is_available ... ok
+test tray_menu::tests::native_colors_and_dpi_units_match_windows_formats ... ok
+test installer::tests::malformed_installers_never_reach_execution ... ok
+test sys_util::windows::tests::get_all_window_rect_returns_valid_rects ... ok
+test overlay::windows::repaint_tests::hidden_window_paint_is_serviced_synchronously_without_showing_it ... ok
+test tray_menu::tests::drawing_uses_cached_brush_and_restores_the_callers_dc ... ok
+test tray_menu::tests::rounded_frame_replaces_bright_edges_without_touching_content ... ok
+test overlay::windows::repaint_tests::fits_hidden_client_bounds_with_native_borders ... ok
+test single_instance::tests::another_launch_activates_primary_and_lock_is_released_on_drop ... ok
+test tray_menu::tests::owner_drawing_preserves_native_labels_ids_and_item_count ... ok
+test overlay::windows::repaint_tests::pin_taskbar_preserves_topmost_and_tracks_minimization ... ok
+test tray_menu::tests::popup_attaches_before_idle_and_prints_into_the_requested_dc ... ok
+test single_instance::tests::restart_waits_for_lock_release_without_activating_the_old_process ... ok
+test single_instance::tests::invalid_tokens_do_not_activate_and_idle_clients_do_not_block_exit ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_runtime-d021e038f06be90e.exe)
+
+running 45 tests
+test quick::tests::equivalent_enabled_shortcuts_conflict_after_normalization ... ok
+test quick::tests::disabled_actions_keep_unregistered_shortcuts_and_normalize_text ... ok
+test services::capture_worker::tests::prepared_windows_do_not_make_failed_or_changed_captures_ready ... ok
+test services::flight::tests::latest_tracks_only_the_newest_claim_and_invalidation_orphans_it ... ok
+test services::capture_worker::tests::preparation_overlaps_capture_and_superseded_results_are_not_published ... ok
+test services::flight::tests::single_flight_aborts_predecessors_and_respects_request_scoped_cancel ... ok
+test services::settings_queue_tests::invalid_shortcut_feedback_uses_the_current_language_and_a_visible_field_name ... ok
+test services::ai_test::tests::invalid_draft_reports_its_identity_without_saving_settings ... ok
+test services::chat::tests::chat_reports_configuration_errors_with_identity_without_saving ... ok
+test services::settings_queue_tests::automatic_shortcut_save_is_not_complete_until_the_ui_confirms_the_transaction ... ok
+test services::settings_queue_tests::accepted_automatic_values_survive_service_shutdown_without_a_view ... ok
+test services::tests::capture_uses_its_own_worker_when_background_capacity_is_saturated ... ok
+test services::tests::progress_relay_never_blocks_callbacks_and_stops_with_its_request ... ok
+test services::tests::ocr_queue_is_bounded_isolated_and_skips_cancelled_work ... ok
+test services::tests::shortcut_prepare_rejection_does_not_touch_disk ... ok
+test services::settings_queue_tests::explicit_save_separates_automatic_batches_in_submission_order ... ok
+test services::settings_queue_tests::rapid_fields_share_one_receipt_and_keep_latest_values ... ok
+test services::settings_queue_tests::local_shortcut_validation_is_atomic_and_allows_explicit_disabling ... ok
+test services::tests::shutdown_wakes_canvas_requests_waiting_for_capacity ... ok
+test shortcuts::tests::debounce_preserves_release_and_recovers_a_stale_press ... ok
+test services::settings_queue_tests::rejected_merge_cannot_change_already_accepted_values ... ok
+test shortcuts::tests::disk_failure_can_roll_back_a_successfully_staged_change ... ok
+test shortcuts::tests::failed_disk_rollback_tracks_an_extra_key_until_cleanup_succeeds ... ok
+test shortcuts::tests::failed_rollback_tracks_a_missing_key_so_the_next_save_can_restore_it ... ok
+test services::tests::failed_settings_write_requests_shortcut_rollback ... ok
+test shortcuts::tests::partial_registration_failure_restores_old_keys ... ok
+test shortcuts::tests::recording_exit_has_a_quiet_period_without_muting_ordinary_window_closes ... ok
+test shortcuts::scope_tests::production_bindings_do_not_add_the_development_settings_hotkey ... ok
+test services::settings_queue_tests::locked_config_rolls_back_an_automatic_batch_and_allows_retry_after_unlock ... ok
+test services::tests::confirmed_capture_is_cropped_and_persisted_before_shutdown ... ok
+test services::tests::shutdown_drains_accepted_configuration_writes_in_order ... ok
+test services::tests::minimized_pin_restore_preserves_ids_and_does_not_rewrite_records ... ok
+test services::tests::pin_store_recovers_after_a_persistence_panic ... ok
+test services::tests::shutdown_drains_accepted_pin_creation_without_an_event_consumer ... ok
+test services::tests::pre_cropped_capture_keeps_monitor_origin_and_request_identity ... ok
+test updates::tests::serial_operations_require_a_release_and_stop_after_shutdown ... ok
+test services::tests::exported_canvas_frame_keeps_its_viewport_size_and_pixels ... ok
+test services::translation_tests::http_failure_is_delivered_as_error_with_the_active_request_id ... ok
+test services::tests::translation_uses_isolated_configuration_and_keeps_request_identity ... ok
+test services::tests::pin_update_and_delete_follow_submission_order ... ok
+test services::tests::pin_export_failure_keeps_record_and_success_removes_it ... ok
+test services::settings_queue_tests::a_full_queue_can_still_replace_its_automatic_tail ... ok
+test services::tests::final_pin_snapshot_bypasses_full_command_and_event_queues ... ok
+test services::translation_tests::superseding_and_cancelling_http_requests_preserves_the_newest_identity ... ok
+test services::settings_queue_tests::unanswered_shortcut_preparation_times_out_and_still_writes_in_order ... ok
+
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.05s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_screenshot-89e82fb532d5e8e3.exe)
+
+running 23 tests
+test img_util::tests::cancelled_ocr_does_not_load_models ... ok
+test img_util::tests::cancelled_detection_stops_before_pixels_and_during_connected_components ... ok
+test img_util::tests::detection_rejects_empty_truncated_and_overflowing_buffers ... ok
+test img_util::tests::inserts_spaces_between_separate_ascii_words ... ok
+test img_util::tests::keeps_different_lines_separate ... ok
+test img_util::tests::keeps_large_horizontal_gaps_separate ... ok
+test img_util::tests::borrowed_bgra_canvas_matches_rgba_for_crop_scale_alpha_and_annotations ... ok
+test img_util::tests::merges_nearby_chinese_results_without_spaces ... ok
+test img_util::tests::resets_ocr_cache_after_mutex_poisoning ... ok
+test monitor::tests::cancelled_and_expired_jobs_do_not_wait_for_a_stalled_capture ... ok
+test pin_store::tests::full_monitor_png_uses_explicit_source_origin ... ok
+test session::tests::cancelled_or_superseded_native_capture_cannot_become_ready ... ok
+test session::tests::native_recovery_rejects_dpi_changes_and_duplicate_monitors ... ok
+test session::tests::native_selection_is_consumed_once_and_requires_a_captured_monitor ... ok
+test pin_store::tests::corrupt_metadata_is_not_overwritten ... ok
+test img_util::tests::detection_formats_have_identical_gray_and_rectangles ... ok
+test pin_store::tests::failed_metadata_write_removes_only_the_new_image ... ok
+test pin_store::tests::annotations_survive_shutdown_and_restore ... ok
+test pin_store::tests::cropped_png_uses_image_rect_as_source_origin ... ok
+test pin_store::tests::orphan_images_are_never_replaced_and_no_temporary_files_remain ... ok
+test pin_store::tests::minimized_pins_are_restored_and_their_records_are_left_alone ... ok
+test pin_store::tests::pins_round_trip_and_unknown_workspaces_survive ... ok
+test pin_store::tests::final_batch_does_not_resurrect_deleted_records ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_searcher-7fe6a7cf09178dd5.exe)
+
+running 69 tests
+test file_data::excluded_dirs::tests::home_directory_resolves_without_home_variable ... ok
+test file_data::excluded_dirs::tests::configured_paths_ignore_case_on_windows ... ok
+test file_data::excluded_dirs::tests::expands_home_with_windows_separators ... ok
+test file_data::excluded_dirs::tests::matches_name_components_anywhere_in_path ... ok
+test file_data::excluded_dirs::tests::parses_names_and_expands_home_paths ... ok
+test file_data::paging::tests::uneven_volumes_merge_all_pages_without_reordering_or_duplicates ... ok
+test file_data::tests::refresh_and_release_drop_cached_results_and_restart_query_paging ... ok
+test file_data::tests::refresh_distinguishes_partial_all_failed_and_ready ... ok
+test file_data::tests::repeated_query_batches_keep_the_original_request_identity ... ok
+test file_data::tests::state_change_callback_only_runs_for_new_states ... ok
+test file_data::tests::missing_or_panicked_volume_builds_never_report_released ... ok
+test file_data::paging::relevance_tests::real_backends_merge_relevance_across_tiers_and_page_sizes ... ok
+test file_data::volume::cache::tests::profiles_roots_and_exclusions_have_distinct_cache_paths ... ok
+test file_data::volume::default_file_map::tests::measure_default_index_release_commit ... ignored, manual process commit measurement; run alone with --ignored --exact --nocapture
+test file_data::tests::volume_sync_adds_removes_and_reuses_workers ... ok
+test file_data::volume::default_file_map::tests::directory_tree_intern_and_find_round_trip ... ok
+test file_data::tests::failed_volume_build_reports_partial_and_successful_retry_reports_released ... ok
+test file_data::volume::default_file_map::tests::search_matches_file_name_by_full_pinyin_and_initials ... ok
+test file_data::tests::unavailable_index_completes_accepted_query_without_loading_forever ... ok
+test file_data::volume::default_file_map::tests::subtree_removal_preserves_siblings ... ok
+test file_data::volume::default_file_map::tests::remove_and_clear_update_file_entries ... ok
+test file_data::volume::default_file_map::tests::stores_parent_path_once_for_siblings ... ok
+test file_data::volume::default_volume::event_tests::parent_events_cover_descendants_without_hiding_sibling_names ... ok
+test file_data::volume::default_volume::event_tests::stale_watcher_callbacks_do_not_request_rescan ... ok
+test file_data::volume::default_volume::event_tests::watcher_queue_is_bounded_and_overflow_requests_rescan ... ok
+test file_data::volume::ntfs_file_map::release_tests::measure_ntfs_index_release_commit ... ignored, manual process commit measurement; run alone with --ignored --exact --nocapture
+test file_data::volume::ntfs_file_map::release_tests::measure_ntfs_search_workload ... ignored, synthetic performance measurement; run alone in release mode
+test file_data::volume::ntfs_file_map::release_tests::cyclic_parent_links_terminate_path_resolution ... ok
+test file_data::volume::ntfs_volume::tests::accumulated_delete_reason_wins_over_creation ... ok
+test file_data::tests::disconnected_request_channel_terminates_instead_of_spinning ... ok
+test file_data::volume::ntfs_volume::tests::release_resets_paging_even_when_empty_and_keeps_volume_metadata ... ok
+test file_data::volume::ntfs_volume::tests::resume_requires_matching_journal_and_available_usn_range ... ok
+test file_data::volume::ntfs_volume::tests::volumes_without_a_journal_never_resume_from_snapshots ... ok
+test file_data::volume::search_match::tests::filename_and_display_alias_precede_pinyin_aliases ... ok
+test file_data::volume::search_match::tests::keeps_display_alias_for_translated_app_name ... ok
+test file_data::volume::search_match::tests::matches_full_pinyin_alias ... ok
+test file_data::volume::search_match::tests::matches_pinyin_alias_with_wildcard ... ok
+test file_data::volume::search_match::tests::matches_pinyin_initials_alias ... ok
+test file_data::volume::search_match::tests::wildcard_order_case_and_unicode_match_existing_semantics ... ok
+test file_data::volume::usn::tests::validates_lengths_versions_and_name_offsets ... ok
+test icons::tests::cache_bounds_pixels_and_reuses_positive_and_negative_results ... ok
+test icons::tests::slow_old_icon_does_not_block_new_query_or_publish_stale_pixels ... ok
+test latest::tests::newest_job_replaces_pending_work_and_drop_wakes_receiver ... ok
+test mailbox::tests::cancellation_registration_covers_dispatch_race_and_disconnect ... ok
+test mailbox::tests::close_cancels_build_and_removes_pending_search ... ok
+test mailbox::tests::rapid_input_retains_only_latest_query_and_preserves_controls ... ok
+test mailbox::tests::shutdown_is_accepted_even_when_control_queue_is_full ... ok
+test tests::ids_do_not_repeat_across_service_instances ... ok
+test tests::requests_fail_after_shutdown_or_receiver_disconnect ... ok
+test tests::status_reads_snapshot_without_waiting_for_busy_coordinator ... ok
+test file_data::volume::ntfs_volume::tests::persistence_of_empty_index_resets_paging_without_writing ... ok
+test file_data::volume::default_volume::event_tests::missing_volume_refresh_returns_identity_and_stays_failed ... ok
+test file_data::volume::ntfs_volume::tests::directory_creation_failure_releases_memory_and_reports_error ... ok
+test file_data::volume::cache::tests::interrupted_write_preserves_snapshot_and_removes_temporary_file ... ok
+test file_data::volume::default_volume::event_tests::empty_loaded_index_does_not_resurrect_old_snapshot_rows ... ok
+test file_data::volume::default_volume::event_tests::directory_events_reconcile_descendants_and_exclusion_boundaries ... ok
+test file_data::volume::default_file_map::tests::save_and_read_round_trips_directory_tree ... ok
+test file_data::volume::default_volume::event_tests::portable_backend_reloads_pages_and_cancels_without_retaining_index ... ok
+test file_data::volume::ntfs_file_map::release_tests::cancelled_load_preserves_existing_index ... ok
+test file_data::volume::default_file_map::tests::batched_removals_preserve_siblings_and_snapshots_drop_orphan_directories ... ok
+test file_data::volume::ntfs_volume::tests::release_checkpoints_latest_changes_and_cursor ... ok
+test file_data::volume::ntfs_volume::tests::persistence_success_releases_memory_and_can_reload ... ok
+test file_data::volume::default_volume::event_tests::requested_rescan_recovers_and_clears_the_flag ... ok
+test file_data::volume::ntfs_file_map::release_tests::corrupt_read_preserves_live_index_and_rename_replaces_old_rank ... ok
+test file_data::volume::default_file_map::tests::oversized_names_fail_to_save_instead_of_truncating ... ok
+test file_data::volume::ntfs_volume::tests::file_write_failure_releases_memory_and_allows_retry ... ok
+test file_data::volume::cache::tests::detects_corruption_and_every_truncation ... ok
+test file_data::volume::ntfs_file_map::release_tests::release_drops_capacity_preserves_usn_and_reloads_all_pages ... ok
+test file_data::volume::default_file_map::tests::release_drops_directory_capacity_and_reloads_all_pages ... ok
+
+test result: ok. 66 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_translator-f172f24b7bb5b917.exe)
+
+running 22 tests
+test engine::ai_tests::custom_endpoints_and_configuration_validation ... ok
+test engine::ai_tests::provider_requests_use_correct_protocol_and_endpoint ... ok
+test engine::stream::anthropic_tests::anthropic_rejects_truncation_refusal_and_errors ... ok
+test engine::ai_tests::chat_requests_preserve_turns_without_translation_instructions ... ok
+test engine::stream::tests::abnormal_finish_and_provider_error_are_not_success ... ok
+test engine::stream::tests::completed_stream_ignores_trailing_data_and_rejects_empty_output ... ok
+test engine::stream::tests::early_eof_never_publishes_a_successful_partial_translation ... ok
+test engine::tests::consumes_deepseek_stream_delta ... ok
+test engine::tests::urlencoding_encodes_non_ascii ... ok
+test engine::tests::errors_redact_raw_and_url_encoded_credentials ... ok
+test engine::tests::parse_custom_response_reads_known_fields ... ok
+test engine::stream::tests::every_utf8_chunk_boundary_preserves_exactly_once_deltas ... ok
+test engine::tests::resolve_target_lang_auto_detects_cjk ... ok
+test engine::tests::resolve_target_lang_prefers_configured_value ... ok
+test engine::tests::error_details_are_bounded_without_splitting_unicode ... ok
+test engine::tests::parse_custom_response_falls_back_to_plain_text ... ok
+test engine::tests::parse_ai_error_reads_api_message ... ok
+test engine::tests::recognizes_deepseek_stream_end ... ok
+test engine::stream::anthropic_tests::anthropic_handles_fragmented_utf8_and_requires_completion ... ok
+test engine::stream::tests::oversized_events_and_outputs_fail_before_growth_or_callback ... ok
+test engine::tests::bounded_body_checks_declared_and_chunked_sizes_and_utf8_boundaries ... ok
+test engine::ai_tests::ai_http_roundtrip_uses_provider_auth_and_streaming ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_ui-e4f724d11b787cc0.exe)
+
+running 67 tests
+test capture::tests::auto_window_bounds_are_clipped_in_negative_desktop_coordinates ... ok
+test capture::tests::bgra_capture_moves_into_render_storage_and_converts_only_on_demand ... ok
+test capture::tests::capture_crop_preserves_rows_and_rejects_invalid_bounds ... ok
+test capture::tests::image_contours_can_refine_the_frontmost_window ... ok
+test capture::tests::inspector_stays_on_screen_and_away_from_edge_pixels ... ok
+test capture::tests::malformed_capture_buffers_are_rejected ... ok
+test capture::tests::native_upload_is_straight_bgra_without_mutating_export_pixels ... ok
+test capture::tests::owned_pin_reuses_pixels_and_shared_pin_does_not_retain_rgba ... ok
+test capture::tests::selection_and_preparation_cancel_without_changing_shared_pixels ... ok
+test pin::annotation::tests::arrow_overlay_is_one_filled_shape_without_a_tip_cap ... ok
+test pin::annotation::tests::committed_marks_are_ready_and_export_snapshots_survive_undo ... ok
+test pin::annotation::tests::redo_only_claims_editing_chords ... ok
+test pin::annotation::tests::export_composes_marks_at_crop_resolution_without_a_display_frame ... ok
+test pin::annotation::tests::text_editor_stays_inside_small_and_edge_viewports ... ok
+test pin::annotation::tests::undo_only_claims_the_plain_editing_chord ... ok
+test capture::tests::drag_releases_cursor_even_when_no_selection_is_created ... ok
+test pin::crop::tests::native_crop_resize_syncs_viewport_after_releasing_view_borrow ... ok
+test pin::menu::tests::full_menu_excludes_annotation_and_ocr_but_overflow_keeps_them ... ok
+test pin::menu::tests::narrowing_hides_a_prefix_and_reserves_the_more_button ... ok
+test pin::ocr::tests::loading_covers_render_and_recognition_and_clears_after_completion ... ok
+test capture::tests::thin_drags_keep_their_rectangle_and_degenerate_ones_fall_back ... ok
+test pin::ocr::tests::positions_map_to_multiline_textbox_utf8_offsets ... ok
+test pin::creation_tests::created_pin_persists_the_placement_accepted_while_pending ... ok
+test pin::ocr::tests::stale_request_or_changed_image_cannot_restore_ocr_mode ... ok
+test pin::ocr::tests::hidden_readonly_textbox_handles_copy_and_select_all ... ok
+test pin::creation_tests::pending_pin_renders_and_failed_creation_keeps_exportable_pixels ... ok
+test pin::shortcut_tests::canonical_recorded_key_names_work_for_local_shortcuts ... ok
+test pin::crop::tests::crop_drag_coalesces_frames_and_flushes_or_discards_pending_updates ... ok
+test pin::annotation::tests::text_confirmation_and_tool_switch_do_not_wait_for_rendering ... ok
+test pin::toolbar::tests::slide_moves_measured_content_and_does_not_paint_when_hidden ... ok
+test search_results::tests::accepted_results_keep_batch_rows_and_reject_stale_batches ... ok
+test search_results::tests::icon_generation_survives_paging_and_rejects_repeated_query_replacements ... ok
+test search_results::tests::late_identical_query_cannot_replace_newer_results ... ok
+test search_results::tests::pages_are_bounded_and_remain_visible_until_the_new_query_arrives ... ok
+test searcher::tests::empty_search_collapses_and_results_grow_to_seven_rows ... ok
+test searcher::tests::labels_prefer_aliases_but_classify_by_original_extension ... ok
+test pin::mode_tests::interaction_modes_are_exclusive_and_transitions_end_the_previous_one ... ok
+test pin::menu::tests::native_menu_actions_reach_the_pin_and_recheck_availability ... ok
+test settings::action_change::tests::clean_list_changes_only_the_selected_saved_action ... ok
+test settings::action_change::tests::list_actions_never_commit_another_unsaved_command ... ok
+test settings::action_change::tests::open_editors_new_drafts_and_missing_ids_cannot_trigger_an_implicit_save ... ok
+test settings::actions::tests::recording_distinguishes_local_keys_from_global_chords ... ok
+test settings::autosave::tests::a_rejected_explicit_value_is_not_hidden_by_an_older_automatic_success ... ok
+test settings::appearance::tests::navigation_buttons_render_without_conflicting_hover_styles ... ok
+test settings::autosave::tests::close_waits_for_receipts_and_a_failure_requires_retry_or_explicit_discard ... ok
+test searcher::tests::failed_open_keeps_the_window_and_shows_the_error ... ok
+test settings::autosave::tests::composition_is_not_saved_but_unmarking_the_same_text_is_observed ... ok
+test settings::autosave::tests::normalized_receipt_does_not_generate_another_save ... ok
+test settings::autosave::tests::old_success_cannot_erase_a_rejected_newer_edit_or_retry_it_forever ... ok
+test searcher::tests::timing_paint_waits_for_the_current_request ... ok
+test settings::autosave::tests::shared_batch_receipt_only_finishes_fields_without_newer_submissions ... ok
+test settings::autosave::tests::shortcut_text_waits_for_a_complete_chord ... ok
+test pin::ocr::tests::image_mouse_drag_selects_hidden_textbox ... ok
+test settings::autosave::tests::successful_text_save_does_not_hide_a_failed_choice_transaction ... ok
+test settings::closing::tests::application_quit_is_never_downgraded_by_a_later_window_close ... ok
+test searcher::chat::tests::keyboard_modes_empty_results_and_stale_replies ... ok
+test settings::logo::tests::downsampling_preserves_edge_color_without_transparent_rgb_bleed ... ok
+test settings::logo::tests::glow_follows_outer_and_cutout_edges ... ok
+test settings::motion::tests::reduced_motion_snaps_and_stops ... ok
+test settings::motion::tests::refresh_rotates_once_then_stops ... ok
+test settings::motion::tests::reversal_starts_at_current_value_and_settles ... ok
+test translator::tests::failures_keep_partial_text_and_begin_input_resets ... ok
+test translator::tests::streamed_text_accumulates_only_for_the_active_request ... ok
+test settings::actions::tests::action_edits_autosave_without_replacing_the_editor ... ok
+test settings::logo::tests::cache_tracks_physical_size_and_reuses_unchanged_images ... ok
+test settings::updates::tests::update_dialog_tracks_events_without_growing_the_settings_row ... ok
+test settings::tests::settings_pages_render_with_windows_main_thread_stack ... ok
+
+test result: ok. 67 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running unittests src\lib.rs (target\debug\deps\rotor_updater-7dbed412c93a8c77.exe)
+
+running 14 tests
+test macos::tests::restart_arguments_cannot_invoke_another_helper ... ok
+test tests::missing_platform_insecure_urls_and_bad_signatures_fail_closed ... ok
+test bundle::tests::archive_links_are_rejected_before_following_them ... ok
+test tests::invalid_downloads_do_not_create_staging_directories ... ok
+test macos::tests::receipts_are_bounded_and_report_only_their_error_field ... ok
+test bundle::tests::archive_traversal_and_duplicate_files_are_rejected ... ok
+test macos::tests::helper_rejects_bad_jobs_before_touching_any_bundle ... ok
+test tests::signed_stream_rejects_tampering ... ok
+test bundle::tests::preview_version_is_distinct_from_numeric_apple_bundle_version ... ok
+test bundle::tests::production_bundle_uses_the_native_executable_name ... ok
+test bundle::tests::ordinary_bundle_archive_extracts_with_its_identity ... ok
+test tests::transport_failures_preserve_previous_download_and_retry_cleanly ... ok
+test bundle::tests::launch_failure_restores_old_bundle_without_deleting_the_new_one ... ok
+test bundle::tests::successful_replacement_retains_backup_and_rejects_downgrades ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running unittests src\main.rs (target\debug\deps\xtask-239903619e295aa6.exe)
+
+running 9 tests
+test release::tests::update_metadata_matches_runtime_endpoint ... ok
+test versions::tests::version_edit_preserves_workspace_settings_without_a_frontend_manifest ... ok
+test tests::missing_workspace_version_is_an_error_not_a_panic ... ok
+test builder::tests::staged_identity_cannot_be_relabelled_as_the_other_flavor ... ok
+test installer::tests::uninstall_only_names_packaged_files_and_escapes_nsis_variables ... ok
+test tests::manifests_detect_modified_missing_and_extra_resources ... ok
+test release::tests::manifest_requires_both_signed_platforms_and_preserves_notes ... ok
+test builder::tests::source_receipts_reject_stale_snapshot_inputs ... ok
+test release::tests::encrypted_signing_keys_produce_native_signatures ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.14s
+
+   Doc-tests rotor_canvas
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_common
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_platform
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_runtime
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_screenshot
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_searcher
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_translator
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_ui
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rotor_updater
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

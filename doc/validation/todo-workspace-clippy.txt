@@ -1,0 +1,13 @@
+    Blocking waiting for file lock on package cache
+    Checking rotor-common v3.0.2 (D:\Project\rotor\crates\rotor-common)
+    Checking rotor-canvas v3.0.2 (D:\Project\rotor\crates\rotor-canvas)
+    Checking rotor-platform v3.0.2 (D:\Project\rotor\crates\rotor-platform)
+    Checking rotor-updater v3.0.2 (D:\Project\rotor\crates\rotor-updater)
+    Checking rotor-translator v3.0.2 (D:\Project\rotor\crates\rotor-translator)
+    Checking xtask v3.0.2 (D:\Project\rotor\xtask)
+    Checking rotor-screenshot v3.0.2 (D:\Project\rotor\crates\rotor-screenshot)
+    Checking rotor-searcher v3.0.2 (D:\Project\rotor\crates\rotor-searcher)
+    Checking rotor-runtime v3.0.2 (D:\Project\rotor\crates\rotor-runtime)
+    Checking rotor-ui v3.0.2 (D:\Project\rotor\crates\rotor-ui)
+    Checking rotor-desktop v3.0.2 (D:\Project\rotor\crates\rotor-desktop)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 14.59s

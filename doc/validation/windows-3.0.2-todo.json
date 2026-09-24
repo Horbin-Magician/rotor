@@ -1,0 +1,75 @@
+{
+  "date": "2026-09-24",
+  "version": "3.0.2",
+  "source_commit": "5f3c6b84e7a2432bc45c18593460228a59f5b3c7",
+  "product": "Rotor",
+  "production_identifier": "rotor",
+  "production_profile": ".rotor",
+  "validation_identity": "development and synthetic test executables; no production package built",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "cpu": "Intel Core Ultra 7 265K (20 logical processors)",
+  "toolchain": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "benchmark": {
+    "executable": "rotor_searcher-cf6a8206bc3ee5bf.exe",
+    "sha256": "2b83d5cacaeac35d1950ec51c903b0668427a4988c4a9a91dc6ce13e47d50e92",
+    "build_profile": "test (unoptimized + debuginfo)",
+    "raw_samples": "todo-search-benchmark.txt",
+    "entries": 250001,
+    "samples_per_query": 30,
+    "end_to_end": false
+  },
+  "checks": [
+    {
+      "command": "cargo test --workspace --locked",
+      "status": "passed",
+      "source_commit": "61bc6d8c0e2f7026ec32a1661fe85b4a95f0bd55",
+      "output": "todo-workspace-tests.txt"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "status": "passed",
+      "source_commit": "61bc6d8c0e2f7026ec32a1661fe85b4a95f0bd55",
+      "output": "todo-workspace-clippy.txt"
+    },
+    {
+      "command": "cargo test -p rotor-searcher --locked",
+      "status": "passed",
+      "source_commit": "5f3c6b84e7a2432bc45c18593460228a59f5b3c7",
+      "passed": 67,
+      "ignored": 3,
+      "output": "todo-search-tests.txt"
+    },
+    {
+      "command": "cargo clippy -p rotor-searcher --all-targets --locked -- -D warnings",
+      "status": "passed",
+      "source_commit": "5f3c6b84e7a2432bc45c18593460228a59f5b3c7"
+    },
+    {
+      "command": "cargo check --workspace --locked",
+      "status": "passed",
+      "source_commit": "5f3c6b84e7a2432bc45c18593460228a59f5b3c7"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "passed",
+      "source_commit": "5f3c6b84e7a2432bc45c18593460228a59f5b3c7"
+    },
+    {
+      "command": "./.github/scripts/check-core-dependencies.ps1",
+      "status": "passed",
+      "target": "x86_64-pc-windows-msvc",
+      "source_commit": "61bc6d8c0e2f7026ec32a1661fe85b4a95f0bd55"
+    }
+  ],
+  "not_executed": [
+    "native GUI / IME / hotkeys",
+    "actual installation and UAC",
+    "native 3.x installed update failure recovery",
+    "multi-monitor and mixed DPI",
+    "macOS build, runtime, permissions and persistent event continuity",
+    "production signing and notarization",
+    "real interactive end-to-end performance",
+    "release benchmark and index-enabled resource measurement"
+  ],
+  "ci": "searcher and canvas tests added to native-candidate.yml; hosted workflow not executed"
+}

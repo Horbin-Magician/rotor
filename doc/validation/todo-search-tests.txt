@@ -1,0 +1,84 @@
+   Compiling rotor-searcher v3.0.2 (D:\Project\rotor\crates\rotor-searcher)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.25s
+     Running unittests src\lib.rs (target\debug\deps\rotor_searcher-cf6a8206bc3ee5bf.exe)
+
+running 70 tests
+test file_data::excluded_dirs::tests::configured_paths_ignore_case_on_windows ... ok
+test file_data::excluded_dirs::tests::home_directory_resolves_without_home_variable ... ok
+test file_data::excluded_dirs::tests::expands_home_with_windows_separators ... ok
+test file_data::excluded_dirs::tests::matches_name_components_anywhere_in_path ... ok
+test file_data::excluded_dirs::tests::parses_names_and_expands_home_paths ... ok
+test file_data::paging::tests::uneven_volumes_merge_all_pages_without_reordering_or_duplicates ... ok
+test file_data::tests::refresh_distinguishes_partial_all_failed_and_ready ... ok
+test file_data::tests::refresh_and_release_drop_cached_results_and_restart_query_paging ... ok
+test file_data::tests::missing_or_panicked_volume_builds_never_report_released ... ok
+test file_data::tests::state_change_callback_only_runs_for_new_states ... ok
+test file_data::tests::repeated_query_batches_keep_the_original_request_identity ... ok
+test file_data::tests::failed_volume_build_reports_partial_and_successful_retry_reports_released ... ok
+test file_data::paging::relevance_tests::real_backends_merge_relevance_across_tiers_and_page_sizes ... ok
+test file_data::tests::unavailable_index_completes_accepted_query_without_loading_forever ... ok
+test file_data::volume::cache::tests::profiles_roots_and_exclusions_have_distinct_cache_paths ... ok
+test file_data::tests::volume_sync_adds_removes_and_reuses_workers ... ok
+test file_data::volume::default_file_map::tests::measure_default_index_release_commit ... ignored, manual process commit measurement; run alone with --ignored --exact --nocapture
+test file_data::volume::default_file_map::tests::directory_tree_intern_and_find_round_trip ... ok
+test file_data::volume::default_file_map::tests::remove_and_clear_update_file_entries ... ok
+test file_data::volume::default_file_map::tests::search_matches_file_name_by_full_pinyin_and_initials ... ok
+test file_data::volume::default_file_map::tests::stores_parent_path_once_for_siblings ... ok
+test file_data::volume::default_file_map::tests::subtree_removal_preserves_siblings ... ok
+test file_data::volume::default_volume::event_tests::parent_events_cover_descendants_without_hiding_sibling_names ... ok
+test file_data::volume::default_volume::event_tests::stale_watcher_callbacks_do_not_request_rescan ... ok
+test file_data::volume::default_volume::event_tests::watcher_queue_is_bounded_and_overflow_requests_rescan ... ok
+test file_data::volume::ntfs_file_map::release_tests::measure_ntfs_index_release_commit ... ignored, manual process commit measurement; run alone with --ignored --exact --nocapture
+test file_data::volume::ntfs_file_map::release_tests::measure_ntfs_search_workload ... ignored, synthetic performance measurement; run alone in release mode
+test file_data::volume::ntfs_file_map::release_tests::cyclic_parent_links_terminate_path_resolution ... ok
+test file_data::volume::ntfs_volume::tests::accumulated_delete_reason_wins_over_creation ... ok
+test file_data::tests::disconnected_request_channel_terminates_instead_of_spinning ... ok
+test file_data::volume::ntfs_volume::tests::release_resets_paging_even_when_empty_and_keeps_volume_metadata ... ok
+test file_data::volume::ntfs_volume::tests::resume_requires_matching_journal_and_available_usn_range ... ok
+test file_data::volume::ntfs_volume::tests::volumes_without_a_journal_never_resume_from_snapshots ... ok
+test file_data::volume::search_match::tests::filename_and_display_alias_precede_pinyin_aliases ... ok
+test file_data::volume::search_match::tests::keeps_display_alias_for_translated_app_name ... ok
+test file_data::volume::search_match::tests::matches_full_pinyin_alias ... ok
+test file_data::volume::search_match::tests::matches_pinyin_alias_with_wildcard ... ok
+test file_data::volume::search_match::tests::matches_pinyin_initials_alias ... ok
+test file_data::volume::search_match::tests::name_index_preserves_duplicates_and_only_skips_impossible_tiers ... ok
+test file_data::volume::search_match::tests::wildcard_order_case_and_unicode_match_existing_semantics ... ok
+test file_data::volume::usn::tests::validates_lengths_versions_and_name_offsets ... ok
+test icons::tests::cache_bounds_pixels_and_reuses_positive_and_negative_results ... ok
+test icons::tests::slow_old_icon_does_not_block_new_query_or_publish_stale_pixels ... ok
+test latest::tests::newest_job_replaces_pending_work_and_drop_wakes_receiver ... ok
+test mailbox::tests::cancellation_registration_covers_dispatch_race_and_disconnect ... ok
+test mailbox::tests::close_cancels_build_and_removes_pending_search ... ok
+test mailbox::tests::rapid_input_retains_only_latest_query_and_preserves_controls ... ok
+test mailbox::tests::shutdown_is_accepted_even_when_control_queue_is_full ... ok
+test tests::ids_do_not_repeat_across_service_instances ... ok
+test tests::requests_fail_after_shutdown_or_receiver_disconnect ... ok
+test tests::status_reads_snapshot_without_waiting_for_busy_coordinator ... ok
+test file_data::volume::ntfs_volume::tests::persistence_of_empty_index_resets_paging_without_writing ... ok
+test file_data::volume::default_volume::event_tests::missing_volume_refresh_returns_identity_and_stays_failed ... ok
+test file_data::volume::ntfs_volume::tests::directory_creation_failure_releases_memory_and_reports_error ... ok
+test file_data::volume::cache::tests::interrupted_write_preserves_snapshot_and_removes_temporary_file ... ok
+test file_data::volume::default_volume::event_tests::directory_events_reconcile_descendants_and_exclusion_boundaries ... ok
+test file_data::volume::default_volume::event_tests::empty_loaded_index_does_not_resurrect_old_snapshot_rows ... ok
+test file_data::volume::default_volume::event_tests::portable_backend_reloads_pages_and_cancels_without_retaining_index ... ok
+test file_data::volume::default_file_map::tests::save_and_read_round_trips_directory_tree ... ok
+test file_data::volume::ntfs_file_map::release_tests::cancelled_load_preserves_existing_index ... ok
+test file_data::volume::default_file_map::tests::batched_removals_preserve_siblings_and_snapshots_drop_orphan_directories ... ok
+test file_data::volume::default_volume::event_tests::requested_rescan_recovers_and_clears_the_flag ... ok
+test file_data::volume::ntfs_volume::tests::persistence_success_releases_memory_and_can_reload ... ok
+test file_data::volume::ntfs_volume::tests::release_checkpoints_latest_changes_and_cursor ... ok
+test file_data::volume::ntfs_file_map::release_tests::corrupt_read_preserves_live_index_and_rename_replaces_old_rank ... ok
+test file_data::volume::default_file_map::tests::oversized_names_fail_to_save_instead_of_truncating ... ok
+test file_data::volume::ntfs_volume::tests::file_write_failure_releases_memory_and_allows_retry ... ok
+test file_data::volume::cache::tests::detects_corruption_and_every_truncation ... ok
+test file_data::volume::ntfs_file_map::release_tests::release_drops_capacity_preserves_usn_and_reloads_all_pages ... ok
+test file_data::volume::default_file_map::tests::release_drops_directory_capacity_and_reloads_all_pages ... ok
+
+test result: ok. 67 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+   Doc-tests rotor_searcher
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
