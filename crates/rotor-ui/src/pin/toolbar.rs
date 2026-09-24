@@ -11,6 +11,7 @@ use gpui_kit::{
 pub(super) enum Glyph {
     Back,
     Rectangle,
+    Redaction,
     Arrow,
     Text,
     Undo,
@@ -68,6 +69,7 @@ pub(super) fn button(id: &'static str, glyph: Glyph, cx: &App) -> Button {
             Icon::new(match glyph {
                 Glyph::Back => IconName::ChevronLeft,
                 Glyph::Rectangle => IconName::Square,
+                Glyph::Redaction => IconName::Square,
                 Glyph::Arrow => IconName::MoveUpRight,
                 Glyph::Text => IconName::Type,
                 Glyph::Undo => IconName::Undo2,

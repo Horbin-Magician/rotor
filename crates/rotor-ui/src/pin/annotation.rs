@@ -9,6 +9,7 @@ use rotor_canvas::{
 pub(super) enum Tool {
     Pen,
     Rectangle,
+    Redaction,
     Arrow,
     Text,
 }
@@ -369,6 +370,10 @@ impl PinView {
                 points: vec![origin],
                 style,
             },
+            Tool::Redaction => Annotation::Redaction {
+                start: origin,
+                end: origin,
+            },
             Tool::Rectangle => Annotation::Rectangle {
                 start: origin,
                 end: origin,
@@ -429,7 +434,9 @@ impl PinView {
                 }
             }
             Some(Draft::Stroke(
-                Annotation::Rectangle { end, .. } | Annotation::Arrow { end, .. },
+                Annotation::Rectangle { end, .. }
+                | Annotation::Arrow { end, .. }
+                | Annotation::Redaction { end, .. },
             )) => *end = point,
             _ => return,
         }
@@ -449,7 +456,7 @@ impl PinView {
         };
         window.release_pointer();
         self.release_native_pointer(window);
-        if matches!(&annotation, Annotation::Rectangle { start, end, .. } if start.x == end.x || start.y == end.y)
+        if matches!(&annotation, Annotation::Rectangle { start, end, .. } | Annotation::Redaction { start, end } if start.x == end.x || start.y == end.y)
             || matches!(&annotation, Annotation::Arrow { start, end, .. } if start == end)
         {
             cx.notify();
@@ -578,6 +585,13 @@ impl PinView {
                         toolbar::Glyph::Rectangle,
                         "矩形",
                         "Rectangle",
+                    ),
+                    (
+                        "canvas-redaction",
+                        Tool::Redaction,
+                        toolbar::Glyph::Redaction,
+                        "实心遮挡",
+                        "Opaque redaction",
                     ),
                     (
                         "canvas-arrow",

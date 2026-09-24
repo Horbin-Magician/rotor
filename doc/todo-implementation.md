@@ -39,3 +39,10 @@ macOS 安装、权限、持久事件连续性与多屏实机验收没有执行�
 
 增加工具栏重做、Ctrl+Y、Ctrl/Cmd+Shift+Z；仅在标注模式接管快捷键，文本输入和 IME 优先，绘制草稿及裁剪过程中不执行历史操作。裁剪窗口调整失败时反向恢复文档，继续使用现有持久化入口。
 `cargo test -p rotor-ui --locked pin::annotation::tests`：7 passed；`cargo test -p rotor-canvas --locked`：17 passed。覆盖撤销后重做、再次编辑清空重做栈及记录恢复；GPUI 模拟不是原生 GUI 验收。
+
+## 实心遮挡
+
+工具栏新增不透明黑色遮挡，向外覆盖完整源像素；预览和导出共用填充几何，不提供透明度设置。
+`cargo test -p rotor-canvas`：18 passed；UI 标注测试：7 passed。
+像素回归逐点验证目标区域 RGBA 为 `[0,0,0,255]`，区域外保留原像素，覆盖反向小数坐标、裁剪、PNG 编码解码、序列化及撤销重做。
+仍需原生显示缩放视觉验收。马赛克、序号及已提交标注编辑不随该步骤标为完成。

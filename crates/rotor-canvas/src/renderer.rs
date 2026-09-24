@@ -577,3 +577,71 @@ mod tests {
         assert!(renderer.render(&image, &scene, scene.size).is_ok());
     }
 }
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+    use crate::{Document, ImagePoint};
+
+    #[test]
+    fn opaque_redaction_removes_source_pixels_after_crop_png_and_history() {
+        let source = RgbaImage::from_fn(12, 10, |x, y| Rgba([x as u8 * 20, y as u8 * 20, 77, 128]));
+        let mut doc = Document::new(
+            ImageSize {
+                width: 12,
+                height: 10,
+            },
+            ImageRect {
+                x: 1,
+                y: 1,
+                width: 10,
+                height: 8,
+            },
+        )
+        .unwrap();
+        let mark = Annotation::Redaction {
+            start: ImagePoint { x: 8.2, y: 7.1 },
+            end: ImagePoint { x: 2.9, y: 2.2 },
+        };
+        // The persisted enum round trip must retain the same geometry.
+        let saved = serde_json::to_string(&mark).unwrap();
+        doc.add(serde_json::from_str(&saved).unwrap()).unwrap();
+        let render = |doc: &Document| {
+            Renderer::without_fonts()
+                .render(
+                    &source,
+                    doc.scene(),
+                    ImageSize {
+                        width: 10,
+                        height: 8,
+                    },
+                )
+                .unwrap()
+        };
+        let rendered = render(&doc);
+        for y in 0..8 {
+            for x in 0..10 {
+                let expected = if (1..8).contains(&x) && (1..7).contains(&y) {
+                    Rgba([0, 0, 0, 255])
+                } else {
+                    *source.get_pixel(x + 1, y + 1)
+                };
+                assert_eq!(*rendered.get_pixel(x, y), expected, "{x},{y}");
+            }
+        }
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        rendered
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        assert_eq!(
+            image::load_from_memory(encoded.get_ref())
+                .unwrap()
+                .to_rgba8(),
+            rendered
+        );
+        assert!(doc.undo());
+        assert_ne!(render(&doc), rendered);
+        assert!(doc.redo());
+        assert_eq!(render(&doc), rendered);
+    }
+}

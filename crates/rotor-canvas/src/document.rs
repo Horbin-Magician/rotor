@@ -23,6 +23,9 @@ pub struct StrokeStyle {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub enum Annotation {
+    /// Opaque black coverage, expanded to whole source pixels. Unlike a stroke
+    /// this deliberately has no alpha or width control.
+    Redaction { start: ImagePoint, end: ImagePoint },
     Pen {
         points: Vec<ImagePoint>,
         style: StrokeStyle,
@@ -56,6 +59,9 @@ impl Annotation {
         let stroke =
             |style: &StrokeStyle| style.width.is_finite() && (0.01..=1024.).contains(&style.width);
         let valid = match self {
+            Self::Redaction { start, end } => {
+                point(start) && point(end) && start.x != end.x && start.y != end.y
+            }
             Self::Pen { points, style } => {
                 !points.is_empty()
                     && points.len() <= 65536
@@ -115,6 +121,22 @@ impl Annotation {
     /// `None` for text, which is laid out by a text system rather than traced.
     pub fn outline(&self) -> Option<(Outline, Color)> {
         match self {
+            Self::Redaction { start, end } => {
+                let (left, right) = (start.x.min(end.x).floor(), start.x.max(end.x).ceil());
+                let (top, bottom) = (start.y.min(end.y).floor(), start.y.max(end.y).ceil());
+                Some((
+                    Outline::Fill(vec![
+                        ImagePoint { x: left, y: top },
+                        ImagePoint { x: right, y: top },
+                        ImagePoint {
+                            x: right,
+                            y: bottom,
+                        },
+                        ImagePoint { x: left, y: bottom },
+                    ]),
+                    Color([0, 0, 0, 255]),
+                ))
+            }
             Self::Pen { points, style } => {
                 let first = *points.first()?;
                 let outline = if points.iter().all(|point| *point == first) {
