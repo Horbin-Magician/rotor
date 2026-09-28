@@ -57,6 +57,14 @@ flate2 = "=1.1.9"
 windows = "0.61.3"
 winreg = "=0.55.0"
 
+# Long capture matches every sampled frame; unoptimized pixel loops make the
+# sampling interval long enough to lose the overlap in development builds.
+[profile.dev.package.rotor-screenshot]
+opt-level = 3
+
+[profile.dev.package.image]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

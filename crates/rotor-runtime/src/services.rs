@@ -36,7 +36,9 @@ mod ai_test;
 mod chat;
 pub use rotor_translator::engine::ChatMessage;
 mod capture_worker;
+mod long_capture;
 use capture_worker::{CaptureRequest, CaptureWorker};
+pub use long_capture::{LongCaptureControl, LongCaptureEvent, LongCaptureStatus};
 mod flight;
 use flight::{Latest, SingleFlight};
 
@@ -63,6 +65,10 @@ pub struct CaptureBundle {
 }
 
 pub enum RuntimeEvent {
+    LongCapture {
+        id: OperationId,
+        event: LongCaptureEvent,
+    },
     Chat {
         id: OperationId,
         event: TranslateStreamEvent,
@@ -754,6 +760,24 @@ impl Services {
 
     pub fn capture(&self) -> Result<OperationId, String> {
         self.capture_after_overlay_change(true, std::time::Instant::now())
+    }
+
+    pub fn start_long_capture(
+        &self,
+        id: OperationId,
+        monitor: MonitorConfig,
+        rect: rotor_canvas::ImageRect,
+        first: Arc<RgbaImage>,
+    ) -> Result<LongCaptureControl, String> {
+        self.ensure_running()?;
+        long_capture::start(
+            id,
+            monitor,
+            rect,
+            first,
+            self.capture_id.clone(),
+            self.events.clone(),
+        )
     }
 
     pub fn capture_after_overlay_change(

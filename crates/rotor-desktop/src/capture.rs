@@ -10,6 +10,8 @@ use std::{
     sync::Arc,
     time::Instant,
 };
+mod long;
+pub use long::{finish_requested as finish_long_capture, handle_event as long_capture_event};
 
 #[derive(Default)]
 pub struct CaptureState {
@@ -24,6 +26,7 @@ pub struct CaptureState {
     shown: HashSet<u32>,
     #[cfg(target_os = "windows")]
     cursor_confinement: Option<(u64, u32, rotor_platform::cursor::CursorConfinement)>,
+    long: Option<long::LongCapture>,
 }
 pub fn report(error: String, cx: &mut App) {
     log::warn!("Capture: {error}");
@@ -200,6 +203,7 @@ fn fit_mask(
 }
 
 pub fn stop(cx: &mut App) {
+    long::stop(cx);
     let state = cx.global_mut::<ShellState>();
     #[cfg(target_os = "windows")]
     {
@@ -556,6 +560,7 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
             session,
             monitor,
             rect,
+            long,
         } => {
             if cx.global::<ShellState>().capture.selecting.is_some() {
                 return;
@@ -589,6 +594,26 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
                 mask_label: format!("ssmask-{monitor}"),
                 minimized: false,
             };
+            if long {
+                if let Err(error) = long::begin(session, frame, rect, config, window, cx) {
+                    let view = cx
+                        .global::<ShellState>()
+                        .windows
+                        .get(&WindowRole::Mask { session, monitor })
+                        .and_then(|slot| {
+                            if let WindowView::Mask(view) = &slot.view {
+                                Some(view.clone())
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(view) = view {
+                        let _ = view.update(cx, |view, cx| view.set_error(error.clone(), cx));
+                    }
+                    report(error, cx);
+                }
+                return;
+            }
             mark(session, "selection_submitted", cx);
             let cancellation = rotor_runtime::Cancellation::default();
             let cancelled = cancellation.flag();

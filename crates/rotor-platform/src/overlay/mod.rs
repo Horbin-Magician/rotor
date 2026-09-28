@@ -139,6 +139,105 @@ pub fn fit_client_bounds(
     native::fit_client_bounds(handle, x, y, width, height)
 }
 
+/// Physical-pixel screen rectangle: left, top, width, height.
+pub type ScreenRect = (i32, i32, u32, u32);
+
+// Rotor's capture accent (0x4ba3e3).
+const FRAME_COLOR: (u8, u8, u8) = (0x4b, 0xa3, 0xe3);
+
+/// A click-through outline drawn just outside a screen region while it is
+/// captured repeatedly. The outline never covers the region's own pixels, so
+/// it neither enters the capture nor intercepts input to the page beneath.
+/// Create and drop it on the UI thread; dropping it removes the outline.
+pub struct SelectionFrame(#[allow(dead_code)] native::SelectionFrame);
+
+impl SelectionFrame {
+    /// `region` and `display` are physical pixels; sides that would fall
+    /// outside `display` are omitted rather than drawn on a neighboring display.
+    pub fn show(
+        region: ScreenRect,
+        display: ScreenRect,
+        thickness: u32,
+        scale: f32,
+    ) -> Result<Self, String> {
+        if !scale.is_finite() || scale <= 0. || thickness == 0 {
+            return Err("Invalid selection frame".into());
+        }
+        native::SelectionFrame::show(&frame_strips(region, display, thickness), scale).map(Self)
+    }
+}
+
+fn frame_strips(region: ScreenRect, display: ScreenRect, thickness: u32) -> Vec<ScreenRect> {
+    let (x, y, w, h) = (
+        i64::from(region.0),
+        i64::from(region.1),
+        i64::from(region.2),
+        i64::from(region.3),
+    );
+    let t = i64::from(thickness);
+    let clip = (
+        i64::from(display.0),
+        i64::from(display.1),
+        i64::from(display.0) + i64::from(display.2),
+        i64::from(display.1) + i64::from(display.3),
+    );
+    [
+        (x - t, y - t, x + w + t, y),
+        (x - t, y + h, x + w + t, y + h + t),
+        (x - t, y, x, y + h),
+        (x + w, y, x + w + t, y + h),
+    ]
+    .into_iter()
+    .filter_map(|(left, top, right, bottom)| {
+        let (left, top) = (left.max(clip.0), top.max(clip.1));
+        let (right, bottom) = (right.min(clip.2), bottom.min(clip.3));
+        (right > left && bottom > top).then(|| {
+            (
+                left as i32,
+                top as i32,
+                (right - left) as u32,
+                (bottom - top) as u32,
+            )
+        })
+    })
+    .collect()
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::frame_strips;
+
+    #[test]
+    fn frame_surrounds_the_region_without_covering_it() {
+        let region = (100, 50, 400, 300);
+        let strips = frame_strips(region, (0, 0, 1920, 1080), 3);
+        assert_eq!(
+            strips,
+            vec![
+                (97, 47, 406, 3),
+                (97, 350, 406, 3),
+                (97, 50, 3, 300),
+                (500, 50, 3, 300),
+            ]
+        );
+        for (x, y, w, h) in strips {
+            let disjoint = x + w as i32 <= region.0
+                || y + h as i32 <= region.1
+                || x >= region.0 + region.2 as i32
+                || y >= region.1 + region.3 as i32;
+            assert!(disjoint);
+        }
+    }
+
+    #[test]
+    fn frame_stays_on_the_captured_display() {
+        // A full-height region on a secondary display left of the primary.
+        let strips = frame_strips((-1920, 0, 800, 1080), (-1920, 0, 1920, 1080), 2);
+        assert_eq!(strips, vec![(-1120, 0, 2, 1080)]);
+        assert!(frame_strips((0, 0, 1920, 1080), (0, 0, 1920, 1080), 2).is_empty());
+    }
+}
+
 // Positions are physical pixels, so the tolerance only absorbs conversion noise.
 #[cfg(any(target_os = "macos", test))]
 fn resize_content_anchor(previous: (f64, f64), next: (i32, i32)) -> (bool, bool) {

@@ -13,8 +13,9 @@ number and mosaic annotations plus unknown record fields.
 
 Search relevance/path ranking/paging, redo, opaque redaction, mosaics, numbering
 and committed annotation editing have automated coverage. Conservative vertical
-stitching has synthetic coverage, but its capture controller and stop/preview/
-confirmation UI are not yet implemented. No native installation, GUI, clipboard
+stitching has synthetic coverage. The capture controller and finish/cancel UI
+were subsequently implemented; see [long capture](long-capture.md) for operation
+and the remaining native acceptance scope. No native installation, GUI, clipboard
 paste, macOS, signing or notarization acceptance is claimed. The user confirmed
 these real-machine acceptance items should remain pending.
 

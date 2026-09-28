@@ -21,7 +21,8 @@ pub use rotor_searcher::{file_data::SearchResultItem, SearchBatch, SearchIconBat
 pub use rotor_searcher::{IndexState, QueryId};
 pub use rotor_translator::engine::{TranslateResult, TranslateStreamEvent};
 pub use services::{
-    CaptureBundle, CapturedMonitor, ChatMessage, OperationId, Overview, RuntimeEvent,
-    ServiceOptions, Services, SettingsCoordination,
+    CaptureBundle, CapturedMonitor, ChatMessage, LongCaptureControl, LongCaptureEvent,
+    LongCaptureStatus, OperationId, Overview, RuntimeEvent, ServiceOptions, Services,
+    SettingsCoordination,
 };
 pub use updates::{UpdatePhase, UpdateSnapshot};

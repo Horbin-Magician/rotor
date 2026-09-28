@@ -221,3 +221,73 @@ pub(super) fn show_window(handle: WindowHandle<'_>) -> Result<(), String> {
         .orderFront(None);
     Ok(())
 }
+
+/// One borderless, mouse-transparent window per side, excluded from capture.
+pub(super) struct SelectionFrame(Vec<objc2::rc::Retained<objc2_app_kit::NSWindow>>);
+
+impl SelectionFrame {
+    pub(super) fn show(strips: &[super::ScreenRect], scale: f32) -> Result<Self, String> {
+        use objc2_app_kit::{
+            NSBackingStoreType, NSColor, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior,
+            NSWindowSharingType,
+        };
+        let mtm = MainThreadMarker::new().ok_or("Selection frame requires the main thread")?;
+        let primary_height = CGDisplay::main().bounds().size.height;
+        let scale = scale as f64;
+        let (r, g, b) = super::FRAME_COLOR;
+        let color = unsafe {
+            NSColor::colorWithSRGBRed_green_blue_alpha(
+                r as f64 / 255.,
+                g as f64 / 255.,
+                b as f64 / 255.,
+                1.,
+            )
+        };
+        let mut frame = Self(Vec::with_capacity(strips.len()));
+        for &(x, y, width, height) in strips {
+            let (width, height) = (width as f64 / scale, height as f64 / scale);
+            let rect = NSRect::new(
+                NSPoint::new(x as f64 / scale, primary_height - y as f64 / scale - height),
+                NSSize::new(width, height),
+            );
+            let window = unsafe {
+                NSWindow::initWithContentRect_styleMask_backing_defer(
+                    mtm.alloc(),
+                    rect,
+                    NSWindowStyleMask::Borderless,
+                    NSBackingStoreType::NSBackingStoreBuffered,
+                    false,
+                )
+            };
+            // Retained is the sole owner; Drop closes the window.
+            unsafe {
+                window.setReleasedWhenClosed(false);
+                window.setAnimationBehavior(NSWindowAnimationBehavior::None);
+                window.setCollectionBehavior(
+                    NSWindowCollectionBehavior::CanJoinAllSpaces
+                        | NSWindowCollectionBehavior::FullScreenAuxiliary
+                        | NSWindowCollectionBehavior::Stationary
+                        | NSWindowCollectionBehavior::IgnoresCycle,
+                );
+            }
+            window.setBackgroundColor(Some(&color));
+            window.setOpaque(true);
+            window.setHasShadow(false);
+            window.setIgnoresMouseEvents(true);
+            window.setSharingType(NSWindowSharingType::NSWindowSharingNone);
+            window.setLevel(NSStatusWindowLevel);
+            unsafe { window.orderFrontRegardless() };
+            frame.0.push(window);
+        }
+        Ok(frame)
+    }
+}
+
+impl Drop for SelectionFrame {
+    fn drop(&mut self) {
+        for window in self.0.drain(..) {
+            window.orderOut(None);
+            window.close();
+        }
+    }
+}

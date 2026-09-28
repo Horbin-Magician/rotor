@@ -21,6 +21,7 @@ pub(crate) enum WindowRole {
     Search,
     Mask { session: u64, monitor: u32 },
     Pin(u64),
+    LongCapture(u64),
 }
 
 pub(crate) enum WindowView {
@@ -29,6 +30,7 @@ pub(crate) enum WindowView {
     Search(WeakEntity<rotor_ui::SearchView>),
     Mask(WeakEntity<rotor_ui::MaskView>),
     Pin(WeakEntity<rotor_ui::PinView>),
+    LongCapture(WeakEntity<rotor_ui::LongCaptureView>),
 }
 
 pub(crate) struct WindowSlot {

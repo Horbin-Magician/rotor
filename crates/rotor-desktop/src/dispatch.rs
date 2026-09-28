@@ -12,6 +12,10 @@ use rotor_common::{Settings, settings::keys};
 use rotor_runtime::RuntimeEvent;
 
 pub(crate) fn handle_event(event: RuntimeEvent, cx: &mut App) {
+    if let RuntimeEvent::LongCapture { id, event } = event {
+        capture::long_capture_event(id, event, cx);
+        return;
+    }
     if let RuntimeEvent::IndexState(state) = &event {
         match state {
             rotor_runtime::IndexState::Ready => crate::logging::startup_mark("index_ready"),
@@ -248,6 +252,9 @@ pub(crate) fn dispatch_command(command: Command, cx: &mut App) {
             }
         }
         Command::Capture => {
+            if capture::finish_long_capture(cx) {
+                return;
+            }
             if let Err(error) = capture::begin(started, cx) {
                 capture::report(error, cx);
             }

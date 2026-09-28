@@ -1,5 +1,9 @@
 mod assets;
 mod capture;
+mod long_capture;
+pub use long_capture::{
+    LONG_CAPTURE_PANEL_HEIGHT, LONG_CAPTURE_PANEL_WIDTH, LongCaptureAction, LongCaptureView,
+};
 mod pin;
 mod search_results;
 mod searcher;

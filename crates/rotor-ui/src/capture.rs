@@ -245,6 +245,7 @@ pub enum MaskAction {
         session: u64,
         monitor: u32,
         rect: ImageRect,
+        long: bool,
     },
 }
 pub type MaskCallback = Rc<dyn Fn(MaskAction, &mut Window, &mut App)>;
@@ -266,6 +267,8 @@ pub struct MaskView {
     detected: Vec<ImageRect>,
     locale: Locale,
     copied: bool,
+    long: bool,
+    error: Option<String>,
     // reset() has no window; the next render applies the language/monitor title.
     title_stale: bool,
 }
@@ -307,6 +310,8 @@ impl MaskView {
             detected: Vec::new(),
             locale,
             copied: false,
+            long: false,
+            error: None,
             title_stale: false,
         }
     }
@@ -332,10 +337,16 @@ impl MaskView {
         self.click_selection = None;
         self.detected.clear();
         self.copied = false;
+        self.long = false;
+        self.error = None;
         cx.notify();
     }
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
+    }
+    pub fn set_error(&mut self, error: String, cx: &mut Context<Self>) {
+        self.error = Some(error);
+        cx.notify();
     }
     pub fn set_cursor(
         &mut self,
@@ -480,6 +491,7 @@ impl MaskView {
                     session: self.session,
                     monitor: self.capture.monitor.id,
                     rect,
+                    long: self.long,
                 },
                 window,
                 cx,
@@ -704,7 +716,33 @@ impl Render for MaskView {
                         "Copy color (C)"
                     }),
             );
-        root.when(self.pointer_inside, |root| root.child(magnifier))
+        root.child(div().absolute().top(px(16.)).left(px(16.)).px_3().py_2()
+            .bg(rgb(0x202428)).text_color(rgb(0xffffff)).text_size(px(14.))
+            .child((if let Some(error) = &self.error { error.as_str() } else if self.long {
+                self.locale.pick("长截图：框选要滚动的内容，避开侧栏和视频 · L 返回普通截图 · Esc 取消", "Long capture: select the scrolling content, excluding sidebars and video · L normal capture · Esc cancel")
+            } else {
+                self.locale.pick("L 长截图 · Esc 取消", "L long capture · Esc cancel")
+            }).to_owned()))
+            .when(self.pointer_inside, |root| root.child(magnifier))
+            .when(self.start.is_none(), |root| root.child(
+                div().id("toggle-long-capture").absolute().bottom(px(16.)).left(px(16.))
+                    .cursor_pointer().px_3().py_2().rounded_md()
+                    .bg(if self.long { rgb(0x2768b8) } else { rgb(0x202428) })
+                    .text_color(rgb(0xffffff)).text_size(px(14.))
+                    .child(if self.long { self.locale.pick("返回普通截图 · L", "Normal capture · L") }
+                        else { self.locale.pick("滚动截图 · L", "Scrolling capture · L") })
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_mouse_up(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        if this.active && this.armed {
+                            this.long = !this.long;
+                            this.error = None;
+                            this.focus.focus(window, cx);
+                            cx.notify();
+                        }
+                        cx.stop_propagation();
+                    }))
+            ))
             // Native window hover changes also cover leaving without a final
             // mouse move (Windows reports this separately from MouseExitEvent).
             .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
@@ -764,6 +802,12 @@ impl Render for MaskView {
                         cx,
                     );
                     cx.stop_propagation();
+                } else if event.keystroke.key.eq_ignore_ascii_case("l") && this.start.is_none() && !event.is_held
+                    && !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt && !event.keystroke.modifiers.platform {
+                    this.long = !this.long;
+                    this.error = None;
+                    cx.notify();
+                    cx.stop_propagation();
                 } else if this.pointer_inside && event.keystroke.key.eq_ignore_ascii_case("c") {
                     cx.write_to_clipboard(ClipboardItem::new_string(this.color()));
                     this.copied = true;
@@ -792,6 +836,105 @@ mod tests {
     use rotor_canvas::ImageRect;
     use rotor_runtime::{CaptureBundle, MonitorConfig};
     use std::sync::Arc;
+    #[gpui::test]
+    fn long_capture_key_routes_selection_and_reset_restores_normal_mode(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::*;
+        use std::cell::RefCell;
+        cx.update(gpui_kit::component::init);
+        let actions = Rc::new(RefCell::new(Vec::new()));
+        let recorded = actions.clone();
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let capture = Arc::new(PreparedCapture {
+                monitor: MonitorConfig {
+                    id: 1,
+                    x: 0,
+                    y: 0,
+                    width: 400,
+                    height: 400,
+                    scale_factor: 1.,
+                },
+                image: PreparedScreenshot::new(rotor_runtime::BgraCapture {
+                    width: 400,
+                    height: 400,
+                    bytes: vec![0; 400 * 400 * 4],
+                })
+                .unwrap(),
+                windows: vec![],
+            });
+            let view = MaskView::new(
+                7,
+                capture,
+                Rc::new(move |action, _, _| recorded.borrow_mut().push(action)),
+                Locale::English,
+                window,
+                cx,
+            );
+            view.focus(window, cx);
+            view
+        });
+        cx.simulate_resize(size(px(400.), px(400.)));
+        view.update(cx, |view, cx| {
+            view.armed = true;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_keystrokes("ctrl-l");
+        view.read_with(cx, |view, _| assert!(!view.long));
+        cx.simulate_mouse_down(
+            point(px(60.), px(365.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        cx.simulate_mouse_up(
+            point(px(60.), px(365.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        view.read_with(cx, |view, _| {
+            assert!(view.long);
+            assert!(
+                view.start.is_none(),
+                "mode button must not begin a selection"
+            );
+        });
+        assert!(
+            !actions
+                .borrow()
+                .iter()
+                .any(|action| matches!(action, MaskAction::Choose { .. }))
+        );
+        cx.simulate_keystrokes("l");
+        view.read_with(cx, |view, _| assert!(!view.long));
+        cx.simulate_keystrokes("l");
+        view.read_with(cx, |view, _| assert!(view.long));
+        cx.simulate_mouse_down(
+            point(px(80.), px(100.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        cx.simulate_mouse_up(
+            point(px(280.), px(300.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        assert!(actions.borrow().iter().any(|action| matches!(
+            action,
+            MaskAction::Choose {
+                session: 7,
+                long: true,
+                ..
+            }
+        )));
+        view.update(cx, |view, cx| {
+            view.reset(8, view.capture.clone(), Locale::English, cx)
+        });
+        view.read_with(cx, |view, _| {
+            assert!(!view.long);
+            assert!(!view.armed);
+        });
+    }
     #[cfg(target_os = "windows")]
     #[gpui::test]
     fn drag_releases_cursor_even_when_no_selection_is_created(cx: &mut gpui::TestAppContext) {

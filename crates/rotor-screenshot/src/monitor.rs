@@ -169,6 +169,111 @@ fn wait_for_capture(
     }
 }
 
+/// Repeated reads of one display region, for long capture. Create and use it
+/// on a single thread: on Windows only the region is copied and the native
+/// bitmap is reused between frames, which keeps the sampling interval short.
+pub struct RegionCapture {
+    monitor: MonitorConfig,
+    rect: rotor_canvas::ImageRect,
+    #[cfg(target_os = "windows")]
+    native: rotor_platform::capture::DesktopCapture,
+}
+
+impl RegionCapture {
+    pub fn new(monitor: MonitorConfig, rect: rotor_canvas::ImageRect) -> Result<Self, String> {
+        if rect.width == 0
+            || rect.height == 0
+            || rect
+                .x
+                .checked_add(rect.width)
+                .is_none_or(|x| x > monitor.width)
+            || rect
+                .y
+                .checked_add(rect.height)
+                .is_none_or(|y| y > monitor.height)
+        {
+            return Err("Long capture selection is outside the display".into());
+        }
+        Ok(Self {
+            monitor,
+            rect,
+            #[cfg(target_os = "windows")]
+            native: Default::default(),
+        })
+    }
+
+    pub fn read(&mut self) -> Result<image::RgbaImage, String> {
+        rotor_platform::monitor::validate_capture_monitor(&self.monitor)?;
+        let rect = self.rect;
+        #[cfg(target_os = "windows")]
+        {
+            let bytes = self.native.capture(
+                self.monitor.x + rect.x as i32,
+                self.monitor.y + rect.y as i32,
+                rect.width,
+                rect.height,
+            )?;
+            crop_bgra(
+                &BgraCapture {
+                    width: rect.width,
+                    height: rect.height,
+                    bytes,
+                },
+                rotor_canvas::ImageRect { x: 0, y: 0, ..rect },
+            )
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let bytes = rotor_platform::capture::capture_display_bgra(
+                self.monitor.id,
+                self.monitor.width,
+                self.monitor.height,
+            )?;
+            crop_bgra(
+                &BgraCapture {
+                    width: self.monitor.width,
+                    height: self.monitor.height,
+                    bytes,
+                },
+                rect,
+            )
+        }
+    }
+}
+
+/// Crop a BGRA capture to an RGBA image.
+pub fn crop_bgra(
+    capture: &BgraCapture,
+    rect: rotor_canvas::ImageRect,
+) -> Result<image::RgbaImage, String> {
+    if rect.width == 0
+        || rect.height == 0
+        || rect
+            .x
+            .checked_add(rect.width)
+            .is_none_or(|x| x > capture.width)
+        || rect
+            .y
+            .checked_add(rect.height)
+            .is_none_or(|y| y > capture.height)
+        || capture.bytes.len() as u64 != u64::from(capture.width) * u64::from(capture.height) * 4
+    {
+        return Err("Long capture selection is outside the display".into());
+    }
+    let stride = capture.width as usize * 4;
+    let row = rect.width as usize * 4;
+    let mut bytes = Vec::with_capacity(row * rect.height as usize);
+    for y in rect.y as usize..(rect.y + rect.height) as usize {
+        let start = y * stride + rect.x as usize * 4;
+        bytes.extend_from_slice(&capture.bytes[start..start + row]);
+    }
+    for pixel in bytes.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    image::RgbaImage::from_raw(rect.width, rect.height, bytes)
+        .ok_or_else(|| "Invalid long capture region".into())
+}
+
 pub fn current_configs() -> Result<Vec<MonitorConfig>, String> {
     rotor_platform::monitor::current_configs()
 }
@@ -188,6 +293,25 @@ fn capture_timeout_message(completed: usize, worker_count: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crop_uses_physical_region_and_converts_channels() {
+        let capture = BgraCapture {
+            width: 2,
+            height: 2,
+            bytes: vec![1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255],
+        };
+        let rect = |x, width| rotor_canvas::ImageRect {
+            x,
+            y: 0,
+            width,
+            height: 2,
+        };
+        let image = crop_bgra(&capture, rect(1, 1)).unwrap();
+        assert_eq!(image.as_raw(), &[6, 5, 4, 255, 12, 11, 10, 255]);
+        assert!(crop_bgra(&capture, rect(u32::MAX, 2)).is_err());
+        assert!(crop_bgra(&capture, rect(1, 2)).is_err());
+    }
 
     #[test]
     fn cancelled_and_expired_jobs_do_not_wait_for_a_stalled_capture() {
