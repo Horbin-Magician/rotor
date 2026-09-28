@@ -15,6 +15,19 @@ pub(super) enum Tool {
     Arrow,
     Text,
 }
+/// Retain button availability while the selection panel slides out.
+#[derive(Clone, Copy, Default)]
+pub(super) struct SelectionTools {
+    can_recolor: bool,
+    can_edit_text: bool,
+}
+impl SelectionTools {
+    pub(super) fn width(self) -> Pixels {
+        let buttons = 4 + if self.can_recolor { 4 } else { 0 } + usize::from(self.can_edit_text);
+        // 27px buttons, one separator, 2px gaps and 8px panel padding.
+        px((buttons * 29 + 9) as f32)
+    }
+}
 /// Annotation editing: the selected tool and whatever is being drafted with
 /// it. This is the payload of `Mode::Annotating`; when no tool is selected the
 /// pin is idle and the pointer moves or crops the window instead.
@@ -728,12 +741,6 @@ impl PinView {
     pub(super) fn canvas_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let disabled = self.busy() || self.mode.is_cropping();
         let selected = self.mode.editing().map(Editing::tool);
-        let selected_mark = self
-            .mode
-            .editing()
-            .and_then(|editing| editing.selected)
-            .and_then(|index| self.canvas.document.scene().annotations.get(index));
-        let edit_disabled = disabled || !self.can_request_export();
         let tools = div()
             .flex()
             .flex_none()
@@ -826,107 +833,113 @@ impl PinView {
                     .on_click(cx.listener(|this, _, window, cx| this.undo_canvas(window, cx))),
             );
 
-        div()
+        toolbar::scroll_row("canvas-main-tools", tools)
+    }
+    pub(super) fn selection_tools(&self) -> Option<SelectionTools> {
+        let mark = self
+            .mode
+            .editing()
+            .and_then(|editing| editing.selected)
+            .and_then(|index| self.canvas.document.scene().annotations.get(index))?;
+        Some(SelectionTools {
+            can_recolor: !matches!(
+                mark,
+                Annotation::Redaction { .. } | Annotation::Mosaic { .. }
+            ),
+            can_edit_text: matches!(mark, Annotation::Text { .. }),
+        })
+    }
+    pub(super) fn canvas_selection_tools(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let SelectionTools {
+            can_recolor,
+            can_edit_text,
+        } = self.selection_toolbar;
+        let edit_disabled =
+            self.busy() || !self.can_request_export() || self.selection_tools().is_none();
+        let actions = div()
             .flex()
-            .flex_col()
-            .w_full()
-            .when_some(selected_mark, |column, mark| {
-                let can_recolor = !matches!(
-                    mark,
-                    Annotation::Redaction { .. } | Annotation::Mosaic { .. }
-                );
-                let can_edit_text = matches!(mark, Annotation::Text { .. });
-                let actions = div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .gap(px(2.))
-                    .children(
-                        [
-                            (
-                                "canvas-smaller",
-                                toolbar::Glyph::Smaller,
-                                -2.,
-                                "缩小选中标注",
-                                "Shrink selected annotation",
-                            ),
-                            (
-                                "canvas-larger",
-                                toolbar::Glyph::Larger,
-                                2.,
-                                "放大选中标注",
-                                "Enlarge selected annotation",
-                            ),
-                        ]
-                        .into_iter()
-                        .map(|(id, glyph, delta, zh, en)| {
-                            toolbar::button(id, glyph, cx)
-                                .accessibility_label(self.t(zh, en))
-                                .disabled(edit_disabled)
-                                .tooltip(self.t(zh, en))
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.edit_selected(|mark| mark.resized(delta), window, cx)
-                                }))
-                        }),
-                    )
-                    .when(can_recolor, |row| {
-                        row.children(
-                            [
-                                ("mark-red", Color::RED, "红", "Red"),
-                                ("mark-blue", Color([0, 128, 255, 255]), "蓝", "Blue"),
-                                ("mark-green", Color([0, 180, 80, 255]), "绿", "Green"),
-                                ("mark-black", Color([0, 0, 0, 255]), "黑", "Black"),
-                            ]
-                            .into_iter()
-                            .map(|(id, color, zh, en)| {
-                                toolbar::color_button(id, rgba(u32::from_be_bytes(color.0)), cx)
-                                    .accessibility_label(self.t(zh, en))
-                                    .tooltip(self.t(zh, en))
-                                    .disabled(edit_disabled)
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.edit_selected(|mark| mark.recolored(color), window, cx)
-                                    }))
-                            }),
-                        )
-                    })
-                    .when(can_edit_text, |row| {
-                        row.child(
-                            toolbar::button("canvas-edit-text", toolbar::Glyph::EditText, cx)
-                                .accessibility_label(self.t("修改文字", "Edit text"))
-                                .disabled(edit_disabled)
-                                .tooltip(self.t("修改文字 (Enter)", "Edit text (Enter)"))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.edit_selected_text(window, cx)
-                                })),
-                        )
-                    })
-                    .child(
-                        toolbar::button("canvas-delete", toolbar::Glyph::Delete, cx)
-                            .accessibility_label(
-                                self.t("删除选中标注", "Delete selected annotation"),
-                            )
+            .flex_none()
+            .min_w(relative(1.))
+            .items_center()
+            .justify_center()
+            .gap(px(2.))
+            .child(
+                toolbar::button("canvas-selection-back", toolbar::Glyph::Back, cx)
+                    .disabled(self.selection_tools().is_none())
+                    .accessibility_label(self.t("返回标注工具", "Back to annotation tools"))
+                    .tooltip(self.t("返回标注工具", "Back to annotation tools"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.set_tool(Tool::Select, window, cx);
+                    })),
+            )
+            .child(toolbar::separator())
+            .children(
+                [
+                    (
+                        "canvas-smaller",
+                        toolbar::Glyph::Smaller,
+                        -2.,
+                        "缩小选中标注",
+                        "Shrink selected annotation",
+                    ),
+                    (
+                        "canvas-larger",
+                        toolbar::Glyph::Larger,
+                        2.,
+                        "放大选中标注",
+                        "Enlarge selected annotation",
+                    ),
+                ]
+                .into_iter()
+                .map(|(id, glyph, delta, zh, en)| {
+                    toolbar::button(id, glyph, cx)
+                        .accessibility_label(self.t(zh, en))
+                        .disabled(edit_disabled)
+                        .tooltip(self.t(zh, en))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.edit_selected(|mark| mark.resized(delta), window, cx)
+                        }))
+                }),
+            )
+            .when(can_recolor, |row| {
+                row.children(
+                    [
+                        ("mark-red", Color::RED, "红", "Red"),
+                        ("mark-blue", Color([0, 128, 255, 255]), "蓝", "Blue"),
+                        ("mark-green", Color([0, 180, 80, 255]), "绿", "Green"),
+                        ("mark-black", Color([0, 0, 0, 255]), "黑", "Black"),
+                    ]
+                    .into_iter()
+                    .map(|(id, color, zh, en)| {
+                        toolbar::color_button(id, rgba(u32::from_be_bytes(color.0)), cx)
+                            .accessibility_label(self.t(zh, en))
+                            .tooltip(self.t(zh, en))
                             .disabled(edit_disabled)
-                            .tooltip(self.t("删除选中标注", "Delete selected annotation"))
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.delete_selected(window, cx)),
-                            ),
-                    );
-                column.child(
-                    div()
-                        .flex_none()
-                        .overflow_hidden()
-                        .child(toolbar::scroll_row("canvas-selection-actions", actions))
-                        .with_animation(
-                            "canvas-selection-reveal",
-                            Animation::new(Duration::from_millis(160)),
-                            |row, progress| {
-                                let progress = 1. - (1. - progress).powi(3);
-                                row.h(px(29. * progress))
-                            },
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.edit_selected(|mark| mark.recolored(color), window, cx)
+                            }))
+                    }),
+                )
+            })
+            .when(can_edit_text, |row| {
+                row.child(
+                    toolbar::button("canvas-edit-text", toolbar::Glyph::EditText, cx)
+                        .accessibility_label(self.t("修改文字", "Edit text"))
+                        .disabled(edit_disabled)
+                        .tooltip(self.t("修改文字 (Enter)", "Edit text (Enter)"))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.edit_selected_text(window, cx)),
                         ),
                 )
             })
-            .child(toolbar::scroll_row("canvas-main-tools", tools))
+            .child(
+                toolbar::button("canvas-delete", toolbar::Glyph::Delete, cx)
+                    .accessibility_label(self.t("删除选中标注", "Delete selected annotation"))
+                    .disabled(edit_disabled)
+                    .tooltip(self.t("删除选中标注", "Delete selected annotation"))
+                    .on_click(cx.listener(|this, _, window, cx| this.delete_selected(window, cx))),
+            );
+        toolbar::scroll_row("canvas-selection-actions", actions)
     }
     pub(super) fn canvas_element(
         &mut self,
@@ -1110,7 +1123,7 @@ fn text_editor_bounds(origin: ImagePoint, width: f64, height: f64) -> (f64, f64,
     let editor_height = height.clamp(0., 40.);
     (
         origin.x.clamp(0., (width - editor_width).max(0.)),
-        // Leave room for the annotation toolbar, including its wrapped second row.
+        // Leave room for the toolbar and any status message.
         origin.y.clamp(0., (height - editor_height - 64.).max(0.)),
         editor_width,
         editor_height,

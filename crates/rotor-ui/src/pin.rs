@@ -202,6 +202,7 @@ pub struct PinView {
     _bounds: Subscription,
     _activation: Subscription,
     canvas: annotation::CanvasState,
+    selection_toolbar: annotation::SelectionTools,
     content_scale: f32,
     bounds: PinBoundsSetter,
     pointer: PinPointerCapture,
@@ -258,6 +259,7 @@ impl PinView {
             _bounds: bounds,
             _activation: activation,
             canvas,
+            selection_toolbar: Default::default(),
             content_scale: init.content_scale,
             bounds: init.bounds,
             pointer: init.pointer,
@@ -758,10 +760,18 @@ impl Render for PinView {
         self.ensure_canvas(window, cx);
         let toolbar_active = window.is_window_active();
         // A single 27 x 25 button, 4 px panel padding and 16 px viewport margin.
-        // Omit both panels immediately when even the overflow button cannot fit.
+        // Omit the panels immediately when even the overflow button cannot fit.
         let toolbar_fits =
             window.viewport_size().width >= px(51.) && window.viewport_size().height >= px(49.);
         let editing = self.mode.is_annotating();
+        let selection = self.selection_tools();
+        if let Some(selection) = selection {
+            self.selection_toolbar = selection;
+        }
+        let selection_width = self
+            .selection_toolbar
+            .width()
+            .min((window.viewport_size().width - px(16.)).max(px(0.)));
         // Nine 27px buttons, two separators, ten 2px gaps and 8px panel padding.
         let annotation_width = px(273.).min((window.viewport_size().width - px(16.)).max(px(0.)));
         div()
@@ -799,7 +809,34 @@ impl Render for PinView {
                     .with_spring(
                         "pin-annotation-toolbar-slide",
                         SpringAnimation::new(SpringConfig::new(625., 50., 1.))
-                            .to(if toolbar_active && editing { 1.0 } else { 0.0 })
+                            .to(if toolbar_active && editing && selection.is_none() {
+                                1.0
+                            } else {
+                                0.0
+                            })
+                            .from(0.0),
+                        |mut toolbar, progress| {
+                            toolbar.progress = progress.clamp(0., 1.);
+                            toolbar
+                        },
+                    ),
+                )
+            })
+            .when(toolbar_fits, |root| {
+                root.child(
+                    toolbar::Slide::new(
+                        toolbar::panel("pin-selection-toolbar", selection_width, window)
+                            .child(self.canvas_selection_tools(cx))
+                            .children(self.status_element()),
+                    )
+                    .with_spring(
+                        "pin-selection-toolbar-slide",
+                        SpringAnimation::new(SpringConfig::new(625., 50., 1.))
+                            .to(if toolbar_active && selection.is_some() {
+                                1.0
+                            } else {
+                                0.0
+                            })
                             .from(0.0),
                         |mut toolbar, progress| {
                             toolbar.progress = progress.clamp(0., 1.);
