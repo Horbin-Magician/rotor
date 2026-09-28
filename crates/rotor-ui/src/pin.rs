@@ -435,8 +435,12 @@ impl PinView {
         }
         self.ensure_canvas(window, cx);
         if self.pending_create.is_some() {
+            self.message = if matches!(&intent, ExportIntent::Target(PinExportTarget::Clipboard)) {
+                String::new()
+            } else {
+                self.t("正在准备导出…", "Preparing export…").into()
+            };
             self.queued_export = Some(intent);
-            self.message = self.t("正在准备导出…", "Preparing export…").into();
             cx.notify();
             return;
         }
@@ -472,7 +476,11 @@ impl PinView {
         let source = Arc::new(self.image.clone());
         let services = self.services.clone();
         self.preparing_export = true;
-        self.message = self.t("正在准备导出…", "Preparing export…").into();
+        self.message = if matches!(&intent, ExportIntent::Target(PinExportTarget::Clipboard)) {
+            String::new()
+        } else {
+            self.t("正在准备导出…", "Preparing export…").into()
+        };
         cx.notify();
         cx.spawn_in(window, async move |view, cx| {
             // Render the document at source resolution, independent of display zoom.
@@ -521,13 +529,18 @@ impl PinView {
             }
             _ => None,
         };
+        let copying = matches!(&target, PinExportTarget::Clipboard);
         match self.services.export_pin_frame(self.id, image, target) {
             Ok(request) => {
                 self.pending_finish = Some(PendingFinish {
                     id: request,
                     remember_directory,
                 });
-                self.message = self.t("正在导出…", "Exporting…").into();
+                self.message = if copying {
+                    String::new()
+                } else {
+                    self.t("正在导出…", "Exporting…").into()
+                };
             }
             Err(error) => self.message = error,
         }
