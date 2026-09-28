@@ -32,12 +32,33 @@ fn settings_pages_render_with_windows_main_thread_stack() {
                 Root::new(view, window, cx)
             });
             let view = settings.unwrap();
+            let moves = std::rc::Rc::new(std::cell::Cell::new(0));
+            let observed_moves = moves.clone();
+            let _drag_subscription = cx.update(|_, cx| {
+                cx.subscribe(&view, move |_, _: &super::SettingsWindowDrag, _| {
+                    observed_moves.set(observed_moves.get() + 1);
+                })
+            });
             cx.update(|window, cx| window.draw(cx).clear(cx));
             let refresh_bounds = cx.debug_bounds("overview-refresh-content").unwrap();
             assert_eq!(
                 refresh_bounds.size,
                 gpui::size(gpui::px(24.), gpui::px(24.))
             );
+            let background = gpui::point(gpui::px(8.), gpui::px(8.));
+            cx.simulate_mouse_down(background, gpui::MouseButton::Left, Default::default());
+            cx.simulate_mouse_up(background, gpui::MouseButton::Left, Default::default());
+            assert_eq!(moves.get(), 1, "sidebar background should begin a move");
+            cx.simulate_mouse_down(background, gpui::MouseButton::Right, Default::default());
+            cx.simulate_mouse_up(background, gpui::MouseButton::Right, Default::default());
+            assert_eq!(moves.get(), 1, "only left presses should move the window");
+            cx.simulate_mouse_down(
+                refresh_bounds.center(),
+                gpui::MouseButton::Left,
+                Default::default(),
+            );
+            cx.simulate_mouse_up(background, gpui::MouseButton::Left, Default::default());
+            assert_eq!(moves.get(), 1, "buttons should not begin a window move");
             view.update(cx, |view, cx| {
                 view.overview_refresh_started = Some(std::time::Instant::now());
                 cx.notify();

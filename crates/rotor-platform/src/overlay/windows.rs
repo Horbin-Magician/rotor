@@ -1,6 +1,30 @@
 use raw_window_handle::{RawWindowHandle, WindowHandle};
 use windows::Win32::Foundation::HWND;
 
+pub(super) fn start_window_move(handle: WindowHandle<'_>) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::{LPARAM, POINT, WPARAM},
+        UI::WindowsAndMessaging::{GetCursorPos, PostMessageW, HTCAPTION, SC_MOVE, WM_SYSCOMMAND},
+    };
+    let hwnd = hwnd(handle)?;
+    let mut position = POINT::default();
+    unsafe { GetCursorPos(&mut position) }.map_err(|error| error.to_string())?;
+    pointer_capture(handle, false)?;
+    let coordinates = (position.x as u16 as u32) | ((position.y as u16 as u32) << 16);
+    // GPUI turns WM_NCLBUTTONDOWN back into a MouseDownEvent. Posting it here
+    // would re-enter the background handler and queue another drag indefinitely.
+    // Start the system move loop directly, after the current UI borrow ends.
+    unsafe {
+        PostMessageW(
+            Some(hwnd),
+            WM_SYSCOMMAND,
+            WPARAM((SC_MOVE | HTCAPTION) as usize),
+            LPARAM(coordinates as isize),
+        )
+    }
+    .map_err(|error| error.to_string())
+}
+
 fn hwnd(handle: WindowHandle<'_>) -> Result<HWND, String> {
     let RawWindowHandle::Win32(raw) = handle.as_raw() else {
         return Err("Expected a Windows window handle".into());
@@ -384,6 +408,64 @@ mod repaint_tests {
             PAINTS.set(PAINTS.get() + 1);
         }
         unsafe { DefWindowProcW(hwnd, message, w, l) }
+    }
+
+    #[test]
+    fn background_drag_queues_one_system_move_without_replaying_mouse_down() {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        unsafe {
+            let hwnd = CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!("Rotor synthetic drag"),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                32,
+                32,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let result = std::panic::catch_unwind(|| {
+                let raw = raw_window_handle::Win32WindowHandle::new(
+                    std::num::NonZeroIsize::new(hwnd.0 as isize).unwrap(),
+                );
+                let handle = WindowHandle::borrow_raw(RawWindowHandle::Win32(raw));
+                start_window_move(handle).unwrap();
+                let mut message = MSG::default();
+                assert!(PeekMessageW(
+                    &mut message,
+                    Some(hwnd),
+                    WM_SYSCOMMAND,
+                    WM_SYSCOMMAND,
+                    PM_REMOVE,
+                )
+                .as_bool());
+                assert_eq!(message.wParam.0, (SC_MOVE | HTCAPTION) as usize);
+                assert!(!PeekMessageW(
+                    &mut message,
+                    Some(hwnd),
+                    WM_SYSCOMMAND,
+                    WM_SYSCOMMAND,
+                    PM_REMOVE,
+                )
+                .as_bool());
+                assert!(!PeekMessageW(
+                    &mut message,
+                    Some(hwnd),
+                    WM_NCLBUTTONDOWN,
+                    WM_NCLBUTTONDOWN,
+                    PM_REMOVE,
+                )
+                .as_bool());
+                assert!(!IsWindowVisible(hwnd).as_bool());
+            });
+            DestroyWindow(hwnd).unwrap();
+            result.unwrap();
+        }
     }
 
     #[test]

@@ -192,6 +192,21 @@ pub(crate) fn show_settings(cx: &mut App) -> Result<(), String> {
             }
         });
         let view = cx.new(|cx| rotor_ui::SettingsView::new(config, services, window, cx));
+        let handle = window.window_handle();
+        cx.subscribe(&view, move |_, _: &rotor_ui::SettingsWindowDrag, cx| {
+            let _ = handle.update(cx, |_, window, _| {
+                #[cfg(target_os = "windows")]
+                if let Err(error) = raw_window_handle::HasWindowHandle::window_handle(window)
+                    .map_err(|error| error.to_string())
+                    .and_then(rotor_platform::overlay::start_window_move)
+                {
+                    log::warn!("Move settings window: {error}");
+                }
+                #[cfg(target_os = "macos")]
+                window.start_window_move();
+            });
+        })
+        .detach();
         let closing = view.downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             closing

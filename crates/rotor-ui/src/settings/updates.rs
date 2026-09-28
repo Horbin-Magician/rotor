@@ -62,7 +62,7 @@ impl SettingsView {
     pub(super) fn update_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let checking = self.update.phase == UpdatePhase::Checking;
         let failed = self.update.error.is_some();
-        let button = Button::new("check-updates")
+        let button = appearance::button("check-updates")
             .h(px(32.))
             .label(self.update_label())
             .when(checking, |button| {
@@ -225,7 +225,7 @@ impl SettingsView {
             .gap_2();
         if self.update.path.is_some() {
             actions = actions.child(
-                Button::new("show-update-folder")
+                appearance::button("show-update-folder")
                     .label(self.t("打开下载目录", "Open download folder"))
                     .disabled(self.controls_locked())
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -242,7 +242,7 @@ impl SettingsView {
             );
         }
         actions = actions.child(
-            Button::new("dismiss-update")
+            appearance::button("dismiss-update")
                 .label(self.t("稍后", "Later"))
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.update_dialog_open = false;
@@ -252,13 +252,13 @@ impl SettingsView {
         );
         if self.update.phase == UpdatePhase::Downloading {
             actions = actions.child(
-                Button::new("cancel-update")
+                appearance::button("cancel-update")
                     .label(self.t("取消下载", "Cancel download"))
                     .on_click(cx.listener(|this, _, _, _| this.services.cancel_update())),
             );
         } else if self.update.phase == UpdatePhase::Ready {
             actions = actions.child(
-                Button::new("install-update")
+                appearance::button("install-update")
                     .primary()
                     .label(self.t("退出并安装更新", "Quit and install update"))
                     .disabled(
@@ -278,7 +278,7 @@ impl SettingsView {
             );
         } else if !self.update.busy() {
             actions = actions.child(
-                Button::new("download-update")
+                appearance::button("download-update")
                     .primary()
                     .label(if self.update.phase == UpdatePhase::Failed {
                         self.t("重新下载", "Retry download")

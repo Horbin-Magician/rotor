@@ -12,6 +12,12 @@ use windows as native;
 
 use raw_window_handle::{RawWindowHandle, WindowHandle};
 
+/// Queue a native caption drag without entering the Win32 move loop in a UI borrow.
+#[cfg(target_os = "windows")]
+pub fn start_window_move(handle: WindowHandle<'_>) -> Result<(), String> {
+    native::start_window_move(handle)
+}
+
 /// Current cursor in the same top-left, physical coordinate space as pin bounds.
 /// Read independently of window geometry: drag events can be replayed after a
 /// window has moved, making their window-relative coordinates stale.

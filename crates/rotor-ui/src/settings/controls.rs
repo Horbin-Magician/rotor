@@ -16,7 +16,9 @@ impl SettingsView {
                         .flex_1()
                         .min_w_0()
                         .px_2()
-                        .child(Slider::new(&self.zoom_step).disabled(self.controls_locked())),
+                        .child(appearance::interactive(
+                            Slider::new(&self.zoom_step).disabled(self.controls_locked()),
+                        )),
                 )
                 .child(
                     div()
@@ -57,7 +59,7 @@ impl SettingsView {
             .collect();
         appearance::control_row(
             self.t(label.0, label.1),
-            appearance::control_button(Button::new(key), cx)
+            appearance::control_button(appearance::button(key), cx)
                 .h(px(34.))
                 .px_3()
                 .accessibility_label(self.t(label.0, label.1))
@@ -112,7 +114,7 @@ impl SettingsView {
         };
         appearance::control_row(
             self.t(field.label.0, field.label.1),
-            appearance::control_button(Button::new(key), cx)
+            appearance::control_button(appearance::button(key), cx)
                 .label(value)
                 .accessibility_label(self.t(field.label.0, field.label.1))
                 .tooltip(self.t(
@@ -139,7 +141,7 @@ impl SettingsView {
     ) -> Div {
         appearance::control_row(
             self.t(label.0, label.1),
-            div().flex().justify_end().child(
+            div().flex().justify_end().child(appearance::interactive(
                 Switch::new(key)
                     .accessibility_label(self.t(label.0, label.1))
                     .checked(self.config.get(key).is_some_and(|value| value == "true"))
@@ -147,7 +149,7 @@ impl SettingsView {
                     .on_click(cx.listener(move |this, enabled: &bool, _, cx| {
                         this.save(vec![(key.into(), enabled.to_string())], cx);
                     })),
-            ),
+            )),
         )
         .when(self.autosave.failed(key), |row| {
             row.child(

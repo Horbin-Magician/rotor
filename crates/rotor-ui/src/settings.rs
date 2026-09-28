@@ -31,6 +31,11 @@ mod search;
 mod tests;
 mod updates;
 
+/// Ask the desktop shell to begin a native move after a background press.
+pub struct SettingsWindowDrag;
+
+impl EventEmitter<SettingsWindowDrag> for SettingsView {}
+
 pub fn settings_title(config: &Config) -> &'static str {
     if rotor_common::native_app::PRODUCTION {
         text(config, "Rotor 设置", "Rotor Settings")
@@ -883,16 +888,22 @@ impl Render for SettingsView {
                         .min_w_0()
                         .gap_2()
                         .child(
-                            div().flex_1().min_w_0().child(
-                                Input::new(&field.state)
-                                    .text_size(px(13.))
-                                    .aria_label(self.t(field.label.0, field.label.1))
-                                    .disabled(self.controls_locked() || self.choosing_path),
-                            ),
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .on_mouse_down(MouseButton::Left, |_, window, _| {
+                                    window.prevent_default()
+                                })
+                                .child(
+                                    Input::new(&field.state)
+                                        .text_size(px(13.))
+                                        .aria_label(self.t(field.label.0, field.label.1))
+                                        .disabled(self.controls_locked() || self.choosing_path),
+                                ),
                         )
                         .when(field.key == "save_path", |row| {
                             row.child(
-                                Button::new("choose-save-directory")
+                                appearance::button("choose-save-directory")
                                     .label("…")
                                     .accessibility_label(self.t("浏览目录…", "Browse…"))
                                     .tooltip(self.t("浏览目录…", "Browse…"))
@@ -936,6 +947,16 @@ impl Render for SettingsView {
             .text_size(px(13.))
             .text_color(appearance::palette(cx).foreground)
             .bg(appearance::palette(cx).background)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, window, cx| {
+                    if !window.default_prevented() {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        cx.emit(SettingsWindowDrag);
+                    }
+                }),
+            )
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
                 if this.recording.take().is_some() {
                     this.services.set_shortcut_recording(false);
@@ -991,6 +1012,9 @@ impl Render for SettingsView {
                                             .relative()
                                             .size(px(logo_size))
                                             .cursor_pointer()
+                                            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                cx.stop_propagation();
+                                            })
                                             .on_click(|_, _, cx| {
                                                 cx.open_url(
                                                     "https://github.com/Horbin-Magician/rotor",
@@ -1032,7 +1056,7 @@ impl Render for SettingsView {
                                                 .child(
                                                     div().relative().child(
                                                         appearance::navigation(
-                                                            Button::new(id)
+                                                            appearance::button(id)
                                                                 .w_full()
                                                                 .h(px(row_height))
                                                                 .rounded_none()
@@ -1108,7 +1132,7 @@ impl Render for SettingsView {
                                 )
                                 .child(
                                     appearance::quiet_button(
-                                        Button::new("settings-minimize")
+                                        appearance::button("settings-minimize")
                                             .icon(IconName::WindowMinimize)
                                             .tooltip(self.t("最小化", "Minimize"))
                                             .accessibility_label(self.t("最小化", "Minimize"))
@@ -1121,7 +1145,7 @@ impl Render for SettingsView {
                                 )
                                 .child(
                                     appearance::close_button(
-                                        Button::new("settings-window-close")
+                                        appearance::button("settings-window-close")
                                             .icon(IconName::WindowClose)
                                             .tooltip(self.t("关闭", "Close"))
                                             .accessibility_label(self.t("关闭", "Close"))
@@ -1158,7 +1182,7 @@ impl Render for SettingsView {
                                                     .p_3()
                                                     .child(self.message.clone())
                                                     .child(
-                                                        Button::new("retry-settings")
+                                                        appearance::button("retry-settings")
                                                             .label(self.t("重试", "Retry"))
                                                             .disabled(self.controls_locked())
                                                             .on_click(cx.listener(
@@ -1171,22 +1195,22 @@ impl Render for SettingsView {
                                                             )),
                                                     )
                                                     .child(
-                                                        Button::new("discard-settings-close")
-                                                            .label(self.t(
-                                                                "放弃更改并关闭",
-                                                                "Discard changes and close",
-                                                            ))
-                                                            .disabled(
-                                                                self.pending.is_some()
-                                                                    || self.autosave.has_pending(),
-                                                            )
-                                                            .on_click(cx.listener(
-                                                                |this, _, window, cx| {
-                                                                    this.discard_and_close(
-                                                                        window, cx,
-                                                                    )
-                                                                },
-                                                            )),
+                                                        appearance::button(
+                                                            "discard-settings-close",
+                                                        )
+                                                        .label(self.t(
+                                                            "放弃更改并关闭",
+                                                            "Discard changes and close",
+                                                        ))
+                                                        .disabled(
+                                                            self.pending.is_some()
+                                                                || self.autosave.has_pending(),
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            |this, _, window, cx| {
+                                                                this.discard_and_close(window, cx)
+                                                            },
+                                                        )),
                                                     ),
                                             )
                                         },

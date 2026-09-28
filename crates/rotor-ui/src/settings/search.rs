@@ -15,7 +15,7 @@ impl SettingsView {
             )
             .child(
                 div().pl(px(12.)).child(
-                    Button::new("clear-search-usage")
+                    appearance::button("clear-search-usage")
                         .label(self.t("清空使用记录", "Clear usage history"))
                         .disabled(self.usage_clear_request.is_some())
                         .on_click(cx.listener(|this, _, _, cx| {

@@ -2,6 +2,18 @@
 use super::*;
 use gpui_kit::component::{Colorize, button::ButtonCustomVariant};
 
+pub(super) fn button(id: impl Into<ElementId>) -> Button {
+    // Include disabled buttons: pressing a control must never move the window.
+    Button::new(id).on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+}
+
+pub(super) fn interactive(control: impl IntoElement) -> Div {
+    div()
+        .flex()
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+        .child(control)
+}
+
 pub(super) struct Palette {
     pub background: Hsla,
     pub surface: Hsla,

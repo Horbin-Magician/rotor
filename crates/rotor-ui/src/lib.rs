@@ -17,6 +17,6 @@ pub use pin::{
     PinPointerCapture, PinPositionReader, PinView,
 };
 pub use searcher::SearchView;
-pub use settings::{SettingsView, settings_title};
+pub use settings::{SettingsView, SettingsWindowDrag, settings_title};
 pub use translator::TranslatorView;
 pub use visual::{Palette, configure_theme, surface_palette};

@@ -46,7 +46,7 @@ impl SettingsView {
             ))
             .child(appearance::control_row(
                 self.t("开机自启", "Launch at startup"),
-                div().flex().justify_end().child(
+                div().flex().justify_end().child(appearance::interactive(
                     Switch::new("autostart")
                         .accessibility_label(self.t("开机自启", "Launch at startup"))
                         .checked(matches!(startup, Some(Ok(true))))
@@ -66,12 +66,12 @@ impl SettingsView {
                             }
                             cx.notify();
                         })),
-                ),
+                )),
             ));
         if startup.is_none() || matches!(startup, Some(Err(_))) {
             general = general.child(
                 div().pl(px(12.)).child(
-                    Button::new("retry-startup")
+                    appearance::button("retry-startup")
                         .label(self.t("刷新启动状态", "Refresh startup status"))
                         .disabled(self.controls_locked() || self.overview_request.is_some())
                         .on_click(cx.listener(|this, _, _, cx| this.refresh_overview(cx))),

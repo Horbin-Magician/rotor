@@ -68,7 +68,7 @@ impl SettingsView {
                 .to_owned(),
         };
         div().flex().flex_col().mt(px(10.)).child(
-            Button::new("test-ai-provider")
+            appearance::button("test-ai-provider")
                 .label(self.t(zh, en))
                 .when(
                     !testing && matches!(self.ai_test.result, Some(Ok(()))),

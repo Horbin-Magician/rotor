@@ -429,7 +429,7 @@ impl SettingsView {
                 icon.group_hover("add-action-button", |style| style.text_color(colors.accent))
             })
             .child(Icon::new(IconName::CirclePlus).size(px(18.)));
-        let add = Button::new("add-action")
+        let add = appearance::button("add-action")
             .group("add-action-button")
             .custom(ButtonCustomVariant::new(cx).foreground(colors.secondary))
             .compact()
@@ -475,7 +475,7 @@ impl SettingsView {
             .items_center()
             .gap_2()
             .min_h(px(38.))
-            .child(toggle)
+            .child(appearance::interactive(toggle))
             .child(description)
             .child(controls);
         let mut card = appearance::card(cx)
@@ -547,7 +547,7 @@ impl SettingsView {
         let runnable = normalized
             .as_ref()
             .is_some_and(|draft| draft.enabled && saved.iter().any(|saved| saved == draft));
-        let run = action_icon_button(Button::new(("run-action", index)), false, cx)
+        let run = action_icon_button(appearance::button(("run-action", index)), false, cx)
             .icon(IconName::Play)
             .accessibility_label(self.t("运行已保存操作", "Run saved action"))
             .tooltip(self.t("运行已保存操作", "Run saved action"))
@@ -559,7 +559,7 @@ impl SettingsView {
                 }
                 cx.notify();
             }));
-        let edit = action_icon_button(Button::new(("edit-action", index)), false, cx)
+        let edit = action_icon_button(appearance::button(("edit-action", index)), false, cx)
             .when(editing, |button| button.icon(IconName::Close))
             .when(!editing, |button| {
                 button.child(Icon::new(IconName::Pencil).size(px(16.)))
@@ -583,7 +583,7 @@ impl SettingsView {
                     cx.notify();
                 }
             }));
-        let delete = action_icon_button(Button::new(("remove-action", index)), true, cx)
+        let delete = action_icon_button(appearance::button(("remove-action", index)), true, cx)
             .child(Icon::new(IconName::Trash).size(px(16.)))
             .accessibility_label(self.t("删除操作", "Delete action"))
             .tooltip(self.t("删除操作", "Delete action"))
@@ -604,18 +604,22 @@ impl SettingsView {
     fn action_fields(&self, index: usize, action: &ActionFields, cx: &mut Context<Self>) -> Div {
         let name = appearance::control_row(
             self.t("名称", "Name"),
-            Input::new(&action.name)
-                .text_size(px(13.))
-                .aria_label(self.t("名称", "Name"))
-                .disabled(self.controls_locked()),
+            appearance::interactive(
+                Input::new(&action.name)
+                    .text_size(px(13.))
+                    .aria_label(self.t("名称", "Name"))
+                    .disabled(self.controls_locked()),
+            ),
         );
         let shortcut = self.action_shortcut(index, action, cx);
         let command = appearance::control_row(
             self.t("命令", "Command"),
-            Textarea::new(&action.command)
-                .text_size(px(13.))
-                .h(px(72.))
-                .disabled(self.controls_locked()),
+            appearance::interactive(
+                Textarea::new(&action.command)
+                    .text_size(px(13.))
+                    .h(px(72.))
+                    .disabled(self.controls_locked()),
+            ),
         );
         div()
             .flex()
@@ -630,7 +634,7 @@ impl SettingsView {
         let disabled = self.controls_locked();
         let record_id = action.id.clone();
         let clear_shortcut = action.shortcut.clone();
-        let record = appearance::control_button(Button::new(("record-action", index)), cx)
+        let record = appearance::control_button(appearance::button(("record-action", index)), cx)
             .label(if matches!(&self.recording, Some(Recording::Action(target)) if target == &record_id) {
                 self.t("请按快捷键…", "Press a shortcut…").into()
             } else { action.shortcut.read(cx).value() })
@@ -640,15 +644,16 @@ impl SettingsView {
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.start_recording(Recording::Action(record_id.clone()), window, cx)
             }));
-        let clear = appearance::quiet_button(Button::new(("clear-action-shortcut", index)), cx)
-            .icon(IconName::Close)
-            .accessibility_label(self.t("清除快捷键", "Clear shortcut"))
-            .tooltip(self.t("清除快捷键", "Clear shortcut"))
-            .disabled(disabled || action.shortcut.read(cx).value().is_empty())
-            .on_click(cx.listener(move |this, _, window, cx| {
-                clear_shortcut.update(cx, |input, cx| input.set_value("", window, cx));
-                this.schedule_action_save(window, cx);
-            }));
+        let clear =
+            appearance::quiet_button(appearance::button(("clear-action-shortcut", index)), cx)
+                .icon(IconName::Close)
+                .accessibility_label(self.t("清除快捷键", "Clear shortcut"))
+                .tooltip(self.t("清除快捷键", "Clear shortcut"))
+                .disabled(disabled || action.shortcut.read(cx).value().is_empty())
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    clear_shortcut.update(cx, |input, cx| input.set_value("", window, cx));
+                    this.schedule_action_save(window, cx);
+                }));
         appearance::control_row(
             self.t("快捷键", "Shortcut"),
             div()

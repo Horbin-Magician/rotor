@@ -189,7 +189,7 @@ impl SettingsView {
                     .size(px(16.))
                     .rotate(radians(rotation)),
             );
-        Button::new("refresh-overview")
+        appearance::button("refresh-overview")
             .group("overview-refresh-button")
             .size(px(24.))
             // Custom children use the text-button padding by default. Reserve
