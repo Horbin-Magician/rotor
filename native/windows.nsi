@@ -30,8 +30,30 @@ InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
 InstallDirRegKey HKLM "Software\${REGISTRY_KEY}" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
+; Keep native, keyboard-accessible controls and let MUI scale artwork with DPI.
+ManifestDPIAware true
+ManifestSupportedOS all
+BrandingText "Rotor  |  ${APP_VERSION}"
+InstallColors 18354B FFFFFF
+!define MUI_ICON "..\assets\icons\icon.ico"
+!define MUI_UNICON "..\assets\icons\icon.ico"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "installer\windows-sidebar.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "installer\windows-sidebar.bmp"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_HEADERIMAGE_BITMAP "installer\windows-header.bmp"
+!define MUI_HEADERIMAGE_UNBITMAP "installer\windows-header.bmp"
+!define MUI_BGCOLOR FFFFFF
+!define MUI_TEXTCOLOR 18354B
 !define MUI_ABORTWARNING
+!define MUI_WELCOMEPAGE_TITLE "$(RotorWelcomeTitle)"
+!define MUI_WELCOMEPAGE_TEXT "$(RotorWelcomeText)"
+!define MUI_WELCOMEPAGE_TITLE_3LINES
+!define MUI_FINISHPAGE_TITLE "$(RotorFinishTitle)"
+!define MUI_FINISHPAGE_TEXT "$(RotorFinishText)"
+!define MUI_FINISHPAGE_TITLE_3LINES
 !define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_TEXT "$(RotorRunText)"
 !define MUI_FINISHPAGE_RUN_FUNCTION RestartRotor
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -41,6 +63,17 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "SimpChinese"
+
+LangString RotorWelcomeTitle ${LANG_ENGLISH} "Welcome to ${PRODUCT_NAME}"
+LangString RotorWelcomeText ${LANG_ENGLISH} "A little more flow for your desktop.$\r$\n$\r$\nSearch files, capture ideas and translate text with Rotor.$\r$\n$\r$\nSetup will guide you through the installation. Close Rotor before continuing.$\r$\n$\r$\nClick Next to get started."
+LangString RotorFinishTitle ${LANG_ENGLISH} "${PRODUCT_NAME} is ready"
+LangString RotorFinishText ${LANG_ENGLISH} "Installation is complete.$\r$\n$\r$\nOpen Rotor to get started. You can also find it in the Start menu."
+LangString RotorRunText ${LANG_ENGLISH} "Open ${PRODUCT_NAME}"
+LangString RotorWelcomeTitle ${LANG_SIMPCHINESE} "欢迎使用 ${PRODUCT_NAME}"
+LangString RotorWelcomeText ${LANG_SIMPCHINESE} "让桌面，得心应手。$\r$\n$\r$\n文件搜索、截图贴图、文字翻译，随手可用。$\r$\n$\r$\n安装向导将引导你完成安装。继续前，请先退出正在运行的 Rotor。$\r$\n$\r$\n点击「下一步」开始。"
+LangString RotorFinishTitle ${LANG_SIMPCHINESE} "${PRODUCT_NAME} 已准备就绪"
+LangString RotorFinishText ${LANG_SIMPCHINESE} "安装已完成。$\r$\n$\r$\n打开 Rotor，即可开始使用。你也可以在开始菜单中找到它。"
+LangString RotorRunText ${LANG_SIMPCHINESE} "打开 ${PRODUCT_NAME}"
 
 Var RestartArguments
 Var ParentPid

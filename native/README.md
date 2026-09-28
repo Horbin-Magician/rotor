@@ -55,7 +55,12 @@ root. Original third-party licenses are in `licenses/` and beside model assets.
 
 Production Windows uses `Rotor_3.0.0_x64-setup.exe`; development uses `Rotor-Dev`.
 macOS produces versioned `.dmg` and `.app.tar.gz` files. The DMG contains the app
-and an Applications link. Developer ID signing, notarization and Gatekeeper
+and an Applications link, arranged over a Retina background with bilingual drag
+instructions. Windows uses Rotor artwork in the native NSIS welcome, finish and
+header areas, with English and Simplified Chinese copy. Checked-in artwork and
+Finder layouts need no additional packaging dependencies or Finder automation;
+see [installer artwork](installer/README.md) for regeneration and visual checks.
+Developer ID signing, notarization and Gatekeeper
 acceptance require a Mac and release credentials.
 
 ## Signing and release drafts
