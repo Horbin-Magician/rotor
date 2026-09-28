@@ -44,6 +44,27 @@ impl Default for UpdateSnapshot {
     }
 }
 impl UpdateSnapshot {
+    /// Stable support codes; full diagnostics are recorded when state is published.
+    pub fn error_code(&self) -> Option<&'static str> {
+        let error = self.error.as_deref()?;
+        if matches!(
+            error,
+            "Update download cancelled" | "Update check cancelled"
+        ) {
+            return None;
+        }
+        Some(match self.phase {
+            UpdatePhase::Ready
+                if error == "Installer identity/version differs from the selected update" =>
+            {
+                "E-UPD-004"
+            }
+            UpdatePhase::Ready => "E-UPD-003",
+            _ if self.release.is_some() => "E-UPD-002",
+            _ => "E-UPD-001",
+        })
+    }
+
     pub fn busy(&self) -> bool {
         matches!(
             self.phase,
@@ -69,6 +90,13 @@ fn publish(
     let mut state = lock(state);
     change(&mut state);
     state.revision += 1;
+    if let Some(code) = state.error_code() {
+        log::error!(
+            "[{code}] update revision {}: {}",
+            state.revision,
+            state.error.as_deref().unwrap_or_default()
+        );
+    }
     Arc::new(state.clone())
 }
 impl UpdateService {
@@ -251,6 +279,36 @@ impl UpdateService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn error_codes_distinguish_update_stages_and_ignore_cancellation() {
+        let mut snapshot = UpdateSnapshot {
+            phase: UpdatePhase::Failed,
+            error: Some("network unavailable\nrequest failed".into()),
+            ..Default::default()
+        };
+        assert_eq!(snapshot.error_code(), Some("E-UPD-001"));
+        snapshot.release = Some(Arc::new(Release {
+            version: "99.0.0".into(),
+            notes: String::new(),
+            artifact: rotor_updater::Artifact {
+                signature: String::new(),
+                url: String::new(),
+            },
+            target: String::new(),
+        }));
+        assert_eq!(snapshot.error_code(), Some("E-UPD-002"));
+        snapshot.phase = UpdatePhase::Ready;
+        assert_eq!(snapshot.error_code(), Some("E-UPD-003"));
+        snapshot.error = Some("Installer identity/version differs from the selected update".into());
+        assert_eq!(snapshot.error_code(), Some("E-UPD-004"));
+        for cancelled in ["Update download cancelled", "Update check cancelled"] {
+            snapshot.error = Some(cancelled.into());
+            assert_eq!(snapshot.error_code(), None);
+        }
+        snapshot.error = None;
+        assert_eq!(snapshot.error_code(), None);
+    }
+
     #[test]
     fn serial_operations_require_a_release_and_stop_after_shutdown() {
         let runtime = tokio::runtime::Runtime::new().unwrap();

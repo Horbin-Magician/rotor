@@ -20,7 +20,25 @@ impl Render for UpdateDialog {
 }
 
 impl SettingsView {
+    fn update_action_error(&mut self, code: &str, error: &str) {
+        log::error!("[{code}] {error}");
+        self.message = format!("{code} · {}", self.t("操作失败", "Action failed"));
+    }
+
+    fn update_download_cancelled(&self) -> bool {
+        self.update.phase == UpdatePhase::Failed
+            && self.update.error.as_deref() == Some("Update download cancelled")
+    }
+
     fn update_label(&self) -> String {
+        if let Some(code) = self.update.error_code() {
+            let label = match code {
+                "E-UPD-003" | "E-UPD-004" => self.t("安装失败", "Install failed"),
+                "E-UPD-002" => self.t("下载失败", "Download failed"),
+                _ => self.t("检查失败", "Check failed"),
+            };
+            return format!("{code} · {label}");
+        }
         match self.update.phase {
             UpdatePhase::Idle => self.t("检查更新", "Check for updates"),
             UpdatePhase::Checking => self.t("正在检查…", "Checking…"),
@@ -33,6 +51,9 @@ impl SettingsView {
             UpdatePhase::Ready => self.t("更新已就绪", "Ready to install"),
             UpdatePhase::Installing => self.t("正在启动安装程序…", "Starting installer…"),
             UpdatePhase::HandedOff => self.t("安装程序已启动", "Installer started"),
+            UpdatePhase::Failed if self.update_download_cancelled() => {
+                self.t("下载已取消", "Download cancelled")
+            }
             UpdatePhase::Failed if self.update.release.is_some() => {
                 self.t("下载失败，点击重试", "Download failed · Retry")
             }
@@ -79,7 +100,9 @@ impl SettingsView {
                 button.primary()
             })
             .disabled(self.controls_locked())
-            .tooltip(self.update.error.clone().unwrap_or_else(|| {
+            .tooltip(if self.update.error.is_some() {
+                self.update_label()
+            } else {
                 if checking {
                     self.t("点击取消检查", "Click to cancel check")
                 } else if self.update.release.is_some() {
@@ -88,7 +111,7 @@ impl SettingsView {
                     self.t("检查是否有新版本", "Check for a new version")
                 }
                 .into()
-            }))
+            })
             .on_click(cx.listener(|this, _, window, cx| {
                 if this.update.phase == UpdatePhase::Checking {
                     this.services.cancel_update();
@@ -96,7 +119,7 @@ impl SettingsView {
                     this.show_update_dialog(window, cx);
                 } else {
                     if let Err(error) = this.services.check_updates() {
-                        this.message = error;
+                        this.update_action_error("E-UPD-001", &error);
                     }
                     this.update = this.services.update_snapshot();
                     if this.update.phase == UpdatePhase::Available {
@@ -165,7 +188,7 @@ impl SettingsView {
         } else {
             release.notes.clone()
         };
-        let mut body = div()
+        let body = div()
             .flex()
             .flex_col()
             .gap_3()
@@ -184,7 +207,7 @@ impl SettingsView {
                 div()
                     .id("update-release-notes")
                     .debug_selector(|| "update-release-notes".into())
-                    .h((window.viewport_size().height - px(330.)).clamp(px(100.), px(360.)))
+                    .h(window.viewport_size().height - px(180.))
                     .min_w_0()
                     .rounded_md()
                     .border_1()
@@ -198,27 +221,24 @@ impl SettingsView {
                         ),
                     ),
             );
-        if self.update.phase != UpdatePhase::Available {
-            body = body.child(appearance::caption(self.update_label(), cx));
-        }
-        if let Some(error) = &self.update.error {
-            body = body.child(
-                div()
-                    .id("update-error")
-                    .max_h(px(64.))
-                    .overflow_y_scrollbar()
-                    .text_size(px(13.))
-                    .text_color(cx.theme().danger)
-                    .child(error.clone()),
-            );
-        }
         body.child(self.update_dialog_actions(cx))
     }
 
     fn update_dialog_actions(&self, cx: &mut Context<Self>) -> Div {
+        let mut status = div().flex_1().min_w_0();
+        if self.update.phase != UpdatePhase::Available {
+            status = status.child(
+                appearance::caption(self.update_label(), cx)
+                    .debug_selector(|| "update-status".into())
+                    .truncate()
+                    .when(self.update.error_code().is_some(), |status| {
+                        status.text_color(cx.theme().danger)
+                    }),
+            );
+        }
         let mut actions = div()
-            .debug_selector(|| "update-actions".into())
             .flex()
+            .flex_shrink_0()
             .flex_wrap()
             .items_center()
             .justify_end()
@@ -235,21 +255,12 @@ impl SettingsView {
                                 .services
                                 .open_file(parent.to_string_lossy().into_owned(), false)
                         {
-                            this.message = error;
+                            this.update_action_error("E-UPD-005", &error);
                             cx.notify();
                         }
                     })),
             );
         }
-        actions = actions.child(
-            appearance::button("dismiss-update")
-                .label(self.t("稍后", "Later"))
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.update_dialog_open = false;
-                    window.close_dialog(cx);
-                    cx.notify();
-                })),
-        );
         if self.update.phase == UpdatePhase::Downloading {
             actions = actions.child(
                 appearance::button("cancel-update")
@@ -270,7 +281,7 @@ impl SettingsView {
                     )
                     .on_click(cx.listener(|this, _, _, cx| {
                         if let Err(error) = this.services.install_update() {
-                            this.message = error;
+                            this.update_action_error("E-UPD-003", &error);
                         }
                         this.update = this.services.update_snapshot();
                         cx.notify();
@@ -288,14 +299,20 @@ impl SettingsView {
                     .disabled(self.controls_locked())
                     .on_click(cx.listener(|this, _, _, cx| {
                         if let Err(error) = this.services.download_update() {
-                            this.message = error;
+                            this.update_action_error("E-UPD-002", &error);
                         }
                         this.update = this.services.update_snapshot();
                         cx.notify();
                     })),
             );
         }
-        actions
+        div()
+            .debug_selector(|| "update-actions".into())
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(status)
+            .child(actions)
     }
 }
 
@@ -365,14 +382,19 @@ mod tests {
                 });
                 assert!(cx.debug_bounds("dialog-layer").is_some());
                 let notes_bounds = cx.debug_bounds("update-release-notes").unwrap();
-                assert!(notes_bounds.size.height <= px(360.), "{notes_bounds:?}");
+                let available_height = cx.update(|window, _| window.viewport_size().height - px(180.));
+                assert!(notes_bounds.size.height <= available_height, "{notes_bounds:?}");
                 assert_eq!(cx.debug_bounds("update-row").unwrap(), initial_row);
                 for phase in [UpdatePhase::Downloading, UpdatePhase::Failed, UpdatePhase::Ready, UpdatePhase::Installing] {
                     snapshot.revision += 1;
                     snapshot.phase = phase;
                     snapshot.downloaded = 50;
                     snapshot.total = Some(100);
-                    snapshot.error = (phase == UpdatePhase::Failed).then(|| "Synthetic download error".into());
+                    snapshot.error = match phase {
+                        UpdatePhase::Failed => Some("Synthetic download error\n".repeat(100)),
+                        UpdatePhase::Ready => Some("Installer identity/version differs from the selected update".into()),
+                        _ => None,
+                    };
                     cx.update(|window, cx| {
                         view.update(cx, |view, cx| view.handle_event(RuntimeEvent::Update(Arc::new(snapshot.clone())), window, cx));
                         window.draw(cx).clear(cx);
@@ -380,6 +402,16 @@ mod tests {
                     });
                     assert_eq!(cx.debug_bounds("update-row").unwrap(), initial_row);
                     assert!(cx.debug_bounds("update-release-notes").is_some());
+                    let status = cx.debug_bounds("update-status").unwrap();
+                    assert!(status.size.height <= px(24.), "{status:?}");
+                    view.read_with(cx, |view, _| {
+                        let label = view.update_label();
+                        assert!(!label.contains('\n'));
+                        assert!(!label.contains("Synthetic"));
+                        if phase == UpdatePhase::Ready {
+                            assert!(label.contains("E-UPD-004"));
+                        }
+                    });
                 }
                 // Closing must restore the entry point; old/duplicate events must
                 // not reopen the dialog or replace a newer download state.
