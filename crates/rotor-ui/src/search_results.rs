@@ -1,4 +1,4 @@
-use rotor_runtime::{QueryId, SearchBatch, SearchResultItem};
+use rotor_runtime::{QueryId, SearchBatch, SearchHighlights, SearchResultItem};
 use std::collections::HashSet;
 
 pub const MAX_RESULTS: usize = 100;
@@ -6,6 +6,7 @@ pub const MAX_RESULTS: usize = 100;
 #[derive(Default)]
 pub struct SearchResults {
     pub items: Vec<SearchResultItem>,
+    pub highlights: SearchHighlights,
     pub selected: usize,
     pub loading: bool,
     pub replacing: bool,
@@ -45,6 +46,7 @@ impl SearchResults {
             return false;
         }
         if !batch.append {
+            self.highlights = SearchHighlights::new(&batch.query);
             self.icon_generation = Some(batch.id);
             self.items.clear();
             self.selected = 0;
@@ -166,23 +168,27 @@ mod tests {
         });
         assert_eq!(results.items.len(), MAX_RESULTS);
         assert_eq!(results.items.last().unwrap().file_path, "99");
+        assert_eq!(results.highlights.name_ranges("abc"), vec![0..1]);
         results.selected = 99;
         results.begin(QueryId(3), "b".into(), false);
         assert_eq!(results.items.len(), MAX_RESULTS);
         assert_eq!(results.selected, 0);
         assert!(results.replacing);
+        assert_eq!(results.highlights.name_ranges("abc"), vec![0..1]);
         assert!(!results.accept(&SearchBatch {
             id: QueryId(2),
             query: "a".into(),
             items: vec![item("late-page")],
             append: true,
         }));
+        assert_eq!(results.highlights.name_ranges("abc"), vec![0..1]);
         results.accept(&SearchBatch {
             id: QueryId(3),
             query: "b".into(),
             items: vec![],
             append: false,
         });
+        assert_eq!(results.highlights.name_ranges("abc"), vec![1..2]);
         assert!(results.exhausted);
         assert!(!results.replacing);
         assert!(results.items.is_empty());

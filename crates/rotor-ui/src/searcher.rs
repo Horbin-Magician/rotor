@@ -380,11 +380,31 @@ impl SearchView {
         let selected_color = rgb(if dark { 0x14212a } else { 0xe9f4fe });
         let foreground = rgb(if dark { 0xf6f6f6 } else { 0x121212 });
         let secondary = rgb(if dark { 0xcccccc } else { 0x666666 });
+        let highlight = HighlightStyle {
+            color: Some(rgb(if dark { 0x60a5fa } else { 0x1d4ed8 }).into()),
+            font_weight: Some(FontWeight::BOLD),
+            ..Default::default()
+        };
         range
             .map(|index| {
                 let item = &self.results.items[index];
                 let (display_name, is_app) = result_label(&item.file_name, item.alias.as_deref());
                 let icon = self.icons.get(&item.file_path).cloned();
+                let title = item
+                    .alias
+                    .as_deref()
+                    .filter(|alias| !alias.is_empty())
+                    .unwrap_or(&item.file_name);
+                let name = StyledText::new(display_name.to_owned()).with_highlights(
+                    self.results
+                        .highlights
+                        .name_ranges(title)
+                        .into_iter()
+                        .filter_map(|range| {
+                            let end = range.end.min(display_name.len());
+                            (range.start < end).then_some((range.start..end, highlight))
+                        }),
+                );
                 div()
                     .id(("result", index))
                     .relative()
@@ -446,7 +466,7 @@ impl SearchView {
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_color(foreground)
                                             .truncate()
-                                            .child(display_name.to_owned()),
+                                            .child(name),
                                     )
                                     .child(
                                         div()
@@ -471,7 +491,15 @@ impl SearchView {
                                     .text_size(px(12.))
                                     .text_color(secondary)
                                     .truncate()
-                                    .child(item.path.clone()),
+                                    .child(
+                                        StyledText::new(item.path.clone()).with_highlights(
+                                            self.results
+                                                .highlights
+                                                .path_ranges(&item.path)
+                                                .into_iter()
+                                                .map(|range| (range, highlight)),
+                                        ),
+                                    ),
                             ),
                     )
                     .when(self.hovered == Some(index), |row| {

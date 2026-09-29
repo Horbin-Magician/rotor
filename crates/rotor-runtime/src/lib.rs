@@ -18,7 +18,7 @@ pub use rotor_screenshot::session::NativeSession;
 pub use rotor_screenshot::{pin_store::StoredPin, shotter_record::ShotterConfig};
 pub use rotor_searcher::file_data::SearchIndexStatus;
 pub use rotor_searcher::{file_data::SearchResultItem, SearchBatch, SearchIconBatch};
-pub use rotor_searcher::{IndexState, QueryId};
+pub use rotor_searcher::{IndexState, QueryId, SearchHighlights};
 pub use rotor_translator::engine::{TranslateResult, TranslateStreamEvent};
 pub use services::{
     CaptureBundle, CapturedMonitor, ChatMessage, LongCaptureControl, LongCaptureEvent,

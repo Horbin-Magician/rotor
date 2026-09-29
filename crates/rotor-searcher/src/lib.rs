@@ -1,5 +1,7 @@
 pub mod file_data;
+mod highlights;
 mod icons;
+pub use highlights::SearchHighlights;
 mod latest;
 mod mailbox;
 mod request;
