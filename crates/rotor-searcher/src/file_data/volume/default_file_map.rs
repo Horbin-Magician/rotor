@@ -727,6 +727,46 @@ mod tests {
     }
 
     #[test]
+    fn localized_app_names_are_searchable_and_survive_snapshot_roundtrip() {
+        let root = tempfile::tempdir().unwrap();
+        let resources = root
+            .path()
+            .join("WeChat.app/Contents/Resources/zh_CN.lproj");
+        fs::create_dir_all(&resources).unwrap();
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            fs::write(
+                resources.join("InfoPlist.strings"),
+                format!("\"{key}\" = \"微信\";"),
+            )
+            .unwrap();
+            let mut map = FileMap::new();
+            map.insert(
+                "WeChat.app".into(),
+                root.path().to_string_lossy().into_owned(),
+            );
+            let snapshot = root.path().join("index");
+            for reload in [false, true] {
+                if reload {
+                    map.save(snapshot.to_str().unwrap()).unwrap();
+                    map.clear();
+                    map.read(snapshot.to_str().unwrap()).unwrap();
+                }
+                for query in ["微信", "weixin", "wx"] {
+                    let items = search_items(&map, query);
+                    assert_eq!(items.len(), 1, "{key}: {query}, reload={reload}");
+                    assert_eq!(items[0].file_name, "WeChat.app");
+                    assert_eq!(items[0].alias.as_deref(), Some("微信"));
+                    assert_eq!(
+                        Path::new(&items[0].file_path),
+                        root.path().join("WeChat.app")
+                    );
+                }
+                assert_eq!(search_names(&map, "wechat"), vec!["WeChat.app"]);
+            }
+        }
+    }
+
+    #[test]
     fn search_matches_file_name_by_full_pinyin_and_initials() {
         let mut file_map = FileMap::new();
         file_map.insert("微信.txt".to_string(), "/tmp".to_string());

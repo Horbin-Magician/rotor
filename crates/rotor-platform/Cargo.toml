@@ -10,6 +10,7 @@ getrandom = "0.4"
 serde_json.workspace = true
 url.workspace = true
 encoding_rs = "0.8.35"
+plist.workspace = true
 file_icon_provider = "0.4.0"
 image.workspace = true
 log.workspace = true
@@ -26,7 +27,6 @@ objc2-foundation = { version = "=0.2.2", features = ["NSRunLoop", "NSDate"] }
 [target."cfg(target_os = \"macos\")".dependencies]
 objc2 = "0.5.2"
 objc2-foundation = { version = "=0.2.2", features = ["NSThread", "NSData"] }
-plist.workspace = true
 core-graphics = "0.23"
 core-foundation = "0.9"
 objc2-app-kit = { version = "0.2.2", features = ["objc2-quartz-core", "NSButton", "NSColor", "NSGraphics", "NSControl", "NSPasteboard", "NSResponder", "NSView", "NSWindow", "NSApplication", "NSRunningApplication", "NSAlert", "NSImage"] }
