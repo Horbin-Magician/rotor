@@ -15,6 +15,7 @@ pub enum LongCaptureStatus {
     NoOverlap,
     Ambiguous,
     Limit,
+    MemoryBudget,
     ViewportChanged,
 }
 impl LongCaptureStatus {
@@ -22,6 +23,7 @@ impl LongCaptureStatus {
         match error {
             StitchError::AmbiguousOverlap => Self::Ambiguous,
             StitchError::LimitExceeded => Self::Limit,
+            StitchError::MemoryBudgetExceeded => Self::MemoryBudget,
             StitchError::DimensionsChanged => Self::ViewportChanged,
             StitchError::NoOverlap | StitchError::Cancelled => Self::NoOverlap,
         }

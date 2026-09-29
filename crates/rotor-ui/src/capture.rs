@@ -10,7 +10,17 @@ pub struct PreparedImage {
     pub render: Arc<RenderImage>,
     width: u32,
     height: u32,
+    pub(crate) tiles: Vec<PreparedTile>,
 }
+#[derive(Clone)]
+pub(crate) struct PreparedTile {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub render: Arc<RenderImage>,
+}
+
 impl PreparedImage {
     pub fn width(&self) -> u32 {
         self.width
@@ -53,12 +63,47 @@ pub fn prepare_image_cancellable(
             pixel.0.swap(0, 2);
         }
     }
+    // Large source images remain available at full resolution for export/OCR.
+    // Display tiles keep either texture dimension within a conservative bound.
+    const TILE_SIDE: u32 = 4096;
+    let mut tiles = Vec::new();
+    if width > TILE_SIDE || height > TILE_SIDE {
+        for y in (0..height).step_by(TILE_SIDE as usize) {
+            for x in (0..width).step_by(TILE_SIDE as usize) {
+                if cancelled() {
+                    return Err("Image preparation cancelled".into());
+                }
+                let w = TILE_SIDE.min(width - x);
+                let h = TILE_SIDE.min(height - y);
+                let tile = image::imageops::crop_imm(&bgra, x, y, w, h).to_image();
+                tiles.push(PreparedTile {
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                    render: Arc::new(RenderImage::new(vec![image::Frame::new(tile)])),
+                });
+            }
+        }
+    }
+    let render = Arc::new(RenderImage::new(vec![image::Frame::new(bgra)]));
+    if tiles.is_empty() {
+        tiles.push(PreparedTile {
+            x: 0,
+            y: 0,
+            width,
+            height,
+            render: render.clone(),
+        });
+    }
     Ok(PreparedImage {
         width,
         height,
-        render: Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])),
+        render,
+        tiles,
     })
 }
+
 pub struct PreparedCapture {
     pub monitor: MonitorConfig,
     pub image: PreparedScreenshot,
@@ -1380,6 +1425,39 @@ mod tests {
                 [(1, background), (2, foreground), (-1, contour)].into_iter()
             ),
             Some(contour)
+        );
+    }
+}
+
+#[cfg(test)]
+mod image_tile_tests {
+    use super::{Arc, RgbaImage, prepare_image};
+
+    #[test]
+    fn tall_image_tiles_preserve_every_source_pixel() {
+        let source = Arc::new(RgbaImage::from_fn(8, 20_001, |x, y| {
+            image::Rgba([x as u8, y as u8, 71, 255])
+        }));
+        let prepared = prepare_image(source.clone()).unwrap();
+        assert_eq!(prepared.tiles.len(), 5);
+        let mut rows = 0;
+        for tile in &prepared.tiles {
+            assert_eq!(tile.y, rows);
+            assert!(tile.width <= 4096 && tile.height <= 4096);
+            let bytes = tile.render.as_bytes(0).unwrap();
+            for y in 0..tile.height {
+                for x in 0..tile.width {
+                    let [r, g, b, a] = source.get_pixel(tile.x + x, tile.y + y).0;
+                    let offset = ((y * tile.width + x) * 4) as usize;
+                    assert_eq!(&bytes[offset..offset + 4], &[b, g, r, a]);
+                }
+            }
+            rows += tile.height;
+        }
+        assert_eq!(rows, source.height());
+        assert_eq!(
+            prepared.render.as_bytes(0).unwrap().len(),
+            source.as_raw().len()
         );
     }
 }

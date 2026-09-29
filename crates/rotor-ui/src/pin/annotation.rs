@@ -950,14 +950,20 @@ impl PinView {
         let scale_x = self.canvas_scale();
         let scale_y = scale_x;
         let mut layer = div().size_full().overflow_hidden();
-        layer = layer.child(
-            img(self.image.render.clone())
-                .absolute()
-                .left(px(-(transform.crop.x as f64 * scale_x) as f32))
-                .top(px(-(transform.crop.y as f64 * scale_y) as f32))
-                .w(px((self.image.width() as f64 * scale_x) as f32))
-                .h(px((self.image.height() as f64 * scale_y) as f32)),
-        );
+        for tile in &self.image.tiles {
+            layer = layer.child(
+                img(tile.render.clone())
+                    .absolute()
+                    .left(px(
+                        ((f64::from(tile.x) - f64::from(transform.crop.x)) * scale_x) as f32,
+                    ))
+                    .top(px(
+                        ((f64::from(tile.y) - f64::from(transform.crop.y)) * scale_y) as f32,
+                    ))
+                    .w(px((f64::from(tile.width) * scale_x) as f32))
+                    .h(px((f64::from(tile.height) * scale_y) as f32)),
+            );
+        }
         let key = (self.canvas.document.revision(), scale_y.to_bits());
         if self.canvas.display_key != Some(key) {
             let reuse = self

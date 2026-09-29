@@ -191,8 +191,12 @@ impl LongCaptureView {
                 "The overlap is too blank or repetitive to place. Scroll back so the selection includes more distinctive text.",
             ),
             LongCaptureStatus::Limit => pick(
-                "已达到长图尺寸上限。点击完成保留已拼接部分，或取消后缩小选区。",
-                "The long image reached its size limit. Click Finish to keep the captured part, or cancel and select a smaller region.",
+                "已达到拼接计算上限。点击完成保留已拼接部分，或取消后缩小选区。",
+                "Stitching reached its comparison limit. Click Finish to keep the captured part, or cancel and select a smaller region.",
+            ),
+            LongCaptureStatus::MemoryBudget => pick(
+                "已达到长图像素缓冲的 256 MiB 内存预算，或内存分配失败。点击完成保留已拼接部分，或取消后缩小选区。",
+                "The long image reached its 256 MiB pixel buffer budget, or allocation failed. Click Finish to keep the captured part, or cancel and select a smaller region.",
             ),
             LongCaptureStatus::ViewportChanged => pick(
                 "窗口尺寸或显示缩放已变化，无法继续拼接。点击完成保留已拼接部分，或取消后重新截图。",

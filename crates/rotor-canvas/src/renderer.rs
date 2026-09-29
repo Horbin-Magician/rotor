@@ -7,6 +7,9 @@ use resvg::{
 };
 use std::{fmt::Write, sync::Arc};
 
+// Budget for one RGBA output buffer; sampling and annotation buffers are additional.
+const MAX_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
+
 pub struct Renderer {
     fonts: Arc<usvg::fontdb::Database>,
     /// The family text annotations actually request: `FONT_FAMILY` when it is
@@ -71,9 +74,7 @@ impl Renderer {
         }
         if output.width == 0
             || output.height == 0
-            || output.width > 16384
-            || output.height > 16384
-            || output.width as u64 * output.height as u64 > 64 * 1024 * 1024
+            || u64::from(output.width) * u64::from(output.height) > MAX_OUTPUT_BYTES / 4
         {
             return Err("Canvas output dimensions are unsupported".into());
         }
@@ -296,6 +297,34 @@ mod tests {
             annotations: Vec::new(),
         }
     }
+    #[test]
+    fn tall_canvas_exports_at_full_resolution_within_byte_budget() {
+        let image = RgbaImage::from_fn(8, 20_000, |x, y| Rgba([x as u8, y as u8, 71, 255]));
+        let scene = scene(8, 20_000);
+        let renderer = Renderer::without_fonts();
+        assert_eq!(renderer.render(&image, &scene, scene.size).unwrap(), image);
+        assert!(renderer
+            .render(
+                &image,
+                &scene,
+                ImageSize {
+                    width: 8192,
+                    height: 8193
+                }
+            )
+            .is_err());
+        assert!(renderer
+            .render(
+                &image,
+                &scene,
+                ImageSize {
+                    width: u32::MAX,
+                    height: u32::MAX
+                }
+            )
+            .is_err());
+    }
+
     #[test]
     fn arrow_tip_has_no_round_protrusion_or_double_opacity() {
         let image = RgbaImage::new(80, 40);

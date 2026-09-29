@@ -11,8 +11,9 @@ use std::sync::{
 };
 
 const MIN_OVERLAP: u32 = 8;
-const MAX_PIXELS: u64 = 16 * 1024 * 1024;
-const MAX_DIMENSION: u32 = 16384;
+/// Maximum capacity of the accumulated RGBA pixel buffer (256 MiB).
+/// Capture frames, matching data, UI copies and export buffers are additional.
+pub const MAX_IMAGE_BYTES: usize = 256 * 1024 * 1024;
 const COMPARE_BUDGET: u64 = 32 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub enum StitchError {
     Cancelled,
     DimensionsChanged,
     LimitExceeded,
+    MemoryBudgetExceeded,
     NoOverlap,
     AmbiguousOverlap,
 }
@@ -28,7 +30,10 @@ impl std::fmt::Display for StitchError {
         f.write_str(match self {
             Self::Cancelled => "Stitching cancelled",
             Self::DimensionsChanged => "Keep the same viewport size and display scale",
-            Self::LimitExceeded => "Long image size or comparison limit reached",
+            Self::LimitExceeded => "Invalid capture dimensions or comparison limit reached",
+            Self::MemoryBudgetExceeded => {
+                "Long image pixel buffer reached its 256 MiB memory budget"
+            }
             Self::NoOverlap => {
                 "No stable overlap: scroll less and exclude fixed headers or changing content"
             }
@@ -133,18 +138,29 @@ impl StitchSession {
         // Validation is complete: grow the accepted buffer in place when no
         // preview consumer still shares it.
         let stride = width as usize * 4;
-        let previous = std::mem::replace(&mut self.preview, Arc::new(RgbaImage::new(0, 0)));
-        let mut raw = Arc::try_unwrap(previous)
-            .unwrap_or_else(|shared| (*shared).clone())
-            .into_raw();
-        raw.truncate(kept as usize * stride);
         let needed = new_height as usize * stride;
-        if raw.capacity() < needed {
-            let grown = (needed + needed / 2)
-                .min(MAX_PIXELS as usize * 4)
-                .max(needed);
-            raw.reserve_exact(grown - raw.len());
+        let grown = (needed + needed / 2).min(MAX_IMAGE_BYTES);
+        // Reserve before mutating accepted pixels. A failed allocation must leave
+        // the previous result available for Finish, just like a budget rejection.
+        let previous = self.preview.clone();
+        let mut raw = Vec::new();
+        if Arc::strong_count(&previous) == 2 {
+            drop(previous);
+            let previous = std::mem::replace(&mut self.preview, Arc::new(RgbaImage::new(0, 0)));
+            let old_height = previous.height();
+            raw = Arc::try_unwrap(previous)
+                .expect("exclusive accepted image")
+                .into_raw();
+            if raw.capacity() < needed && raw.try_reserve_exact(grown - raw.len()).is_err() {
+                self.preview = Arc::new(RgbaImage::from_raw(width, old_height, raw).unwrap());
+                return Err(StitchError::MemoryBudgetExceeded);
+            }
+        } else {
+            raw.try_reserve_exact(grown)
+                .map_err(|_| StitchError::MemoryBudgetExceeded)?;
+            raw.extend_from_slice(&previous.as_raw()[..kept as usize * stride]);
         }
+        raw.truncate(kept as usize * stride);
         raw.extend_from_slice(&next.image.as_raw()[start as usize * stride..]);
         self.preview = Arc::new(
             RgbaImage::from_raw(width, new_height, raw).ok_or(StitchError::LimitExceeded)?,
@@ -158,17 +174,19 @@ impl StitchSession {
     }
 }
 fn validate_size(width: u32, height: u32) -> Result<(), StitchError> {
-    if width == 0
-        || height == 0
-        || width > MAX_DIMENSION
-        || height > MAX_DIMENSION
-        || u64::from(width) * u64::from(height) > MAX_PIXELS
-    {
-        Err(StitchError::LimitExceeded)
+    if width == 0 || height == 0 {
+        return Err(StitchError::LimitExceeded);
+    }
+    let bytes = u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4));
+    if bytes.is_none_or(|bytes| bytes > MAX_IMAGE_BYTES as u64) {
+        Err(StitchError::MemoryBudgetExceeded)
     } else {
         Ok(())
     }
 }
+
 fn check_cancel(cancel: &AtomicBool) -> Result<(), StitchError> {
     if cancel.load(Ordering::Relaxed) {
         Err(StitchError::Cancelled)
@@ -525,6 +543,59 @@ fn scaled(image: &RgbaImage, top: u32, rows: u32, max_width: u32, max_height: u3
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn byte_budget_accepts_tall_images_and_checks_overflow() {
+        assert_eq!(validate_size(64, 200_000), Ok(()));
+        assert_eq!(validate_size(1, (MAX_IMAGE_BYTES / 4) as u32), Ok(()));
+        assert_eq!(
+            validate_size(1, (MAX_IMAGE_BYTES / 4 + 1) as u32),
+            Err(StitchError::MemoryBudgetExceeded)
+        );
+        assert_eq!(
+            validate_size(u32::MAX, u32::MAX),
+            Err(StitchError::MemoryBudgetExceeded)
+        );
+        assert_eq!(validate_size(0, 100), Err(StitchError::LimitExceeded));
+    }
+
+    #[test]
+    fn append_crosses_old_height_limit_and_preserves_pixels() {
+        let source = source();
+        let mut session = StitchSession::new(frame(&source, 0)).unwrap();
+        // Seed accumulated rows while keeping a small viewport for matching.
+        session.preview = Arc::new(RgbaImage::from_pixel(
+            64,
+            16380,
+            image::Rgba([1, 2, 3, 255]),
+        ));
+        let accepted = session.preview();
+        assert!(matches!(
+            session.append(frame(&source, 32), &AtomicBool::new(false)),
+            Ok(AppendOutcome::Added { .. })
+        ));
+        assert_eq!(session.preview.height(), 16412);
+        assert_eq!(session.preview.get_pixel(0, 0), accepted.get_pixel(0, 0));
+        assert_eq!(session.preview.get_pixel(0, 16411), source.get_pixel(0, 95));
+        assert_eq!(accepted.height(), 16380);
+        assert!(session.preview.as_raw().capacity() <= MAX_IMAGE_BYTES);
+    }
+
+    #[test]
+    fn budget_rejection_preserves_accepted_image_and_reference_frame() {
+        let source = source();
+        let mut session = StitchSession::new(frame(&source, 0)).unwrap();
+        session.preview = Arc::new(RgbaImage::new(64, (MAX_IMAGE_BYTES / (64 * 4)) as u32));
+        let accepted = session.preview();
+        let reference = session.last.image.clone();
+        assert_eq!(
+            session.append(frame(&source, 32), &AtomicBool::new(false)),
+            Err(StitchError::MemoryBudgetExceeded)
+        );
+        assert!(Arc::ptr_eq(&accepted, &session.preview()));
+        assert!(Arc::ptr_eq(&reference, &session.last.image));
+        assert_eq!(session.frame_count(), 1);
+    }
+
     fn document() -> RgbaImage {
         RgbaImage::from_fn(384, 1200, |x, y| {
             let line = y / 24;
@@ -835,11 +906,11 @@ mod tests {
         }
         assert_eq!(session.frame_count(), 97);
         assert_eq!(*session.preview(), source);
+        assert_eq!(validate_size(64, 16385), Ok(()));
         assert_eq!(
-            validate_size(64, MAX_DIMENSION + 1),
-            Err(StitchError::LimitExceeded)
+            validate_size(8192, 8193),
+            Err(StitchError::MemoryBudgetExceeded)
         );
-        assert_eq!(validate_size(8192, 4096), Err(StitchError::LimitExceeded));
     }
     #[test]
     fn manual_frames_reconstruct_pixels_and_skip_unchanged_captures() {
@@ -912,6 +983,6 @@ mod tests {
         );
         assert!(Arc::ptr_eq(&a, &session.preview()));
         assert!(validate_size(16384, 16384).is_err());
-        assert!(validate_size(64, 16385).is_err());
+        assert!(validate_size(64, 16385).is_ok());
     }
 }
