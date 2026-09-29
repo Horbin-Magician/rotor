@@ -8,7 +8,7 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::excluded_dirs::ExcludedDirs;
-use super::search_match::{prepare_search_name, NameIndex, SearchAlias, SearchQuery};
+use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
 use super::{cache, read_i64, read_string, read_u16, read_u64, SearchResultItem};
 
 pub struct FileView {
@@ -26,7 +26,6 @@ pub struct FileKey {
 }
 
 pub struct FileMap {
-    names: NameIndex,
     pub start_usn: i64,
     pub journal_id: u64,
     main_map: BTreeMap<FileKey, FileView>,
@@ -36,7 +35,6 @@ pub struct FileMap {
 impl FileMap {
     pub fn new() -> FileMap {
         FileMap {
-            names: NameIndex::default(),
             start_usn: 0,
             journal_id: 0,
             main_map: BTreeMap::new(),
@@ -62,11 +60,6 @@ impl FileMap {
 
     // insert a file to the database by index and file struct
     fn insert_simple(&mut self, index: u64, file: FileView) {
-        if let Some(old) = self.get(&index) {
-            let name = old.file_name.clone();
-            self.names.remove(&name);
-        }
-        self.names.insert(&file.file_name);
         let key = FileKey {
             rank: file.rank,
             index,
@@ -89,9 +82,7 @@ impl FileMap {
                 rank: self.rank_map[index],
                 index: *index,
             };
-            if let Some(file) = self.main_map.remove(&file_key) {
-                self.names.remove(&file.file_name);
-            }
+            self.main_map.remove(&file_key);
             self.rank_map.remove(index);
         }
     }
@@ -136,8 +127,7 @@ impl FileMap {
             if excluded_dirs.is_excluded_path(std::path::Path::new(&file_path)) {
                 continue;
             }
-            let tier = query.tier(alias.as_deref().unwrap_or(&file.file_name)) * 2
-                + query.path_tier(&path);
+            let tier = query.path_tier(&path);
             result.push(SearchResultItem {
                 path,
                 file_path,
@@ -165,14 +155,9 @@ impl FileMap {
         let mut query = SearchQuery::new(query);
         let mut result = Vec::new();
         let mut next_cursor = cursor.cloned();
-        // Resume within a relevance tier, ordered by the existing static rank.
+        // Resume within a path tier, ordered by the existing static rank.
         // Every tier spans the full index; buffering remains bounded by batch.
-        for tier in
-            (0..=cursor.map_or(query.max_rank_tier(&self.names), |c| (c.rank / 128) as u8)).rev()
-        {
-            if !query.active_rank_tier(tier) {
-                continue;
-            }
+        for tier in (0..=cursor.map_or(query.max_path_tier(), |c| (c.rank / 128) as u8)).rev() {
             let bound = cursor
                 .filter(|c| c.rank / 128 == i16::from(tier))
                 .map(|c| FileKey {
@@ -184,7 +169,7 @@ impl FileMap {
                 if cancel.load(Ordering::Relaxed) {
                     return None;
                 }
-                if !query.may_match(file.filter) || query.tier(&file.file_name) != tier / 2 {
+                if !query.may_match(file.filter) {
                     continue;
                 }
                 if query
@@ -201,7 +186,7 @@ impl FileMap {
                 let Some(path) = self.get_path(&file.parent_index) else {
                     continue;
                 };
-                if !query.matches_path(&path) || query.path_tier(&path) != tier % 2 {
+                if !query.matches_path(&path) || query.path_tier(&path) != tier {
                     continue;
                 }
                 let full_path = format!("{}{}", path, file.file_name);
@@ -297,7 +282,6 @@ impl FileMap {
     }
 
     pub fn clear(&mut self) {
-        self.names.clear();
         self.main_map.clear();
         // Only whole-index release uses this path. Keep start_usn for reload,
         // but relinquish the hash table allocation instead of retaining it.
@@ -344,8 +328,6 @@ impl FileMap {
         } else if extension.eq_ignore_ascii_case("lnk") {
             rank += 25;
         }
-
-        rank += 40usize.saturating_sub(file_name.len()) as i8;
 
         rank
     }

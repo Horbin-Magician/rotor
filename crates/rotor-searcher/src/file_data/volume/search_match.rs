@@ -1,48 +1,4 @@
 use pinyin::ToPinyin;
-use std::collections::BTreeMap;
-
-/// Counts normalized names (including display aliases) so duplicate filenames
-/// in different directories survive removals. This is rebuilt with snapshots;
-/// it only skips impossible relevance tiers, never supplies result identities.
-#[derive(Default)]
-pub(super) struct NameIndex(BTreeMap<String, usize>);
-
-impl NameIndex {
-    pub fn insert(&mut self, name: &str) {
-        *self.0.entry(name.to_lowercase()).or_default() += 1;
-    }
-    pub fn remove(&mut self, name: &str) {
-        let key = name.to_lowercase();
-        if let Some(count) = self.0.get_mut(&key) {
-            *count -= 1;
-            if *count == 0 {
-                self.0.remove(&key);
-            }
-        }
-    }
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
-    fn max_tier(&self, literal: &str) -> u8 {
-        if self.0.contains_key(literal) {
-            return 2;
-        }
-        if self
-            .0
-            .range::<str, _>((
-                std::ops::Bound::Included(literal),
-                std::ops::Bound::Unbounded,
-            ))
-            .next()
-            .is_some_and(|(name, _)| name.starts_with(literal))
-        {
-            1
-        } else {
-            0
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SearchAlias {
     pub text: Box<str>,
@@ -85,7 +41,6 @@ pub(super) struct SearchQuery {
     filter: u32,
     parts: Vec<String>,
     scratch: String,
-    literal: Option<String>,
     path: Option<String>,
 }
 
@@ -99,7 +54,6 @@ impl SearchQuery {
             });
         let lower = name.to_owned();
         Self {
-            literal: (!lower.is_empty() && !lower.contains('*')).then(|| lower.clone()),
             path,
             filter: make_filter(&lower),
             parts: lower
@@ -111,22 +65,13 @@ impl SearchQuery {
         }
     }
 
-    /// Empty and wildcard queries retain the static index order.
+    /// Skip candidates that cannot contain the query characters.
     pub fn may_match(&self, filter: u32) -> bool {
         (filter & self.filter) == self.filter
     }
 
-    pub fn max_tier(&self, names: &NameIndex) -> u8 {
-        self.literal
-            .as_deref()
-            .map_or(0, |literal| names.max_tier(literal))
-    }
-
-    pub fn max_rank_tier(&self, names: &NameIndex) -> u8 {
-        self.max_tier(names) * 2 + u8::from(self.has_path_bonus())
-    }
-    pub fn active_rank_tier(&self, tier: u8) -> bool {
-        tier.is_multiple_of(2) || self.has_path_bonus()
+    pub fn max_path_tier(&self) -> u8 {
+        u8::from(self.has_path_bonus())
     }
     fn has_path_bonus(&self) -> bool {
         self.path
@@ -134,7 +79,7 @@ impl SearchQuery {
             .is_some_and(|path| !path.is_empty() && !path.contains('*'))
     }
     /// A path qualifier ending at the immediate parent ranks above an ancestor
-    /// or a partial directory match. Name relevance remains the primary key.
+    /// or a partial directory match.
     pub fn path_tier(&self, path: &str) -> u8 {
         if !self.has_path_bonus() {
             return 0;
@@ -146,32 +91,6 @@ impl SearchQuery {
                 .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/')),
         )
     }
-    pub fn tier(&self, name: &str) -> u8 {
-        let Some(literal) = &self.literal else {
-            return 0;
-        };
-        if name.is_ascii() {
-            return if name.eq_ignore_ascii_case(literal) {
-                2
-            } else if name
-                .get(..literal.len())
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(literal))
-            {
-                1
-            } else {
-                0
-            };
-        }
-        let name = name.to_lowercase();
-        if name == *literal {
-            2
-        } else if name.starts_with(literal) {
-            1
-        } else {
-            0
-        }
-    }
-
     pub fn matches_path(&self, path: &str) -> bool {
         self.path.as_ref().is_none_or(|query| {
             let path = path.replace('\\', "/").to_lowercase();
@@ -336,27 +255,6 @@ mod tests {
             prepared.aliases.as_deref(),
             prepared.filter,
         )
-    }
-
-    #[test]
-    fn name_index_preserves_duplicates_and_only_skips_impossible_tiers() {
-        let mut names = NameIndex::default();
-        for name in ["Report", "REPORT", "report.txt", "微信"] {
-            names.insert(name);
-        }
-        assert_eq!(SearchQuery::new("report").max_tier(&names), 2);
-        names.remove("REPORT");
-        assert_eq!(SearchQuery::new("report").max_tier(&names), 2);
-        names.remove("report");
-        assert_eq!(SearchQuery::new("report").max_tier(&names), 1);
-        names.remove("report.txt");
-        assert_eq!(SearchQuery::new("report").max_tier(&names), 0);
-        assert_eq!(SearchQuery::new("微").max_tier(&names), 1);
-        assert_eq!(SearchQuery::new("微信").max_tier(&names), 2);
-        assert_eq!(SearchQuery::new("wx").max_tier(&names), 0);
-        assert_eq!(SearchQuery::new("*").max_tier(&names), 0);
-        names.clear();
-        assert_eq!(SearchQuery::new("微信").max_tier(&names), 0);
     }
 
     #[test]

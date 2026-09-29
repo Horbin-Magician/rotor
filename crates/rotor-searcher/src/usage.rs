@@ -199,7 +199,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scoring_decays_caps_and_preserves_relevance_tiers() {
+    fn scoring_decays_caps_and_preserves_path_tiers() {
         let mut r = Record {
             count: 1,
             last_opened: 100 * DAY,
@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(bonus(&r, 100 * DAY), 48);
         assert_eq!(bonus(&r, 130 * DAY), 12);
         assert_eq!(bonus(&r, 190 * DAY), 0);
-        assert!(65 + bonus(&r, 100 * DAY) < 128);
+        assert!(25 + bonus(&r, 100 * DAY) < 128);
     }
 
     #[test]

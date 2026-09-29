@@ -161,7 +161,7 @@ mod tests {
 }
 
 #[cfg(all(test, target_os = "windows"))]
-mod relevance_tests {
+mod ranking_tests {
     use super::*;
     use crate::file_data::{
         excluded_dirs::ExcludedDirs,
@@ -170,7 +170,7 @@ mod relevance_tests {
     use std::{collections::HashSet, sync::atomic::AtomicBool};
 
     #[test]
-    fn usage_promotes_later_pages_without_crossing_tiers_or_duplicating_results() {
+    fn usage_promotes_later_pages_without_duplicating_results() {
         let dir = tempfile::tempdir().unwrap();
         let usage = crate::usage::UsageStore::new(dir.path().into());
         let mut ntfs = ntfs_file_map::FileMap::new();
@@ -252,13 +252,19 @@ mod relevance_tests {
             assert!(actual
                 .windows(2)
                 .all(|items| items[0].rank >= items[1].rank));
-            assert!(actual[..2].iter().all(|item| item.file_name == "query"));
-            assert!(actual[2..4]
+            assert!(actual[..4].iter().all(|item| {
+                item.rank == 48
+                    && matches!(
+                        item.file_name.as_str(),
+                        "query-very-long-document.txt" | "a-query.txt"
+                    )
+            }));
+            assert!(actual[4..6]
                 .iter()
-                .all(|item| item.file_name == "query-very-long-document.txt"));
+                .all(|item| item.file_name == "query.exe" && item.rank == 10));
             assert!(actual[6..]
                 .iter()
-                .all(|item| item.file_name == "a-query.txt"));
+                .all(|item| item.file_name == "query" && item.rank == 0));
         }
         let frozen = usage.snapshot();
         usage.clear().unwrap();
@@ -329,7 +335,7 @@ mod relevance_tests {
     }
 
     #[test]
-    fn real_backends_merge_relevance_across_tiers_and_page_sizes() {
+    fn real_backends_merge_type_ranks_across_page_sizes() {
         let mut ntfs = ntfs_file_map::FileMap::new();
         let mut portable = default_file_map::FileMap::new();
         ntfs.insert(1, "X:".into(), 0);
@@ -403,9 +409,9 @@ mod relevance_tests {
             }
             if query == "report" {
                 let rows = reference.unwrap();
-                assert!(rows[..6].iter().all(|row| row.0 >= 512));
-                assert!(rows[6..10].iter().all(|row| row.0 >= 256 && row.0 < 512));
-                assert!(rows[10..].iter().all(|row| row.0 < 256));
+                assert!(rows[..2].iter().all(|row| row.0 == 25));
+                assert!(rows[2..4].iter().all(|row| row.0 == 10));
+                assert!(rows[4..].iter().all(|row| row.0 == 0));
             }
         }
         let cancelled = AtomicBool::new(true);

@@ -9,7 +9,7 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::search_match::{prepare_search_name, NameIndex, SearchAlias, SearchQuery};
+use super::search_match::{prepare_search_name, SearchAlias, SearchQuery};
 use super::{cache, read_string, read_u16, read_u32, read_u8, SearchResultItem};
 use rotor_platform::file_util;
 
@@ -255,7 +255,6 @@ impl Ord for FileView {
 }
 
 pub struct FileMap {
-    names: NameIndex,
     main_set: BTreeSet<FileView>,
     dir_tree: DirectoryTree,
 }
@@ -263,7 +262,6 @@ pub struct FileMap {
 impl FileMap {
     pub fn new() -> FileMap {
         FileMap {
-            names: NameIndex::default(),
             main_set: BTreeSet::new(),
             dir_tree: DirectoryTree::new(),
         }
@@ -310,16 +308,7 @@ impl FileMap {
     }
 
     fn insert_simple(&mut self, file: FileView) {
-        self.names.insert(&file.file_name);
-        for alias in file.aliases.as_deref().unwrap_or_default() {
-            self.names.insert(alias);
-        }
-        if let Some(old) = self.main_set.replace(file) {
-            self.names.remove(&old.file_name);
-            for alias in old.aliases.as_deref().unwrap_or_default() {
-                self.names.remove(alias);
-            }
-        }
+        self.main_set.replace(file);
     }
 
     #[cfg(test)]
@@ -353,16 +342,8 @@ impl FileMap {
                 }
                 descendants[id] |= descendants[node.parent_id as usize];
             }
-            self.main_set.retain(|file| {
-                if !descendants[file.parent_id as usize] {
-                    return true;
-                }
-                self.names.remove(&file.file_name);
-                for alias in file.aliases.as_deref().unwrap_or_default() {
-                    self.names.remove(alias);
-                }
-                false
-            });
+            self.main_set
+                .retain(|file| !descendants[file.parent_id as usize]);
         }
         for path in paths {
             cache::check_cancel(cancel)?;
@@ -415,12 +396,7 @@ impl FileMap {
             aliases: None,
             search_aliases: None,
         };
-        if let Some(old) = self.main_set.take(&file) {
-            self.names.remove(&old.file_name);
-            for alias in old.aliases.as_deref().unwrap_or_default() {
-                self.names.remove(alias);
-            }
-        }
+        self.main_set.remove(&file);
     }
 
     pub fn promoted(
@@ -457,8 +433,7 @@ impl FileMap {
                 continue;
             }
 
-            let tier = query.tier(alias.as_deref().unwrap_or(&file.file_name)) * 2
-                + query.path_tier(&path);
+            let tier = query.path_tier(&path);
             result.push(SearchResultItem {
                 path,
                 file_path,
@@ -485,14 +460,9 @@ impl FileMap {
         let mut query = SearchQuery::new(query);
         let mut result = Vec::new();
         let mut next_cursor = cursor.cloned();
-        // Resume within a relevance tier, ordered by the existing static rank.
+        // Resume within a path tier, ordered by the existing static rank.
         // Every tier spans the full index; buffering remains bounded by batch.
-        for tier in
-            (0..=cursor.map_or(query.max_rank_tier(&self.names), |c| (c.rank / 128) as u8)).rev()
-        {
-            if !query.active_rank_tier(tier) {
-                continue;
-            }
+        for tier in (0..=cursor.map_or(query.max_path_tier(), |c| (c.rank / 128) as u8)).rev() {
             let bound = cursor
                 .filter(|c| c.rank / 128 == i16::from(tier))
                 .map(|c| FileView {
@@ -516,14 +486,11 @@ impl FileMap {
                 ) else {
                     continue;
                 };
-                if query.tier(alias.as_deref().unwrap_or(&file.file_name)) != tier / 2 {
-                    continue;
-                }
                 let Some((path, file_path)) = self.result_paths(file.parent_id, &file.file_name)
                 else {
                     continue;
                 };
-                if !query.matches_path(&path) || query.path_tier(&path) != tier % 2 {
+                if !query.matches_path(&path) || query.path_tier(&path) != tier {
                     continue;
                 }
                 let rank = i16::from(tier) * 128 + i16::from(file.rank);
@@ -675,7 +642,6 @@ impl FileMap {
     }
 
     pub fn clear(&mut self) {
-        self.names.clear();
         self.main_set.clear();
         self.dir_tree.clear();
     }
@@ -703,8 +669,6 @@ impl FileMap {
         } else if extension.eq_ignore_ascii_case("app") || extension.eq_ignore_ascii_case("lnk") {
             rank += 25;
         }
-
-        rank += 40usize.saturating_sub(file_name.len()) as i8;
 
         rank
     }
