@@ -1,4 +1,4 @@
-Unicode true
+﻿Unicode true
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "FileFunc.nsh"
@@ -33,8 +33,7 @@ SetCompressor /SOLID lzma
 ; Keep native, keyboard-accessible controls and let MUI scale artwork with DPI.
 ManifestDPIAware true
 ManifestSupportedOS all
-BrandingText "Rotor  |  ${APP_VERSION}"
-InstallColors 18354B FFFFFF
+BrandingText "${PRODUCT_NAME}  ${APP_VERSION}"
 !define MUI_ICON "..\assets\icons\icon.ico"
 !define MUI_UNICON "..\assets\icons\icon.ico"
 !define MUI_WELCOMEFINISHPAGE_BITMAP "installer\windows-sidebar.bmp"
@@ -45,6 +44,7 @@ InstallColors 18354B FFFFFF
 !define MUI_HEADERIMAGE_UNBITMAP "installer\windows-header.bmp"
 !define MUI_BGCOLOR FFFFFF
 !define MUI_TEXTCOLOR 18354B
+!define MUI_INSTFILESPAGE_COLORS "18354B F4F8FB"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "$(RotorWelcomeTitle)"
 !define MUI_WELCOMEPAGE_TEXT "$(RotorWelcomeText)"
@@ -56,7 +56,12 @@ InstallColors 18354B FFFFFF
 !define MUI_FINISHPAGE_RUN_TEXT "$(RotorRunText)"
 !define MUI_FINISHPAGE_RUN_FUNCTION RestartRotor
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_PAGE_HEADER_TEXT "$(RotorDirectoryTitle)"
+!define MUI_PAGE_HEADER_SUBTEXT "$(RotorDirectorySubtitle)"
+!define MUI_DIRECTORYPAGE_TEXT_TOP "$(RotorDirectoryText)"
 !insertmacro MUI_PAGE_DIRECTORY
+!define MUI_PAGE_HEADER_TEXT "$(RotorInstallingTitle)"
+!define MUI_PAGE_HEADER_SUBTEXT "$(RotorInstallingSubtitle)"
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -65,12 +70,22 @@ InstallColors 18354B FFFFFF
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
 LangString RotorWelcomeTitle ${LANG_ENGLISH} "Welcome to ${PRODUCT_NAME}"
-LangString RotorWelcomeText ${LANG_ENGLISH} "A little more flow for your desktop.$\r$\n$\r$\nSearch files, capture ideas and translate text with Rotor.$\r$\n$\r$\nSetup will guide you through the installation. Close Rotor before continuing.$\r$\n$\r$\nClick Next to get started."
+LangString RotorWelcomeText ${LANG_ENGLISH} "Your desktop, within reach.$\r$\n$\r$\nFind files, capture and pin screenshots, and translate text in one place.$\r$\n$\r$\nClose Rotor before continuing, then click Next to choose where to install."
+LangString RotorDirectoryTitle ${LANG_ENGLISH} "Choose a home for Rotor"
+LangString RotorDirectorySubtitle ${LANG_ENGLISH} "Select the installation folder."
+LangString RotorDirectoryText ${LANG_ENGLISH} "Use the folder below or click Browse to choose another location.$\r$\n$\r$\nYour settings and saved pins are stored separately from the application."
+LangString RotorInstallingTitle ${LANG_ENGLISH} "Setting up Rotor"
+LangString RotorInstallingSubtitle ${LANG_ENGLISH} "Please wait while the application files are installed."
 LangString RotorFinishTitle ${LANG_ENGLISH} "${PRODUCT_NAME} is ready"
 LangString RotorFinishText ${LANG_ENGLISH} "Installation is complete.$\r$\n$\r$\nOpen Rotor to get started. You can also find it in the Start menu."
 LangString RotorRunText ${LANG_ENGLISH} "Open ${PRODUCT_NAME}"
 LangString RotorWelcomeTitle ${LANG_SIMPCHINESE} "欢迎使用 ${PRODUCT_NAME}"
-LangString RotorWelcomeText ${LANG_SIMPCHINESE} "让桌面，得心应手。$\r$\n$\r$\n文件搜索、截图贴图、文字翻译，随手可用。$\r$\n$\r$\n安装向导将引导你完成安装。继续前，请先退出正在运行的 Rotor。$\r$\n$\r$\n点击「下一步」开始。"
+LangString RotorWelcomeText ${LANG_SIMPCHINESE} "让桌面，得心应手。$\r$\n$\r$\n查找文件、截图贴图、翻译文字，$\r$\n日常工具，一处就绪。$\r$\n$\r$\n请先退出正在运行的 Rotor，$\r$\n再点击「下一步」选择安装位置。"
+LangString RotorDirectoryTitle ${LANG_SIMPCHINESE} "为 Rotor 选择安装位置"
+LangString RotorDirectorySubtitle ${LANG_SIMPCHINESE} "选择用于存放应用程序的文件夹。"
+LangString RotorDirectoryText ${LANG_SIMPCHINESE} "使用下方的默认位置，或点击「浏览」选择其他文件夹。$\r$\n$\r$\n设置和已保存的贴图会独立存放在用户配置目录中。"
+LangString RotorInstallingTitle ${LANG_SIMPCHINESE} "正在安装 Rotor"
+LangString RotorInstallingSubtitle ${LANG_SIMPCHINESE} "正在准备应用文件，请稍候。"
 LangString RotorFinishTitle ${LANG_SIMPCHINESE} "${PRODUCT_NAME} 已准备就绪"
 LangString RotorFinishText ${LANG_SIMPCHINESE} "安装已完成。$\r$\n$\r$\n打开 Rotor，即可开始使用。你也可以在开始菜单中找到它。"
 LangString RotorRunText ${LANG_SIMPCHINESE} "打开 ${PRODUCT_NAME}"

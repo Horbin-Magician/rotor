@@ -1,7 +1,9 @@
 # Installer artwork
 
-The checked-in assets share Rotor's existing blue mark, pale blue surfaces and
-slate text. They are inputs to `xtask package`; normal packaging does not require
+The checked-in assets use Rotor's existing blue mark. Windows pairs a deep blue
+gradient sidebar and search/capture/translation symbols with a white header;
+macOS uses pale blue surfaces and slate text.
+They are inputs to `xtask package`; normal packaging does not require
 Python packages, a logged-in Finder session or Automation permissions.
 
 - `windows-sidebar.bmp`: 328 × 628, twice the MUI welcome/finish dimensions.
@@ -21,6 +23,14 @@ Windows page text stays in `native/windows.nsi` as native localized labels.
 
 ## Regenerate
 
+On Windows, Python 3.10+ and Pillow are enough. This only rewrites the two Windows
+bitmaps and uses the installed Segoe UI and Segoe UI Semibold fonts:
+
+```powershell
+python -m pip install Pillow==11.3.0
+python native/installer/generate-assets.py --platform windows
+```
+
 On macOS, from the repository root:
 
 ```sh
@@ -29,8 +39,11 @@ python3 -m venv /tmp/rotor-installer-art
 /tmp/rotor-installer-art/bin/python native/installer/generate-assets.py
 ```
 
-The authoring script uses the existing `assets/icons/icon.png`, installed Arial
-and Arial Unicode fonts, Pillow, `ds_store`, `mac_alias`, and Apple's `tiffutil`.
+The macOS authoring path needs Python 3.11+ and uses the existing
+`assets/icons/icon.png`, installed Arial and Arial Unicode fonts, Pillow,
+`ds_store`, `mac_alias`, and Apple's `tiffutil`. Use `--platform macos` to leave
+the Windows bitmaps unchanged. With no flag, Windows regenerates its own assets;
+macOS regenerates all assets (using Arial for the Windows wordmark).
 Fonts are rasterized into artwork, not redistributed. Change the script to edit
 artwork or icon positions, then regenerate all assets. Regenerate layouts when
 product names change. Commit the generator and generated assets together.

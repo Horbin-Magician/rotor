@@ -6,23 +6,24 @@ macOS: pip install -r native/installer/requirements.txt
 Uses installed system fonts and the existing Rotor logo.
 """
 
+import argparse
 import datetime
+import os
 from pathlib import Path
 import subprocess
 import tempfile
-import tomllib
 
 from PIL import Image, ImageDraw, ImageFont
-from ds_store import DSStore
-from mac_alias import Alias, VolumeInfo, TargetInfo, ALIAS_NO_CNID
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 BLUE = "#29a6d7"
 INK = "#18354b"
 MUTED = "#637e90"
-FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
-BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+FONT = (str(Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/segoeui.ttf")
+        if os.name == "nt" else "/System/Library/Fonts/Supplemental/Arial.ttf")
+BOLD = (str(Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/seguisb.ttf")
+        if os.name == "nt" else "/System/Library/Fonts/Supplemental/Arial Bold.ttf")
 CJK = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
 SCALE = 3
 
@@ -58,27 +59,62 @@ def save_scaled(image, name, size):
     image.resize(size, Image.Resampling.LANCZOS).save(HERE / name)
 
 
-def artwork():
-    side = canvas((164, 314), "#eff8fc")
+def windows_artwork():
+    side = canvas((164, 314), "#102b43")
     d = ImageDraw.Draw(side)
-    box(d, (20, 29, 76, 85), "white", 16)
-    logo(side, (28, 37), 40)
-    text(d, (20, 101), "Rotor", 29, font=BOLD)
-    box(d, (21, 147, 49, 150), BLUE, 1)
-    # Quiet, oversized orbit shapes echo the curves in Rotor's existing mark.
-    for bounds, color in [((35, 194, 249, 408), "#dfeff7"),
-                           ((57, 216, 227, 386), "#eff8fc"),
-                           ((86, 245, 198, 357), "#d1eaf5")]:
-        d.ellipse(tuple(v * SCALE for v in bounds), fill=color)
-    text(d, (20, 274), "YOUR DESKTOP.", 8, MUTED, BOLD)
-    text(d, (20, 288), "WITH A LITTLE MORE FLOW.", 6, MUTED)
+    # Paint at 3x, then downsample to the checked-in 2x MUI bitmaps.
+    for y in range(side.height):
+        t = y / (side.height - 1)
+        color = tuple(round(a + (b - a) * t)
+                      for a, b in zip((16, 43, 67), (24, 72, 95)))
+        d.line((0, y, side.width, y), fill=color)
+    for bounds in ((65, -72, 253, 116), (83, -54, 235, 98),
+                   (-103, 244, 109, 456), (-85, 262, 91, 438)):
+        d.ellipse(tuple(v * SCALE for v in bounds), outline="#23516a", width=SCALE)
+    box(d, (20, 25, 72, 77), "#ffffff", 14)
+    logo(side, (27, 32), 38)
+    text(d, (20, 87), "Rotor", 30, "#ffffff", BOLD)
+    box(d, (21, 133, 45, 136), "#53c7ef", 1)
+
+    # Small line icons stay legible at 100% and need no additional icon font.
+    for index, label in enumerate(("SEARCH", "CAPTURE", "TRANSLATE")):
+        y = 161 + index * 36
+        box(d, (20, y, 44, y + 24), "#24546b", 7)
+        glyph = Image.new("RGBA", (24 * SCALE, 24 * SCALE))
+        g = ImageDraw.Draw(glyph)
+        color = "#9ee5fb"
+
+        def line(points):
+            g.line([(x * SCALE, y * SCALE) for x, y in points],
+                   fill=color, width=SCALE)
+
+        if index == 0:
+            g.ellipse((6*SCALE, 5*SCALE, 15*SCALE, 14*SCALE),
+                      outline=color, width=SCALE)
+            line(((14, 13), (19, 18)))
+        elif index == 1:
+            for points in (((9, 6), (6, 6), (6, 10)),
+                           ((15, 6), (18, 6), (18, 10)),
+                           ((6, 14), (6, 18), (10, 18)),
+                           ((18, 14), (18, 18), (14, 18))):
+                line(points)
+        else:
+            line(((5, 8), (18, 8), (15, 5)))
+            line(((19, 16), (6, 16), (9, 19)))
+        side.paste(glyph, (20*SCALE, y*SCALE), glyph)
+        text(d, (53, y + 6), label, 9, "#d9eff8", BOLD)
+    text(d, (20, 286), "WINDOWS DESKTOP", 7, "#99c2d5", BOLD)
     save_scaled(side, "windows-sidebar.bmp", (328, 628))
 
     header = canvas((150, 57), "white")
-    logo(header, (27, 13), 30)
-    text(ImageDraw.Draw(header), (66, 17), "Rotor", 21, font=BOLD)
+    d = ImageDraw.Draw(header)
+    box(d, (19, 10, 55, 46), "#eff8fc", 10)
+    logo(header, (24, 15), 26)
+    text(d, (65, 14), "Rotor", 22, font=BOLD)
     save_scaled(header, "windows-header.bmp", (300, 114))
 
+
+def macos_artwork():
     bg = canvas((720, 300), "#f5f9fc")
     d = ImageDraw.Draw(bg)
     d.ellipse((510*SCALE, -410*SCALE, 1040*SCALE, 120*SCALE), fill="#eaf4fa")
@@ -101,6 +137,9 @@ def artwork():
 
 
 def finder_layout(product, destination):
+    from ds_store import DSStore
+    from mac_alias import Alias, VolumeInfo, TargetInfo, ALIAS_NO_CNID
+
     # Resolve by volume-relative path, never by an authoring machine's inode.
     epoch = datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc)
     alias = Alias(volume=VolumeInfo(product, epoch, b"H+", 5, 0, b"\0\0",
@@ -132,7 +171,16 @@ def finder_layout(product, destination):
 
 
 if __name__ == "__main__":
-    artwork()
-    config = tomllib.loads((ROOT / "native/app.toml").read_text())
-    finder_layout(config["product_name"], HERE / "macos-development.dsstore")
-    finder_layout(config["production_product_name"], HERE / "macos-production.dsstore")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--platform", choices=("windows", "macos", "all"),
+                        default="windows" if os.name == "nt" else "all")
+    args = parser.parse_args()
+    if args.platform in ("windows", "all"):
+        windows_artwork()
+    if args.platform in ("macos", "all"):
+        import tomllib
+
+        macos_artwork()
+        config = tomllib.loads((ROOT / "native/app.toml").read_text())
+        finder_layout(config["product_name"], HERE / "macos-development.dsstore")
+        finder_layout(config["production_product_name"], HERE / "macos-production.dsstore")
