@@ -1,5 +1,23 @@
-use crate::{files, Result};
+use crate::{files, root, Result};
 use std::{collections::BTreeSet, path::Path};
+
+/// Finder reads the checked-in layout without an interactive packaging session.
+/// Its background alias is volume-relative and contains no build-machine paths.
+pub fn prepare_dmg(directory: &Path, production: bool) -> Result<()> {
+    let artwork = root().join("native/installer");
+    let layout = if production {
+        "macos-production.dsstore"
+    } else {
+        "macos-development.dsstore"
+    };
+    std::fs::create_dir(directory.join(".background"))?;
+    std::fs::copy(
+        artwork.join("macos-background.tiff"),
+        directory.join(".background/background.tiff"),
+    )?;
+    std::fs::copy(artwork.join(layout), directory.join(".DS_Store"))?;
+    Ok(())
+}
 
 pub fn uninstall_script(stage: &Path, executable: &str) -> Result<String> {
     let mut paths = Vec::new();

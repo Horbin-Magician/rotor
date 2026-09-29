@@ -74,8 +74,18 @@ pub(super) fn disable_window_animation(_handle: WindowHandle<'_>) -> Result<(), 
     Ok(())
 }
 
-/// Corner preferences are a DWM attribute; AppKit windows are not rounded by the OS.
-pub(super) fn disable_window_rounding(_handle: WindowHandle<'_>) -> Result<(), String> {
+pub(super) fn disable_window_rounding(handle: WindowHandle<'_>) -> Result<(), String> {
+    let view = view(handle)?;
+    let window = view.window().ok_or("View is not attached to a window")?;
+    // GPUI hides the titlebar but retains Titled | FullSizeContentView, which
+    // lets AppKit clip the window corners. Use an actual borderless panel,
+    // retaining minimization and nonactivating behavior. Preserve the client
+    // rectangle because changing decoration can otherwise shift its geometry.
+    let client = window.convertRectToScreen(view.convertRect_toView(view.bounds(), None));
+    window.setStyleMask(
+        window.styleMask() & !(NSWindowStyleMask::Titled | NSWindowStyleMask::FullSizeContentView),
+    );
+    window.setFrame_display(client, false);
     Ok(())
 }
 
@@ -290,4 +300,21 @@ impl Drop for SelectionFrame {
             window.close();
         }
     }
+}
+
+pub(super) fn client_bounds(
+    handle: WindowHandle<'_>,
+    scale: f32,
+) -> Result<(i32, i32, u32, u32), String> {
+    let view = view(handle)?;
+    let window = view.window().ok_or("View is not attached to a window")?;
+    let client = window.convertRectToScreen(view.convertRect_toView(view.bounds(), None));
+    let scale = scale as f64;
+    Ok((
+        (client.origin.x * scale).round() as i32,
+        ((CGDisplay::main().bounds().size.height - client.origin.y - client.size.height) * scale)
+            .round() as i32,
+        (client.size.width * scale).round().max(1.) as u32,
+        (client.size.height * scale).round().max(1.) as u32,
+    ))
 }

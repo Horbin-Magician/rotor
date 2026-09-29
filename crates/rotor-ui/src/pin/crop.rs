@@ -65,6 +65,7 @@ impl PinView {
         let mut bounds = drag.bounds;
         bounds.x = (bounds.x as f64 + pointer.x - drag.pointer.x).round() as i32;
         bounds.y = (bounds.y as f64 + pointer.y - drag.pointer.y).round() as i32;
+        let bounds = (self.snap_move)(window, bounds, cx);
         if let Err(error) = (self.bounds)(window, bounds) {
             self.message = error;
         }
@@ -497,6 +498,12 @@ mod tests {
                         position: Rc::new(move |_| Some((read.get().x, read.get().y))),
                         minimized: Rc::new(|_| None),
                         activate: Rc::new(|_| Ok(())),
+                        snap_move: Rc::new(|_, mut bounds, _| {
+                            if (bounds.y - 50).abs() <= 10 {
+                                bounds.y = 50;
+                            }
+                            bounds
+                        }),
                         bounds: Rc::new(move |_, bounds| {
                             write.set(bounds);
                             calls.set(calls.get() + 1);
@@ -636,8 +643,13 @@ mod tests {
                     cursor.set((221., 60.));
                     for _ in 0..8 {
                         pin.move_pin(point(px(50.), px(40.)), window, cx);
-                        assert_eq!(native.get().y, 60);
+                        assert_eq!(native.get().y, 50);
                     }
+                    // Moving past the attraction distance releases using the
+                    // original pointer anchor, not the last snapped position.
+                    cursor.set((221., 30.));
+                    pin.move_pin(point(px(50.), px(10.)), window, cx);
+                    assert_eq!(native.get().y, 30);
                     pin.finish_move(window, cx);
                 });
             })

@@ -1,3 +1,5 @@
+mod snap;
+
 use crate::{ShellState, WindowRole, WindowSlot, WindowView};
 use gpui_kit::{component::Root, *};
 use raw_window_handle::HasWindowHandle;
@@ -394,9 +396,12 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
             |window, cx| {
                 if let Err(error) = HasWindowHandle::window_handle(window)
                     .map_err(|error| error.to_string())
-                    .and_then(rotor_platform::overlay::enable_pin_minimization)
+                    .and_then(|handle| {
+                        rotor_platform::overlay::enable_pin_minimization(handle)?;
+                        rotor_platform::overlay::disable_window_rounding(handle)
+                    })
                 {
-                    log::warn!("Could not enable pin minimization: {error}");
+                    log::warn!("Could not configure native pin window: {error}");
                 }
                 let view = cx.new(|cx| {
                     rotor_ui::PinView::new(
@@ -416,6 +421,9 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
                             }),
                             content_scale,
                             bounds: bounds_setter,
+                            snap_move: Rc::new(move |window, bounds, cx| {
+                                snap_move(token, window, bounds, cx)
+                            }),
                             pointer,
                             cursor: Rc::new(|window| {
                                 rotor_platform::overlay::screen_cursor_position(
@@ -453,9 +461,6 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
             rotor_platform::overlay::enable_pin_taskbar(
                 HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
             )?;
-            rotor_platform::overlay::use_small_window_corners(
-                HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
-            )?;
             rotor_platform::overlay::fit_client_bounds(
                 HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?,
                 (position.x.as_f32() * scale).round() as i32,
@@ -484,6 +489,47 @@ fn open(pin: DeferredPin, cx: &mut App) -> Result<(AnyWindowHandle, bool), Strin
         let _ = view.update(cx, |view, cx| view.persist_geometry(cx));
     }
     Ok((*handle, activate))
+}
+
+fn snap_move(
+    token: u64,
+    window: &Window,
+    bounds: rotor_ui::PinBounds,
+    cx: &mut App,
+) -> rotor_ui::PinBounds {
+    let handles: Vec<_> = cx
+        .global::<ShellState>()
+        .windows
+        .iter()
+        .filter_map(|(role, slot)| match role {
+            WindowRole::Pin(other) if *other != token => Some(slot.window),
+            _ => None,
+        })
+        .collect();
+    let scale = window.scale_factor();
+    let targets: Vec<_> = handles
+        .into_iter()
+        .filter_map(|handle| {
+            handle
+                .update(cx, |_, window, _| {
+                    let handle = HasWindowHandle::window_handle(window).ok()?;
+                    if rotor_platform::overlay::window_minimized(handle) != Some(false) {
+                        return None;
+                    }
+                    let (x, y, width, height) =
+                        rotor_platform::overlay::client_bounds(handle, scale).ok()?;
+                    Some(rotor_ui::PinBounds {
+                        x,
+                        y,
+                        width,
+                        height,
+                    })
+                })
+                .ok()
+                .flatten()
+        })
+        .collect();
+    snap::snap(bounds, &targets, (6. * scale).round().max(1.) as i64)
 }
 
 #[cfg(test)]

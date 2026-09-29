@@ -1549,6 +1549,7 @@ mod tests {
                         position: Rc::new(|_| None),
                         minimized: Rc::new(|_| None),
                         activate: Rc::new(|_| Ok(())),
+                        snap_move: Rc::new(|_, bounds, _| bounds),
                         bounds: Rc::new(|_, _| Ok(())),
                         pointer: Rc::new(|_, _| Ok(())),
                         cursor: Rc::new(|_| Some((0., 0.))),

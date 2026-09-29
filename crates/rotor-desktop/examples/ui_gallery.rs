@@ -186,6 +186,7 @@ fn synthetic_pin(
                 window.activate_window();
                 Ok(())
             }),
+            snap_move: Rc::new(|_, bounds, _| bounds),
             bounds: Rc::new(|window, bounds| {
                 rotor_platform::overlay::set_client_bounds(
                     HasWindowHandle::window_handle(window).map_err(|e| e.to_string())?,

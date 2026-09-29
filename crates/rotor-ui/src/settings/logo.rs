@@ -53,7 +53,7 @@ fn encode(image: &RgbaImage) -> Arc<Image> {
 }
 
 pub(super) fn glow_padding(pixels: u32) -> u32 {
-    (pixels as f32 * 0.1).ceil() as u32
+    (pixels as f32 * 0.2).ceil() as u32
 }
 
 fn contour_glow(logo: &RgbaImage) -> RgbaImage {
@@ -65,11 +65,22 @@ fn contour_glow(logo: &RgbaImage) -> RgbaImage {
     for (x, y, pixel) in logo.enumerate_pixels() {
         mask.put_pixel(x + padding, y + padding, image::Luma([pixel[3]]));
     }
-    let blurred = image::imageops::blur(&mask, logo.width() as f32 * 0.025);
+    // A close highlight keeps the silhouette crisp while a faint, wider halo
+    // softens the falloff. Bake both into one cached texture, not per frame.
+    let edge = image::imageops::blur(&mask, logo.width() as f32 * 0.024);
+    let halo = image::imageops::blur(&mask, logo.width() as f32 * 0.055);
     RgbaImage::from_fn(size, size, |x, y| {
-        let alpha = blurred.get_pixel(x, y)[0] as f32;
+        let edge_alpha = edge.get_pixel(x, y)[0] as f32 * 1.15;
+        let halo_alpha = halo.get_pixel(x, y)[0] as f32 * 0.45;
+        let alpha = edge_alpha + halo_alpha;
         let outside = 1. - mask.get_pixel(x, y)[0] as f32 / 255.;
-        image::Rgba([70, 190, 245, (alpha * outside * 1.8).min(255.) as u8])
+        let highlight = if alpha > 0. { edge_alpha / alpha } else { 0. };
+        image::Rgba([
+            (55. + highlight * 55.) as u8,
+            (170. + highlight * 45.) as u8,
+            250,
+            (alpha * outside).min(255.) as u8,
+        ])
     })
 }
 

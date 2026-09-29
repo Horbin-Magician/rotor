@@ -18,7 +18,7 @@ pub use capture::{
 };
 pub use pin::{
     PinActivation, PinBounds, PinBoundsSetter, PinCursorReader, PinInit, PinMinimizedReader,
-    PinPointerCapture, PinPositionReader, PinView,
+    PinMoveSnap, PinPointerCapture, PinPositionReader, PinView,
 };
 pub use searcher::SearchView;
 pub use settings::{SettingsView, SettingsWindowDrag, settings_title};

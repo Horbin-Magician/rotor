@@ -295,8 +295,9 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
         copy_tree(&directory.join(&app_name), &dmg_root.path().join(&app_name))?;
         #[cfg(target_os = "macos")]
         std::os::unix::fs::symlink("/Applications", dmg_root.path().join("Applications"))?;
+        installer::prepare_dmg(dmg_root.path(), info.production)?;
         let status = Command::new("hdiutil")
-            .args(["create", "-format", "UDZO", "-volname"])
+            .args(["create", "-format", "UDZO", "-fs", "HFS+", "-volname"])
             .arg(&info.product_name)
             .arg("-srcfolder")
             .arg(dmg_root.path())

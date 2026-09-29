@@ -5,6 +5,12 @@
 # SVG assets are hashed verbatim in native source receipts.
 *.svg text eol=lf
 
+# Installer artwork and Finder layout templates are binary assets.
+native/installer/*.py text eol=lf
+native/installer/*.bmp -text
+native/installer/*.tiff -text
+native/installer/*.dsstore -text
+
 # Model artifacts and their matching dictionary must retain their exact bytes.
 assets/model/*.onnx -text
 assets/model/*dict.txt -text
