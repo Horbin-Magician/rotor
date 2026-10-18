@@ -761,33 +761,26 @@ impl Render for MaskView {
                         "Copy color (C)"
                     }),
             );
-        root.child(div().absolute().top(px(16.)).left(px(16.)).px_3().py_2()
-            .bg(rgb(0x202428)).text_color(rgb(0xffffff)).text_size(px(14.))
-            .child((if let Some(error) = &self.error { error.as_str() } else if self.long {
-                self.locale.pick("长截图：框选要滚动的内容，避开侧栏和视频 · L 返回普通截图 · Esc 取消", "Long capture: select the scrolling content, excluding sidebars and video · L normal capture · Esc cancel")
-            } else {
-                self.locale.pick("L 长截图 · Esc 取消", "L long capture · Esc cancel")
-            }).to_owned()))
+        root.when(self.start.is_none(), |root| {
+            root.child(
+                div()
+                    .absolute()
+                    .bottom(px(16.))
+                    .left(px(16.))
+                    .max_w(px((width - 32.).max(0.)))
+                    .opacity(0.75)
+                    .child(
+                        div().px_3().py_2().rounded_md()
+                            .bg(rgb(0x202428)).text_color(rgb(0xffffff)).text_size(px(14.))
+                            .child((if let Some(error) = &self.error { error.as_str() } else if self.long {
+                                self.locale.pick("长截图：框选要滚动的内容，避开侧栏和视频 · L 返回普通截图 · Esc 取消", "Long capture: select the scrolling content, excluding sidebars and video · L normal capture · Esc cancel")
+                            } else {
+                                self.locale.pick("L 长截图 · Esc 取消", "L long capture · Esc cancel")
+                            }).to_owned()),
+                    ),
+            )
+        })
             .when(self.pointer_inside, |root| root.child(magnifier))
-            .when(self.start.is_none(), |root| root.child(
-                div().id("toggle-long-capture").absolute().bottom(px(16.)).left(px(16.))
-                    .cursor_pointer().px_3().py_2().rounded_md()
-                    .bg(if self.long { rgb(0x2768b8) } else { rgb(0x202428) })
-                    .text_color(rgb(0xffffff)).text_size(px(14.))
-                    .child(if self.long { self.locale.pick("返回普通截图 · L", "Normal capture · L") }
-                        else { self.locale.pick("滚动截图 · L", "Scrolling capture · L") })
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_mouse_up(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.active && this.armed {
-                            this.long = !this.long;
-                            this.error = None;
-                            this.focus.focus(window, cx);
-                            cx.notify();
-                        }
-                        cx.stop_propagation();
-                    }))
-            ))
             // Native window hover changes also cover leaving without a final
             // mouse move (Windows reports this separately from MouseExitEvent).
             .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
@@ -927,29 +920,23 @@ mod tests {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_keystrokes("ctrl-l");
         view.read_with(cx, |view, _| assert!(!view.long));
+        // The former mode-button area now lets selection gestures through.
         cx.simulate_mouse_down(
             point(px(60.), px(365.)),
             MouseButton::Left,
             Default::default(),
         );
+        view.read_with(cx, |view, _| {
+            assert!(view.start.is_some());
+            assert!(!view.long);
+        });
         cx.simulate_mouse_up(
             point(px(60.), px(365.)),
             MouseButton::Left,
             Default::default(),
         );
-        view.read_with(cx, |view, _| {
-            assert!(view.long);
-            assert!(
-                view.start.is_none(),
-                "mode button must not begin a selection"
-            );
-        });
-        assert!(
-            !actions
-                .borrow()
-                .iter()
-                .any(|action| matches!(action, MaskAction::Choose { .. }))
-        );
+        cx.simulate_keystrokes("l");
+        view.read_with(cx, |view, _| assert!(view.long));
         cx.simulate_keystrokes("l");
         view.read_with(cx, |view, _| assert!(!view.long));
         cx.simulate_keystrokes("l");
