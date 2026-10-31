@@ -14,11 +14,25 @@ the GPUI window and CPU images have been dropped.
 
 Accessibility remains enabled. The adapter is released while the NSWindow
 still owns its content view, allowing normal view and window destruction to
-finish releasing the state. No rendering, input or platform APIs are changed.
+finish releasing the state. No rendering or platform APIs are changed.
 
 Re-evaluate this patch when upgrading GPUI. Preserve the original license;
 do not edit the Cargo registry cache. Validate repeated native window closure
 with accessibility enabled when replacing or removing the patch.
+
+## Keyboard routing
+
+Windows without an active text input handler dispatch keys directly to GPUI.
+Sending their non-printing keys through AppKit's input context can consume
+Escape after another window, such as settings, has activated text input.
+Editable controls and live IME compositions retain the upstream input routing,
+so Escape can still cancel composition before reaching application shortcuts.
+
+Native validation must cover opening settings and focusing an input, then
+using Escape to cancel a capture and close a pin, with both an ASCII layout
+and a Chinese IME. Also check Escape during composition in settings and pin
+text annotations. GPUI's simulated keystrokes bypass AppKit and cannot establish
+this native input behavior.
 
 ## Foundation compatibility
 

@@ -2439,6 +2439,19 @@ extern "C" fn handle_key_event(this: &Object, native_event: id, key_equivalent: 
                     .flatten()
                     .is_some();
 
+            // AppKit can consume non-printing keys in its input context even
+            // when this window has no text editor (for example, after a settings
+            // window has activated an IME). Deliver those windows' shortcuts
+            // directly to GPUI instead of letting handleEvent: swallow Escape.
+            // A live composition still owns its keys, including cancellation.
+            let accepts_text_input = with_input_handler(this, |input_handler| {
+                input_handler.query_accepts_text_input()
+            })
+            .unwrap_or(false);
+            if !is_composing && !accepts_text_input {
+                return run_callback(PlatformInput::KeyDown(key_down_event));
+            }
+
             // If we're composing, send the key to the input handler first;
             // otherwise we only send to the input handler if we don't have a matching binding.
             // The input handler may call `do_command_by_selector` if it doesn't know how to handle
