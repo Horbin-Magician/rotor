@@ -22,6 +22,18 @@ on:
         required: false
       ROTOR_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
+      APPLE_CERTIFICATE_P12_BASE64:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_SIGNING_IDENTITY:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
   workflow_dispatch:
     inputs:
       platforms:
@@ -99,12 +111,50 @@ jobs:
             & "$env:RUNNER_TEMP/native-stage/$name.app/Contents/MacOS/$binary" --check-resources
             if ($LASTEXITCODE -ne 0) { throw 'Packaged resource check failed' }
           }
+      - name: Configure Apple distribution credentials
+        if: runner.os == 'macOS' && inputs.production_identity
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE_P12_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "Missing required secret: $name"; exit 1; fi
+          done
+          keychain="$RUNNER_TEMP/rotor-signing.keychain-db"
+          certificate="$RUNNER_TEMP/rotor-certificate.p12"
+          trap 'rm -f "$certificate"' EXIT
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          xcrun notarytool store-credentials rotor-release --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --keychain "$keychain"
+          printf 'APPLE_SIGNING_IDENTITY=%s\nAPPLE_NOTARY_PROFILE=rotor-release\nAPPLE_NOTARY_KEYCHAIN=%s\n' "$APPLE_SIGNING_IDENTITY" "$keychain" >> "$GITHUB_ENV"
       - name: Build native packages
         shell: pwsh
         run: |
           if ($IsWindows) { $env:NSIS_MAKENSIS = 'C:\Program Files (x86)\NSIS\makensis.exe' }
           cargo run -p xtask --locked -- package "$env:RUNNER_TEMP/native-stage" "$env:RUNNER_TEMP/native-package"
           if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed' }
+      - name: Remove Apple distribution credentials
+        if: always() && runner.os == 'macOS' && inputs.production_identity
+        shell: bash
+        run: |
+          security default-keychain -d user -s "$HOME/Library/Keychains/login.keychain-db"
+          if [ -f "$RUNNER_TEMP/rotor-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/rotor-signing.keychain-db"
+          fi
+          rm -f "$RUNNER_TEMP/rotor-certificate.p12"
       - name: Verify silent Windows installation and removal
         if: runner.os == 'Windows' && inputs.test_installation && !inputs.production_identity
         shell: pwsh

@@ -1,3 +1,4 @@
+mod apple;
 mod builder;
 mod installer;
 mod licenses;
@@ -234,6 +235,11 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
     builder::supported_host()?;
     verify_stage(directory)?;
     let info = builder::staged_info(directory)?;
+    let apple_signing = if cfg!(target_os = "macos") {
+        apple::Signing::from_env(info.production)?
+    } else {
+        None
+    };
     let version = version()?;
     let prefix = if info.production {
         "Rotor"
@@ -279,20 +285,24 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
         }
     } else if cfg!(target_os = "macos") {
         let app_name = format!("{}.app", info.product_name);
+        let dmg_root = tempfile::Builder::new().prefix("rotor-dmg-").tempdir()?;
+        let packaged_app = dmg_root.path().join(&app_name);
+        copy_tree(&directory.join(&app_name), &packaged_app)?;
+        if let Some(signing) = &apple_signing {
+            signing.app(&packaged_app)?;
+        }
         let archive_name = format!("{prefix}_{version}_aarch64.app.tar.gz");
         let status = Command::new("tar")
             .env("COPYFILE_DISABLE", "1")
             .arg("-czf")
             .arg(output.join(archive_name))
             .arg("-C")
-            .arg(&directory)
+            .arg(dmg_root.path())
             .arg(&app_name)
             .status()?;
         if !status.success() {
             return Err("macOS archive failed".into());
         }
-        let dmg_root = tempfile::Builder::new().prefix("rotor-dmg-").tempdir()?;
-        copy_tree(&directory.join(&app_name), &dmg_root.path().join(&app_name))?;
         #[cfg(target_os = "macos")]
         std::os::unix::fs::symlink("/Applications", dmg_root.path().join("Applications"))?;
         installer::prepare_dmg(dmg_root.path(), info.production)?;
@@ -305,6 +315,9 @@ fn package(directory: &Path, output: &Path) -> Result<()> {
             .status()?;
         if !status.success() {
             return Err("DMG creation failed".into());
+        }
+        if let Some(signing) = &apple_signing {
+            signing.dmg(&output.join(format!("{prefix}_{version}_aarch64.dmg")))?;
         }
     }
     fs::write(
