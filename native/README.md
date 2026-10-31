@@ -60,8 +60,10 @@ instructions. Windows uses Rotor artwork in the native NSIS welcome, finish and
 header areas, with English and Simplified Chinese copy. Checked-in artwork and
 Finder layouts need no additional packaging dependencies or Finder automation;
 see [installer artwork](installer/README.md) for regeneration and visual checks.
-Developer ID signing, notarization and Gatekeeper
-acceptance require a Mac and release credentials.
+Production macOS packaging requires Developer ID signing and notarization
+credentials; see [Apple signing setup](signing.md#apple-developer-id-distribution).
+Packaging checks signatures, staples Apple tickets and assesses Gatekeeper.
+Signed runtime and downloaded-app acceptance still require manual Mac testing.
 
 ## Signing and release drafts
 
