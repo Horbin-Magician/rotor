@@ -277,6 +277,25 @@ impl FileData {
                 let msg: Result<SearcherMessage, mpsc::RecvError> = if !wait_deals.is_empty() {
                     wait_deals.pop_front().ok_or(mpsc::RecvError)
                 } else {
+                    #[cfg(target_os = "macos")]
+                    {
+                        match msg_reciever.recv_timeout(Duration::from_secs(2)) {
+                            Ok(message) => Ok(message),
+                            Err(mpsc::RecvTimeoutError::Disconnected) => Err(mpsc::RecvError),
+                            Err(mpsc::RecvTimeoutError::Timeout) => {
+                                if !file_data.loaded {
+                                    file_data.work_cancel = Arc::new(AtomicBool::new(false));
+                                    // Any foreground command pre-empts idle maintenance,
+                                    // including commands queued before registration.
+                                    msg_reciever.activate(file_data.work_cancel.clone(), true);
+                                    file_data.checkpoint_idle_changes();
+                                    msg_reciever.deactivate();
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    #[cfg(not(target_os = "macos"))]
                     msg_reciever.recv()
                 };
 
@@ -641,6 +660,40 @@ impl FileData {
         ));
         self.loaded = matches!(state, FileState::Ready | FileState::Partial);
         state
+    }
+
+    #[cfg(target_os = "macos")]
+    fn checkpoint_idle_changes(&mut self) {
+        let mut changed = false;
+        for pack in &mut self.volume_packs {
+            if self.work_cancel.load(Ordering::Acquire) {
+                break;
+            }
+            let mut volume = pack
+                .volume
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            match volume.checkpoint_pending_changes(&self.work_cancel) {
+                Ok(true) => {
+                    pack.available = true;
+                    changed = true;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    if error.kind() != std::io::ErrorKind::Interrupted {
+                        log::warn!("{} Background index checkpoint failed: {error}", pack.drive);
+                    }
+                }
+            }
+        }
+        if changed {
+            self.set_state(if self.volume_packs.iter().all(|pack| pack.available) {
+                FileState::Released
+            } else {
+                FileState::Partial
+            });
+            self.publish_status();
+        }
     }
 
     pub fn release_index(&mut self) -> bool {

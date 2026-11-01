@@ -38,6 +38,7 @@ pub struct Volume {
     loaded: bool,
     watcher: Option<RecommendedWatcher>,
     event_receiver: Option<mpsc::Receiver<notify::Result<Event>>>,
+    pending_event: Option<notify::Result<Event>>,
     rescan_required: Arc<AtomicBool>,
     saved_item_count: usize,
     excluded_dirs: ExcludedDirs,
@@ -56,6 +57,7 @@ impl Volume {
             loaded: false,
             watcher: None,
             event_receiver: None,
+            pending_event: None,
             rescan_required: Arc::new(AtomicBool::new(false)),
             saved_item_count: 0,
             excluded_dirs,
@@ -122,6 +124,7 @@ impl Volume {
             log::info!("{} File watcher stopped", self.drive);
         }
         self.event_receiver = None;
+        self.pending_event = None;
     }
 
     #[cfg(test)]
@@ -225,7 +228,13 @@ impl Volume {
         };
 
         let mut paths = std::collections::HashSet::new();
-        for event_result in receiver.try_iter().take(EVENT_CAPACITY) {
+        for event_result in self
+            .pending_event
+            .take()
+            .into_iter()
+            .chain(receiver.try_iter())
+            .take(EVENT_CAPACITY)
+        {
             match event_result {
                 Ok(event) => paths.extend(event.paths),
                 Err(_) => self.rescan_required.store(true, Ordering::Release),
@@ -421,6 +430,29 @@ impl Volume {
     pub fn release_index_without_save(&mut self) {
         self.file_map.clear();
         self.loaded = false;
+    }
+
+    /// Consume idle filesystem changes without retaining the index in memory.
+    /// Peeking retains the first event so a failed/cancelled load cannot lose it.
+    pub(crate) fn checkpoint_pending_changes(&mut self, cancel: &AtomicBool) -> io::Result<bool> {
+        cache::check_cancel(Some(cancel))?;
+        if self.pending_event.is_none() {
+            self.pending_event = self
+                .event_receiver
+                .as_ref()
+                .and_then(|receiver| receiver.try_recv().ok());
+        }
+        if self.pending_event.is_none() && !self.rescan_required.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        self.update_index_with_cancel(Some(cancel))?;
+        // Cancellation after reconciliation must not discard uncheckpointed changes.
+        // Let the atomic snapshot finish before releasing its in-memory source.
+        let result = self.release_index();
+        if result.is_err() {
+            self.rescan_required.store(true, Ordering::Release);
+        }
+        result.map(|()| true)
     }
 
     // update index, add new file, remove deleted file
@@ -643,6 +675,166 @@ fn has_named_component(path: &std::path::Path, names: &[&str]) -> bool {
 #[cfg(test)]
 mod event_tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn coordinator_checkpoints_changes_without_a_search_request() {
+        use crate::file_data::{FileData, FileState, SearcherMessage, VolumePack};
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+        let temp = tempfile::Builder::new()
+            .prefix("rotor-idle-loop-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path().canonicalize().unwrap().join("files");
+        fs::create_dir(&root).unwrap();
+        let pack = VolumePack::new(root.to_string_lossy().into_owned());
+        let volume = pack.volume.clone();
+        let (events, receiver) = mpsc::sync_channel(EVENT_CAPACITY);
+        let initial_count;
+        {
+            let mut volume = volume.lock().unwrap();
+            volume.cache_path = temp.path().join("cache.idx");
+            volume.initialize_index(&AtomicBool::new(false)).unwrap();
+            volume.event_receiver = Some(receiver);
+            initial_count = volume.saved_item_count;
+        }
+        let mut data = FileData::new(
+            |_| panic!("no search was requested"),
+            None,
+            Arc::new(Mutex::new(FileState::Released)),
+        );
+        data.volume_packs.push(pack);
+        let snapshot = data.snapshot.clone();
+        let (commands, receiver) = crate::mailbox::channel();
+        let worker = FileData::event_loop(receiver, data);
+        fs::write(root.join("created.txt"), b"fixture").unwrap();
+        events
+            .send(Ok(Event::new(EventKind::Create(
+                notify::event::CreateKind::File,
+            ))
+            .add_path(root.join("created.txt"))))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while snapshot.lock().unwrap().index_item_count != initial_count + 1
+            && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        commands.send(SearcherMessage::Shutdown).unwrap();
+        worker.join().unwrap();
+        assert_eq!(snapshot.lock().unwrap().index_item_count, initial_count + 1);
+        let mut volume = volume.lock().unwrap();
+        assert!(!volume.loaded);
+        assert!(volume.file_map.is_empty());
+        volume.serialization_read().unwrap();
+        assert_eq!(
+            volume
+                .file_map
+                .search("created.txt", None, 20, &AtomicBool::new(false))
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
+        volume.stop_watching();
+    }
+
+    #[test]
+    fn idle_changes_are_checkpointed_without_rescan_or_retained_memory() {
+        let temp = tempfile::Builder::new()
+            .prefix("rotor-idle-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path().canonicalize().unwrap().join("files");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("old.txt"), b"fixture").unwrap();
+        let mut volume = Volume::new(root.to_string_lossy().into_owned());
+        volume.cache_path = temp.path().join("cache.idx");
+        let cancel = AtomicBool::new(false);
+        volume.initialize_index(&cancel).unwrap();
+        // Deliver deterministic events while keeping the watcher initialized.
+        let (sender, receiver) = mpsc::sync_channel(EVENT_CAPACITY);
+        volume.event_receiver = Some(receiver);
+        let modified = fs::metadata(&volume.cache_path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert!(!volume.checkpoint_pending_changes(&cancel).unwrap());
+        assert_eq!(
+            fs::metadata(&volume.cache_path)
+                .unwrap()
+                .modified()
+                .unwrap(),
+            modified
+        );
+        fs::rename(root.join("old.txt"), root.join("new.txt")).unwrap();
+        fs::write(root.join("unannounced.txt"), b"not in event batch").unwrap();
+        sender
+            .send(Ok(Event::new(EventKind::Modify(ModifyKind::Name(
+                RenameMode::Both,
+            )))
+            .add_path(root.join("old.txt"))
+            .add_path(root.join("new.txt"))))
+            .unwrap();
+        cancel.store(true, Ordering::Release);
+        assert_eq!(
+            volume
+                .checkpoint_pending_changes(&cancel)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::Interrupted
+        );
+        cancel.store(false, Ordering::Release);
+        assert!(volume.checkpoint_pending_changes(&cancel).unwrap());
+        assert!(!volume.loaded);
+        assert!(volume.file_map.is_empty());
+        assert!(!volume.checkpoint_pending_changes(&cancel).unwrap());
+        volume.serialization_read().unwrap();
+        let search = |query| {
+            volume
+                .file_map
+                .search(query, None, 20, &cancel)
+                .map_or(0, |page| page.items.len())
+        };
+        assert_eq!(search("new.txt"), 1);
+        assert_eq!(search("old.txt"), 0);
+        assert_eq!(
+            search("unannounced.txt"),
+            0,
+            "idle processing must apply events without scanning the root"
+        );
+        volume.release_index().unwrap();
+        fs::remove_file(root.join("new.txt")).unwrap();
+        sender
+            .send(Ok(Event::new(EventKind::Remove(
+                notify::event::RemoveKind::File,
+            ))
+            .add_path(root.join("new.txt"))))
+            .unwrap();
+        assert!(volume.checkpoint_pending_changes(&cancel).unwrap());
+        volume.serialization_read().unwrap();
+        assert!(volume
+            .file_map
+            .search("new.txt", None, 20, &cancel)
+            .is_none_or(|page| page.items.is_empty()));
+        volume.release_index().unwrap();
+        // Lost events still recover in the background, before another search.
+        volume.rescan_required.store(true, Ordering::Release);
+        assert!(volume.checkpoint_pending_changes(&cancel).unwrap());
+        assert!(!volume.loaded);
+        volume.serialization_read().unwrap();
+        assert_eq!(
+            volume
+                .file_map
+                .search("unannounced.txt", None, 20, &cancel)
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
+        volume.stop_watching();
+    }
 
     #[test]
     fn empty_loaded_index_does_not_resurrect_old_snapshot_rows() {

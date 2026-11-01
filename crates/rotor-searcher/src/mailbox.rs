@@ -98,6 +98,7 @@ impl Drop for Sender {
 }
 
 impl Receiver {
+    #[cfg(any(not(target_os = "macos"), test))]
     pub fn recv(&self) -> Result<SearcherMessage, std::sync::mpsc::RecvError> {
         let mut queue = self
             .0
@@ -116,6 +117,37 @@ impl Receiver {
                 .ready
                 .wait(queue)
                 .unwrap_or_else(|error| error.into_inner());
+        }
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    pub fn recv_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<SearcherMessage, std::sync::mpsc::RecvTimeoutError> {
+        let deadline = std::time::Instant::now() + timeout;
+        let mut queue = self
+            .0
+            .queue
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        loop {
+            if let Some(message) = queue.messages.pop_front() {
+                return Ok(message);
+            }
+            if queue.closed {
+                return Err(std::sync::mpsc::RecvTimeoutError::Disconnected);
+            }
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(std::sync::mpsc::RecvTimeoutError::Timeout);
+            }
+            queue = self
+                .0
+                .ready
+                .wait_timeout(queue, remaining)
+                .unwrap_or_else(|error| error.into_inner())
+                .0;
         }
     }
 
@@ -186,6 +218,31 @@ mod tests {
             append: false,
             query: id.to_string(),
         })
+    }
+
+    #[test]
+    fn idle_wait_preserves_commands_disconnect_and_foreground_cancellation() {
+        use std::sync::mpsc::RecvTimeoutError;
+        use std::time::Duration;
+        let (sender, receiver) = channel();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::ZERO),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        sender.send(query(7)).unwrap();
+        assert!(
+            matches!(receiver.recv_timeout(Duration::ZERO), Ok(SearcherMessage::Find(request)) if request.id == QueryId(7))
+        );
+        let cancel = Arc::new(AtomicBool::new(false));
+        receiver.activate(cancel.clone(), true);
+        sender.send(query(8)).unwrap();
+        assert!(cancel.load(Ordering::Acquire));
+        receiver.recv().unwrap();
+        drop(sender);
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(1)),
+            Err(RecvTimeoutError::Disconnected)
+        ));
     }
 
     #[test]
