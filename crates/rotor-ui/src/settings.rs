@@ -660,8 +660,8 @@ impl Render for SettingsView {
             (
                 "ai-provider",
                 Section::AiProvider,
-                "AI 服务商",
-                "AI providers",
+                "AI",
+                "AI",
                 "统一管理 AI 服务、密钥与模型",
                 "Manage AI services, credentials and models",
             ),
@@ -829,7 +829,7 @@ impl Render for SettingsView {
                 if self.config.translator_engine() == TranslatorEngine::Ai {
                     content = content.child(appearance::caption(
                         self.t(
-                            "AI 翻译的密钥、模型与服务地址在「AI 服务商」中统一设置。",
+                            "AI 翻译的密钥、模型与服务地址在「AI」中统一设置。",
                             "Configure AI translation credentials, model and endpoint in AI providers.",
                         ),
                         cx,
