@@ -30,43 +30,6 @@ fn action_icon_button(button: Button, danger: bool, cx: &App) -> Button {
         )
 }
 
-fn shortcut_label(value: &str) -> String {
-    let parts = value.split('+').collect::<Vec<_>>();
-    let mut labels = Vec::new();
-    for (aliases, label) in [
-        (&["ctrl", "control"][..], "Ctrl"),
-        (&["alt", "option"][..], "Alt"),
-        (&["shift"][..], "Shift"),
-        (&["super", "meta", "cmd", "command", "win"][..], "Super"),
-    ] {
-        if parts
-            .iter()
-            .any(|part| aliases.iter().any(|alias| part.eq_ignore_ascii_case(alias)))
-        {
-            labels.push(label.to_owned());
-        }
-    }
-    for part in parts {
-        if [
-            "ctrl", "control", "alt", "option", "shift", "super", "meta", "cmd", "command", "win",
-        ]
-        .iter()
-        .any(|modifier| part.eq_ignore_ascii_case(modifier))
-        {
-            continue;
-        }
-        let key = part
-            .strip_prefix("Key")
-            .or_else(|| part.strip_prefix("Digit"))
-            .unwrap_or(part);
-        labels.push(if key.len() == 1 {
-            key.to_uppercase()
-        } else {
-            key.to_owned()
-        });
-    }
-    labels.join("+")
-}
 #[derive(Clone)]
 pub(super) enum Recording {
     Setting(&'static str),
@@ -492,7 +455,7 @@ impl SettingsView {
 
     fn action_description(&self, action: &ActionFields, cx: &App) -> Div {
         let colors = appearance::palette(cx);
-        let shortcut = shortcut_label(&action.shortcut.read(cx).value());
+        let shortcut = crate::shortcut::display_label(&action.shortcut.read(cx).value());
         let name = div()
             .min_w_0()
             .truncate()
@@ -636,8 +599,8 @@ impl SettingsView {
         let clear_shortcut = action.shortcut.clone();
         let record = appearance::control_button(appearance::button(("record-action", index)), cx)
             .label(if matches!(&self.recording, Some(Recording::Action(target)) if target == &record_id) {
-                self.t("请按快捷键…", "Press a shortcut…").into()
-            } else { action.shortcut.read(cx).value() })
+                self.t("请按快捷键…", "Press a shortcut…").to_owned()
+            } else { crate::shortcut::display_label(&action.shortcut.read(cx).value()) })
             .accessibility_label(self.t("快捷键", "Shortcut"))
             .tooltip(self.t("点击录制快捷键，Esc 取消", "Click to record a shortcut; Esc cancels"))
             .disabled(disabled)

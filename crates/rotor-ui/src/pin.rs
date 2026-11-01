@@ -280,7 +280,7 @@ impl PinView {
     }
     fn shortcut_hint(&self, label: &'static str, key: &str) -> String {
         match self.settings.get(key).filter(|key| !key.is_empty()) {
-            Some(shortcut) => format!("{label} · {shortcut}"),
+            Some(shortcut) => format!("{label} · {}", crate::shortcut::display_label(shortcut)),
             None => label.into(),
         }
     }

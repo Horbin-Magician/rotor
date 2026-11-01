@@ -110,7 +110,7 @@ impl SettingsView {
         let value = if recording {
             self.t("请按快捷键…", "Press a shortcut…").to_owned()
         } else {
-            field.state.read(cx).value().to_string()
+            crate::shortcut::display_label(&field.state.read(cx).value())
         };
         appearance::control_row(
             self.t(field.label.0, field.label.1),

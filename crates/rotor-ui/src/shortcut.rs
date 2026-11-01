@@ -1,6 +1,51 @@
 use gpui_kit::Keystroke;
 use std::str::FromStr;
 
+pub(crate) fn display_label(value: &str) -> String {
+    let parts = value.split('+').map(str::trim).collect::<Vec<_>>();
+    let mut labels = Vec::new();
+    for (aliases, label) in [
+        (
+            &["super", "meta", "cmd", "command", "win"][..],
+            if cfg!(target_os = "macos") {
+                "Cmd"
+            } else {
+                "Win"
+            },
+        ),
+        (&["ctrl", "control"][..], "Ctrl"),
+        (&["alt", "option"][..], "Alt"),
+        (&["shift"][..], "Shift"),
+    ] {
+        if parts
+            .iter()
+            .any(|part| aliases.iter().any(|alias| part.eq_ignore_ascii_case(alias)))
+        {
+            labels.push(label.to_owned());
+        }
+    }
+    for part in parts {
+        if [
+            "ctrl", "control", "alt", "option", "shift", "super", "meta", "cmd", "command", "win",
+        ]
+        .iter()
+        .any(|modifier| part.eq_ignore_ascii_case(modifier))
+        {
+            continue;
+        }
+        let key = part
+            .strip_prefix("Key")
+            .or_else(|| part.strip_prefix("Digit"))
+            .unwrap_or(part);
+        labels.push(if key.len() == 1 {
+            key.to_uppercase()
+        } else {
+            key.to_owned()
+        });
+    }
+    labels.join("+")
+}
+
 pub(crate) fn recorded_key(event: &Keystroke, local: bool) -> Result<Option<String>, String> {
     let key = event.key.to_ascii_lowercase();
     if [
