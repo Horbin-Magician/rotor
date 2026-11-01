@@ -244,9 +244,13 @@ impl PinView {
             width: self.image.width(),
             height: self.image.height(),
         };
-        let Some(crop) = rotor_canvas::resize_crop(drag.start, drag.edges, delta, size, 12) else {
+        let Some(crop) = rotor_canvas::resize_crop(drag.start, drag.edges, delta, size, 1) else {
             return;
         };
+        // The minimum is an area in source pixels, not a minimum edge length.
+        if u64::from(crop.width) * u64::from(crop.height) < 16 {
+            return;
+        }
         let x = drag.bounds.x as f64 + (crop.x as f64 - drag.start.x as f64) * drag.ratio;
         let y = drag.bounds.y as f64 + (crop.y as f64 - drag.start.y as f64) * drag.ratio;
         let Mode::CroppingEdge(drag) = &mut self.mode else {

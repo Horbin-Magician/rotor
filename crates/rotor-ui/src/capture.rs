@@ -473,7 +473,9 @@ impl MaskView {
     }
     fn selected(&self) -> Option<ImageRect> {
         if let Some(start) = self.start {
-            ImageRect::from_drag(start, self.point, self.dimensions()).or(self.click_selection)
+            ImageRect::from_drag(start, self.point, self.dimensions())
+                .filter(|rect| u64::from(rect.width) * u64::from(rect.height) >= 16)
+                .or(self.click_selection)
         } else {
             self.auto_selection()
         }
@@ -518,14 +520,16 @@ impl MaskView {
         }
         self.move_pointer(position, window, cx);
         let start = self.start.take().unwrap();
-        let minimum = 5. * window.scale_factor() as f64;
-        // Moving past the threshold on either axis is a drag, matching the
+        let minimum = 1.;
+        // Moving at least one image pixel on either axis is a drag, matching the
         // preview in selected(): a thin selection keeps its drawn rectangle,
-        // and a degenerate zero-extent one falls back to the click target.
-        let rect = if (start.x - self.point.x).abs() > minimum
-            || (start.y - self.point.y).abs() > minimum
+        // and selections smaller than 16 image pixels fall back to the click target.
+        let rect = if (start.x - self.point.x).abs() >= minimum
+            || (start.y - self.point.y).abs() >= minimum
         {
-            ImageRect::from_drag(start, self.point, self.dimensions()).or(self.click_selection)
+            ImageRect::from_drag(start, self.point, self.dimensions())
+                .filter(|rect| u64::from(rect.width) * u64::from(rect.height) >= 16)
+                .or(self.click_selection)
         } else {
             self.click_selection
         };
@@ -1121,16 +1125,58 @@ mod tests {
         cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
         cx.simulate_mouse_up(at(340., 40.), MouseButton::Left, Default::default());
         assert_eq!(chosen(&actions).last(), Some(&full));
-        // Sub-threshold jitter remains a click.
+        // A one-pixel-wide selection with area 16 must remain selectable.
         view.update(cx, |view, cx| {
             view.armed = true;
             cx.notify();
         });
         cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
-        cx.simulate_mouse_up(at(43., 41.), MouseButton::Left, Default::default());
+        cx.simulate_mouse_up(at(41., 56.), MouseButton::Left, Default::default());
         assert_eq!(chosen(&actions).len(), 3);
+        assert_eq!(
+            chosen(&actions).last(),
+            Some(&ImageRect {
+                x: 40,
+                y: 40,
+                width: 1,
+                height: 16,
+            })
+        );
+        // A stationary click still selects the detected window.
+        view.update(cx, |view, cx| {
+            view.armed = true;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+        cx.simulate_mouse_up(start, MouseButton::Left, Default::default());
+        assert_eq!(chosen(&actions).len(), 4);
         assert_eq!(chosen(&actions).last(), Some(&full));
+        for (width, height, accepted) in [(4., 4., true), (2., 8., true), (3., 5., false)] {
+            view.update(cx, |view, cx| {
+                view.armed = true;
+                cx.notify();
+            });
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+            cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+            cx.simulate_mouse_up(
+                at(40. + width, 40. + height),
+                MouseButton::Left,
+                Default::default(),
+            );
+            let expected = if accepted {
+                ImageRect {
+                    x: 40,
+                    y: 40,
+                    width: width as u32,
+                    height: height as u32,
+                }
+            } else {
+                full
+            };
+            assert_eq!(chosen(&actions).last(), Some(&expected));
+        }
     }
 
     #[test]
