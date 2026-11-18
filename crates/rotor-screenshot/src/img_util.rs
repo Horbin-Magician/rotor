@@ -107,14 +107,29 @@ pub fn detect_pixels_cancellable(
     let edge_image = sobel_edge_mask(&gray, 10.0);
     check_cancelled(&cancelled)?;
 
+    // Preserve outlined controls before closing can bridge adjacent borders.
+    let mut rects = find_bounding_boxes(
+        &edge_image,
+        RegionFilter::Outline {
+            scale: scale_factor,
+        },
+        &cancelled,
+    )?;
     let morph_size = cmp::max(1, 4 / scale_factor) as u8;
     let processed_image = morphological_close(edge_image, morph_size);
     check_cancelled(&cancelled)?;
 
-    let min_size = 100 / scale_factor;
-    let rects = find_bounding_boxes(&processed_image, min_size, &cancelled)?;
+    rects.extend(find_bounding_boxes(
+        &processed_image,
+        RegionFilter::Content {
+            min_size: 100 / scale_factor,
+        },
+        &cancelled,
+    )?);
+    rects.sort_unstable();
+    rects.dedup();
 
-    // 6. Rescale back
+    // Return physical pixel coordinates for the selection overlay.
     Ok(rects
         .into_iter()
         .map(|(x, y, w, h)| {
@@ -161,24 +176,26 @@ fn image_to_scaled_gray(
     let dst_height = src_height.div_ceil(scale_factor);
 
     let mut gray_data = vec![0u8; dst_width as usize * dst_height as usize];
-    let src_width_usize = src_width as usize;
-    let scale_factor_usize = scale_factor as usize;
-
+    let stride = src_width as usize * 4;
+    let scale = scale_factor as usize;
     gray_data
         .par_chunks_mut(dst_width as usize)
-        .enumerate()
-        .for_each(|(dst_y, row)| {
-            let src_y = (dst_y * scale_factor_usize).min(src_height as usize - 1);
-            let src_row_offset = src_y * src_width_usize * 4;
-
-            for (dst_x, gray) in row.iter_mut().enumerate() {
-                let src_x = (dst_x * scale_factor_usize).min(src_width_usize - 1);
-                let src_offset = src_row_offset + src_x * 4;
-
-                let r = img_data[src_offset + red] as u32;
-                let g = img_data[src_offset + 1] as u32;
-                let b = img_data[src_offset + blue] as u32;
-                *gray = ((r * 299 + g * 587 + b * 114) / 1000) as u8;
+        .zip(img_data.par_chunks(stride * scale))
+        .for_each(|(row, band)| {
+            // Average each source tile, including partial tiles at the right and bottom.
+            let rows = band.len() / stride;
+            for (x, gray) in row.iter_mut().enumerate() {
+                let left = x * scale * 4;
+                let right = (left + scale * 4).min(stride);
+                let mut sum = 0u32;
+                for source in band.chunks_exact(stride) {
+                    for pixel in source[left..right].chunks_exact(4) {
+                        sum += u32::from(pixel[red]) * 299
+                            + u32::from(pixel[1]) * 587
+                            + u32::from(pixel[blue]) * 114;
+                    }
+                }
+                *gray = (sum / (1000 * (rows * ((right - left) / 4)) as u32)) as u8;
             }
         });
 
@@ -292,14 +309,21 @@ fn morphological_close(img: GrayImage, size: u8) -> GrayImage {
     })
 }
 
+#[derive(Clone, Copy)]
+enum RegionFilter {
+    Outline { scale: u32 },
+    Content { min_size: u32 },
+}
+
 fn find_bounding_boxes(
     img: &GrayImage,
-    min_size: u32,
+    filter: RegionFilter,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Vec<(u32, u32, u32, u32)>, String> {
     let (width, height) = img.dimensions();
     let mut visited = vec![false; width as usize * height as usize];
     let mut boxes = Vec::new();
+    let mut stack = Vec::new();
     let img_data = img.as_raw();
 
     for y in 0..height {
@@ -307,16 +331,9 @@ fn find_bounding_boxes(
         for x in 0..width {
             let idx = y as usize * width as usize + x as usize;
             if img_data[idx] > 64 && !visited[idx] {
-                if let Some(rect) = flood_fill_bbox(
-                    img_data,
-                    &mut visited,
-                    x,
-                    y,
-                    width,
-                    height,
-                    min_size,
-                    cancelled,
-                )? {
+                if let Some(rect) =
+                    flood_fill_bbox(img, &mut visited, (x, y), filter, &mut stack, cancelled)?
+                {
                     boxes.push(rect);
                 }
             }
@@ -326,20 +343,18 @@ fn find_bounding_boxes(
     Ok(boxes)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn flood_fill_bbox(
-    img_data: &[u8],
+    img: &GrayImage,
     visited: &mut [bool],
-    start_x: u32,
-    start_y: u32,
-    width: u32,
-    height: u32,
-    min_size: u32,
+    (start_x, start_y): (u32, u32),
+    filter: RegionFilter,
+    stack: &mut Vec<usize>,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Option<(u32, u32, u32, u32)>, String> {
+    let (width, height) = img.dimensions();
+    let img_data = img.as_raw();
     let w_usize = width as usize;
     let start_idx = start_y as usize * w_usize + start_x as usize;
-    let mut stack = Vec::with_capacity(512);
     stack.push(start_idx);
     visited[start_idx] = true;
 
@@ -409,12 +424,35 @@ fn flood_fill_bbox(
     let w = max_x - min_x + 1;
     let h = max_y - min_y + 1;
 
-    // 过滤过小的区域
-    if w < min_size || h < min_size || pixel_count < min_size * min_size / 4 {
-        return Ok(None);
-    }
-
-    Ok(Some((min_x, min_y, w, h)))
+    let keep = match filter {
+        RegionFilter::Content { min_size } => {
+            w >= min_size && h >= min_size && pixel_count >= min_size * min_size / 4
+        }
+        RegionFilter::Outline { scale } => {
+            // Require a useful control size and sustained edges on all four sides.
+            let long = 64u32.div_ceil(scale);
+            let short = 20u32.div_ceil(scale);
+            let horizontal = |y: u32| {
+                (min_x..=max_x)
+                    .filter(|&x| img_data[y as usize * w_usize + x as usize] != 0)
+                    .count()
+            };
+            let vertical = |x: u32| {
+                (min_y..=max_y)
+                    .filter(|&y| img_data[y as usize * w_usize + x as usize] != 0)
+                    .count()
+            };
+            w.max(h) >= long
+                && w.min(h) >= short
+                && [min_y, max_y]
+                    .into_iter()
+                    .all(|y| horizontal(y) >= (w - w / 4) as usize)
+                && [min_x, max_x]
+                    .into_iter()
+                    .all(|x| vertical(x) >= (h - h / 4) as usize)
+        }
+    };
+    Ok(keep.then_some((min_x, min_y, w, h)))
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1000,7 +1038,7 @@ mod tests {
         assert!(detect_pixels_cancellable(&Unreadable, || true).is_err());
         let image = GrayImage::from_pixel(256, 256, image::Luma([255]));
         let checks = std::cell::Cell::new(0);
-        let result = find_bounding_boxes(&image, 10, &|| {
+        let result = find_bounding_boxes(&image, RegionFilter::Content { min_size: 10 }, &|| {
             checks.set(checks.get() + 1);
             checks.get() > 2
         });
@@ -1014,6 +1052,77 @@ mod tests {
         let error = img2text_cancellable(Path::new("missing-synthetic-models"), &image, || true)
             .unwrap_err();
         assert!(error.to_string().contains("cancelled"));
+    }
+
+    #[test]
+    fn detects_short_list_row() {
+        check_outlines(400, 100, &[(20, 20, 300, 40)], 2);
+    }
+
+    #[test]
+    fn three_sided_row_is_not_a_closed_outline() {
+        let image = RgbaImage::from_fn(400, 100, |x, y| {
+            let edge = ((y == 20 || y == 59) && (20..320).contains(&x))
+                || (x == 20 && (20..60).contains(&y));
+            image::Rgba(if edge { [0, 0, 0, 255] } else { [255; 4] })
+        });
+        assert!(detect_pixels_cancellable(&image, || false)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn detects_thin_border_at_each_4k_sampling_offset() {
+        for shift in 0..3 {
+            check_outlines(3840, 2160, &[(100 + shift, 100 + shift, 240, 150)], 6);
+        }
+    }
+
+    #[test]
+    fn detects_neighboring_cards_before_their_edges_merge() {
+        for gap in [10, 7, 4] {
+            check_outlines(
+                360,
+                160,
+                &[(10, 10, 160, 120), (170 + gap, 10, 160, 120)],
+                2,
+            );
+        }
+    }
+
+    fn check_outlines(width: u32, height: u32, regions: &[(u32, u32, u32, u32)], tolerance: u32) {
+        let mut image = RgbaImage::from_pixel(width, height, image::Rgba([245, 245, 245, 255]));
+        let ink = image::Rgba([65, 65, 65, 255]);
+        for &(x, y, w, h) in regions {
+            for dx in x..x + w {
+                image.put_pixel(dx, y, ink);
+                image.put_pixel(dx, y + h - 1, ink);
+            }
+            for dy in y..y + h {
+                image.put_pixel(x, dy, ink);
+                image.put_pixel(x + w - 1, dy, ink);
+            }
+        }
+        let boxes = detect_pixels_cancellable(&image, || false).unwrap();
+        for &(x, y, w, h) in regions {
+            let hit = boxes
+                .iter()
+                .copied()
+                .filter(|&(l, t, w2, h2)| {
+                    (l..l + w2).contains(&(x + w / 2)) && (t..t + h2).contains(&(y + h / 2))
+                })
+                .min_by_key(|&(_, _, w2, h2)| u64::from(w2) * u64::from(h2));
+            assert!(
+                hit.is_some_and(|(l, t, bw, bh)| {
+                    l.abs_diff(x) <= tolerance
+                        && t.abs_diff(y) <= tolerance
+                        && (l + bw).abs_diff(x + w) <= tolerance
+                        && (t + bh).abs_diff(y + h) <= tolerance
+                }),
+                "expected {:?}, found {hit:?}",
+                (x, y, w, h)
+            );
+        }
     }
 
     #[test]
