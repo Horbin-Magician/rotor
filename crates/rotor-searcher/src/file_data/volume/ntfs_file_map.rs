@@ -157,6 +157,9 @@ impl FileMap {
         let mut query = SearchQuery::new(query);
         let mut result = Vec::new();
         let mut next_cursor = cursor.cloned();
+        // Scope both positive and negative directory matches to this immutable search.
+        let mut last_parent = None;
+        let mut matched_directory = None;
         // Resume within a path tier, ordered by the existing static rank.
         // Every tier spans the full index; buffering remains bounded by batch.
         for tier in (0..=cursor.map_or(query.max_path_tier(), |c| (c.rank / 128) as u8)).rev() {
@@ -185,10 +188,17 @@ impl FileMap {
                 {
                     continue;
                 }
-                let Some(path) = self.get_path(&file.parent_index) else {
+                if last_parent != Some(file.parent_index) {
+                    last_parent = Some(file.parent_index);
+                    matched_directory = self.get_path(&file.parent_index).and_then(|path| {
+                        let directory_tier = query.matched_path_tier(&path)?;
+                        Some((path, directory_tier))
+                    });
+                }
+                let Some((path, directory_tier)) = &matched_directory else {
                     continue;
                 };
-                if query.matched_path_tier(&path) != Some(tier) {
+                if *directory_tier != tier {
                     continue;
                 }
                 let full_path = format!("{}{}", path, file.file_name);
@@ -202,7 +212,7 @@ impl FileMap {
                     name: String::new(),
                 });
                 result.push(SearchResultItem {
-                    path,
+                    path: path.clone(),
                     file_path: full_path,
                     file_name: file.file_name.to_string(),
                     rank,
