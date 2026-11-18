@@ -497,6 +497,56 @@ mod release_tests {
     }
 
     #[test]
+    #[ignore = "synthetic release benchmark"]
+    fn measure_directory_queries() {
+        let mut map = FileMap::new();
+        map.insert(1, "X:".into(), 0);
+        for dir in 0..128 {
+            map.insert(2 + dir, format!("group-{dir}"), 1);
+            for n in 0..256 {
+                map.insert(1000 + dir * 256 + n, format!("Report-{n}.dll"), 2 + dir);
+            }
+        }
+        for (query, count) in [
+            ("*.dll", 32768),
+            ("group-12/*.dll", 2304),
+            ("absent/*.dll", 0),
+        ] {
+            let mut first = Vec::new();
+            let mut all = Vec::new();
+            for _ in 0..11 {
+                let mut cursor = None;
+                let mut hits = 0;
+                let start = std::time::Instant::now();
+                loop {
+                    let page = map
+                        .search(
+                            query,
+                            cursor.as_ref(),
+                            20,
+                            &AtomicBool::new(false),
+                            &ExcludedDirs::default(),
+                        )
+                        .unwrap();
+                    if cursor.is_none() {
+                        first.push(start.elapsed().as_micros());
+                    }
+                    hits += page.items.len();
+                    if page.exhausted {
+                        break;
+                    }
+                    cursor = page.cursor;
+                }
+                all.push(start.elapsed().as_micros());
+                assert_eq!(hits, count);
+            }
+            first.sort_unstable();
+            all.sort_unstable();
+            println!("{query} first_us={} all_us={}", first[5], all[5]);
+        }
+    }
+
+    #[test]
     #[ignore = "synthetic performance measurement; run alone in release mode"]
     fn measure_ntfs_search_workload() {
         use std::time::Instant;
