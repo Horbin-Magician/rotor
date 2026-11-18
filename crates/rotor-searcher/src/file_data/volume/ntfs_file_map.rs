@@ -121,13 +121,15 @@ impl FileMap {
             };
             let file_path = format!("{}{}", path, file.file_name);
             let bonus = usage.bonus(&file_path);
-            if bonus == 0 || !query.matches_path(&path) {
+            if bonus == 0 {
                 continue;
             }
             if excluded_dirs.is_excluded_path(std::path::Path::new(&file_path)) {
                 continue;
             }
-            let tier = query.path_tier(&path);
+            let Some(tier) = query.matched_path_tier(&path) else {
+                continue;
+            };
             result.push(SearchResultItem {
                 path,
                 file_path,
@@ -186,7 +188,7 @@ impl FileMap {
                 let Some(path) = self.get_path(&file.parent_index) else {
                     continue;
                 };
-                if !query.matches_path(&path) || query.path_tier(&path) != tier {
+                if query.matched_path_tier(&path) != Some(tier) {
                     continue;
                 }
                 let full_path = format!("{}{}", path, file.file_name);

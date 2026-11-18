@@ -42,6 +42,7 @@ pub(super) struct SearchQuery {
     parts: Vec<String>,
     scratch: String,
     path: Option<String>,
+    path_parts: Vec<String>,
 }
 
 impl SearchQuery {
@@ -54,6 +55,13 @@ impl SearchQuery {
             });
         let lower = name.to_owned();
         Self {
+            path_parts: path
+                .as_deref()
+                .unwrap_or_default()
+                .split('*')
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect(),
             path,
             filter: make_filter(&lower),
             parts: lower
@@ -80,29 +88,21 @@ impl SearchQuery {
     }
     /// A path qualifier ending at the immediate parent ranks above an ancestor
     /// or a partial directory match.
-    pub fn path_tier(&self, path: &str) -> u8 {
-        if !self.has_path_bonus() {
-            return 0;
-        }
+    pub fn matched_path_tier(&self, path: &str) -> Option<u8> {
+        let Some(qualifier) = &self.path else {
+            return Some(0);
+        };
         let path = path.replace('\\', "/").to_lowercase();
-        let path = path.trim_end_matches('/');
-        u8::from(
-            path.strip_suffix(self.path.as_deref().unwrap())
-                .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/')),
-        )
-    }
-    pub fn matches_path(&self, path: &str) -> bool {
-        self.path.as_ref().is_none_or(|query| {
-            let path = path.replace('\\', "/").to_lowercase();
-            matches_parts(
-                &path,
-                &query
-                    .split('*')
-                    .filter(|part| !part.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>(),
-            )
-        })
+        if !matches_parts(&path, &self.path_parts) {
+            return None;
+        }
+        Some(u8::from(
+            self.has_path_bonus()
+                && path
+                    .trim_end_matches('/')
+                    .strip_suffix(qualifier)
+                    .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/')),
+        ))
     }
 
     fn matches(&mut self, name: &str) -> bool {
