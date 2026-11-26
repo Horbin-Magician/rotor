@@ -1,5 +1,5 @@
 use core_graphics::{
-    display::CGDisplay,
+    display::{CGDisplay, CGPoint, CGRect, CGSize},
     image::CGImage,
     window::{create_image, kCGNullWindowID, kCGWindowImageDefault, kCGWindowListOptionAll},
 };
@@ -15,6 +15,89 @@ pub fn capture_display_bgra(display_id: u32, width: u32, height: u32) -> Result<
     )
     .ok_or("Could not capture display; check Screen Recording permission")?;
     image_bgra(&image, width, height)
+}
+
+/// Capture a physical pixel rectangle on `display_id` in top-down BGRA format.
+/// Captures only the minimal Quartz point rect covering the requested pixels,
+/// falling back to the full display if fractional scaling shifts image dimensions.
+#[allow(clippy::too_many_arguments)]
+pub fn capture_region_bgra(
+    display_id: u32,
+    display_width: u32,
+    display_height: u32,
+    scale_factor: f32,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    if width == 0
+        || height == 0
+        || x.checked_add(width)
+            .is_none_or(|right| right > display_width)
+        || y.checked_add(height)
+            .is_none_or(|bottom| bottom > display_height)
+    {
+        return Err("Capture region is outside the display".into());
+    }
+    let scale = scale_factor as f64;
+    if scale.is_finite() && scale > 0. {
+        let display_bounds = CGDisplay::new(display_id).bounds();
+        let left_pt = (x as f64 / scale).floor();
+        let top_pt = (y as f64 / scale).floor();
+        let right_pt = ((x + width) as f64 / scale)
+            .ceil()
+            .min(display_bounds.size.width);
+        let bottom_pt = ((y + height) as f64 / scale)
+            .ceil()
+            .min(display_bounds.size.height);
+        let rect_w_pt = right_pt - left_pt;
+        let rect_h_pt = bottom_pt - top_pt;
+        if rect_w_pt > 0. && rect_h_pt > 0. {
+            let capture_rect = CGRect::new(
+                &CGPoint::new(
+                    display_bounds.origin.x + left_pt,
+                    display_bounds.origin.y + top_pt,
+                ),
+                &CGSize::new(rect_w_pt, rect_h_pt),
+            );
+            if let Some(image) = create_image(
+                capture_rect,
+                kCGWindowListOptionAll,
+                kCGNullWindowID,
+                kCGWindowImageDefault,
+            ) {
+                let offset_x = x.saturating_sub((left_pt * scale).round() as u32);
+                let offset_y = y.saturating_sub((top_pt * scale).round() as u32);
+                if image.bits_per_component() == 8
+                    && image.bits_per_pixel() == 32
+                    && offset_x as usize + width as usize <= image.width()
+                    && offset_y as usize + height as usize <= image.height()
+                {
+                    let data = image.data();
+                    return copy_bgra_subrect(
+                        data.bytes(),
+                        image.bytes_per_row(),
+                        image.height(),
+                        offset_x,
+                        offset_y,
+                        width,
+                        height,
+                    );
+                }
+            }
+        }
+    }
+    let full = capture_display_bgra(display_id, display_width, display_height)?;
+    copy_bgra_subrect(
+        &full,
+        display_width as usize * 4,
+        display_height as usize,
+        x,
+        y,
+        width,
+        height,
+    )
 }
 
 fn image_bgra(image: &CGImage, width: u32, height: u32) -> Result<Vec<u8>, String> {
@@ -53,6 +136,49 @@ fn copy_bgra_rows(data: &[u8], width: u32, height: u32, stride: usize) -> Result
     let mut bytes = Vec::with_capacity(length);
     for row in data[..source_length].chunks_exact(stride) {
         bytes.extend_from_slice(&row[..row_bytes]);
+    }
+    Ok(bytes)
+}
+
+fn copy_bgra_subrect(
+    data: &[u8],
+    stride: usize,
+    source_height: usize,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let x_bytes = (x as usize)
+        .checked_mul(4)
+        .ok_or("Invalid capture region offset")?;
+    let row_bytes = (width as usize)
+        .checked_mul(4)
+        .filter(|length| *length > 0)
+        .ok_or("Invalid capture region width")?;
+    let end_x_bytes = x_bytes
+        .checked_add(row_bytes)
+        .filter(|end| *end <= stride)
+        .ok_or("Capture region exceeds source row stride")?;
+    let end_y = (y as usize)
+        .checked_add(height as usize)
+        .filter(|end| *end <= source_height)
+        .ok_or("Capture region exceeds source height")?;
+    let source_length = stride
+        .checked_mul(end_y)
+        .filter(|len| *len <= data.len())
+        .ok_or("Invalid capture row data")?;
+    let length = row_bytes
+        .checked_mul(height as usize)
+        .filter(|length| *length > 0 && *length <= isize::MAX as usize)
+        .ok_or("Invalid capture region dimensions")?;
+    let mut bytes = Vec::with_capacity(length);
+    for row in data[..source_length]
+        .chunks_exact(stride)
+        .skip(y as usize)
+        .take(height as usize)
+    {
+        bytes.extend_from_slice(&row[x_bytes..end_x_bytes]);
     }
     Ok(bytes)
 }

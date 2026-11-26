@@ -123,6 +123,11 @@ pub fn window_visible(handle: WindowHandle<'_>) -> Result<bool, String> {
     native::window_visible(handle)
 }
 
+/// Exclude a floating control window from OS screen capture when supported.
+pub fn exclude_from_capture(handle: WindowHandle<'_>) -> Result<(), String> {
+    native::exclude_from_capture(handle)
+}
+
 #[cfg(target_os = "windows")]
 pub fn client_origin(handle: WindowHandle<'_>) -> Result<(i32, i32), String> {
     native::client_origin(handle)
@@ -160,10 +165,22 @@ impl SelectionFrame {
         thickness: u32,
         scale: f32,
     ) -> Result<Self, String> {
+        Self::show_with_color(region, display, thickness, scale, FRAME_COLOR)
+    }
+
+    /// Show the outline using a custom RGB accent color (e.g. recording red).
+    pub fn show_with_color(
+        region: ScreenRect,
+        display: ScreenRect,
+        thickness: u32,
+        scale: f32,
+        color: (u8, u8, u8),
+    ) -> Result<Self, String> {
         if !scale.is_finite() || scale <= 0. || thickness == 0 {
             return Err("Invalid selection frame".into());
         }
-        native::SelectionFrame::show(&frame_strips(region, display, thickness), scale).map(Self)
+        native::SelectionFrame::show(&frame_strips(region, display, thickness), scale, color)
+            .map(Self)
     }
 }
 

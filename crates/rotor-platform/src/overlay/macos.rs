@@ -232,11 +232,24 @@ pub(super) fn show_window(handle: WindowHandle<'_>) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn exclude_from_capture(handle: WindowHandle<'_>) -> Result<(), String> {
+    use objc2_app_kit::NSWindowSharingType;
+    view(handle)?
+        .window()
+        .ok_or("View is not attached to a window")?
+        .setSharingType(NSWindowSharingType::NSWindowSharingNone);
+    Ok(())
+}
+
 /// One borderless, mouse-transparent window per side, excluded from capture.
 pub(super) struct SelectionFrame(Vec<objc2::rc::Retained<objc2_app_kit::NSWindow>>);
 
 impl SelectionFrame {
-    pub(super) fn show(strips: &[super::ScreenRect], scale: f32) -> Result<Self, String> {
+    pub(super) fn show(
+        strips: &[super::ScreenRect],
+        scale: f32,
+        color: (u8, u8, u8),
+    ) -> Result<Self, String> {
         use objc2_app_kit::{
             NSBackingStoreType, NSColor, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior,
             NSWindowSharingType,
@@ -244,7 +257,7 @@ impl SelectionFrame {
         let mtm = MainThreadMarker::new().ok_or("Selection frame requires the main thread")?;
         let primary_height = CGDisplay::main().bounds().size.height;
         let scale = scale as f64;
-        let (r, g, b) = super::FRAME_COLOR;
+        let (r, g, b) = color;
         let color = unsafe {
             NSColor::colorWithSRGBRed_green_blue_alpha(
                 r as f64 / 255.,

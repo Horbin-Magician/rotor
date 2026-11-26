@@ -3,7 +3,7 @@
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::capture_display_bgra;
+pub use macos::{capture_display_bgra, capture_region_bgra};
 
 #[cfg(target_os = "windows")]
 mod windows_capture {

@@ -34,6 +34,14 @@ pub fn open_file_as_admin(file_path: String) -> Result<(), Box<dyn Error>> {
     native::open_file_as_admin(&file_path)
 }
 
+pub fn reveal_in_folder(file_path: String) -> Result<(), Box<dyn Error>> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path).into());
+    }
+    native::reveal_in_folder(&file_path)
+}
+
 /// Native RGBA pixels; callers can share them without PNG/Base64 round trips.
 pub fn file_icon(file_path: &str) -> Option<RgbaImage> {
     let path = Path::new(file_path);

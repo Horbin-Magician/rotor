@@ -203,39 +203,38 @@ impl RegionCapture {
     }
 
     pub fn read(&mut self) -> Result<image::RgbaImage, String> {
+        let mut bytes = self.read_bgra()?;
+        for pixel in bytes.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        image::RgbaImage::from_raw(self.rect.width, self.rect.height, bytes)
+            .ok_or_else(|| "Invalid capture region".into())
+    }
+
+    /// Capture the selected region in top-down BGRA format without channel swapping.
+    pub fn read_bgra(&mut self) -> Result<Vec<u8>, String> {
         rotor_platform::monitor::validate_capture_monitor(&self.monitor)?;
         let rect = self.rect;
         #[cfg(target_os = "windows")]
         {
-            let bytes = self.native.capture(
+            self.native.capture(
                 self.monitor.x + rect.x as i32,
                 self.monitor.y + rect.y as i32,
                 rect.width,
                 rect.height,
-            )?;
-            crop_bgra(
-                &BgraCapture {
-                    width: rect.width,
-                    height: rect.height,
-                    bytes,
-                },
-                rotor_canvas::ImageRect { x: 0, y: 0, ..rect },
             )
         }
         #[cfg(target_os = "macos")]
         {
-            let bytes = rotor_platform::capture::capture_display_bgra(
+            rotor_platform::capture::capture_region_bgra(
                 self.monitor.id,
                 self.monitor.width,
                 self.monitor.height,
-            )?;
-            crop_bgra(
-                &BgraCapture {
-                    width: self.monitor.width,
-                    height: self.monitor.height,
-                    bytes,
-                },
-                rect,
+                self.monitor.scale_factor,
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
             )
         }
     }

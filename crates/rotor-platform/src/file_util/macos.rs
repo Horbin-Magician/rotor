@@ -9,3 +9,11 @@ pub(super) fn open_file_as_admin(file_path: &str) -> Result<(), Box<dyn Error>> 
     log::info!("macOS does not support elevated open; opening normally instead");
     open_file(file_path)
 }
+
+pub(super) fn reveal_in_folder(file_path: &str) -> Result<(), Box<dyn Error>> {
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(file_path)
+        .spawn()?;
+    Ok(())
+}

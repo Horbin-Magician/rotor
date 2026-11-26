@@ -6572,6 +6572,7 @@ name = "rotor-platform"
 version = "3.2.0"
 dependencies = [
  "arboard",
+ "block2 0.5.1",
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
  "dunce",
@@ -6621,6 +6622,7 @@ dependencies = [
 name = "rotor-screenshot"
 version = "3.2.0"
 dependencies = [
+ "gif 0.14.2",
  "image",
  "log",
  "oar-ocr",

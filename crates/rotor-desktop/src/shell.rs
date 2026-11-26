@@ -22,6 +22,7 @@ pub(crate) enum WindowRole {
     Mask { session: u64, monitor: u32 },
     Pin(u64),
     LongCapture(u64),
+    ScreenRecord(u64),
 }
 
 pub(crate) enum WindowView {
@@ -31,6 +32,7 @@ pub(crate) enum WindowView {
     Mask(WeakEntity<rotor_ui::MaskView>),
     Pin(WeakEntity<rotor_ui::PinView>),
     LongCapture(WeakEntity<rotor_ui::LongCaptureView>),
+    ScreenRecord(WeakEntity<rotor_ui::ScreenRecordView>),
 }
 
 pub(crate) struct WindowSlot {

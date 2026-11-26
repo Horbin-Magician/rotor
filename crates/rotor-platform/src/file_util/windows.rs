@@ -38,3 +38,15 @@ pub(super) fn open_file_as_admin(file_path: &str) -> Result<(), Box<dyn Error>> 
     }
     Ok(())
 }
+
+pub(super) fn reveal_in_folder(file_path: &str) -> Result<(), Box<dyn Error>> {
+    let trimmed_path = file_path.trim_end_matches(&['/', '\\'][..]);
+    if trimmed_path.contains(['\0', '"']) {
+        return Err("File path contains an invalid character".into());
+    }
+    std::process::Command::new("explorer.exe")
+        .raw_arg(format!("/select,\"{trimmed_path}\""))
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .spawn()?;
+    Ok(())
+}

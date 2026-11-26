@@ -3,7 +3,7 @@ use gpui_kit::{component::Root, *};
 use raw_window_handle::HasWindowHandle;
 use rotor_common::Settings;
 use rotor_runtime::{CaptureBundle, NativeSession, OperationId, ShotterConfig};
-use rotor_ui::{MaskAction, PreparedCapture};
+use rotor_ui::{CaptureMode, MaskAction, PreparedCapture};
 use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
@@ -11,7 +11,12 @@ use std::{
     time::Instant,
 };
 mod long;
+mod record;
 pub use long::{finish_requested as finish_long_capture, handle_event as long_capture_event};
+pub use record::{
+    handle_event as screen_record_event, stop_requested as stop_screen_record,
+    sync_settings as sync_record_settings,
+};
 
 #[derive(Default)]
 pub struct CaptureState {
@@ -27,6 +32,7 @@ pub struct CaptureState {
     #[cfg(target_os = "windows")]
     cursor_confinement: Option<(u64, u32, rotor_platform::cursor::CursorConfinement)>,
     long: Option<long::LongCapture>,
+    record: Option<record::ScreenRecord>,
 }
 pub fn report(error: String, cx: &mut App) {
     log::warn!("Capture: {error}");
@@ -204,6 +210,7 @@ fn fit_mask(
 
 pub fn stop(cx: &mut App) {
     long::stop(cx);
+    record::stop(cx);
     let state = cx.global_mut::<ShellState>();
     #[cfg(target_os = "windows")]
     {
@@ -560,7 +567,7 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
             session,
             monitor,
             rect,
-            long,
+            mode,
         } => {
             if cx.global::<ShellState>().capture.selecting.is_some() {
                 return;
@@ -594,25 +601,20 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
                 mask_label: format!("ssmask-{monitor}"),
                 minimized: false,
             };
-            if long {
-                if let Err(error) = long::begin(session, frame, rect, config, window, cx) {
-                    let view = cx
-                        .global::<ShellState>()
-                        .windows
-                        .get(&WindowRole::Mask { session, monitor })
-                        .and_then(|slot| {
-                            if let WindowView::Mask(view) = &slot.view {
-                                Some(view.clone())
-                            } else {
-                                None
-                            }
-                        });
-                    if let Some(view) = view {
-                        let _ = view.update(cx, |view, cx| view.set_error(error.clone(), cx));
+            match mode {
+                CaptureMode::Long => {
+                    if let Err(error) = long::begin(session, frame, rect, config, window, cx) {
+                        report_mask_error(session, monitor, error, cx);
                     }
-                    report(error, cx);
+                    return;
                 }
-                return;
+                CaptureMode::Record => {
+                    if let Err(error) = record::begin(session, frame, rect, window, cx) {
+                        report_mask_error(session, monitor, error, cx);
+                    }
+                    return;
+                }
+                CaptureMode::Normal => {}
             }
             mark(session, "selection_submitted", cx);
             let cancellation = rotor_runtime::Cancellation::default();
@@ -656,4 +658,22 @@ fn mask_action(action: MaskAction, window: &mut Window, cx: &mut App) {
             cx.global_mut::<ShellState>().capture.selecting = Some(task);
         }
     }
+}
+
+fn report_mask_error(session: u64, monitor: u32, error: String, cx: &mut App) {
+    let view = cx
+        .global::<ShellState>()
+        .windows
+        .get(&WindowRole::Mask { session, monitor })
+        .and_then(|slot| {
+            if let WindowView::Mask(view) = &slot.view {
+                Some(view.clone())
+            } else {
+                None
+            }
+        });
+    if let Some(view) = view {
+        let _ = view.update(cx, |view, cx| view.set_error(error.clone(), cx));
+    }
+    report(error, cx);
 }

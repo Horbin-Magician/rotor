@@ -288,6 +288,15 @@ pub(super) fn show_window(handle: WindowHandle<'_>) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn exclude_from_capture(handle: WindowHandle<'_>) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+    };
+    let hwnd = hwnd(handle)?;
+    unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) }
+        .map_err(|error| error.to_string())
+}
+
 pub(super) fn client_origin(handle: WindowHandle<'_>) -> Result<(i32, i32), String> {
     use windows::Win32::{Foundation::POINT, Graphics::Gdi::ClientToScreen};
     let RawWindowHandle::Win32(raw) = handle.as_raw() else {
@@ -395,27 +404,44 @@ const FRAME_CLASS: windows::core::PCWSTR = windows::core::w!("RotorSelectionFram
 fn register_frame_class() -> Result<(), String> {
     use std::sync::OnceLock;
     use windows::Win32::{
-        Foundation::COLORREF,
-        Graphics::Gdi::CreateSolidBrush,
-        UI::WindowsAndMessaging::{DefWindowProcW, RegisterClassW, WNDCLASSW},
+        Foundation::{COLORREF, LRESULT, RECT},
+        Graphics::Gdi::{
+            BeginPaint, EndPaint, FillRect, GetStockObject, SetDCBrushColor, DC_BRUSH, HBRUSH,
+            PAINTSTRUCT,
+        },
+        UI::WindowsAndMessaging::{
+            DefWindowProcW, GetClientRect, GetWindowLongPtrW, RegisterClassW, GWLP_USERDATA,
+            WM_ERASEBKGND, WM_PAINT, WNDCLASSW,
+        },
     };
     unsafe extern "system" fn procedure(
         hwnd: HWND,
         message: u32,
         wparam: windows::Win32::Foundation::WPARAM,
         lparam: windows::Win32::Foundation::LPARAM,
-    ) -> windows::Win32::Foundation::LRESULT {
+    ) -> LRESULT {
+        if message == WM_ERASEBKGND {
+            return LRESULT(1);
+        }
+        if message == WM_PAINT {
+            let mut paint = PAINTSTRUCT::default();
+            let hdc = unsafe { BeginPaint(hwnd, &mut paint) };
+            let mut rect = RECT::default();
+            let _ = unsafe { GetClientRect(hwnd, &mut rect) };
+            let color = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as u32;
+            let brush = HBRUSH(unsafe { GetStockObject(DC_BRUSH) }.0);
+            let _ = unsafe { SetDCBrushColor(hdc, COLORREF(color)) };
+            let _ = unsafe { FillRect(hdc, &rect, brush) };
+            let _ = unsafe { EndPaint(hwnd, &paint) };
+            return LRESULT(0);
+        }
         unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
     }
     static REGISTERED: OnceLock<Result<(), String>> = OnceLock::new();
     REGISTERED
         .get_or_init(|| {
-            let (r, g, b) = super::FRAME_COLOR;
-            // The class brush lives for the process; DefWindowProc paints it.
-            let brush = unsafe { CreateSolidBrush(COLORREF(u32::from_le_bytes([r, g, b, 0]))) };
             let class = WNDCLASSW {
                 lpfnWndProc: Some(procedure),
-                hbrBackground: brush,
                 lpszClassName: FRAME_CLASS,
                 ..Default::default()
             };
@@ -428,16 +454,22 @@ fn register_frame_class() -> Result<(), String> {
 }
 
 impl SelectionFrame {
-    pub(super) fn show(strips: &[super::ScreenRect], _scale: f32) -> Result<Self, String> {
+    pub(super) fn show(
+        strips: &[super::ScreenRect],
+        _scale: f32,
+        color: (u8, u8, u8),
+    ) -> Result<Self, String> {
         use windows::Win32::{
             Foundation::COLORREF,
             UI::WindowsAndMessaging::{
-                CreateWindowExW, SetLayeredWindowAttributes, ShowWindow, LWA_ALPHA,
-                SW_SHOWNOACTIVATE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                CreateWindowExW, SetLayeredWindowAttributes, SetWindowDisplayAffinity,
+                SetWindowLongPtrW, ShowWindow, GWLP_USERDATA, LWA_ALPHA, SW_SHOWNOACTIVATE,
+                WDA_EXCLUDEFROMCAPTURE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
                 WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         };
         register_frame_class()?;
+        let colorref = u32::from_le_bytes([color.0, color.1, color.2, 0]);
         let mut frame = Self(Vec::with_capacity(strips.len()));
         for &(x, y, width, height) in strips {
             let hwnd = unsafe {
@@ -463,6 +495,10 @@ impl SelectionFrame {
             .map_err(|error| error.to_string())?;
             // Owned from here on: an early return destroys created windows.
             frame.0.push(hwnd);
+            unsafe {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, colorref as isize);
+                let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+            }
             unsafe { SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA) }
                 .map_err(|error| error.to_string())?;
             let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
@@ -495,7 +531,7 @@ mod selection_frame_tests {
     #[test]
     fn frame_windows_pass_input_through_and_close_on_drop() {
         let strips = [(-4000, -4000, 40, 2), (-4000, -3960, 2, 40)];
-        let frame = SelectionFrame::show(&strips, 1.).unwrap();
+        let frame = SelectionFrame::show(&strips, 1., super::super::FRAME_COLOR).unwrap();
         let windows = frame.0.clone();
         assert_eq!(windows.len(), 2);
         for (hwnd, (x, y, w, h)) in windows.iter().zip(strips) {

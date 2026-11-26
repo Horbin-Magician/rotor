@@ -268,6 +268,14 @@ pub fn prepare_capture(bundle: CaptureBundle) -> Result<Vec<Arc<PreparedCapture>
         })
         .collect()
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CaptureMode {
+    #[default]
+    Normal,
+    Long,
+    Record,
+}
+
 #[derive(Clone, Copy)]
 pub enum MaskAction {
     #[cfg(target_os = "windows")]
@@ -290,7 +298,7 @@ pub enum MaskAction {
         session: u64,
         monitor: u32,
         rect: ImageRect,
-        long: bool,
+        mode: CaptureMode,
     },
 }
 pub type MaskCallback = Rc<dyn Fn(MaskAction, &mut Window, &mut App)>;
@@ -312,7 +320,7 @@ pub struct MaskView {
     detected: Vec<ImageRect>,
     locale: Locale,
     copied: bool,
-    long: bool,
+    mode: CaptureMode,
     error: Option<String>,
     // reset() has no window; the next render applies the language/monitor title.
     title_stale: bool,
@@ -355,7 +363,7 @@ impl MaskView {
             detected: Vec::new(),
             locale,
             copied: false,
-            long: false,
+            mode: CaptureMode::Normal,
             error: None,
             title_stale: false,
         }
@@ -382,7 +390,7 @@ impl MaskView {
         self.click_selection = None;
         self.detected.clear();
         self.copied = false;
-        self.long = false;
+        self.mode = CaptureMode::Normal;
         self.error = None;
         cx.notify();
     }
@@ -540,7 +548,7 @@ impl MaskView {
                     session: self.session,
                     monitor: self.capture.monitor.id,
                     rect,
-                    long: self.long,
+                    mode: self.mode,
                 },
                 window,
                 cx,
@@ -666,7 +674,11 @@ impl Render for MaskView {
                         .w(px(w))
                         .h(px(h))
                         .border_1()
-                        .border_color(cx.theme().primary),
+                        .border_color(if self.mode == CaptureMode::Record {
+                            Hsla::from(rgb(0xe85d5d))
+                        } else {
+                            cx.theme().primary
+                        }),
                 );
         } else {
             root = root.child(shade(0., 0., width, height));
@@ -776,10 +788,23 @@ impl Render for MaskView {
                     .child(
                         div().px_3().py_2().rounded_md()
                             .bg(rgb(0x202428)).text_color(rgb(0xffffff)).text_size(px(14.))
-                            .child((if let Some(error) = &self.error { error.as_str() } else if self.long {
-                                self.locale.pick("长截图：框选要滚动的内容，避开侧栏和视频 · L 返回普通截图 · Esc 取消", "Long capture: select the scrolling content, excluding sidebars and video · L normal capture · Esc cancel")
+                            .child((if let Some(error) = &self.error {
+                                error.as_str()
                             } else {
-                                self.locale.pick("L 长截图 · Esc 取消", "L long capture · Esc cancel")
+                                match self.mode {
+                                    CaptureMode::Long => self.locale.pick(
+                                        "长截图：框选要滚动的内容，避开侧栏和视频 · L 返回普通截图 · R 录屏 · Esc 取消",
+                                        "Long capture: select the scrolling content, excluding sidebars and video · L normal capture · R record screen · Esc cancel",
+                                    ),
+                                    CaptureMode::Record => self.locale.pick(
+                                        "录屏：框选要录制的区域（支持导出 MP4 / GIF） · R 返回普通截图 · L 长截图 · Esc 取消",
+                                        "Screen record: select a region to record (MP4 / GIF) · R normal capture · L long capture · Esc cancel",
+                                    ),
+                                    CaptureMode::Normal => self.locale.pick(
+                                        "L 长截图 · R 录屏 · Esc 取消",
+                                        "L long capture · R record screen · Esc cancel",
+                                    ),
+                                }
                             }).to_owned()),
                     ),
             )
@@ -844,9 +869,33 @@ impl Render for MaskView {
                         cx,
                     );
                     cx.stop_propagation();
-                } else if event.keystroke.key.eq_ignore_ascii_case("l") && this.start.is_none() && !event.is_held
-                    && !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt && !event.keystroke.modifiers.platform {
-                    this.long = !this.long;
+                } else if event.keystroke.key.eq_ignore_ascii_case("l")
+                    && this.start.is_none()
+                    && !event.is_held
+                    && !event.keystroke.modifiers.control
+                    && !event.keystroke.modifiers.alt
+                    && !event.keystroke.modifiers.platform
+                {
+                    this.mode = if this.mode == CaptureMode::Long {
+                        CaptureMode::Normal
+                    } else {
+                        CaptureMode::Long
+                    };
+                    this.error = None;
+                    cx.notify();
+                    cx.stop_propagation();
+                } else if event.keystroke.key.eq_ignore_ascii_case("r")
+                    && this.start.is_none()
+                    && !event.is_held
+                    && !event.keystroke.modifiers.control
+                    && !event.keystroke.modifiers.alt
+                    && !event.keystroke.modifiers.platform
+                {
+                    this.mode = if this.mode == CaptureMode::Record {
+                        CaptureMode::Normal
+                    } else {
+                        CaptureMode::Record
+                    };
                     this.error = None;
                     cx.notify();
                     cx.stop_propagation();
@@ -923,7 +972,7 @@ mod tests {
         });
         cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_keystrokes("ctrl-l");
-        view.read_with(cx, |view, _| assert!(!view.long));
+        view.read_with(cx, |view, _| assert_eq!(view.mode, CaptureMode::Normal));
         // The former mode-button area now lets selection gestures through.
         cx.simulate_mouse_down(
             point(px(60.), px(365.)),
@@ -932,7 +981,7 @@ mod tests {
         );
         view.read_with(cx, |view, _| {
             assert!(view.start.is_some());
-            assert!(!view.long);
+            assert_eq!(view.mode, CaptureMode::Normal);
         });
         cx.simulate_mouse_up(
             point(px(60.), px(365.)),
@@ -940,11 +989,13 @@ mod tests {
             Default::default(),
         );
         cx.simulate_keystrokes("l");
-        view.read_with(cx, |view, _| assert!(view.long));
+        view.read_with(cx, |view, _| assert_eq!(view.mode, CaptureMode::Long));
+        cx.simulate_keystrokes("r");
+        view.read_with(cx, |view, _| assert_eq!(view.mode, CaptureMode::Record));
+        cx.simulate_keystrokes("r");
+        view.read_with(cx, |view, _| assert_eq!(view.mode, CaptureMode::Normal));
         cx.simulate_keystrokes("l");
-        view.read_with(cx, |view, _| assert!(!view.long));
-        cx.simulate_keystrokes("l");
-        view.read_with(cx, |view, _| assert!(view.long));
+        view.read_with(cx, |view, _| assert_eq!(view.mode, CaptureMode::Long));
         cx.simulate_mouse_down(
             point(px(80.), px(100.)),
             MouseButton::Left,
@@ -959,7 +1010,27 @@ mod tests {
             action,
             MaskAction::Choose {
                 session: 7,
-                long: true,
+                mode: CaptureMode::Long,
+                ..
+            }
+        )));
+        cx.simulate_keystrokes("r");
+        view.read_with(cx, |view, _| assert_eq!(view.mode, CaptureMode::Record));
+        cx.simulate_mouse_down(
+            point(px(80.), px(100.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        cx.simulate_mouse_up(
+            point(px(280.), px(300.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        assert!(actions.borrow().iter().any(|action| matches!(
+            action,
+            MaskAction::Choose {
+                session: 7,
+                mode: CaptureMode::Record,
                 ..
             }
         )));
@@ -967,7 +1038,7 @@ mod tests {
             view.reset(8, view.capture.clone(), Locale::English, cx)
         });
         view.read_with(cx, |view, _| {
-            assert!(!view.long);
+            assert_eq!(view.mode, CaptureMode::Normal);
             assert!(!view.armed);
         });
     }

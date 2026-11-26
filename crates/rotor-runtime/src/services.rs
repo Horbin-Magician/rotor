@@ -37,8 +37,12 @@ mod chat;
 pub use rotor_translator::engine::ChatMessage;
 mod capture_worker;
 mod long_capture;
+mod screen_record;
 use capture_worker::{CaptureRequest, CaptureWorker};
 pub use long_capture::{LongCaptureControl, LongCaptureEvent, LongCaptureStatus};
+pub use screen_record::{
+    ScreenRecordControl, ScreenRecordEvent, ScreenRecordLimit, ScreenRecordStatus,
+};
 mod flight;
 use flight::{Latest, SingleFlight};
 
@@ -68,6 +72,10 @@ pub enum RuntimeEvent {
     LongCapture {
         id: OperationId,
         event: LongCaptureEvent,
+    },
+    ScreenRecord {
+        id: OperationId,
+        event: ScreenRecordEvent,
     },
     Chat {
         id: OperationId,
@@ -718,6 +726,15 @@ impl Services {
         )
     }
 
+    pub fn reveal_file(&self, path: String) -> Result<OperationId, String> {
+        self.spawn_job(
+            move || {
+                rotor_platform::file_util::reveal_in_folder(path).map_err(|error| error.to_string())
+            },
+            |id, result| RuntimeEvent::FileOpened { id, result },
+        )
+    }
+
     pub fn translate(&self, text: String) -> Result<OperationId, String> {
         self.ensure_running()?;
         if text.trim().is_empty() {
@@ -775,6 +792,24 @@ impl Services {
             monitor,
             rect,
             first,
+            self.capture_id.clone(),
+            self.events.clone(),
+        )
+    }
+
+    pub fn start_screen_record(
+        &self,
+        id: OperationId,
+        monitor: MonitorConfig,
+        rect: rotor_canvas::ImageRect,
+        fps: u32,
+    ) -> Result<ScreenRecordControl, String> {
+        self.ensure_running()?;
+        screen_record::start(
+            id,
+            monitor,
+            rect,
+            fps,
             self.capture_id.clone(),
             self.events.clone(),
         )

@@ -219,8 +219,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                     // release the index after a replacement has been opened.
                     cx.global::<ShellState>().services.release_search();
                 }
-                if let Some(WindowRole::Mask { session, .. } | WindowRole::LongCapture(session)) =
-                    role
+                if let Some(
+                    WindowRole::Mask { session, .. }
+                    | WindowRole::LongCapture(session)
+                    | WindowRole::ScreenRecord(session),
+                ) = role
                 {
                     cx.defer(move |cx| {
                         if cx.global::<ShellState>().capture.session.generation() == Some(session) {

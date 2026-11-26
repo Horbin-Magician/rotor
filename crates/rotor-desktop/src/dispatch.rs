@@ -16,6 +16,10 @@ pub(crate) fn handle_event(event: RuntimeEvent, cx: &mut App) {
         capture::long_capture_event(id, event, cx);
         return;
     }
+    if let RuntimeEvent::ScreenRecord { id, event } = event {
+        capture::screen_record_event(id, event, cx);
+        return;
+    }
     if let RuntimeEvent::IndexState(state) = &event {
         match state {
             rotor_runtime::IndexState::Ready => crate::logging::startup_mark("index_ready"),
@@ -104,6 +108,7 @@ pub(crate) fn handle_event(event: RuntimeEvent, cx: &mut App) {
             .get(keys::SEARCH_EXCLUDED_DIRS)
             != config.get(keys::SEARCH_EXCLUDED_DIRS);
         cx.global_mut::<ShellState>().config = config.clone();
+        capture::sync_record_settings(config, cx);
         if exclusions_changed {
             let services = cx.global::<ShellState>().services.clone();
             let rebuild = cx.spawn(async move |cx| {
@@ -252,7 +257,7 @@ pub(crate) fn dispatch_command(command: Command, cx: &mut App) {
             }
         }
         Command::Capture => {
-            if capture::finish_long_capture(cx) {
+            if capture::finish_long_capture(cx) || capture::stop_screen_record(cx) {
                 return;
             }
             if let Err(error) = capture::begin(started, cx) {
