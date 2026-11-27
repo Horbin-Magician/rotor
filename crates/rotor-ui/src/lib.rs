@@ -7,7 +7,8 @@ pub use long_capture::{
 mod pin;
 mod screen_record;
 pub use screen_record::{
-    SCREEN_RECORD_PANEL_HEIGHT, SCREEN_RECORD_PANEL_WIDTH, ScreenRecordAction, ScreenRecordView,
+    SCREEN_RECORD_PANEL_HEIGHT, SCREEN_RECORD_PANEL_WIDTH, SCREEN_RECORD_REVIEW_HEIGHT,
+    SCREEN_RECORD_REVIEW_WIDTH, ScreenRecordAction, ScreenRecordView,
 };
 mod search_results;
 mod searcher;

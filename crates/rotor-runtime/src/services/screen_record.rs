@@ -276,13 +276,9 @@ fn record_loop(
             CMD_PAUSE if !paused => {
                 elapsed_ms = elapsed_ms.saturating_add(advance_ms());
                 paused = true;
-                publish(ScreenRecordEvent::Progress {
-                    elapsed_ms,
-                    frames: spool.captured_frames(),
-                    unique_frames: spool.unique_frames(),
-                    spool_bytes: spool.spool_bytes(),
-                    status: ScreenRecordStatus::Paused,
-                });
+                // A full UI event queue must not lose the pause acknowledgement.
+                // The paused branch retries without capturing or advancing time.
+                last_progress = None;
             }
             CMD_RESUME if paused => {
                 // Discard time spent paused.
@@ -299,6 +295,17 @@ fn record_loop(
             _ => {}
         }
         if paused {
+            if last_progress.is_none()
+                && publish(ScreenRecordEvent::Progress {
+                    elapsed_ms,
+                    frames: spool.captured_frames(),
+                    unique_frames: spool.unique_frames(),
+                    spool_bytes: spool.spool_bytes(),
+                    status: ScreenRecordStatus::Paused,
+                })
+            {
+                last_progress = Some(Instant::now());
+            }
             wait(Duration::from_millis(40));
             continue;
         }
@@ -522,5 +529,52 @@ mod tests {
         )
         .unwrap();
         assert!(result.is_none());
+    }
+    #[test]
+    fn paused_progress_retries_after_a_full_event_queue() {
+        let spool = RecordingSpool::new(32, 24, 20, 1.).unwrap();
+        let command = AtomicU8::new(CMD_NONE);
+        let captures = std::cell::Cell::new(0);
+        let attempts = std::cell::Cell::new(0);
+        let (clip, _) = record_loop(
+            spool,
+            32,
+            24,
+            20,
+            &command,
+            &|| false,
+            || {
+                captures.set(captures.get() + 1);
+                Ok(synthetic_bgra(40))
+            },
+            || 50,
+            |_| {
+                if attempts.get() == 0 {
+                    command.store(CMD_PAUSE, Ordering::Release);
+                }
+            },
+            |event| {
+                if matches!(
+                    event,
+                    ScreenRecordEvent::Progress {
+                        status: ScreenRecordStatus::Paused,
+                        ..
+                    }
+                ) {
+                    attempts.set(attempts.get() + 1);
+                    if attempts.get() == 1 {
+                        return false;
+                    }
+                    command.store(CMD_STOP, Ordering::Release);
+                }
+                true
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(attempts.get(), 2);
+        assert_eq!(captures.get(), 1);
+        assert_eq!(clip.captured_frames(), 1);
+        assert_eq!(clip.duration_ms(), 50);
     }
 }

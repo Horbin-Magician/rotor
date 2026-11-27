@@ -797,8 +797,8 @@ impl Render for MaskView {
                                         "Long capture: select the scrolling content, excluding sidebars and video · L normal capture · R record screen · Esc cancel",
                                     ),
                                     CaptureMode::Record => self.locale.pick(
-                                        "录屏：框选要录制的区域（支持导出 MP4 / GIF） · R 返回普通截图 · L 长截图 · Esc 取消",
-                                        "Screen record: select a region to record (MP4 / GIF) · R normal capture · L long capture · Esc cancel",
+                                        "录屏：框选后开始录制，无声音 · R 返回截图 · L 长截图 · Esc 取消",
+                                        "Screen record: select a region to start, without audio · R screenshot · L long capture · Esc cancel",
                                     ),
                                     CaptureMode::Normal => self.locale.pick(
                                         "L 长截图 · R 录屏 · Esc 取消",

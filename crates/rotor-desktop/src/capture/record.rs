@@ -2,10 +2,11 @@ use super::*;
 use rotor_canvas::ImageRect;
 use rotor_runtime::{DEFAULT_RECORD_FPS, ScreenRecordControl, ScreenRecordEvent};
 use rotor_ui::{
-    SCREEN_RECORD_PANEL_HEIGHT, SCREEN_RECORD_PANEL_WIDTH, ScreenRecordAction, ScreenRecordView,
+    SCREEN_RECORD_PANEL_HEIGHT, SCREEN_RECORD_PANEL_WIDTH, SCREEN_RECORD_REVIEW_WIDTH,
+    ScreenRecordAction, ScreenRecordView,
 };
 
-const PANEL_GAP: f32 = 16.;
+const PANEL_GAP: f32 = 8.;
 const FRAME_THICKNESS: f32 = 2.;
 const RECORD_FRAME_COLOR: (u8, u8, u8) = (0xe8, 0x5d, 0x5d);
 
@@ -13,6 +14,8 @@ pub(super) struct ScreenRecord {
     session: u64,
     control: ScreenRecordControl,
     remember_directory: bool,
+    source_monitor: rotor_runtime::MonitorConfig,
+    source_rect: ImageRect,
     // Outlines the recorded region while recording; dropped once stopped or cancelled.
     frame: Option<rotor_platform::overlay::SelectionFrame>,
 }
@@ -55,32 +58,30 @@ fn show_frame(
     )
 }
 
-/// Prefer placing the control panel outside the recorded region so it stays out
-/// of the user's way. When the selection covers nearly the full display, place
-/// it in the top-right corner (the window is excluded from OS capture).
-fn panel_origin(screen: (f32, f32), selection: (f32, f32, f32, f32)) -> (f32, f32) {
-    let (w, h) = screen;
+/// Center the bar below the selection, then above it. Only overlap the
+/// recording when neither side fits, anchoring to its bottom edge. All inputs
+/// are logical coordinates relative to the captured display; the work area
+/// excludes the menu bar, Dock, and taskbar.
+fn panel_origin(work: (f32, f32, f32, f32), selection: (f32, f32, f32, f32)) -> (f32, f32) {
+    let (wx, wy, ww, wh) = work;
     let (x, y, rw, rh) = selection;
     let pw = SCREEN_RECORD_PANEL_WIDTH;
     let ph = SCREEN_RECORD_PANEL_HEIGHT;
     let gap = PANEL_GAP;
-    if w >= pw + gap * 2. && h >= ph + gap * 2. {
-        let left = x.clamp(gap, w - pw - gap);
-        let top = y.clamp(gap, h - ph - gap);
-        if y >= ph + gap * 2. {
-            return (left, y - ph - gap);
-        }
-        if h - y - rh >= ph + gap * 2. {
-            return (left, y + rh + gap);
-        }
-        if x >= pw + gap * 2. {
-            return (x - pw - gap, top);
-        }
-        if w - x - rw >= pw + gap * 2. {
-            return (x + rw + gap, top);
-        }
+    let margin_x = gap.min(((ww - pw) / 2.).max(0.));
+    let margin_y = gap.min(((wh - ph) / 2.).max(0.));
+    let left = (x + (rw - pw) / 2.).clamp(wx + margin_x, wx + (ww - pw - margin_x).max(margin_x));
+    let top = wy + margin_y;
+    let bottom = wy + (wh - ph - margin_y).max(margin_y);
+    let below = y + rh + gap;
+    if below >= top && below <= bottom {
+        return (left, below);
     }
-    ((w - pw - gap).max(0.), gap.min((h - ph).max(0.)))
+    let above = y - ph - gap;
+    if above >= top && above <= bottom {
+        return (left, above);
+    }
+    (left, (y + rh - ph - gap).clamp(top, bottom))
 }
 
 pub(super) fn begin(
@@ -104,8 +105,20 @@ pub(super) fn begin(
     }
     let monitor = frame.monitor.clone();
     let scale = monitor.scale_factor;
+    let display = cx
+        .displays()
+        .into_iter()
+        .find(|d| u64::from(d.id()) as u32 == monitor.id)
+        .ok_or("Captured display is no longer available")?;
+    let work = display.visible_bounds();
+    let screen_origin = display.bounds().origin;
     let origin = panel_origin(
-        (monitor.width as f32 / scale, monitor.height as f32 / scale),
+        (
+            (work.left() - screen_origin.x).as_f32(),
+            (work.top() - screen_origin.y).as_f32(),
+            work.size.width.as_f32(),
+            work.size.height.as_f32(),
+        ),
         (
             rect.x as f32 / scale,
             rect.y as f32 / scale,
@@ -113,11 +126,6 @@ pub(super) fn begin(
             rect.height as f32 / scale,
         ),
     );
-    let display = cx
-        .displays()
-        .into_iter()
-        .find(|d| u64::from(d.id()) as u32 == monitor.id)
-        .ok_or("Captured display is no longer available")?;
     let settings = cx.global::<ShellState>().config.clone();
     let bounds = Bounds::new(
         display.bounds().origin + point(px(origin.0), px(origin.1)),
@@ -132,6 +140,9 @@ pub(super) fn begin(
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 display_id: Some(display.id()),
                 titlebar: None,
+                app_owns_titlebar_drag: true,
+                window_background: WindowBackgroundAppearance::Blurred,
+                window_min_size: Some(size(px(1.), px(1.))),
                 kind: WindowKind::PopUp,
                 is_resizable: false,
                 focus: false,
@@ -145,24 +156,41 @@ pub(super) fn begin(
                     let mut view = ScreenRecordView::new(
                         locale,
                         settings,
-                        DEFAULT_RECORD_FPS,
                         Rc::new(move |action, window, cx| {
                             handle_action(session, action, window, cx);
                         }),
                         cx,
                     );
-                    view.set_source(monitor.id, (monitor.width, monitor.height), scale, rect);
+                    view.set_source(scale, rect);
+                    view.focus(window, cx);
                     view
                 });
+                let record_window = Window::window_handle(window);
+                let mut previous_height = None;
+                cx.observe(&view, move |view, cx| {
+                    if !is_current(session, cx) {
+                        return;
+                    }
+                    let height = view.read(cx).review_height();
+                    if height == previous_height {
+                        return;
+                    }
+                    previous_height = height;
+                    if let Some(height) = height {
+                        let _ = record_window.update(cx, |_, window, cx| {
+                            expand_review_panel(window, height, cx);
+                        });
+                    }
+                })
+                .detach();
+                let closing = view.downgrade();
                 window.on_window_should_close(cx, move |window, cx| {
                     if is_current(session, cx) {
-                        cx.global_mut::<ShellState>()
-                            .windows
-                            .remove(&WindowRole::ScreenRecord(session));
-                        let _ = super::cancel(None, cx);
+                        let _ = closing.update(cx, |view, cx| view.request_close(window, cx));
+                        false
+                    } else {
+                        true
                     }
-                    window.remove_window();
-                    false
                 });
                 cx.global_mut::<ShellState>().windows.insert(
                     WindowRole::ScreenRecord(session),
@@ -172,7 +200,11 @@ pub(super) fn begin(
                         _appearance: None,
                     },
                 );
-                cx.new(|cx| Root::new(view, window, cx))
+                cx.new(|cx| {
+                    Root::new(view, window, cx)
+                        .bordered(false)
+                        .bg(gpui::transparent_black())
+                })
             },
         )
         .map_err(|e| e.to_string())?;
@@ -208,7 +240,12 @@ pub(super) fn begin(
             .ok();
         cx.global::<ShellState>()
             .services
-            .start_screen_record(OperationId(session), monitor, rect, DEFAULT_RECORD_FPS)
+            .start_screen_record(
+                OperationId(session),
+                monitor.clone(),
+                rect,
+                DEFAULT_RECORD_FPS,
+            )
             .map(|control| (control, outline))
     })();
 
@@ -221,6 +258,8 @@ pub(super) fn begin(
                 session,
                 control,
                 remember_directory: false,
+                source_monitor: monitor,
+                source_rect: rect,
                 frame: outline,
             });
             Ok(())
@@ -241,6 +280,17 @@ fn handle_action(session: u64, action: ScreenRecordAction, window: &mut Window, 
         return;
     }
     match action {
+        ScreenRecordAction::Move => {
+            #[cfg(target_os = "windows")]
+            if let Err(error) = HasWindowHandle::window_handle(window)
+                .map_err(|error| error.to_string())
+                .and_then(rotor_platform::overlay::start_window_move)
+            {
+                log::warn!("Move recording panel: {error}");
+            }
+            #[cfg(target_os = "macos")]
+            window.start_window_move();
+        }
         ScreenRecordAction::Pause => {
             if let Some(record) = &cx.global::<ShellState>().capture.record {
                 record.control.pause();
@@ -312,8 +362,8 @@ fn handle_action(session: u64, action: ScreenRecordAction, window: &mut Window, 
     }
 }
 
-/// Pressing the capture shortcut while actively recording stops the recording
-/// and moves to the export panel instead of discarding the clip.
+/// Keep the current recording session until the user saves or discards it.
+/// Repeated capture shortcuts stop recording or bring its save panel forward.
 pub fn stop_requested(cx: &mut App) -> bool {
     let Some(session) = cx
         .global::<ShellState>()
@@ -329,9 +379,13 @@ pub fn stop_requested(cx: &mut App) -> bool {
     };
     handle
         .update(cx, |_, window, cx| {
-            view.update(cx, |view, cx| view.stop(window, cx))
+            let _ = view.update(cx, |view, cx| {
+                view.stop(window, cx);
+                view.focus(window, cx);
+            });
+            window.activate_window();
         })
-        .is_ok_and(|result| result.unwrap_or(false))
+        .is_ok()
 }
 
 pub fn sync_settings(config: &rotor_common::Config, cx: &mut App) {
@@ -368,6 +422,113 @@ fn record_view(session: u64, cx: &App) -> Option<(AnyWindowHandle, WeakEntity<Sc
         })
 }
 
+/// Center the review on the original recording, only shifting it enough to
+/// keep the save controls inside the display's usable area.
+fn review_origin(
+    work: (f32, f32, f32, f32),
+    selection: (f32, f32, f32, f32),
+    height: f32,
+) -> (f32, f32) {
+    let (wx, wy, ww, wh) = work;
+    let (x, y, width, selection_height) = selection;
+    let pw = SCREEN_RECORD_REVIEW_WIDTH;
+    let ph = height;
+    let mx = PANEL_GAP.min(((ww - pw) / 2.).max(0.));
+    let my = PANEL_GAP.min(((wh - ph) / 2.).max(0.));
+    (
+        (x + (width - pw) / 2.).clamp(wx + mx, wx + (ww - pw - mx).max(mx)),
+        (y + (selection_height - ph) / 2.).clamp(wy + my, wy + (wh - ph - my).max(my)),
+    )
+}
+
+fn expand_review_panel(window: &mut Window, height: f32, cx: &mut App) {
+    // The view fills the client area; the native window supplies its only
+    // outline and corner mask. Stop blurring once recording is complete.
+    window.set_background_appearance(WindowBackgroundAppearance::Transparent);
+    let source = cx
+        .global::<ShellState>()
+        .capture
+        .record
+        .as_ref()
+        .map(|record| (record.source_monitor.clone(), record.source_rect));
+    let source_display = source.as_ref().and_then(|(monitor, _)| {
+        cx.displays()
+            .into_iter()
+            .find(|display| u64::from(display.id()) as u32 == monitor.id)
+    });
+    let Some(display) = source_display
+        .clone()
+        .or_else(|| window.display(cx))
+        .or_else(|| cx.primary_display())
+    else {
+        window.resize(size(px(SCREEN_RECORD_REVIEW_WIDTH), px(height)));
+        return;
+    };
+    let work = display.visible_bounds();
+    let display_bounds = display.bounds();
+    let work_rect = (
+        work.left().as_f32(),
+        work.top().as_f32(),
+        work.size.width.as_f32(),
+        work.size.height.as_f32(),
+    );
+    let selection = match (&source, source_display) {
+        (Some((monitor, rect)), Some(_)) => (
+            display_bounds.left().as_f32() + rect.x as f32 / monitor.scale_factor,
+            display_bounds.top().as_f32() + rect.y as f32 / monitor.scale_factor,
+            rect.width as f32 / monitor.scale_factor,
+            rect.height as f32 / monitor.scale_factor,
+        ),
+        // If the captured display was disconnected, use the current work area
+        // rather than moving the review to stale off-screen coordinates.
+        _ => work_rect,
+    };
+    let (x, y) = review_origin(work_rect, selection, height);
+    let target_id = u64::from(display.id()) as u32;
+    let target_monitor = cx
+        .global::<ShellState>()
+        .monitors
+        .iter()
+        .find(|monitor| monitor.id == target_id)
+        .cloned()
+        .or_else(|| {
+            source
+                .map(|(monitor, _)| monitor)
+                .filter(|monitor| monitor.id == target_id)
+        });
+    let scale = target_monitor
+        .as_ref()
+        .map_or(window.scale_factor(), |monitor| monitor.scale_factor);
+    #[cfg(target_os = "macos")]
+    let (native_x, native_y) = (x * scale, y * scale);
+    #[cfg(target_os = "windows")]
+    let (native_x, native_y) = target_monitor
+        .as_ref()
+        .map_or((x * scale, y * scale), |monitor| {
+            (
+                monitor.x as f32 + (x - display_bounds.left().as_f32()) * scale,
+                monitor.y as f32 + (y - display_bounds.top().as_f32()) * scale,
+            )
+        });
+    let result = HasWindowHandle::window_handle(window)
+        .map_err(|error| error.to_string())
+        .and_then(|handle| {
+            rotor_platform::overlay::set_client_bounds(
+                handle,
+                native_x.round() as i32,
+                native_y.round() as i32,
+                (SCREEN_RECORD_REVIEW_WIDTH * scale).round() as u32,
+                (height * scale).round() as u32,
+                scale,
+            )
+        });
+    if let Err(error) = result {
+        log::warn!("Position recording review: {error}");
+        window.resize(size(px(SCREEN_RECORD_REVIEW_WIDTH), px(height)));
+    }
+    window.bounds_changed(cx);
+}
+
 pub fn handle_event(id: OperationId, event: ScreenRecordEvent, cx: &mut App) {
     if !is_current(id.0, cx) {
         return;
@@ -384,25 +545,23 @@ pub fn handle_event(id: OperationId, event: ScreenRecordEvent, cx: &mut App) {
         }
         ScreenRecordEvent::Progress {
             elapsed_ms,
-            frames,
             unique_frames,
-            spool_bytes,
             status,
+            ..
         } => {
             if let Some((handle, view)) = record_view(id.0, cx) {
                 let _ = handle.update(cx, |_, _, cx| {
                     let _ = view.update(cx, |view, cx| {
-                        view.progress(elapsed_ms, frames, unique_frames, spool_bytes, status, cx)
+                        view.progress(elapsed_ms, unique_frames, status, cx)
                     });
                 });
             }
         }
         ScreenRecordEvent::Stopped {
             duration_ms,
-            frames,
             unique_frames,
-            spool_bytes,
             limit,
+            ..
         } => {
             // Recording is complete; remove the on-screen selection border.
             if let Some(record) = cx.global_mut::<ShellState>().capture.record.as_mut() {
@@ -411,8 +570,9 @@ pub fn handle_event(id: OperationId, event: ScreenRecordEvent, cx: &mut App) {
             if let Some((handle, view)) = record_view(id.0, cx) {
                 let _ = handle.update(cx, |_, window, cx| {
                     let _ = view.update(cx, |view, cx| {
-                        view.stopped(duration_ms, frames, unique_frames, spool_bytes, limit, cx)
+                        view.stopped(duration_ms, unique_frames, limit, cx)
                     });
+                    let _ = view.update(cx, |view, cx| view.focus(window, cx));
                     window.activate_window();
                 });
             }
@@ -463,17 +623,90 @@ pub fn handle_event(id: OperationId, event: ScreenRecordEvent, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{SCREEN_RECORD_PANEL_HEIGHT, SCREEN_RECORD_PANEL_WIDTH, panel_origin};
+    use super::{
+        PANEL_GAP, SCREEN_RECORD_PANEL_HEIGHT as H, SCREEN_RECORD_PANEL_WIDTH as W, panel_origin,
+        review_origin,
+    };
 
     #[test]
-    fn panel_prefers_outside_selection_and_falls_back_on_fullscreen() {
-        let (x, y) = panel_origin((1920., 1080.), (100., 500., 800., 500.));
-        assert!(x >= 0. && y >= 0.);
-        assert!(y + SCREEN_RECORD_PANEL_HEIGHT < 500.);
+    fn bar_prefers_below_then_above_the_selection() {
+        let work = (0., 0., 1920., 1080.);
+        let selection = (100., 300., 800., 400.);
+        assert_eq!(
+            panel_origin(work, selection),
+            (100. + (800. - W) / 2., 700. + PANEL_GAP)
+        );
+        let selection = (100., 500., 800., 560.);
+        assert_eq!(
+            panel_origin(work, selection),
+            (100. + (800. - W) / 2., 500. - H - PANEL_GAP)
+        );
+    }
 
-        // Fullscreen recording still gets a valid on-screen corner position.
-        let (fx, fy) = panel_origin((1920., 1080.), (0., 0., 1920., 1080.));
-        assert!(fx >= 0. && fx + SCREEN_RECORD_PANEL_WIDTH <= 1920.);
-        assert!(fy >= 0. && fy + SCREEN_RECORD_PANEL_HEIGHT <= 1080.);
+    #[test]
+    fn fullscreen_and_tall_regions_use_the_inside_bottom_edge() {
+        let work = (0., 0., 1920., 1080.);
+        assert_eq!(
+            panel_origin(work, (0., 0., 1920., 1080.)),
+            ((1920. - W) / 2., 1080. - H - PANEL_GAP)
+        );
+        assert_eq!(
+            panel_origin(work, (400., 12., 800., 1050.)),
+            (400. + (800. - W) / 2., 1062. - H - PANEL_GAP)
+        );
+    }
+
+    #[test]
+    fn placement_respects_work_area_and_clamps_narrow_edge_selections() {
+        let work = (0., 25., 1440., 805.);
+        for selection in [
+            (0., 0., 1440., 900.),
+            (0., 25., 20., 800.),
+            (1420., 25., 20., 800.),
+        ] {
+            let (x, y) = panel_origin(work, selection);
+            assert!(x >= 0. && x + W <= 1440.);
+            assert!(y >= 25. && y + H <= 830.);
+        }
+        // Coordinates remain display-local, including HiDPI displays with a
+        // taskbar along the left side. No physical pixel offsets leak in.
+        let (x, y) = panel_origin((60., 0., 900., 600.), (0., 0., 960., 600.));
+        assert!(x >= 60. && x + W <= 960.);
+        assert_eq!(y, 600. - H - PANEL_GAP);
+    }
+    #[test]
+    fn review_centers_on_recording_even_when_selection_is_smaller_than_panel() {
+        let work = (0., 25., 1440., 805.);
+        assert_eq!(
+            review_origin(work, (360., 180., 640., 480.), 184.),
+            (520., 328.)
+        );
+        assert_eq!(
+            review_origin(work, (600., 400., 80., 40.), 184.),
+            (480., 328.)
+        );
+        // Revealing GIF options grows around the same selection center.
+        assert_eq!(
+            review_origin(work, (360., 180., 640., 480.), 220.),
+            (520., 310.)
+        );
+    }
+
+    #[test]
+    fn review_stays_in_work_area_near_edges_and_on_negative_origin_displays() {
+        let work = (0., 25., 1440., 805.);
+        assert_eq!(
+            review_origin(work, (1400., 780., 20., 20.), 184.),
+            (1112., 638.)
+        );
+        assert_eq!(review_origin(work, (0., 25., 20., 20.), 184.), (8., 33.));
+        assert_eq!(
+            review_origin((-1600., 25., 1600., 825.), (-1000., 200., 500., 400.), 184.),
+            (-910., 308.)
+        );
+        assert_eq!(
+            review_origin((0., 25., 1920., 1000.), (0., 0., 1920., 1080.), 184.),
+            (800., 448.)
+        );
     }
 }
