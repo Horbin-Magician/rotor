@@ -385,6 +385,9 @@ impl SearchView {
             font_weight: Some(FontWeight::BOLD),
             ..Default::default()
         };
+        let action_button_width = 38.;
+        let action_count = if cfg!(target_os = "windows") { 2. } else { 1. };
+        let action_bar_width = action_button_width * action_count;
         range
             .map(|index| {
                 let item = &self.results.items[index];
@@ -447,7 +450,7 @@ impl SearchView {
                             .flex_col()
                             .gap(px(2.))
                             .pr(px(if self.hovered == Some(index) {
-                                80.
+                                action_bar_width + 4.
                             } else {
                                 10.
                             }))
@@ -503,17 +506,12 @@ impl SearchView {
                             ),
                     )
                     .when(self.hovered == Some(index), |row| {
-                        let width = if cfg!(target_os = "windows") {
-                            76.
-                        } else {
-                            38.
-                        };
                         row.child(
                             div()
                                 .absolute()
                                 .top_0()
                                 .h_full()
-                                .w(px(width))
+                                .w(px(action_bar_width))
                                 .flex()
                                 .items_center()
                                 .justify_end()
@@ -521,7 +519,7 @@ impl SearchView {
                                     bar.child(
                                         Button::new(("open-admin", index))
                                             .text()
-                                            .w(px(38.))
+                                            .w(px(action_button_width))
                                             .h_full()
                                             .p_0()
                                             .rounded_none()
@@ -548,7 +546,7 @@ impl SearchView {
                                 .child(
                                     Button::new(("open-folder", index))
                                         .text()
-                                        .w(px(38.))
+                                        .w(px(action_button_width))
                                         .h_full()
                                         .p_0()
                                         .rounded_none()
@@ -572,7 +570,7 @@ impl SearchView {
                                     Animation::new(Duration::from_millis(300)),
                                     move |bar, progress| {
                                         let eased = 1. - (1. - progress).powi(3);
-                                        bar.right(px(-width * (1. - eased)))
+                                        bar.right(px(-action_bar_width * (1. - eased)))
                                     },
                                 ),
                         )
